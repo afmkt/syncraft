@@ -1,6 +1,6 @@
 [project]
 name = "syncraft"
-version="0.1.0"
+version = "0.1.0"
 description = "Parser combinator library"
 readme = "README.md"
 authors = [
