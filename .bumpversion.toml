@@ -4,6 +4,7 @@ commit = true
 tag = true
 tag_name = "v{new_version}"
 
-[bumpversion:file:pyproject.toml]
+[bumpversion.file.pyproject-toml]
 search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
+
