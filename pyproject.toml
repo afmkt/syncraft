@@ -23,6 +23,4 @@ dev = [
     "pytest>=8.4.1",
 ]
 
-[tool.uv.scripts]
-release = "sh -c 'bump-my-version $0 && git push && git push --tags'"
 
