@@ -48,7 +48,7 @@ read -p "Enter commit message [default: Bump version to $NEW_VERSION]: " COMMIT_
 COMMIT_MSG=${COMMIT_MSG:-"Bump version to $NEW_VERSION"}
 
 # Commit and tag
-git add pyproject.toml
+git add pyproject.toml uv.lock
 git commit -m "$COMMIT_MSG"
 git tag "v$NEW_VERSION"
 
