@@ -12,3 +12,10 @@ Syncraft is a parser/generator combinator library with full round-trip support:
 
 ```bash
 pip install syncraft
+```
+
+
+## TODO
+- [ ] Test Walker.get/set for bidirectional mapping between source code and data class
+- [ ] Annotate sqlite3 grammar with named nodes and data classes
+- [ ] 
