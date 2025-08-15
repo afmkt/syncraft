@@ -43,9 +43,13 @@ rm pyproject.toml.bak
 
 echo "Version updated in pyproject.toml"
 
+# Ask for commit message
+read -p "Enter commit message [default: Bump version to $NEW_VERSION]: " COMMIT_MSG
+COMMIT_MSG=${COMMIT_MSG:-"Bump version to $NEW_VERSION"}
+
 # Commit and tag
 git add pyproject.toml
-git commit -m "Bump version to $NEW_VERSION"
+git commit -m "$COMMIT_MSG"
 git tag "v$NEW_VERSION"
 
 # Push commit and tag
