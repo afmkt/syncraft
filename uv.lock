@@ -154,8 +154,8 @@ wheels = [
 
 [[package]]
 name = "syncraft"
-version = "0.1.6"
-source = { editable = "." }
+version = "0.1.7"
+source = { virtual = "." }
 dependencies = [
     { name = "rich" },
     { name = "rstr" },
