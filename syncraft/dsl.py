@@ -156,7 +156,7 @@ class DSL(Generic[A, S], Insptectable):
     def sep_by(self, sep: DSL[Any, S]) -> DSL[ThenResult[A, ManyResult[ThenResult[None, A]]], S]:
         return (self + (sep >> self).many()).describe(
             name='sep_by',
-            fixity='infix',
+            fixity='prefix',
             parameter=[self, sep]
         )
     
