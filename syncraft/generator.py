@@ -123,16 +123,16 @@ class GenState(Generic[T], Insptectable):
     def freeform(self) -> GenState[T]:
         return FreeformState(ast=None, seed=self.seed)
     
+    
     @classmethod
     def from_ast(cls, ast: Optional[AST[T]], seed: int = 0) -> GenState[T]:
-        return cls(ast=ast, seed=seed)
+        ret = cls(ast=ast, seed=seed)
+        return ret if ast is not None else ret.freeform()
+
 
     @classmethod
     def from_parse_result(cls, parse_result: Optional[ParseResult[T]], seed: int = 0) -> GenState[T]:
-        ret = cls(ast=AST(parse_result) if parse_result else None, seed=seed)
-        return ret if parse_result is not None else ret.freeform()
-    
-
+        return cls.from_ast(AST(parse_result) if parse_result else None, seed)
 
 
 @dataclass(frozen=True)
