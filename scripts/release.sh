@@ -11,8 +11,8 @@ if ! git diff-index --quiet HEAD --; then
   exit 1
 fi
 
-bump-my-version bump "$BUMP_TYPE"
 echo "🔖 Releasing a new $BUMP_TYPE version..."
+bump-my-version bump "$BUMP_TYPE"
 
 git push
 git push --tags
