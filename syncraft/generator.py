@@ -298,7 +298,6 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
         gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
         lazy_self: Algebra[GenResult[T], GenState[T]]
         def token_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[GenResult[Token], GenState[T]]]:
-            print('token', gen, input)
             if input.ended:
                 return Left(Error(None,
                                   message=f"{input.__class__.__name__} has ended, cannot run token.", 
