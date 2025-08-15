@@ -1,13 +1,13 @@
 [project]
 name = "syncraft"
-version = "0.1.5"
+version = "0.1.6"
 description = "Parser combinator library"
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{name = "Michael Afmokt", email = "michael@esacca.com"}]
 keywords = ["parser", "combinator", "sql", "sqlite", "generator", 'printer']
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "rich>=14.1.0",
     "rstr>=3.2.2",
