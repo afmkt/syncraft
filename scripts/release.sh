@@ -1,18 +1,55 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
+BUMP=${1:-patch}
 
-# Choose bump type: patch, minor, major
-BUMP_TYPE="${1:-patch}"
+# Read current version robustly
+CURRENT_VERSION=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([0-9]+)\.([0-9]+)\.([0-9]+)".*/\1.\2.\3/p' pyproject.toml)
 
-# Check clean working tree
-if ! git diff-index --quiet HEAD --; then
-  echo "❌ Working tree is dirty. Commit or stash changes first."
+if [ -z "$CURRENT_VERSION" ]; then
+  echo "Error: Could not find current version in pyproject.toml"
   exit 1
 fi
 
-echo "🔖 Releasing a new $BUMP_TYPE version..."
-bump-my-version bump --config-file bumpversion.cfg "$BUMP_TYPE"
+echo "Current version: $CURRENT_VERSION"
 
-git push
-git push --tags
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+case "$BUMP" in
+  major)
+    ((MAJOR+=1))
+    MINOR=0
+    PATCH=0
+    ;;
+  minor)
+    ((MINOR+=1))
+    PATCH=0
+    ;;
+  patch)
+    ((PATCH+=1))
+    ;;
+  *)
+    echo "Unknown bump type: $BUMP. Use major, minor, or patch."
+    exit 1
+    ;;
+esac
+
+NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+echo "New version: $NEW_VERSION"
+
+# Update pyproject.toml in place
+sed -i.bak -E "s/^([[:space:]]*version[[:space:]]*=[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\".*)/\1$NEW_VERSION\2/" pyproject.toml
+rm pyproject.toml.bak
+
+echo "Version updated in pyproject.toml"
+
+# Commit and tag
+git add pyproject.toml
+git commit -m "Bump version to $NEW_VERSION"
+git tag "v$NEW_VERSION"
+
+# Push commit and tag
+git push origin main
+git push origin "v$NEW_VERSION"
+
+echo "Release $NEW_VERSION committed, tagged, and pushed."
