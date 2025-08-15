@@ -1,0 +1,373 @@
+from __future__ import annotations
+
+from typing import (
+    Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast,
+    Type, Literal
+)
+from dataclasses import dataclass, field
+from functools import reduce
+from syncraft.algebra import Algebra, Error, Either, Insptectable, NamedResult, ThenResult, ManyResult, ThenKind
+from types import MethodType, FunctionType
+
+
+
+
+A = TypeVar('A')  # Result type
+B = TypeVar('B')  # Result type for mapping
+C = TypeVar('C')  # Result type for else branch
+S = TypeVar('S')  # State type
+
+@dataclass(frozen=True)
+class Description(Insptectable):
+    name: Optional[str] = None
+    newline: Optional[str] = None
+    fixity: Literal['infix', 'prefix', 'postfix'] = 'infix'
+    parameter: List[Any] = field(default_factory=list)
+
+    def update(self, 
+               *,
+               newline: Optional[str] = None,
+               name: Optional[str] = None,
+               fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
+               parameter: Optional[List[Any]] = None) -> 'Description':
+        return Description(
+            name=name if name is not None else self.name,
+            newline= newline if newline is not None else self.newline,
+            fixity=fixity if fixity is not None else self.fixity,
+            parameter=parameter if parameter is not None else self.parameter
+        )
+        
+    def to_string(self, interested: Callable[[Any], bool]) -> Optional[str]:
+        if self.name is not None:
+            if self.fixity == 'infix':
+                assert len(self.parameter) == 2, "Expected exactly two parameters for infix operator"
+                left  = self.parameter[0].to_string(interested) if interested(self.parameter[0]) else '...'
+                right = self.parameter[1].to_string(interested) if interested(self.parameter[1]) else '...'
+                if self.parameter[1].meta.newline is not None:
+                    dot = '\u25cf'  
+                    rarrow = '\u2794'
+                    new = '\u2570' #'\u2936'
+                    return f"{left}\n{new} \"{self.parameter[1].meta.newline}\" {self.name} {right}"
+                return f"{left} {self.name} {right}"
+            elif self.fixity == 'prefix':
+                if len(self.parameter) == 0:
+                    return self.name
+                tmp = [x.to_string(interested) if interested(x) else '...' for x in self.parameter]
+                return f"{self.name}({','.join(str(x) for x in tmp)})" 
+            elif self.fixity == 'postfix':
+                if len(self.parameter) == 0:
+                    return self.name
+                tmp = [x.to_string(interested) if interested(x) else '...' for x in self.parameter]
+                return f"({','.join(str(x) for x in tmp)}).{self.name}" 
+            else:
+                return f"Invalid fixity: {self.fixity}"
+        return None
+
+
+
+
+@dataclass(frozen=True)
+class DSL(Generic[A, S], Insptectable):
+    alg: Callable[[Type[Algebra[Any, Any]]], Algebra[A, S]]
+    meta: Description = field(default_factory=Description, repr=False)
+
+    def algebra(self, name: str | MethodType | FunctionType, *args: Any, **kwargs: Any)-> DSL[A, S]:
+        def algebra_run(cls: Type[Algebra[Any, S]]) -> Algebra[Any, S]:
+            a = self.alg(cls)
+            if isinstance(name, str):
+                attr = getattr(a, name, None) or getattr(cls, name, None)
+                if attr is None:
+                    return a
+                if isinstance(attr, (staticmethod, classmethod)):
+                    # These are descriptors: unwrap then call
+                    attr = attr.__get__(None, cls)
+                elif isinstance(attr, FunctionType):
+                    # Unbound function (e.g., static method not wrapped)
+                    attr = MethodType(attr, a)
+                else:
+                    return a
+                return cast(Algebra[Any, S], attr(*args, **kwargs))
+            elif isinstance(name, MethodType):
+                f = MethodType(name.__func__, a)
+                return cast(Algebra[Any, S], f(*args, **kwargs))
+            elif isinstance(name, FunctionType):
+                f = MethodType(name, a)
+                return cast(Algebra[Any, S], f(*args, **kwargs))
+            else:
+                return a
+        return self.__class__(alg=algebra_run, meta=self.meta)
+                
+
+
+
+    def as_(self, typ: Type[B])->B:
+        return cast(typ, self) # type: ignore
+        
+    def __call__(self, alg: Type[Algebra[Any, Any]]) -> Algebra[A, S]:
+        return self.alg(alg)
+    
+    def to_string(self, interested: Callable[[Any], bool]) -> Optional[str]:
+        return self.meta.to_string(interested)
+
+        
+    def describe(self, 
+                 *, 
+                 newline: Optional[str] = None,
+                 name: Optional[str] = None, 
+                 fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None, 
+                 parameter: Optional[List[DSL[Any, S]]] = None) -> DSL[A, S]:
+        return self.__class__(alg=self.alg,
+                              meta=self.meta.update(name=name,
+                                    newline=newline,
+                                    fixity=fixity,
+                                    parameter=parameter))
+    
+    def newline(self, info: str='')-> DSL[A, S]:
+        return self.describe(newline=info)
+
+    def terminal(self, name: str)->DSL[A, S]:
+        return self.describe(name=name, fixity='prefix', parameter=[])
+
+######################################################## value transformation ########################################################
+    def map(self, f: Callable[[A], B]) -> DSL[B, S]:
+        return self.__class__(lambda cls: self.alg(cls).map(f), meta = self.meta) # type: ignore
+
+    def map_error(self, f: Callable[[Optional[Any]], Any]) -> DSL[A, S]:
+        return self.__class__(lambda cls: self.alg(cls).map_error(f), meta=self.meta)
+    
+    def map_state(self, f: Callable[[S], S]) -> DSL[A, S]:
+        return self.__class__(lambda cls: self.alg(cls).map_state(f), meta=self.meta)
+
+    def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> DSL[B, S]:
+        return self.__class__(lambda cls: self.alg(cls).flat_map(f)) # type: ignore
+
+    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> DSL[ManyResult[A], S]:
+        return self.__class__(lambda cls:self.alg(cls).many(at_least=at_least, at_most=at_most)).describe(name='*', # type: ignore
+                                                 fixity='prefix', 
+                                                 parameter=[self])  
+    
+################################################ facility combinators ############################################################
+
+
+
+    def between(self, left: DSL[Any, S], right: DSL[Any, S]) -> DSL[ThenResult[None, ThenResult[A, None]], S]:
+        return left >> self // right
+
+    def sep_by(self, sep: DSL[Any, S]) -> DSL[ThenResult[A, ManyResult[ThenResult[None, A]]], S]:
+        return (self + (sep >> self).many()).describe(
+            name='sep_by',
+            fixity='infix',
+            parameter=[self, sep]
+        )
+    
+    def parens(self, sep: DSL[Any, S], open: DSL[Any, S], close: DSL[Any, S]) -> DSL[Any, S]:
+        return self.sep_by(sep=sep).between(left=open, right=close)
+            
+    def optional(self, default: Optional[B] = None) -> DSL[Optional[A | B], S]:
+        return (self | success(default)).describe(name='~', fixity='prefix', parameter=[self])
+
+
+    def cut(self) -> DSL[A, S]:
+        return self.__class__(lambda cls:self.alg(cls).cut())
+
+
+####################################################### operator overloading #############################################
+    def __ge__(self, f: Callable[[A], Algebra[B, S]]) -> DSL[B, S]:
+        return self.flat_map(f).describe(name='>=', fixity='infix', parameter=[self])
+
+
+    def __gt__(self, other: Callable[[A], B])->DSL[B, S]:
+        return self.map(other)
+
+
+    def __floordiv__(self, other: DSL[B, S]) -> DSL[ThenResult[A, None], S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return self.__class__(
+            lambda cls: self.alg(cls).then_left(other.alg(cls))   # type: ignore
+            ).describe(name=ThenKind.LEFT.value, fixity='infix', parameter=[self, other]).as_(DSL[ThenResult[A, None], S]) 
+
+    def __rfloordiv__(self, other: DSL[B, S]) -> DSL[ThenResult[B, None], S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return other.__floordiv__(self)
+
+    def __invert__(self) -> DSL[A | None, S]:
+        return self.optional()
+
+    def __radd__(self, other: DSL[B, S]) -> DSL[ThenResult[B, A], S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return other.__add__(self)
+
+    def __add__(self, other: DSL[B, S]) -> DSL[ThenResult[A, B], S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return self.__class__( 
+            lambda cls: self.alg(cls).then_both(other.alg(cls)) # type: ignore
+            ).describe(name=ThenKind.BOTH.value, fixity='infix', parameter=[self, other])
+
+    def __rshift__(self, other: DSL[B, S]) -> DSL[ThenResult[None, B], S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return self.__class__(
+            lambda cls: self.alg(cls).then_right(other.alg(cls))   # type: ignore
+            ).describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=[self, other]).as_(DSL[ThenResult[None, B], S])   
+
+
+    def __rrshift__(self, other: DSL[B, S]) -> DSL[ThenResult[None, A], S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return other.__rshift__(self)  
+
+
+    def __or__(self, other: DSL[B, S]) -> DSL[A | B, S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return self.__class__(lambda cls: self.alg(cls).or_else(other.alg(cls))).describe(name='|', fixity='infix', parameter=[self, other]) # type: ignore
+
+
+    def __ror__(self, other: DSL[B, S]) -> DSL[A | B, S]:
+        other = other if isinstance(other, DSL) else self.lift(other).as_(DSL[B, S])
+        return other.__or__(self).as_(DSL[A | B, S]) 
+
+
+######################################################################## data processing combinators #########################################################
+
+    def _attach(self, 
+               name: str, 
+               *,
+               forward_map: Callable[[B], C] | None,
+               backward_map: Callable[[C], B] | None,
+               aggregator_f: Callable[..., Any] | None,
+               ) -> DSL[NamedResult[A, C], S]:
+        def attach_f(x: A | NamedResult[A, B]) -> NamedResult[A, C]:
+            if isinstance(x, NamedResult):
+                if x.backward_map is not None:
+                    b_f = x.backward_map
+                    def combined_bf(a: Any)->A:
+                        if backward_map is not None:
+                            return b_f(backward_map(a))
+                        else:
+                            return b_f(a)
+                if x.forward_map is not None:
+                    f_f = x.forward_map
+                    def combined_ff(a: Any)->Any:
+                        if forward_map is not None:
+                            return forward_map(f_f(a))
+                        else:
+                            return f_f(a)
+                if x.aggregator is not None:
+                    agg_f = x.aggregator
+                    def combined_agg(a: Any)->Any:
+                        if aggregator_f is not None:
+                            return aggregator_f(agg_f(a))
+                        else:
+                            return agg_f(a)
+                return NamedResult(
+                    name=name,
+                    value=x.value,
+                    forward_map=forward_map if x.forward_map is None else combined_ff, # type: ignore
+                    backward_map=backward_map if x.backward_map is None else combined_bf, # type: ignore
+                    aggregator=aggregator_f if x.aggregator is None else combined_agg
+                )
+            else:
+                return NamedResult(
+                    name=name,
+                    value=x,
+                    forward_map=forward_map, # type: ignore
+                    backward_map=backward_map, # type: ignore
+                    aggregator=aggregator_f,
+
+                )            
+            
+        return self.map(attach_f)
+
+    def bind(self, name: str) -> DSL[NamedResult[Any, Any], S]:
+        return self._attach(name, 
+                           forward_map=None, 
+                           backward_map=None, 
+                           aggregator_f=None,
+                           ).describe(name=f'bind("{name}")', fixity='postfix', parameter=[self])            
+
+    def bimap(self, name: str, *, forward_map: Callable[[Any], Any], backward_map: Callable[[Any], Any]) -> DSL[NamedResult[Any, Any], S]:
+        return self._attach(name, 
+                           forward_map=forward_map, 
+                           backward_map=backward_map, 
+                           aggregator_f=None,
+                           ).describe(name=f'bimap("{name}")', fixity='postfix', parameter=[self])            
+    def to(self, name: str, aggregator_f: Callable[..., Any]) -> DSL[NamedResult[A, Any], S]:
+        return self._attach(name, 
+                           forward_map=None, 
+                           backward_map=None, 
+                           aggregator_f=aggregator_f,
+                           ).describe(name=f'to("{name}")', fixity='postfix', parameter=[self])
+
+    def dump_error(self, formatter: Optional[Callable[[Error], None]] = None) -> DSL[A, S]:
+        def dump_error_run(err: Any)->Any:
+            if isinstance(err, Error) and formatter is not None:
+                formatter(err) 
+            return err
+        return self.__class__(lambda cls: self.alg(cls).map_error(dump_error_run))
+
+
+    def debug(self, 
+              label: str, 
+              formatter: Optional[Callable[[Algebra[Any, S], S, Either[Any, Tuple[Any, S]]], None]] = None) -> DSL[A, S]:
+        return self.__class__(lambda cls:self.alg(cls).debug(label, formatter), meta=self.meta)
+
+
+    
+def lazy(thunk: Callable[[], DSL[A, S]]) -> DSL[A, S]:
+    return DSL(lambda cls: cls.lazy(lambda: thunk()(cls))).describe(name='lazy(?)', fixity='postfix') 
+
+def fail(error: Any) -> DSL[Any, Any]:
+    return DSL(lambda alg: alg.fail(error)).describe(name=f'fail({error})', fixity='prefix')
+
+def success(value: Any) -> DSL[Any, Any]:
+    return DSL(lambda alg: alg.success(value)).describe(name=f'success({value})', fixity='prefix')
+
+def choice(*parsers: DSL[Any, S]) -> DSL[Any, S]:
+    return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(None)
+
+
+
+
+
+
+
+
+def all(*parsers: DSL[Any, S]) -> DSL[ThenResult[Any, Any], S]:
+    return reduce(lambda a, b: a + b, parsers) if len(parsers) > 0 else success(None)
+
+def first(*parsers: DSL[Any, S]) -> DSL[Any, S]:
+    return reduce(lambda a, b: a // b, parsers) if len(parsers) > 0 else success(None)
+
+def last(*parsers: DSL[Any, S]) -> DSL[Any, S]:
+    return reduce(lambda a, b: a >> b, parsers) if len(parsers) > 0 else success(None)
+
+def named(* parsers: DSL[Any, S] | Tuple[str, DSL[Any, S]]) -> DSL[Any, S]:
+    def is_named_parser(x: Any) -> bool:
+        return isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], DSL)
+    
+    def to_parser(x: DSL[Any, S] | Tuple[str, DSL[Any, S]])->DSL[Any, S]:
+        if isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], DSL):
+            return x[1].bind(x[0])
+        elif isinstance(x, DSL):
+            return x
+        else:
+            raise ValueError(f"Invalid parser or tuple: {x}", x)
+    ret: Optional[DSL[Any, S]] = None
+    has_data = False
+    for p in parsers:
+        just_parser = to_parser(p)
+        if has_data:
+            if ret is not None:
+                if is_named_parser(p):
+                    ret = ret + just_parser
+                else:
+                    ret = ret // just_parser
+            else:
+                ret = just_parser
+        else:
+            has_data = is_named_parser(p)
+            if ret is None:
+                ret = just_parser
+            else:
+                ret = ret >> just_parser
+    
+    return ret if ret is not None else success(None) 
+

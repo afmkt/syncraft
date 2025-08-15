@@ -1,0 +1,18 @@
+[project]
+name = "syncraft"
+version = "0.1.0"
+description = "Parser combinator library"
+readme = "README.md"
+authors = [
+    { name = "michael", email = "afmkt1020@proton.me" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "rich>=14.1.0",
+    "rstr>=3.2.2",
+    "sqlglot>=27.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
