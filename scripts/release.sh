@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-if [ -z "$1" ]; then
-  echo "Usage: scripts/release.sh <new-version>"
-  exit 1
-fi
 
-VERSION="$1"
+# Choose bump type: patch, minor, major
+BUMP_TYPE="${1:-patch}"
 
 # Check clean working tree
 if ! git diff-index --quiet HEAD --; then
@@ -14,6 +11,8 @@ if ! git diff-index --quiet HEAD --; then
   exit 1
 fi
 
-bump-my-version "$VERSION"
+bump-my-version bump "$BUMP_TYPE"
+echo "🔖 Releasing a new $BUMP_TYPE version..."
+
 git push
 git push --tags
