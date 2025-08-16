@@ -1,5 +1,6 @@
 from __future__ import annotations
-from syncraft.parser import AST, literal, variable, parse, Parser
+from syncraft.parser import literal, variable, parse, Parser
+from syncraft.ast import AST
 import syncraft.generator as gen
 from typing import Any
 from rich import print

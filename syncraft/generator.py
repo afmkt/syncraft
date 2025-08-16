@@ -10,10 +10,9 @@ from syncraft.algebra import (
     Algebra, ThenResult, Either, Left, Right, Error, Insptectable, 
     NamedResult, OrResult, ManyResult
 )
-from syncraft.parser import TokenProtocol, ParseResult, AST, Token, TokenSpec, Crumb
+from syncraft.ast import TokenProtocol, ParseResult, AST, Token, TokenSpec, Crumb
 from sqlglot import TokenType
 import re
-from rich import print
 import rstr
 from functools import lru_cache
 import random
