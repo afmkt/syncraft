@@ -4,21 +4,19 @@ from typing import (
     Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, Iterable, Hashable, 
     cast, List
 )
-
+from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, ThenResult, Either, Left, Right, Error, Insptectable, 
-    NamedResult, OrResult, ManyResult
+    NamedResult, OrResult, ManyResult, ThenKind
 )
-from syncraft.ast import TokenProtocol, ParseResult, AST, Token, TokenSpec, Crumb
+from syncraft.ast import TokenProtocol, ParseResult, AST, Token, TokenSpec
 from sqlglot import TokenType
 import re
 import rstr
 from functools import lru_cache
 import random
 
-
-A = TypeVar('A')
 B = TypeVar('B')
 T = TypeVar('T', bound=TokenProtocol)  
 
@@ -29,12 +27,6 @@ GenResult = Union[
     Iterable[T],
     T
 ]
-
-
-
-
-E = TypeVar('E', bound=Hashable)
-F = TypeVar('F', bound=Hashable)
 
 @dataclass(frozen=True)
 class GenState(Generic[T], Insptectable):
@@ -50,15 +42,9 @@ class GenState(Generic[T], Insptectable):
     def to_string(self, interested: Callable[[Any], bool]) -> str | None:
         return f"GenState(current={self.focus})"
 
-    @property
-    def is_freeform(self) -> bool:
-        if self.ast is None:
-            return True
-        return self.ast.is_pruned
-    
-    @property
-    def ended(self) -> bool:
-        return self.ast is None
+    @cached_property
+    def pruned(self)->bool:
+        return self.ast is None or self.ast.pruned
     
 
     @property
@@ -68,65 +54,35 @@ class GenState(Generic[T], Insptectable):
         return self.ast.focus
     
 
-    def leftmost(self)-> GenState[T]:
+    def left(self)-> GenState[T]:
         if self.ast is None:
             return self
-        return replace(self, ast=self.ast.leftmost)
+        return replace(self, ast=self.ast.left())
 
-    def down_left(self) -> GenState[T]:
-        if self.ast is None:
-            return self
-        return replace(self, ast=self.ast.down_left())
-        
     def right(self) -> GenState[T]:
         if self.ast is None:
-            return self    
+            return self
         return replace(self, ast=self.ast.right())
-
-    def advance(self, filter: Callable[[Any], bool]) -> GenState[T]:
+    
+    def up(self)->GenState[T]:
         if self.ast is None:
-            return self        
-        def filtered(z: GenState[T]) -> GenState[T]:
-            return z if z.ast is None or filter(z.ast.focus) else z.advance(filter=filter)
-        z = self.down_left()
-        if z.ast is not None:
-            return filtered(z)
-        z = self.right()
-        if z.ast is not None:
-            return filtered(z)
-        
-        zs = self.ast
-        while tmp_z := zs.up():
-            if next_z := tmp_z.right():
-                return filtered(replace(self, ast=next_z))
-            zs = tmp_z
-        return filtered(replace(self, ast=None))
-
-        
-        
-    @staticmethod
-    def only_terminal(node: Any) -> bool:
-        return not isinstance(node, (ManyResult, ThenResult, NamedResult, OrResult))
+            return self
+        return replace(self, ast=self.ast.up())
     
-    def copy(self) -> GenState[T]:
-        return self.__class__(ast=self.ast, seed=self.seed)
-
-    def delta(self, new_state: GenState[T]) -> Tuple[T, ...]:
-        return tuple()
-
-    def scoped(self) -> GenState[T]:
-        return ScopedState(ast=self.ast, 
-                           seed=self.seed,
-                           scope=self.ast.breadcrumbs[-1] if self.ast and self.ast.breadcrumbs else None)
-
-    def freeform(self) -> GenState[T]:
-        return FreeformState(ast=None, seed=self.seed)
+    def down(self, index: int) -> GenState[T]:
+        if self.ast is None:
+            return self
+        return replace(self, ast=self.ast.down(index))
     
-    
+    @cached_property
+    def how_many(self) -> int:
+        if self.ast is None:
+            return 0
+        return self.ast.how_many()
+
     @classmethod
     def from_ast(cls, ast: Optional[AST[T]], seed: int = 0) -> GenState[T]:
-        ret = cls(ast=ast, seed=seed)
-        return ret if ast is not None else ret.freeform()
+        return cls(ast=ast, seed=seed)
 
 
     @classmethod
@@ -134,32 +90,7 @@ class GenState(Generic[T], Insptectable):
         return cls.from_ast(AST(parse_result) if parse_result else None, seed)
 
 
-@dataclass(frozen=True)
-class ScopedState(GenState[T]):
-    scope: None | Crumb[T]
-    @property
-    def ended(self) -> bool:
-        return self.ast is None or self.scope in self.ast.closed
-    
-    def right(self)-> GenState[T]:
-        ret: ScopedState[T] = cast(ScopedState[T], super().right())
-        if ret.ast is not None and self.scope is not None:
-            if self.scope not in ret.ast.closed and self.scope not in ret.ast.breadcrumbs:
-                return replace(ret, scope=ret.ast.breadcrumbs[-1] if ret.ast.breadcrumbs else None)
-        return ret
-            
 
-@dataclass(frozen=True)
-class FreeformState(GenState[T]):
-    @property
-    def ended(self) -> bool:
-        return False
-
-    def scoped(self) -> GenState[T]:
-        return self
-
-    def advance(self, filter: Callable[[Any], bool]) -> GenState[T]:
-        return self
 
 
 @lru_cache(maxsize=None)
@@ -211,81 +142,68 @@ class TokenGen(TokenSpec):
 class Generator(Algebra[GenResult[T], GenState[T]]):  
     def flat_map(self, f: Callable[[GenResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
-            left = input.down_left()
-            s = left.scoped()
-            match self.run(s, use_cache=use_cache):
+            match self.run(input.left(), use_cache=use_cache):
                 case Left(error):
                     return Left(error)
                 case Right((value, next_input)):
-                    return f(value).run(left.right(), use_cache)
+                    r = input.right()
+                    return f(value).run(r, use_cache)
             raise ValueError("flat_map should always return a value or an error.")
         return Generator(run_f = flat_map_run, name=self.name) # type: ignore  
-
-    def gen(self, 
-            freeform: Algebra[Any, GenState[T]], 
-            default: Algebra[Any, GenState[T]]
-            ) -> Algebra[Any, GenState[T]]:
-        def gen_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Any, GenState[T]]]:
-            if input.ended:
-                return Left(Error(this=self, 
-                                  message=f"{input.__class__.__name__} has ended, cannot run many.",
-                                  state=input))
-            elif input.is_freeform:            
-                return freeform.run(input, use_cache)
-            else:
-                return default.run(input, use_cache)
-        return self.__class__(gen_run, name=default.name) 
-
-    def gen_many(self, 
-                 at_least: int, 
-                 at_most: Optional[int] = None
-                 ) -> Algebra[ManyResult[GenResult[T]], GenState[T]]: 
-        def gen_many_run(input: GenState[T], 
-                         use_cache:bool
-                         ) -> Either[Any, Tuple[ManyResult[GenResult[T]], GenState[T]]]:
-            upper = at_most if at_most is not None else at_least + 2
-            count = input.rng("many").randint(at_least, upper)
-            ret: List[Any] = []
-            current_input: GenState[T] = input.freeform()
-            for _ in range(count):
-                forked_input = current_input.fork(tag=len(ret))
-                match self.run(forked_input, use_cache):
-                    case Right((value, next_input)):
-                        current_input = next_input
-                        ret.append(value)
-                    case Left(_):
-                        break
-            return Right((ManyResult(tuple(ret)), input))
-        return self.__class__(run_f=gen_many_run, name=f"free_many({self.name})")  # type: ignore
+    
         
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[ManyResult[GenResult[T]], GenState[T]]:
         assert at_least > 0, "at_least must be greater than 0"
         assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
-        return self.gen(freeform=self.gen_many(at_least, at_most), 
-                        default=super().many(at_least=at_least, at_most=at_most)) 
+        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ManyResult[GenResult[T]], GenState[T]]]:
+            if input.pruned:
+                upper = at_most if at_most is not None else at_least + 2
+                count = input.rng("many").randint(at_least, upper)
+                ret: List[Any] = []
+                for i in range(count):
+                    forked_input = input.down(0).fork(tag=len(ret))
+                    match self.run(forked_input, use_cache):
+                        case Right((value, next_input)):
+                            ret.append(value)
+                        case Left(_):
+                            pass
+                return Right((ManyResult(tuple(ret)), input))
+            else:
+                ret = []
+                for index in range(input.how_many): 
+                    match self.run(input.down(index), use_cache):
+                        case Right((value, next_input)):
+                            ret.append(value)
+                        case Left(_):
+                            pass
+                return Right((ManyResult(tuple(ret)), input))
+        return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
     
-    def gen_or_else(self, 
-                 other: Algebra[GenResult[T], GenState[T]]) -> Algebra[OrResult[GenResult[T]], GenState[T]]:
-        def gen_or_else_run(input: GenState[T], 
-                            use_cache:bool
-                            )->Either[Any, Tuple[OrResult[GenResult[T]], GenState[T]]]:
-            forked_input = input.fork(tag="or_else")
-            match forked_input.rng("or_else").choice((self, other)).run(forked_input.freeform(), use_cache):
-                case Right((value, next_input)):
-                    return Right((OrResult(value), next_input))
-                case Left(error):
-                    return Left(error)
-            raise TypeError(f"Unexpected result type from {self}")
-        return self.__class__(gen_or_else_run, name=f"free_or({self.name} | {other.name})") # type: ignore
  
-
     def or_else(self, # type: ignore
                 other: Algebra[GenResult[T], GenState[T]]
                 ) -> Algebra[OrResult[GenResult[T]], GenState[T]]: 
-        return self.gen(freeform=self.gen_or_else(other), 
-                        default=super().or_else(other))  
-
+        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[OrResult[GenResult[T]], GenState[T]]]:
+            if input.pruned:
+                forked_input = input.fork(tag="or_else")
+                match forked_input.rng("or_else").choice((self, other)).run(forked_input, use_cache):
+                    case Right((value, next_input)):
+                        return Right((OrResult(value), next_input))
+                    case Left(error):
+                        return Left(error)
+            else:
+                match self.run(input.down(0), use_cache):
+                    case Right((value, next_input)):
+                        return Right((OrResult(value), next_input))
+                    case Left(error):
+                        match other.run(input.down(0), use_cache):
+                            case Right((value, next_input)):
+                                return Right((OrResult(value), next_input))
+                            case Left(error):
+                                return Left(error)
+            raise ValueError("or_else should always return a value or an error.")
+        return self.__class__(or_else_run, name=f"free_or({self.name} | {other.name})") # type: ignore
 
     @classmethod
     def token(cls, 
@@ -297,20 +215,15 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
         gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
         lazy_self: Algebra[GenResult[T], GenState[T]]
         def token_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[GenResult[Token], GenState[T]]]:
-            if input.ended:
-                return Left(Error(None,
-                                  message=f"{input.__class__.__name__} has ended, cannot run token.", 
-                                  state=input))
-            elif input.is_freeform:
-                return Right((gen.gen(), input.advance(GenState.only_terminal)))  
+            if input.pruned:
+                return Right((gen.gen(), input))
             else:
-                input = input.leftmost()
                 current = input.focus
                 if not isinstance(current, Token) or not gen.is_valid(current):
                     return Left(Error(None, 
                                       message=f"Expected a Token, but got {type(current)}.", 
                                       state=input))
-                return Right((current, input.advance(GenState.only_terminal)))
+                return Right((current, input))
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
 
@@ -321,6 +234,6 @@ def generate(gen: Algebra[Any, Any], data: Optional[AST[Any]] = None, seed: int 
     result = gen.run(state, use_cache=False)
     if isinstance(result, Right):
         return AST(result.value[0])
-    assert isinstance(result, Left), "Parser must return Either[E, Tuple[A, S]]"
+    assert isinstance(result, Left), "Generator must return Either[Any, Tuple[Any, Any]]"
     return result.value
 

@@ -63,42 +63,8 @@ ParseResult = Union[
 
 
 
-@dataclass(frozen=True)
-class Crumb(Generic[T]):
-    entrance: str
-    id: int = field(init=False)
-    def __post_init__(self)-> None:
-        object.__setattr__(self, 'id', id(self))
 
     
-
-@dataclass(frozen=True)
-class LeftCrumb(Crumb[T]):
-    right: ParseResult[T]
-    kind: ThenKind
-    
-
-@dataclass(frozen=True)
-class OrCrumb(Crumb[T]):
-    pass
-@dataclass(frozen=True)
-class RightCrumb(Crumb[T]):
-    left: ParseResult[T]
-    kind: ThenKind
-    
-    
-@dataclass(frozen=True)
-class NamedCrumb(Crumb[T]):
-    name: str
-    forward_map: Callable[[Any], Any] | None
-    backward_map: Callable[[Any], Any] | None
-    aggregator: Callable[..., Any] | None
-
-    
-@dataclass(frozen=True)
-class ManyCrumb(Crumb[T]):
-    before: Tuple[ParseResult[T], ...]
-    after: Tuple[ParseResult[T], ...]
 
 
 @dataclass(frozen=True)
@@ -183,139 +149,54 @@ class Walker:
 @dataclass(frozen=True)
 class AST(Generic[T]):
     focus: ParseResult[T]
-    breadcrumbs: Tuple[Crumb[T], ...] = field(default_factory=tuple)
-    closed: frozenset[Crumb[T]] = field(default_factory=frozenset)
+    pruned: bool = False
+    parent: Optional[AST[T]] = None
 
-    @cached_property
-    def is_pruned(self) -> bool:
-        for crumb in self.breadcrumbs:
-            match crumb:
-                case LeftCrumb(kind=ThenKind.RIGHT):
-                    return True  # you're in a left child of a then_right
-                case RightCrumb(kind=ThenKind.LEFT):
-                    return True  # you're in a right child of a then_left
-        return False
+    def up(self)->Optional[AST[T]]:
+        return self.parent
 
-
-    def up(self) -> Optional[AST[T]]:
-        if not self.breadcrumbs:
-            return None
-        *rest, last = self.breadcrumbs
-
-        match last:
-            case LeftCrumb(right=right, kind=kind):
-                parent: ParseResult[T] = ThenResult(kind=kind, left=self.focus, right=right)
-            case RightCrumb(left=left, kind=kind):
-                parent = ThenResult(kind=kind, left=left, right=self.focus)
-            case NamedCrumb(name=name, forward_map=forward_map, backward_map=backward_map, aggregator=aggregator):
-                parent = NamedResult(name=name, value=self.focus, forward_map=forward_map, backward_map=backward_map, aggregator=aggregator)
-            case ManyCrumb(before=before, after=after):
-                parent = ManyResult(value=before + (self.focus,) + after)
-            case OrCrumb():
-                parent = OrResult(value=self.focus)
-            case _:
-                raise ValueError(f"Unexpected crumb type: {last}")
-        return AST(focus=parent, breadcrumbs=tuple(rest), closed=frozenset(self.closed | {last}))
-
-    def down_left(self) -> Optional[AST[T]]:
+    def left(self) -> Optional[AST[T]]:
         match self.focus:
-            case ThenResult(left=left, right=_, kind=kind):
-                return AST(focus=left, 
-                           breadcrumbs=self.breadcrumbs + (LeftCrumb("\u2199", right=self.focus.right, kind=kind),), 
-                           closed=self.closed)
-            case NamedResult(name=name, 
-                             value=inner, 
-
-                             forward_map=forward_map, 
-                             backward_map=backward_map,
-                             aggregator=aggregator):
-                return AST(focus=inner, 
-                           breadcrumbs=self.breadcrumbs + (NamedCrumb("\u2199", 
-                                                                      name=name, 
-
-                                                                      forward_map=forward_map, 
-                                                                      backward_map=backward_map, 
-                                                                      aggregator=aggregator),),
-                           closed=self.closed)
-            case ManyResult(value=()):
-                return None
-            case ManyResult(value=(head, *tail)):
-                return AST(focus=head, 
-                           breadcrumbs=self.breadcrumbs + (ManyCrumb("\u2199", before=(), after=tuple(tail)),),
-                           closed=self.closed)
-            case OrResult(value=value):
-                return AST(focus=value, 
-                           breadcrumbs=self.breadcrumbs + (OrCrumb("\u2199"),),
-                           closed=self.closed)
+            case ThenResult(left=left, kind=kind):
+                return replace(self, focus=left, parent=self, pruned = self.pruned or kind == ThenKind.RIGHT)
             case _:
-                return None        
-
-
-
+                raise TypeError(f"Invalid focus type({self.focus}) for left traversal")
 
     def right(self) -> Optional[AST[T]]:
-        if not self.breadcrumbs:
-            return None
-        *rest, last = self.breadcrumbs
-        match last:
-            case ManyCrumb(before=before, after=(next_, *after)):
-                # If inside a ManyResult, and there are elements in after, return the next sibling and update before to include current focus
-                new_last = ManyCrumb("\u2192", before=before + (self.focus,), after=tuple(after))
-                return AST(focus=next_, 
-                           breadcrumbs=tuple(rest) + (new_last,),
-                           # don't add the ManyCrumb(last) to closed, because we only close one of its children
-                           # and the whole ManyCrumb can not be considered closed
-                           # so we only add the current focus to closed if it is a Crumb.
-                           # if the client code hold MnayCrumb(last) as a scope, it should check 
-                           # if the scope is in closed, and update the scope to the new ManyCrumb
-                           closed=frozenset(self.closed | {self.focus}) if isinstance(self.focus, Crumb) else frozenset(self.closed)
-                        )
-            case LeftCrumb(right=right, kind=kind):
-                return AST(focus=right, 
-                           breadcrumbs=tuple(rest) + (RightCrumb("\u2192", self.focus, kind),),
-                           closed=frozenset(self.closed | {last}))
+        match self.focus:
+            case ThenResult(right=right, kind=kind):
+                return replace(self, focus=right, parent=self, pruned = self.pruned or kind == ThenKind.LEFT)
             case _:
-                return None
+                raise TypeError(f"Invalid focus type({self.focus}) for right traversal")
+
+
+    def down(self, index: int) -> Optional[AST[T]]:
+        match self.focus:
+            case ManyResult(value=children):
+                if 0 <= index < len(children):
+                    return replace(self, focus=children[index], parent=self, pruned=self.pruned)
+                else:
+                    raise IndexError(f"Index {index} out of bounds for ManyResult with {len(children)} children")
+            case OrResult(value=value):
+                if index == 0:
+                    return replace(self, focus=value, parent=self, pruned=self.pruned)
+                else:
+                    raise IndexError(f"Index {index} out of bounds for OrResult")
+            case _:
+                raise TypeError(f"Invalid focus type({self.focus}) for down traversal")
+
+    def how_many(self)->int:
+        match self.focus:
+            case ManyResult(value=children):
+                return len(children)
+            case _:
+                raise TypeError(f"Invalid focus type({self.focus}) for how_many")
+            
     
 
-    def replace(self, new_focus: ParseResult[T]) -> AST[T]:
-        focus = new_focus
-        for crumb in reversed(self.breadcrumbs):
-            match crumb:
-                case LeftCrumb(right=right, kind=kind):
-                    focus = ThenResult(left=focus, right=right, kind=kind)
-                case RightCrumb(left=left, kind=kind):
-                    focus = ThenResult(left=left, right=focus, kind=kind)
-                case NamedCrumb(name=name, 
-                                
-                                forward_map=forward_map, 
-                                backward_map=backward_map,
-                                aggregator=aggregator):
-                    focus = NamedResult(name=name, 
-                                        value=focus, 
-
-                                        forward_map=forward_map, 
-                                        backward_map=backward_map,
-                                        aggregator=aggregator)
-                case ManyCrumb(before=before, after=after):
-                    focus = ManyResult(value=before + (focus,) + after)
-                case OrCrumb():
-                    focus = OrResult(value=focus)
-        return AST(focus=focus)
-    
     @cached_property
     def root(self) -> AST[T]:
-        z = self
-        while z.breadcrumbs:
-            z = z.up() # type: ignore
-            assert z is not None, "Zipper should not be None when breadcrumbs are present"
-        return z
+        while self.parent is not None:
+            self = self.parent  
+        return self
     
-    @cached_property
-    def leftmost(self) -> AST[T]:
-        z = self
-        while True:
-            next_z = z.down_left()
-            if next_z is None:
-                return z
-            z = next_z

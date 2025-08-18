@@ -23,7 +23,7 @@ ifif = IF >> if_stmt.many().bind('ifif')
 
 
 def test6()->None:
-    sql = "if then if then if then if"
+    sql = "if then if"
     syntax = IF.sep_by(THEN)
     ast:AST[Any] = parse(syntax(Parser), sql, dialect='sqlite')    
     print('---' * 40)
