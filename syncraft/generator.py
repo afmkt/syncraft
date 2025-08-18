@@ -142,7 +142,8 @@ class TokenGen(TokenSpec):
 class Generator(Algebra[GenResult[T], GenState[T]]):  
     def flat_map(self, f: Callable[[GenResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
-            match self.run(input.left(), use_cache=use_cache):
+            lft = input.left()
+            match self.run(lft, use_cache=use_cache):
                 case Left(error):
                     return Left(error)
                 case Right((value, next_input)):
@@ -175,8 +176,20 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
                     match self.run(input.down(index), use_cache):
                         case Right((value, next_input)):
                             ret.append(value)
+                            if at_most is not None and len(ret) > at_most:
+                                return Left(Error(
+                                        message=f"Expected at most {at_most} matches, got {len(ret)}",
+                                        this=self,
+                                        state=input.down(index)
+                                    ))                             
                         case Left(_):
                             pass
+                if len(ret) < at_least:
+                    return Left(Error(
+                        message=f"Expected at least {at_least} matches, got {len(ret)}",
+                        this=self,
+                        state=input.down(index)
+                    )) 
                 return Right((ManyResult(tuple(ret)), input))
         return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
     
@@ -203,7 +216,7 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
                             case Left(error):
                                 return Left(error)
             raise ValueError("or_else should always return a value or an error.")
-        return self.__class__(or_else_run, name=f"free_or({self.name} | {other.name})") # type: ignore
+        return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})") # type: ignore
 
     @classmethod
     def token(cls, 

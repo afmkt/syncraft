@@ -45,10 +45,10 @@ def test7()->None:
     ast:AST[Any] = parse(syntax(Parser), sql, dialect='sqlite')
     print('---' * 40)
     print(ast)   
-    generated = gen.generate(syntax(gen.Generator))
+    generated = gen.generate(syntax(gen.Generator), ast)
     print('---' * 40)
     print(generated)
     assert ast == generated, "Parsed and generated results do not match."
 
 if __name__ == "__main__":
-    test6()
+    test7()
