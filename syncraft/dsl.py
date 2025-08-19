@@ -6,7 +6,7 @@ from typing import (
 )
 from dataclasses import dataclass, field
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, Insptectable, NamedResult, ThenResult, ManyResult, ThenKind
+from syncraft.algebra import Algebra, Error, Either, Insptectable, ThenResult, ManyResult, ThenKind
 from types import MethodType, FunctionType
 
 

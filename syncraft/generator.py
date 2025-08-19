@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, Iterable, Hashable, 
-    cast, List
+    Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, Iterable, 
+    List
 )
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, ThenResult, Either, Left, Right, Error, Insptectable, 
-    NamedResult, OrResult, ManyResult, ThenKind
+    OrResult, ManyResult
 )
 from syncraft.ast import TokenProtocol, ParseResult, AST, Token, TokenSpec
 from sqlglot import TokenType

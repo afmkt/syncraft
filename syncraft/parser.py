@@ -111,52 +111,79 @@ class Parser(Algebra[Tuple[T,...] | T, ParserState[T]]):
               inclusive: bool = True, 
               strict: bool = True) -> Algebra[Any, ParserState[T]]:
         def until_run(state: ParserState[T], use_cache:bool) -> Either[Any, Tuple[Any, ParserState[T]]]:
-            counters = [0] * len(open_close)
+            # Use a stack to enforce proper nesting across multiple open/close pairs.
             tokens: List[Any] = []
             if not terminator and len(open_close) == 0:
-                return Left(Error(this=until_run, message="No terminator and no open/close parsers, nothing to parse", state=state))  
-            def run_oc(s: ParserState[T], 
-                       sign: int, 
-                       *oc: Algebra[Any, ParserState[T]])->Tuple[bool, ParserState[T]]:
-                matched = False
-                for i, p in enumerate(oc):
-                    new = p.run(s, use_cache)
-                    if isinstance(new, Right):
-                        matched = True
-                        counters[i] += sign
-                        if inclusive:
-                            tokens.append(new.value[0])
-                        s = new.value[1]
-                return matched, s
+                return Left(Error(this=until_run, message="No terminator and no open/close parsers, nothing to parse", state=state))
+
+            # Helper to try matching any of the parsers once, returning early on first match
+            def try_match(s: ParserState[T], *parsers: Algebra[Any, ParserState[T]]) -> Tuple[bool, Optional[int], Optional[Any], ParserState[T]]:
+                for i, p in enumerate(parsers):
+                    res = p.run(s, use_cache)
+                    if isinstance(res, Right):
+                        val, ns = res.value
+                        return True, i, val, ns
+                return False, None, None, s
+
             opens, closes = zip(*open_close) if len(open_close) > 0 else ((), ())
             tmp_state: ParserState[T] = state.copy()
-            if strict:
-                c = reduce(lambda a, b: a.or_else(b), opens).run(tmp_state)
+            stack: List[int] = []  # indices into open_close indicating expected closer
+
+            # If strict, require the very next token to be an opener of any kind
+            if strict and len(opens) > 0:
+                c = reduce(lambda a, b: a.or_else(b), opens).run(tmp_state, use_cache)
                 if c.is_left():
-                    return Left(Error(
-                        this=until_run,
-                        message="No opening parser matched",
-                        state=tmp_state
-                    ))
+                    return Left(Error(this=until_run, message="No opening parser matched", state=tmp_state))
+
             while not tmp_state.ended():
-                mopen, tmp_state = run_oc(tmp_state, 1, *opens)
-                mclose, tmp_state = run_oc(tmp_state, -1, *closes)
-                matched = mopen or mclose
-                if all(c == 0 for c in counters):
-                    if terminator :
-                        new = terminator.run(tmp_state, use_cache)
-                        if isinstance(new, Right):
-                            matched = True
+                # Try to open
+                o_matched, o_idx, o_tok, o_state = try_match(tmp_state, *opens)
+                if o_matched and o_idx is not None:
+                    stack.append(o_idx)
+                    if inclusive:
+                        tokens.append(o_tok)
+                    tmp_state = o_state
+                    continue
+
+                # Try to close
+                c_matched, c_idx, c_tok, c_state = try_match(tmp_state, *closes)
+                if c_matched and c_idx is not None:
+                    if not stack or stack[-1] != c_idx:
+                        return Left(Error(this=until_run, message="Mismatched closing parser", state=tmp_state))
+                    stack.pop()
+                    if inclusive:
+                        tokens.append(c_tok)
+                    tmp_state = c_state
+                    # After closing, if stack empty, we may terminate on a terminator
+                    if len(stack) == 0:
+                        if terminator:
+                            term = terminator.run(tmp_state, use_cache)
+                            if isinstance(term, Right):
+                                if inclusive:
+                                    tokens.append(term.value[0])
+                                return Right((tuple(tokens), term.value[1]))
+                        else:
+                            return Right((tuple(tokens), tmp_state))
+                    continue
+
+                # If nothing structural matched, check termination when not nested
+                if len(stack) == 0:
+                    if terminator:
+                        term2 = terminator.run(tmp_state, use_cache)
+                        if isinstance(term2, Right):
                             if inclusive:
-                                tokens.append(new.value[0])
-                            return Right((tuple(tokens), new.value[1]))
+                                tokens.append(term2.value[0])
+                            return Right((tuple(tokens), term2.value[1]))
                     else:
                         return Right((tuple(tokens), tmp_state))
-                elif any(c < 0 for c in counters):
-                    return Left(Error(this=until_run, message="Unmatched closing parser", state=tmp_state))
-                if not matched:
-                    tokens.append(tmp_state.current())
-                    tmp_state = tmp_state.advance()
+
+                # Otherwise, consume one token as payload and continue
+                tokens.append(tmp_state.current())
+                tmp_state = tmp_state.advance()
+
+            # Reached end of input
+            if len(stack) != 0:
+                return Left(Error(this=until_run, message="Unterminated group", state=tmp_state))
             return Right((tuple(tokens), tmp_state))
         return cls(until_run, name=cls.__name__ + '.until')
 

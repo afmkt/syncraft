@@ -7,10 +7,10 @@ from typing import (
     Protocol, Generic, Callable, Union
 )
 from syncraft.algebra import (
-    NamedResult, OrResult,ThenResult, ManyResult, ThenKind,
+    OrResult,ThenResult, ManyResult, ThenKind,
     Lens
 )
-from dataclasses import dataclass, field, replace, is_dataclass, asdict
+from dataclasses import dataclass, replace, is_dataclass, asdict
 from enum import Enum
 from functools import cached_property
 
@@ -54,7 +54,7 @@ T = TypeVar('T', bound=TokenProtocol)
 
 ParseResult = Union[
     ThenResult['ParseResult[T]', 'ParseResult[T]'], 
-    NamedResult['ParseResult[T]', Any], 
+    
     ManyResult['ParseResult[T]'],
     OrResult['ParseResult[T]'],
     Tuple[T, ...],

@@ -28,7 +28,7 @@ from typing import (
 )
 
 import traceback
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, fields, replace, field
 from functools import cached_property
 from weakref import WeakKeyDictionary
 from abc import ABC, abstractmethod
@@ -55,14 +55,11 @@ class Insptectable(ABC):
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Result type for mapping
 C = TypeVar('C')  # Result type for composing lenses
+D = TypeVar('D')
 S = TypeVar('S')  # State type for the Algebra
 
     
     
-
-class StructuralResult:
-    pass    
-
 class FrozenDict(Generic[A]):
     def __init__(self, items: Mapping[str, A]):
         for k, v in items.items():
@@ -122,60 +119,63 @@ class Lens(Generic[S, A]):
     
     
 
-@dataclass(eq=True, frozen=True)
-class NamedResult(Generic[A, B], StructuralResult):
-    value: A
-    name: str
-    forward_map: Callable[[A], B] | None = None
-    backward_map: Callable[[B], A] | None = None
-    aggregator: Callable[..., Any] | None = None
 
-    def __post_init__(self)->None:
-        if (self.forward_map or self.backward_map) and self.aggregator is not None:
-            raise ValueError("NamedResult can have either bimap or aggregator, never both.")
-
+@dataclass(frozen=True)
+class StructuralResult:
+    def bimap(self, ctx: Any)->Tuple[Any, Callable[[Any], StructuralResult]]:
+        return (self, lambda x: self)
     @staticmethod
-    def lens() -> Lens[NamedResult[A, B], A]:
-        def get(data: NamedResult[A, B]) -> A:
-            return data.value
+    def flat(array: Any | Tuple[Any, ...]) -> Tuple[Any | Tuple[Any, ...], Callable[[Any | Tuple[Any, ...]], Any | Tuple[Tuple[Any, ...]]]]:
+        if not isinstance(array, (list, tuple)):
+            return array, lambda x: x
+        index: Dict[int, int] = {}
+        ret: List[Any] = []
+        for e in array:
+            if isinstance(e, (list, tuple)):
+                index[len(ret)] = len(e)
+                ret.extend(e)
+            else:
+                ret.append(e)
+        def backward(data: Tuple[Any, ...]) -> Tuple[Any, ...]:
+            tmp: List[Any] = []
+            skip: int = 0
+            for i, e in enumerate(data):
+                if skip <= 0:
+                    if i in index:
+                        tmp.append(tuple(data[i:i + index[i]]))
+                        skip = index[i] - 1
+                    else:
+                        tmp.append(e)
+                else:
+                    skip -= 1
+            return tuple(tmp)
+        return tuple(ret), backward
 
-        def set(data: NamedResult[A, B], value: A) -> NamedResult[A, B]:
-            return replace(data, value = value)
-
-        return Lens(get=get, set=set)
-    
-
+        
 
 @dataclass(eq=True, frozen=True)
 class ManyResult(Generic[A], StructuralResult):
     value: Tuple[A, ...]
+    def bimap(self, ctx: Any)->Tuple[Any, Callable[[Any], StructuralResult]]:
+        transformed = [v.bimap(ctx) if isinstance(v, StructuralResult) else (v, lambda x: x) for v in self.value]
+        backmaps = [b for (_, b) in transformed]
+        ret = [a for (a, _) in transformed]
+        def backward(data: Any) -> StructuralResult:
+            if len(data) != len(transformed):
+                raise ValueError("Incompatible data length")
+            return ManyResult(value=tuple([backmaps[i](x) for i, x in enumerate(data)]))
+        x, y = StructuralResult.flat(tuple(ret))
+        return x, lambda data: backward(y(data))
 
-    @staticmethod
-    def lens(index: int) -> Lens[ManyResult[A], A]:
-        def get(data: ManyResult[A]) -> A:
-            return data.value[index]
-
-        def set(data: ManyResult[A], value: A) -> ManyResult[A]:
-            new_value = list(data.value)
-            new_value[index] = value
-            return ManyResult(value=tuple(new_value))
-
-        return Lens(get=get, set=set)
 
 
 @dataclass(eq=True, frozen=True)
 class OrResult(Generic[A], StructuralResult):
     value: A
-
-    @staticmethod
-    def lens() -> Lens[OrResult[A], A]:
-        def get(data: OrResult[A]) -> A:
-            return data.value
-
-        def set(data: OrResult[A], value: A) -> OrResult[A]:
-            return OrResult(value=value)
-
-        return Lens(get=get, set=set)
+    def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
+        value, backward = self.value.bimap(ctx) if isinstance(self.value, StructuralResult) else (self.value, lambda x: x)
+        x, y = StructuralResult.flat(value)
+        return x, lambda data: backward(y(data))
 
 
 class ThenKind(Enum):
@@ -188,89 +188,22 @@ class ThenResult(Generic[A, B], StructuralResult):
     kind: ThenKind
     left: A
     right: B
-    @cached_property
-    def flatten(self)-> Tuple[Any, ...]:
-        def _flatten_side(side: Any)->Tuple[Any, ...]:
-            return side.flatten if isinstance(side, ThenResult) else (side,)
+    def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
         match self.kind:
             case ThenKind.BOTH:
-                return _flatten_side(self.left) + _flatten_side(self.right)
+                left_value, left_bmap = self.left.bimap(ctx) if isinstance(self.left, StructuralResult) else (self.left, lambda x: x)
+                right_value, right_bmap = self.right.bimap(ctx) if isinstance(self.right, StructuralResult) else (self.right, lambda x: x)
+                value, backward = (left_value, right_value), lambda x: ThenResult(self.kind, left_bmap(x[0]), right_bmap(x[1]))
+                x, y = StructuralResult.flat(value)
+                return x, lambda data: backward(y(data))
             case ThenKind.LEFT:
-                return _flatten_side(self.left)
+                left_value, left_bmap = self.left.bimap(ctx) if isinstance(self.left, StructuralResult) else (self.left, lambda x: x)
+                x, y = StructuralResult.flat(left_value)
+                return x, lambda data: ThenResult(self.kind, left_bmap(y(data)), self.right)
             case ThenKind.RIGHT:
-                return _flatten_side(self.right)
-            
-    @staticmethod
-    def lens(kind: ThenKind) -> Lens[ThenResult[A, B], Tuple[A, B]] | Lens[ThenResult[A, B], A] | Lens[ThenResult[A, B], B]:
-        def both_lens() -> Lens[ThenResult[A, B], Tuple[A, B]]:
-            def get(data: ThenResult[A, B]) -> Tuple[A, B]:
-                match data:
-                    case ThenResult(left=left, right=right, kind=ThenKind.BOTH):
-                        return left, right
-                    case _:
-                        raise ValueError(f"Unexpected ThenResult type: {type(data)}")
-
-            def set(data: ThenResult[A, B], value: Tuple[A, B] | ThenResult[A, B]) -> ThenResult[A, B]:
-                match data:
-                    case ThenResult(left=_, right=_, kind=ThenKind.BOTH):
-                        if isinstance(value, tuple) and len(value) == 2:
-                            return ThenResult(left=value[0], right=value[1], kind=ThenKind.BOTH)
-                        elif isinstance(value, ThenResult):
-                            return ThenResult(left=value.left, right=value.right, kind=ThenKind.BOTH)
-                        else:
-                            raise ValueError(f"Expected a tuple or ThenResult, got: {type(value)}")
-                    case _:
-                        raise ValueError(f"Unexpected ThenResult type: {type(data)}")
-            return Lens(get=get, set=set)
-
-        def left_lens()-> Lens[ThenResult[A, B], A]:
-            def left_get(data: ThenResult[A, B]) -> A:
-                match data:
-                    case ThenResult(left=left, right=_, kind=ThenKind.LEFT):
-                        return left
-                    case _:
-                        raise ValueError(f"Unexpected ParseResult type: {type(data)}")
-
-            def left_set(data: ThenResult[A, B], v: A) -> ThenResult[A, B]:
-                match data:
-                    case ThenResult(kind=ThenKind.LEFT):
-                        return replace(data, left=v)
-                    case _:
-                        raise ValueError(f"Unexpected ParseResult type: {type(data)}")
-                return 
-            return Lens(
-                get=left_get, 
-                set=left_set
-            )
-    
-        def right_lens()-> Lens[ThenResult[A, B], B]:
-            def right_get(data: ThenResult[A, B]) -> B:
-                match data:
-                    case ThenResult(left=_, right=right, kind=ThenKind.RIGHT):
-                        return right
-                    case _:
-                        raise ValueError(f"Unexpected ParseResult type: {type(data)}")
-
-            def right_set(data: ThenResult[A, B], v: B) -> ThenResult[A, B]:
-                match data:
-                    case ThenResult(kind=ThenKind.RIGHT):
-                        return replace(data, right=v)
-                    case _:
-                        raise ValueError(f"Unexpected ParseResult type: {type(data)}")
-                return
-            return Lens(
-                get=right_get,
-                set=right_set
-            )
-        match kind:
-            case ThenKind.BOTH:
-                return both_lens()
-            case ThenKind.LEFT:
-                return left_lens()
-            case ThenKind.RIGHT:
-                return right_lens()
-            case _:
-                raise ValueError(f"Unknown ThenKind: {kind}")
+                right_value, right_bmap = self.right.bimap(ctx) if isinstance(self.right, StructuralResult) else (self.right, lambda x: x)
+                x, y = StructuralResult.flat(right_value)
+                return x, lambda data: ThenResult(self.kind, self.left, right_bmap(y(data)))
 
 
 InProgress = object()  # Marker for in-progress state, used to prevent re-entrance in recursive calls

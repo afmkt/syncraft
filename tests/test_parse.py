@@ -1,7 +1,6 @@
 from syncraft.parser import AST, literal, variable, parse, Parser
 import syncraft.generator as gen
 from typing import Any
-from rich import print
 
 IF = literal("if")
 ELSE = literal("else")
@@ -32,5 +31,5 @@ def test_many_or()->None:
     syntax = (IF.many() | THEN.many()).many() // END
     sql = "if if then end"
     ast:AST[Any] = parse(syntax(Parser), sql, dialect='sqlite')
-    generated = gen.generate(syntax(gen.Generator))
-    # assert ast == generated, "Parsed and generated results do not match."
+    generated = gen.generate(syntax(gen.Generator), ast)
+    assert ast == generated, "Parsed and generated results do not match."
