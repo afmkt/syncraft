@@ -147,24 +147,31 @@ class TokenGen(TokenSpec):
 @dataclass(frozen=True)
 class Generator(Algebra[GenResult[T], GenState[T]]):  
     def flat_map(self, f: Callable[[GenResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
-        def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
-            wrapper = input.wrapper()
-            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
-            lft = input.left() 
-            match self.run(lft, use_cache=use_cache):
-                case Left(error):
-                    return Left(error)
-                case Right((value, next_input)):
-                    r = input.right() 
-                    match f(value).run(r, use_cache):
-                        case Left(e):
-                            return Left(e)
-                        case Right((result, next_input)):
-                            return Right((wrapper(result), next_input))
-            raise ValueError("flat_map should always return a value or an error.")
-        return Generator(run_f = flat_map_run, name=self.name) # type: ignore  
-    
-        
+        def flat_map_run(original: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
+            wrapper = original.wrapper()
+            input = original if not original.is_named else original.down(0)  # If the input is named, we need to go down to the first child
+            try:
+                lft = input.left() 
+                match self.run(lft, use_cache=use_cache):
+                    case Left(error):
+                        return Left(error)
+                    case Right((value, next_input)):
+                        r = input.right() 
+                        match f(value).run(r, use_cache):
+                            case Left(e):
+                                return Left(e)
+                            case Right((result, next_input)):
+                                return Right((wrapper(result), next_input))
+                raise ValueError("flat_map should always return a value or an error.")
+            except Exception as e:
+                return Left(Error(
+                    message=str(e),
+                    this=self,
+                    state=original,
+                    error=e
+                ))
+        return Generator(run_f = flat_map_run, name=self.name) # type: ignore
+
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[ManyResult[GenResult[T]], GenState[T]]:
         assert at_least > 0, "at_least must be greater than 0"
