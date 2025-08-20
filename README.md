@@ -16,6 +16,7 @@ pip install syncraft
 
 
 ## TODO
-- [ ] Test Walker.get/set for bidirectional mapping between source code and data class
-- [ ] Annotate sqlite3 grammar with named nodes and data classes
-- [ ] 
+- [ ] Add a collect method to AST to collect all named entries and pack them into a dict or a custom dataclass. This method will be called as the last step of my current bimap. So it shares the signature of bimap and can combine with the current bimap
+- [ ] Amend all, first, last, and named helper functions to support bimap and named results.
+- [ ] Try the parsing, generation, and data processing machinery on SQLite3 syntax. So that I can have direct feedback on the usability of this library and a fully functional SQLite3 library.
+- [ ] Make the library as fast as possible and feasible.
