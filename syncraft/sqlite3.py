@@ -4,7 +4,7 @@ https://www.sqlite.org/syntaxdiagrams.html
 """
 from __future__ import annotations
 from typing import Any
-from syncraft.dsl import DSL, lazy, choice
+from syncraft.syntax import Syntax, lazy, choice
 import syncraft.parser as dsl
 from syncraft.diagnostic import rich_error, rich_debug, rich_parser
 from sqlglot import TokenType
@@ -607,16 +607,16 @@ update_stmt_limited = (
     )
 
 
-def table_or_subquery()->DSL[Any, Any]:
+def table_or_subquery()->Syntax[Any, Any]:
     t1 = ~schema_name >> table_as_alias >> ~((INDEXED >> BY >> index_name)|(NOT >> INDEXED))
     t2 = ~schema_name >> table_function_name >> expr.parens(COMMA, L_PAREN, R_PAREN) >> ~(~AS >> var)
     t3 = select_stmt.between(L_PAREN, R_PAREN) >> ~(~AS >> var)
     t4 = table_subquery.parens(COMMA, L_PAREN, R_PAREN)
     t5 = join_clause.between(L_PAREN, R_PAREN) 
-    return (t1 | t2 | t3 | t4 | t5).as_(DSL[Any, Any])
+    return (t1 | t2 | t3 | t4 | t5).as_(Syntax[Any, Any])
 
 
-def expression() -> DSL[Any, Any]:
+def expression() -> Syntax[Any, Any]:
     return choice(
         literal_value,
         bind_parameter,
@@ -639,9 +639,9 @@ def expression() -> DSL[Any, Any]:
         expr >> ~NOT >> IN >> ~schema_name >> (table_name | (function_name >> expr.parens(COMMA, L_PAREN, R_PAREN))),
         ~NOT >> ~EXISTS >> select_stmt.between(L_PAREN, R_PAREN),
         CASE >> ~expr >> (WHEN >> expr >> THEN >> expr).many() >> ~(ELSE >> expr) // END,
-    ).as_(DSL[Any, Any])
+    ).as_(Syntax[Any, Any])
 
-def select_statement() -> DSL[Any, Any]:
+def select_statement() -> Syntax[Any, Any]:
     select_clause = SELECT >> ~(DISTINCT | ALL) >> result_columns.sep_by(COMMA)
     from_clause = FROM >> (table_subquery.sep_by(COMMA) | join_clause)
     where_clause = WHERE >> expr
@@ -657,7 +657,7 @@ def select_statement() -> DSL[Any, Any]:
          >> select_core.sep_by(compound_operator)
          >> ~(ordering_clause >> ~limit_clause)
          >> ~SEMICOLON
-    ).as_(DSL[Any, Any])
+    ).as_(Syntax[Any, Any])
 
 column_constraint = ~(CONSTRAINT >> constraint_name) >> (
     (PRIMARY >> KEY >> ~(ASC | DESC) >> ~conflict_clause >> AUTO_INCREMENT)

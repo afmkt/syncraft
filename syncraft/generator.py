@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, 
-    List
+    List, Generator as YieldGen
 )
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, ThenResult, Either, Left, Right, Error, Insptectable, 
-    OrResult, ManyResult
+    OrResult, ManyResult, NamedResult
 )
+
 from syncraft.ast import TokenProtocol, ParseResult, AST, Token, TokenSpec
+from syncraft.syntax import Syntax
 from sqlglot import TokenType
 import re
 import rstr
@@ -270,7 +272,8 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
 
 
 
-def generate(gen: Algebra[Any, Any], data: Optional[AST[Any]] = None, seed: int = 0) -> AST[Any] | Any:
+def generate(syntax: Syntax[Any, Any], data: Optional[AST[Any]] = None, seed: int = 0) -> AST[Any] | Any:
+    gen = syntax(Generator)
     state = GenState.from_ast(data, seed)
     result = gen.run(state, use_cache=False)
     if isinstance(result, Right):
@@ -278,3 +281,28 @@ def generate(gen: Algebra[Any, Any], data: Optional[AST[Any]] = None, seed: int 
     assert isinstance(result, Left), "Generator must return Either[Any, Tuple[Any, Any]]"
     return result.value
 
+
+def matches(syntax: Syntax[Any, Any], data: AST[Any])-> bool:
+    gen = syntax(Generator)
+    state = GenState.from_ast(data)
+    result = gen.run(state, use_cache=True)
+    return isinstance(result, Right)
+
+
+def search(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, None]:
+    if matches(syntax, data):
+        yield data
+    match data.focus:
+        case ThenResult(left = left, right=right):
+            yield from search(syntax, AST(left))
+            yield from search(syntax, AST(right))
+        case ManyResult(value = value):
+            for e in value:
+                yield from search(syntax, AST(e))
+        case NamedResult(value=value):
+            yield from search(syntax, AST(value))
+        case OrResult(value=value):
+            yield from search(syntax, AST(value))
+        case _:
+            pass
+    

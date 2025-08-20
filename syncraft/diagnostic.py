@@ -2,7 +2,7 @@ from __future__ import annotations
 from rich import print
 from rich.table import Table as RichTable
 from typing import Tuple, Any, Set
-from syncraft.dsl import DSL
+from syncraft.syntax import Syntax
 from syncraft.algebra import  Left, Right, Error, Either, Algebra
 
 from syncraft.parser import ParserState, Token
@@ -44,7 +44,7 @@ def rich_debug(this: Algebra[Any, ParserState[Any]],
                 return prefix + value.sql()
             elif isinstance(value, Token):
                 return prefix + f"{value.token_type.name}({value.text})"
-            elif isinstance(value, (Error, ParserState, DSL)):
+            elif isinstance(value, (Error, ParserState, Syntax)):
                 return prefix + (value._string or 'N/A')
             else:
                 return prefix + str(value)

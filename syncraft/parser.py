@@ -11,7 +11,7 @@ from syncraft.algebra import (
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from functools import reduce
-from syncraft.dsl import DSL
+from syncraft.syntax import Syntax
 
 from syncraft.ast import Token, TokenSpec, AST, T
 
@@ -187,15 +187,16 @@ class Parser(Algebra[T, ParserState[T]]):
             return Right((tuple(tokens), tmp_state))
         return cls(until_run, name=cls.__name__ + '.until')
 
-def sqlglot(parser: DSL[Any, Any], 
-            dialect: str) -> DSL[List[exp.Expression], ParserState[Any]]:
+def sqlglot(parser: Syntax[Any, Any], 
+            dialect: str) -> Syntax[List[exp.Expression], ParserState[Any]]:
     gp = GlotParser(dialect=dialect)
     return parser.map(lambda tokens: [e for e in gp.parse(raw_tokens=tokens) if e is not None])
 
 
-def parse(parser: Algebra[Any, ParserState[Token]], 
+def parse(syntax: Syntax[Any, Any], 
           sql: str, 
           dialect: str) -> AST[Any] | Any:
+    parser = syntax(Parser)
     input: ParserState[Token] = token_state(sql, dialect=dialect)
     result = parser.run(input, True)
     if isinstance(result, Right):
@@ -212,34 +213,34 @@ def token(token_type: Optional[Enum] = None,
           text: Optional[str] = None, 
           case_sensitive: bool = False,
           regex: Optional[re.Pattern[str]] = None
-          ) -> DSL[Any, Any]:
+          ) -> Syntax[Any, Any]:
     token_type_txt = token_type.name if token_type is not None else None
     token_value_txt = text if text is not None else None
     msg = 'token(' + ','.join([x for x in [token_type_txt, token_value_txt, str(regex)] if x is not None]) + ')'
-    return DSL(
+    return Syntax(
         lambda cls: cls.factory('token', token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
         ).describe(name=msg, fixity='prefix') 
 
     
-def identifier(value: str | None = None) -> DSL[Any, Any]:
+def identifier(value: str | None = None) -> Syntax[Any, Any]:
     if value is None:
         return token(TokenType.IDENTIFIER)
     else:
         return token(TokenType.IDENTIFIER, text=value)
 
-def variable(value: str | None = None) -> DSL[Any, Any]:
+def variable(value: str | None = None) -> Syntax[Any, Any]:
     if value is None:
         return token(TokenType.VAR)
     else:
         return token(TokenType.VAR, text=value)
 
-def literal(lit: str) -> DSL[Any, Any]:
+def literal(lit: str) -> Syntax[Any, Any]:
     return token(token_type=None, text=lit, case_sensitive=True)
 
-def regex(regex: re.Pattern[str]) -> DSL[Any, Any]:
+def regex(regex: re.Pattern[str]) -> Syntax[Any, Any]:
     return token(token_type=None, regex=regex, case_sensitive=True)
 
-def lift(value: Any)-> DSL[Any, Any]:
+def lift(value: Any)-> Syntax[Any, Any]:
     if isinstance(value, str):
         return literal(value)
     elif isinstance(value, re.Pattern):
@@ -247,22 +248,22 @@ def lift(value: Any)-> DSL[Any, Any]:
     elif isinstance(value, Enum):
         return token(value)
     else:
-        return DSL(lambda cls: cls.success(value))
+        return Syntax(lambda cls: cls.success(value))
 
-def number() -> DSL[Any, Any]:
+def number() -> Syntax[Any, Any]:
     return token(TokenType.NUMBER)
 
 
-def string() -> DSL[Any, Any]:
+def string() -> Syntax[Any, Any]:
     return token(TokenType.STRING)
 
 
 
-def until(*open_close: Tuple[DSL[Tuple[T, ...] | T, ParserState[T]], DSL[Tuple[T, ...] | T, ParserState[T]]],
-          terminator: Optional[DSL[Tuple[T, ...] | T, ParserState[T]]] = None,
+def until(*open_close: Tuple[Syntax[Tuple[T, ...] | T, ParserState[T]], Syntax[Tuple[T, ...] | T, ParserState[T]]],
+          terminator: Optional[Syntax[Tuple[T, ...] | T, ParserState[T]]] = None,
           inclusive: bool = True, 
-          strict: bool = True) -> DSL[Any, Any]:
-    return DSL(
+          strict: bool = True) -> Syntax[Any, Any]:
+    return Syntax(
         lambda cls: cls.factory('until', 
                            *[(left.alg(cls), right.alg(cls)) for left, right in open_close], 
                            terminator=terminator.alg(cls) if terminator else None, 
