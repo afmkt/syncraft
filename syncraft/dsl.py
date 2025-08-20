@@ -4,7 +4,7 @@ from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast,
     Type, Literal
 )
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Insptectable, ThenResult, ManyResult, ThenKind, NamedResult
 from types import MethodType, FunctionType
@@ -227,7 +227,12 @@ class DSL(Generic[A, S], Insptectable):
 
 ######################################################################## data processing combinators #########################################################
     def bind(self, name: str) -> DSL[NamedResult[A], S]:
-        return self.map(lambda x: NamedResult(name, x)).describe(name=f'bind("{name}")', fixity='postfix', parameter=[self]) # type: ignore
+        def bind_f(value: A) -> NamedResult[A]:
+            if isinstance(value, NamedResult):
+                return replace(value, name=name)    
+            else:
+                return NamedResult(name=name, value=value)
+        return self.map(bind_f).describe(name=f'bind("{name}")', fixity='postfix', parameter=[self]) 
 
 
     def dump_error(self, formatter: Optional[Callable[[Error], None]] = None) -> DSL[A, S]:

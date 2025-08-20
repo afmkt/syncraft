@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import (
     Optional, Any, TypeVar, Tuple, runtime_checkable, Dict,
-    Protocol, Generic, Callable, Union
+    Protocol, Generic, Callable, Union, cast
 )
 from syncraft.algebra import (
     OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult,
@@ -65,23 +65,32 @@ class AST(Generic[T]):
     pruned: bool = False
     parent: Optional[AST[T]] = None
 
+
     def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], AST[T]]]:
         value, backward = self.focus.bimap(ctx) if isinstance(self.focus, StructuralResult) else (self.focus, lambda x: x)
         def back2ast(data: Any) -> AST[T]:
             return replace(self, focus=backward(data)) # type: ignore
         return value, back2ast
 
+    def wrapper(self)-> Callable[[Any], Any]:
+        if isinstance(self.focus, NamedResult):
+            focus = cast(NamedResult[Any], self.focus)
+            return lambda x: NamedResult(name = focus.name, value = x)
+        else:
+            return lambda x: x
+        
+    def is_named(self) -> bool: 
+        return isinstance(self.focus, NamedResult)
+
     def left(self) -> Optional[AST[T]]:
-        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
-        match focus:
+        match self.focus:
             case ThenResult(left=left, kind=kind):
                 return replace(self, focus=left, parent=self, pruned = self.pruned or kind == ThenKind.RIGHT)
             case _:
                 raise TypeError(f"Invalid focus type({self.focus}) for left traversal")
 
     def right(self) -> Optional[AST[T]]:
-        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
-        match focus:
+        match self.focus:
             case ThenResult(right=right, kind=kind):
                 return replace(self, focus=right, parent=self, pruned = self.pruned or kind == ThenKind.LEFT)
             case _:
@@ -89,8 +98,7 @@ class AST(Generic[T]):
 
 
     def down(self, index: int) -> Optional[AST[T]]:
-        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
-        match focus:
+        match self.focus:
             case ManyResult(value=children):
                 if 0 <= index < len(children):
                     return replace(self, focus=children[index], parent=self, pruned=self.pruned)
@@ -101,6 +109,8 @@ class AST(Generic[T]):
                     return replace(self, focus=value, parent=self, pruned=self.pruned)
                 else:
                     raise IndexError(f"Index {index} out of bounds for OrResult")
+            case NamedResult(value=value):
+                return replace(self, focus=value, parent=self, pruned=self.pruned)
             case _:
                 raise TypeError(f"Invalid focus type({self.focus}) for down traversal")
 

@@ -127,7 +127,13 @@ class NamedResult(Generic[A], StructuralResult):
     value: A
     def bimap(self, ctx: Any)->Tuple[NamedResult[Any], Callable[[NamedResult[Any]], StructuralResult]]:
         value, backward = self.value.bimap(ctx) if isinstance(self.value, StructuralResult) else (self.value, lambda x: x)
-        return NamedResult(self.name, value), lambda data: NamedResult(self.name, backward(data))
+        def named_back(data: Any)->NamedResult[Any]:
+            v = backward(data)
+            if isinstance(v, NamedResult):
+                return replace(v, name=self.name)
+            else:
+                return NamedResult(name=self.name, value=v)
+        return NamedResult(self.name, value), named_back
 
 @dataclass(eq=True, frozen=True)
 class ManyResult(Generic[A], StructuralResult):

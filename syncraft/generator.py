@@ -24,7 +24,7 @@ GenResult = Union[
     ThenResult['GenResult[T]', 'GenResult[T]'], 
     ManyResult['GenResult[T]'],
     OrResult['GenResult[T]'],
-    
+
     T
 ]
 
@@ -52,7 +52,16 @@ class GenState(Generic[T], Insptectable):
         if self.ast is None:
             return None
         return self.ast.focus
+
+    @property
+    def is_named(self)->bool:
+        return self.ast is not None and self.ast.is_named()
     
+    def wrapper(self)->Callable[[Any], Any]:
+        if self.ast is not None:
+            return self.ast.wrapper()
+        else:
+            return lambda x: x
 
     def left(self)-> GenState[T]:
         if self.ast is None:
@@ -139,13 +148,19 @@ class TokenGen(TokenSpec):
 class Generator(Algebra[GenResult[T], GenState[T]]):  
     def flat_map(self, f: Callable[[GenResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
-            lft = input.left()
+            wrapper = input.wrapper()
+            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
+            lft = input.left() 
             match self.run(lft, use_cache=use_cache):
                 case Left(error):
                     return Left(error)
                 case Right((value, next_input)):
-                    r = input.right()
-                    return f(value).run(r, use_cache)
+                    r = input.right() 
+                    match f(value).run(r, use_cache):
+                        case Left(e):
+                            return Left(e)
+                        case Right((result, next_input)):
+                            return Right((wrapper(result), next_input))
             raise ValueError("flat_map should always return a value or an error.")
         return Generator(run_f = flat_map_run, name=self.name) # type: ignore  
     
@@ -155,6 +170,8 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
         assert at_least > 0, "at_least must be greater than 0"
         assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
         def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ManyResult[GenResult[T]], GenState[T]]]:
+            wrapper = input.wrapper()
+            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
             if input.pruned:
                 upper = at_most if at_most is not None else at_least + 2
                 count = input.rng("many").randint(at_least, upper)
@@ -166,7 +183,7 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
                             ret.append(value)
                         case Left(_):
                             pass
-                return Right((ManyResult(tuple(ret)), input))
+                return Right((wrapper(ManyResult(tuple(ret))), input))
             else:
                 ret = []
                 for index in range(input.how_many): 
@@ -187,7 +204,7 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
                         this=self,
                         state=input.down(index)
                     )) 
-                return Right((ManyResult(tuple(ret)), input))
+                return Right((wrapper(ManyResult(tuple(ret))), input))
         return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
     
  
@@ -195,21 +212,23 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
                 other: Algebra[GenResult[T], GenState[T]]
                 ) -> Algebra[OrResult[GenResult[T]], GenState[T]]: 
         def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[OrResult[GenResult[T]], GenState[T]]]:
+            wrapper = input.wrapper()
+            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
             if input.pruned:
                 forked_input = input.fork(tag="or_else")
                 match forked_input.rng("or_else").choice((self, other)).run(forked_input, use_cache):
                     case Right((value, next_input)):
-                        return Right((OrResult(value), next_input))
+                        return Right((wrapper(OrResult(value)), next_input))
                     case Left(error):
                         return Left(error)
             else:
                 match self.run(input.down(0), use_cache):
                     case Right((value, next_input)):
-                        return Right((OrResult(value), next_input))
+                        return Right((wrapper(OrResult(value)), next_input))
                     case Left(error):
                         match other.run(input.down(0), use_cache):
                             case Right((value, next_input)):
-                                return Right((OrResult(value), next_input))
+                                return Right((wrapper(OrResult(value)), next_input))
                             case Left(error):
                                 return Left(error)
             raise ValueError("or_else should always return a value or an error.")
@@ -225,6 +244,8 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
         gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
         lazy_self: Algebra[GenResult[T], GenState[T]]
         def token_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[GenResult[Token], GenState[T]]]:
+            wrapper = input.wrapper()
+            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
             if input.pruned:
                 return Right((gen.gen(), input))
             else:
@@ -233,7 +254,7 @@ class Generator(Algebra[GenResult[T], GenState[T]]):
                     return Left(Error(None, 
                                       message=f"Expected a Token, but got {type(current)}.", 
                                       state=input))
-                return Right((current, input))
+                return Right((wrapper(current), input))
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
 
