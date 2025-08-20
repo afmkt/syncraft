@@ -54,8 +54,7 @@ class Insptectable(ABC):
 
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Result type for mapping
-C = TypeVar('C')  # Result type for composing lenses
-D = TypeVar('D')
+
 S = TypeVar('S')  # State type for the Algebra
 
     
@@ -116,56 +115,32 @@ class Lens(Generic[S, A]):
     
     def __rtruediv__(self, other: Lens[B, S])->Lens[B, A]:
         return other.__truediv__(self)
-    
-    
-
-
-@dataclass(frozen=True)
+        
 class StructuralResult:
     def bimap(self, ctx: Any)->Tuple[Any, Callable[[Any], StructuralResult]]:
         return (self, lambda x: self)
-    @staticmethod
-    def flat(array: Any | Tuple[Any, ...]) -> Tuple[Any | Tuple[Any, ...], Callable[[Any | Tuple[Any, ...]], Any | Tuple[Tuple[Any, ...]]]]:
-        if not isinstance(array, (list, tuple)):
-            return array, lambda x: x
-        index: Dict[int, int] = {}
-        ret: List[Any] = []
-        for e in array:
-            if isinstance(e, (list, tuple)):
-                index[len(ret)] = len(e)
-                ret.extend(e)
-            else:
-                ret.append(e)
-        def backward(data: Tuple[Any, ...]) -> Tuple[Any, ...]:
-            tmp: List[Any] = []
-            skip: int = 0
-            for i, e in enumerate(data):
-                if skip <= 0:
-                    if i in index:
-                        tmp.append(tuple(data[i:i + index[i]]))
-                        skip = index[i] - 1
-                    else:
-                        tmp.append(e)
-                else:
-                    skip -= 1
-            return tuple(tmp)
-        return tuple(ret), backward
 
         
+@dataclass(frozen=True)
+class NamedResult(Generic[A], StructuralResult):
+    name: str
+    value: A
+    def bimap(self, ctx: Any)->Tuple[NamedResult[Any], Callable[[NamedResult[Any]], StructuralResult]]:
+        value, backward = self.value.bimap(ctx) if isinstance(self.value, StructuralResult) else (self.value, lambda x: x)
+        return NamedResult(self.name, value), lambda data: NamedResult(self.name, backward(data))
 
 @dataclass(eq=True, frozen=True)
 class ManyResult(Generic[A], StructuralResult):
     value: Tuple[A, ...]
-    def bimap(self, ctx: Any)->Tuple[Any, Callable[[Any], StructuralResult]]:
+    def bimap(self, ctx: Any)->Tuple[List[Any], Callable[[List[Any]], StructuralResult]]:
         transformed = [v.bimap(ctx) if isinstance(v, StructuralResult) else (v, lambda x: x) for v in self.value]
         backmaps = [b for (_, b) in transformed]
         ret = [a for (a, _) in transformed]
-        def backward(data: Any) -> StructuralResult:
+        def backward(data: List[Any]) -> StructuralResult:
             if len(data) != len(transformed):
                 raise ValueError("Incompatible data length")
             return ManyResult(value=tuple([backmaps[i](x) for i, x in enumerate(data)]))
-        x, y = StructuralResult.flat(tuple(ret))
-        return x, lambda data: backward(y(data))
+        return ret, lambda data: backward(data)
 
 
 
@@ -174,8 +149,7 @@ class OrResult(Generic[A], StructuralResult):
     value: A
     def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
         value, backward = self.value.bimap(ctx) if isinstance(self.value, StructuralResult) else (self.value, lambda x: x)
-        x, y = StructuralResult.flat(value)
-        return x, lambda data: backward(y(data))
+        return value, lambda data: OrResult(value=backward(data))
 
 
 class ThenKind(Enum):
@@ -189,21 +163,53 @@ class ThenResult(Generic[A, B], StructuralResult):
     left: A
     right: B
     def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
+        def branch(b: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
+            if isinstance(b, ThenResult):
+               value, backward = b.bimap(ctx)
+               x, y = ThenResult.flat((value, backward))
+               return x, lambda data: ThenResult(self.kind, y(data), self.right)
+            elif isinstance(b, StructuralResult):
+                return b.bimap(ctx)
+            else:
+                return b, lambda x: x
         match self.kind:
             case ThenKind.BOTH:
-                left_value, left_bmap = self.left.bimap(ctx) if isinstance(self.left, StructuralResult) else (self.left, lambda x: x)
-                right_value, right_bmap = self.right.bimap(ctx) if isinstance(self.right, StructuralResult) else (self.right, lambda x: x)
-                value, backward = (left_value, right_value), lambda x: ThenResult(self.kind, left_bmap(x[0]), right_bmap(x[1]))
-                x, y = StructuralResult.flat(value)
+                left_value, left_bmap = branch(self.left)
+                right_value, right_bmap = branch(self.right)
+                def backward(x: Tuple[Any, Any]) -> StructuralResult:
+                    return ThenResult(self.kind, left_bmap(x[0]), right_bmap(x[1]))
+                x, y = ThenResult.flat((left_value, right_value))
                 return x, lambda data: backward(y(data))
             case ThenKind.LEFT:
-                left_value, left_bmap = self.left.bimap(ctx) if isinstance(self.left, StructuralResult) else (self.left, lambda x: x)
-                x, y = StructuralResult.flat(left_value)
-                return x, lambda data: ThenResult(self.kind, left_bmap(y(data)), self.right)
+                left_value, left_bmap = branch(self.left)
+                return left_value, lambda data: ThenResult(self.kind, left_bmap(data), self.right)
             case ThenKind.RIGHT:
-                right_value, right_bmap = self.right.bimap(ctx) if isinstance(self.right, StructuralResult) else (self.right, lambda x: x)
-                x, y = StructuralResult.flat(right_value)
-                return x, lambda data: ThenResult(self.kind, self.left, right_bmap(y(data)))
+                right_value, right_bmap = branch(self.right)
+                return right_value, lambda data: ThenResult(self.kind, self.left, right_bmap(data))
+    @staticmethod
+    def flat(array: Tuple[Any, Any]) -> Tuple[Tuple[Any, ...], Callable[[Tuple[Any, ...]], Tuple[Any, Any]]]:
+        index: Dict[int, int] = {}
+        ret: List[Any] = []
+        for e in array:
+            if isinstance(e, tuple):
+                index[len(ret)] = len(e)
+                ret.extend(e)
+            else:
+                ret.append(e)
+        def backward(data: Tuple[Any, ...]) -> Tuple[Any, Any]:
+            tmp: List[Any] = []
+            skip: int = 0
+            for i, e in enumerate(data):
+                if skip <= 0:
+                    if i in index:
+                        tmp.append(tuple(data[i:i + index[i]]))
+                        skip = index[i] - 1
+                    else:
+                        tmp.append(e)
+                else:
+                    skip -= 1
+            return tuple(tmp)
+        return tuple(ret), backward
 
 
 InProgress = object()  # Marker for in-progress state, used to prevent re-entrance in recursive calls

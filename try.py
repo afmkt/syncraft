@@ -49,6 +49,11 @@ def test7()->None:
     print('---' * 40)
     print(generated)
     assert ast == generated, "Parsed and generated results do not match."
+    value, bmap = generated.bimap(None)
+    assert value is not generated 
+    print(value)
+    assert bmap(value) == generated, "Bimap value should be different from generated"
+
 
 if __name__ == "__main__":
     test7()

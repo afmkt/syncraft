@@ -7,7 +7,7 @@ from typing import (
     Protocol, Generic, Callable, Union
 )
 from syncraft.algebra import (
-    OrResult,ThenResult, ManyResult, ThenKind,
+    OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult,
     Lens
 )
 from dataclasses import dataclass, replace, is_dataclass, asdict
@@ -54,116 +54,37 @@ T = TypeVar('T', bound=TokenProtocol)
 
 ParseResult = Union[
     ThenResult['ParseResult[T]', 'ParseResult[T]'], 
-    
+    NamedResult['ParseResult[T]'],
     ManyResult['ParseResult[T]'],
     OrResult['ParseResult[T]'],
-    Tuple[T, ...],
     T,
-] 
-
-
-
-
-    
-
-
-@dataclass(frozen=True)
-class NamedRecord:
-    lens: Lens[Any, Any]
-    value: Any
-
-@dataclass(frozen=True)
-class Walker:
-    lens: Optional[Lens[Any, Any]] = None
-    def get(self, root: ParseResult[Any]) -> Dict[str, NamedRecord]:
-        match root:
-            case ManyResult(value=children):
-                new_named: Dict[str, NamedRecord] = {}
-                for i, child in enumerate(children):
-                    new_walker = replace(self, lens=(self.lens / ManyResult.lens(i)) if self.lens else ManyResult.lens(i))
-                    new_named |= new_walker.get(child)
-                return new_named
-            case OrResult(value=value):
-                new_walker = replace(self, lens=(self.lens / OrResult.lens()) if self.lens else OrResult.lens())
-                return new_walker.get(value)
-            case ThenResult(left=left, 
-                            right=right, 
-                            kind=kind):
-                new_walker = replace(self, lens=(self.lens / ThenResult.lens(kind)) if self.lens else ThenResult.lens(kind))
-                return new_walker.get(left) | new_walker.get(right)
-            case NamedResult(name=name, 
-                             value=value, 
-                             forward_map=forward_map,
-                             backward_map=backward_map,
-                             aggregator=aggregator):
-                this_lens = (self.lens / NamedResult.lens()) if self.lens else NamedResult.lens()
-                if callable(forward_map) and callable(backward_map):
-                    this_lens = this_lens.bimap(forward_map, backward_map) 
-                elif callable(forward_map):
-                    this_lens = this_lens.bimap(forward_map, lambda _: value)
-                elif callable(backward_map):
-                    raise ValueError("backward_map provided without forward_map")
-                new_walker = replace(self, lens=this_lens)
-                child_named = new_walker.get(value)
-                if aggregator is not None:
-                    return child_named | {name: NamedRecord(lens=this_lens, 
-                                                            value=aggregator(child_named))}
-                else:
-                    return child_named
-        return {}
-
-    def set(self, root: ParseResult[Any], updated_values: Dict[str, Any]) -> ParseResult[Any]:
-        named_records = self.get(root)
-        def apply_update(name: str, value: Any, root: ParseResult[Any]) -> ParseResult[Any]:
-            if name not in named_records:
-                # Skip unknown names safely
-                return root
-            record = named_records[name]
-            target_named: NamedResult[Any, Any] = record.lens.get(root)
-            assert isinstance(target_named, NamedResult)
-
-            if target_named.aggregator is not None:
-                # Break apart dataclass/dict into child fields
-                if isinstance(value, dict):
-                    child_updates = value
-                elif is_dataclass(value) and not isinstance(value, type):
-                    child_updates = asdict(value)
-                else:
-                    raise TypeError(f"Unsupported aggregator value for '{name}': {type(value)}")
-
-                # Recursively apply each child update
-                for child_name, child_value in child_updates.items():
-                    root = apply_update(child_name, child_value, root)
-                return root
-
-            else:
-                # Leaf: just replace the value
-                updated_named = replace(target_named, value=value)
-                return record.lens.set(root, updated_named)
-
-        for name, value in updated_values.items():
-            root = apply_update(name, value, root)
-
-        return root
-
+]
 @dataclass(frozen=True)
 class AST(Generic[T]):
     focus: ParseResult[T]
     pruned: bool = False
     parent: Optional[AST[T]] = None
 
+    def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], AST[T]]]:
+        value, backward = self.focus.bimap(ctx) if isinstance(self.focus, StructuralResult) else (self.focus, lambda x: x)
+        def back2ast(data: Any) -> AST[T]:
+            return replace(self, focus=backward(data)) # type: ignore
+        return value, back2ast
+
     def up(self)->Optional[AST[T]]:
         return self.parent
 
     def left(self) -> Optional[AST[T]]:
-        match self.focus:
+        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
+        match focus:
             case ThenResult(left=left, kind=kind):
                 return replace(self, focus=left, parent=self, pruned = self.pruned or kind == ThenKind.RIGHT)
             case _:
                 raise TypeError(f"Invalid focus type({self.focus}) for left traversal")
 
     def right(self) -> Optional[AST[T]]:
-        match self.focus:
+        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
+        match focus:
             case ThenResult(right=right, kind=kind):
                 return replace(self, focus=right, parent=self, pruned = self.pruned or kind == ThenKind.LEFT)
             case _:
@@ -171,7 +92,8 @@ class AST(Generic[T]):
 
 
     def down(self, index: int) -> Optional[AST[T]]:
-        match self.focus:
+        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
+        match focus:
             case ManyResult(value=children):
                 if 0 <= index < len(children):
                     return replace(self, focus=children[index], parent=self, pruned=self.pruned)
@@ -186,7 +108,8 @@ class AST(Generic[T]):
                 raise TypeError(f"Invalid focus type({self.focus}) for down traversal")
 
     def how_many(self)->int:
-        match self.focus:
+        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
+        match focus:
             case ManyResult(value=children):
                 return len(children)
             case _:
