@@ -259,3 +259,15 @@ def test_combo() -> None:
     ast = parse(syntax(Parser), sql, dialect="sqlite")
     assert isinstance(ast, Error)
 
+
+def test_optional():
+    A = literal("a").bind("a")
+    syntax = A.optional()
+    ast1 = parse(syntax(Parser), "", dialect="sqlite")
+    v1, _ = ast1.bimap(None)
+    assert v1 is None
+    ast2 = parse(syntax(Parser), "a", dialect="sqlite")
+    v2, _ = ast2.bimap(None)
+    assert v2 == NamedResult(name='a', value=TokenGen.from_string('a'))
+
+
