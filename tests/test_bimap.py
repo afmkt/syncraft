@@ -147,15 +147,20 @@ def test_named_in_or():
     assert bmap(value) == ast    
 
 
+
+
+
 def test_deep_mix():
     A = literal("a").bind("a")
     B = literal("b")
     C = literal("c").bind("c")
-    syntax = ((A + B).many() | C) + B
+    syntax = ((A + B) | C).many() + B
     sql = "a b a b c b"
     ast = parse(syntax(Parser), sql, dialect='sqlite')
     print(ast)
     generated = gen.generate(syntax(gen.Generator), ast)
+    print('---' * 40)
+    print(generated)
     assert ast == generated
     value, bmap = ast.bimap(None)
     assert bmap(value) == ast
