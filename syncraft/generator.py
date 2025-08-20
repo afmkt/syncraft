@@ -111,6 +111,7 @@ def token_type_from_string(token_type: Optional[TokenType], text: str, case_sens
 
 @dataclass(frozen=True)
 class TokenGen(TokenSpec):
+
     def __str__(self) -> str:
         tt = self.token_type.name if self.token_type else ""
         txt = self.text if self.text else ""
@@ -141,7 +142,9 @@ class TokenGen(TokenSpec):
                                                         self.case_sensitive), 
                      text=text)        
 
-
+    @staticmethod
+    def from_string(string: str)->Token:
+        return Token(token_type=token_type_from_string(None, string, case_sensitive=False), text=string)
 
 
 @dataclass(frozen=True)

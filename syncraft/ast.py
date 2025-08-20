@@ -32,6 +32,8 @@ class Token:
     def __repr__(self) -> str:
         return self.__str__()
 
+    
+
 @dataclass(frozen=True)
 class TokenSpec:
     token_type: Optional[Enum] = None
