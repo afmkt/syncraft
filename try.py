@@ -1,4 +1,5 @@
 from __future__ import annotations
+from syncraft.algebra import NamedResult
 from syncraft.parser import literal, variable, parse, Parser
 from syncraft.ast import AST
 import syncraft.generator as gen
@@ -135,5 +136,51 @@ def test5_nested_then_many() -> None:
     print(value)
     assert bmap(value) == generated
 
+
+def test_then_flatten():
+    A, B, C = literal("a"), literal("b"), literal("c")
+    syntax = A + (B + C)
+    sql = "a b c"
+    ast = parse(syntax(Parser), sql, dialect='sqlite')
+    print(ast)
+    generated = gen.generate(syntax(gen.Generator), ast)
+    assert ast == generated
+    value, bmap = ast.bimap(None)
+    back = bmap(value)
+    print(value, back)
+    assert back == ast
+
+def test_named_in_then():
+    A = literal("a").bind("first")
+    B = literal("b").bind("second")
+    C = literal("c").bind("third")
+    syntax = A + B + C
+    sql = "a b c"
+    ast = parse(syntax(Parser), sql, dialect='sqlite')
+    print(ast)
+    generated = gen.generate(syntax(gen.Generator), ast)
+    assert ast == generated
+    value, bmap = ast.bimap(None)
+    assert isinstance(value, tuple)
+    print(value)
+    assert set(x.name for x in value if isinstance(x, NamedResult)) == {"first", "second", "third"}
+    assert bmap(value) == ast
+
+
+def test_deep_mix():
+    A = literal("a").bind("a")
+    B = literal("b")
+    C = literal("c").bind("c")
+    syntax = ((A + B) | C).many() + B
+    sql = "a b a b c b"
+    ast = parse(syntax(Parser), sql, dialect='sqlite')
+    print(ast)
+    generated = gen.generate(syntax(gen.Generator), ast)
+    print('---' * 40)
+    print(generated)
+    assert ast == generated
+    value, bmap = ast.bimap(None)
+    assert bmap(value) == ast
+
 if __name__ == "__main__":
-    test5_nested_then_many()
+    test_deep_mix()

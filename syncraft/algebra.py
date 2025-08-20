@@ -170,17 +170,7 @@ class ThenResult(Generic[A, B], StructuralResult):
     right: B
     def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
         def branch(b: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
-            if isinstance(b, ThenResult):
-                value, backward = b.bimap(ctx)
-                if isinstance(value, tuple):
-                    x, y = ThenResult.flat(value)
-                    return x, lambda data: ThenResult(self.kind, y(data), self.right)
-                else:
-                    return value, backward
-            elif isinstance(b, StructuralResult):
-                return b.bimap(ctx)
-            else:
-                return b, lambda x: x
+            return b.bimap(ctx) if isinstance(b, StructuralResult) else (b, lambda x: x)
         match self.kind:
             case ThenKind.BOTH:
                 left_value, left_bmap = branch(self.left)
