@@ -77,23 +77,23 @@ class ParserState(Generic[T], Insptectable):
 
     
 @dataclass(frozen=True)
-class Parser(Algebra[Tuple[T,...] | T, ParserState[T]]):
+class Parser(Algebra[T, ParserState[T]]):
     @classmethod
     def token(cls, 
               token_type: Optional[Enum] = None, 
               text: Optional[str] = None, 
               case_sensitive: bool = False,
               regex: Optional[re.Pattern[str]] = None
-              )-> Algebra[Tuple[T,...] | T, ParserState[T]]:
+              )-> Algebra[T, ParserState[T]]:
         spec = TokenSpec(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
-        def token_run(state: ParserState[T], use_cache:bool) -> Either[Any, Tuple[Tuple[T,...] | T, ParserState[T]]]:
+        def token_run(state: ParserState[T], use_cache:bool) -> Either[Any, Tuple[T, ParserState[T]]]:
             if state.ended():
                 return Left(state)
             token = state.current()
             if token is None or not spec.is_valid(token):
                 return Left(state)
             return Right((Token(token_type = token.token_type, text=token.text), state.advance()))  # type: ignore
-        captured: Algebra[Tuple[T,...] | T, ParserState[T]] = cls(token_run, name=cls.__name__ + f'.token({token_type}, {text})')
+        captured: Algebra[T, ParserState[T]] = cls(token_run, name=cls.__name__ + f'.token({token_type}, {text})')
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
                 return Error(message=f"Cannot match token at {err}", this=captured, state=err)            

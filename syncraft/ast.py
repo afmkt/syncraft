@@ -71,9 +71,6 @@ class AST(Generic[T]):
             return replace(self, focus=backward(data)) # type: ignore
         return value, back2ast
 
-    def up(self)->Optional[AST[T]]:
-        return self.parent
-
     def left(self) -> Optional[AST[T]]:
         focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
         match focus:

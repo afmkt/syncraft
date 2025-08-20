@@ -6,7 +6,7 @@ from typing import (
 )
 from dataclasses import dataclass, field
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, Insptectable, ThenResult, ManyResult, ThenKind
+from syncraft.algebra import Algebra, Error, Either, Insptectable, ThenResult, ManyResult, ThenKind, NamedResult
 from types import MethodType, FunctionType
 
 
@@ -226,75 +226,9 @@ class DSL(Generic[A, S], Insptectable):
 
 
 ######################################################################## data processing combinators #########################################################
+    def bind(self, name: str) -> DSL[NamedResult[A], S]:
+        return self.map(lambda x: NamedResult(name, x)).describe(name=f'bind("{name}")', fixity='postfix', parameter=[self]) # type: ignore
 
-    def _attach(self, 
-               name: str, 
-               *,
-               forward_map: Callable[[B], C] | None,
-               backward_map: Callable[[C], B] | None,
-               aggregator_f: Callable[..., Any] | None,
-               ) -> DSL[NamedResult[A, C], S]:
-        def attach_f(x: A | NamedResult[A, B]) -> NamedResult[A, C]:
-            if isinstance(x, NamedResult):
-                if x.backward_map is not None:
-                    b_f = x.backward_map
-                    def combined_bf(a: Any)->A:
-                        if backward_map is not None:
-                            return b_f(backward_map(a))
-                        else:
-                            return b_f(a)
-                if x.forward_map is not None:
-                    f_f = x.forward_map
-                    def combined_ff(a: Any)->Any:
-                        if forward_map is not None:
-                            return forward_map(f_f(a))
-                        else:
-                            return f_f(a)
-                if x.aggregator is not None:
-                    agg_f = x.aggregator
-                    def combined_agg(a: Any)->Any:
-                        if aggregator_f is not None:
-                            return aggregator_f(agg_f(a))
-                        else:
-                            return agg_f(a)
-                return NamedResult(
-                    name=name,
-                    value=x.value,
-                    forward_map=forward_map if x.forward_map is None else combined_ff, # type: ignore
-                    backward_map=backward_map if x.backward_map is None else combined_bf, # type: ignore
-                    aggregator=aggregator_f if x.aggregator is None else combined_agg
-                )
-            else:
-                return NamedResult(
-                    name=name,
-                    value=x,
-                    forward_map=forward_map, # type: ignore
-                    backward_map=backward_map, # type: ignore
-                    aggregator=aggregator_f,
-
-                )            
-            
-        return self.map(attach_f)
-
-    def bind(self, name: str) -> DSL[NamedResult[Any, Any], S]:
-        return self._attach(name, 
-                           forward_map=None, 
-                           backward_map=None, 
-                           aggregator_f=None,
-                           ).describe(name=f'bind("{name}")', fixity='postfix', parameter=[self])            
-
-    def bimap(self, name: str, *, forward_map: Callable[[Any], Any], backward_map: Callable[[Any], Any]) -> DSL[NamedResult[Any, Any], S]:
-        return self._attach(name, 
-                           forward_map=forward_map, 
-                           backward_map=backward_map, 
-                           aggregator_f=None,
-                           ).describe(name=f'bimap("{name}")', fixity='postfix', parameter=[self])            
-    def to(self, name: str, aggregator_f: Callable[..., Any]) -> DSL[NamedResult[A, Any], S]:
-        return self._attach(name, 
-                           forward_map=None, 
-                           backward_map=None, 
-                           aggregator_f=aggregator_f,
-                           ).describe(name=f'to("{name}")', fixity='postfix', parameter=[self])
 
     def dump_error(self, formatter: Optional[Callable[[Error], None]] = None) -> DSL[A, S]:
         def dump_error_run(err: Any)->Any:

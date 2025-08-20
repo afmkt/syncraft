@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, Iterable, 
+    Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, 
     List
 )
 from functools import cached_property
@@ -24,7 +24,7 @@ GenResult = Union[
     ThenResult['GenResult[T]', 'GenResult[T]'], 
     ManyResult['GenResult[T]'],
     OrResult['GenResult[T]'],
-    Iterable[T],
+    
     T
 ]
 
@@ -64,10 +64,7 @@ class GenState(Generic[T], Insptectable):
             return self
         return replace(self, ast=self.ast.right())
     
-    def up(self)->GenState[T]:
-        if self.ast is None:
-            return self
-        return replace(self, ast=self.ast.up())
+
     
     def down(self, index: int) -> GenState[T]:
         if self.ast is None:
