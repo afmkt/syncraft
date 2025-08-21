@@ -6,7 +6,7 @@ from typing import (
     Generic, Callable
 )
 from syncraft.algebra import (
-    Either, Left, Right, Error, Insptectable, Algebra
+    Either, Left, Right, Error, Algebra
 )
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -24,7 +24,7 @@ from syncraft.ast import Token, TokenSpec, AST, T
 
 
 @dataclass(frozen=True)
-class ParserState(Generic[T], Insptectable):
+class ParserState(Generic[T]):
     input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
     
@@ -41,12 +41,12 @@ class ParserState(Generic[T], Insptectable):
         length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
         return " ".join(token.text for token in self.input[self.index:self.index + length])
  
-    def to_string(self, interested: Callable[[Any], bool])->str:
-        return f"ParserState(\n"\
-               f"index={self.index}, \n"\
-               f"input({len(self.input)})=[{self.token_sample_string()}, ...]), \n"\
-               f"before=({self.before()}), \n"\
-               f"after=({self.after()})"  
+    # def to_string(self, interested: Callable[[Any], bool])->str:
+    #     return f"ParserState(\n"\
+    #            f"index={self.index}, \n"\
+    #            f"input({len(self.input)})=[{self.token_sample_string()}, ...]), \n"\
+    #            f"before=({self.before()}), \n"\
+    #            f"after=({self.after()})"  
 
 
     def current(self)->T:

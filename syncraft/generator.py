@@ -7,7 +7,7 @@ from typing import (
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
-    Algebra, ThenResult, Either, Left, Right, Error, Insptectable, 
+    Algebra, ThenResult, Either, Left, Right, Error, 
     OrResult, ManyResult, NamedResult
 )
 
@@ -31,7 +31,7 @@ GenResult = Union[
 ]
 
 @dataclass(frozen=True)
-class GenState(Generic[T], Insptectable):
+class GenState(Generic[T]):
     ast: Optional[AST[T]]
     seed: int
 

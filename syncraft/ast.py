@@ -7,8 +7,7 @@ from typing import (
     Protocol, Generic, Callable, Union, cast
 )
 from syncraft.algebra import (
-    OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult,
-    Lens
+    OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult
 )
 from dataclasses import dataclass, replace, is_dataclass, asdict
 from enum import Enum

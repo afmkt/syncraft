@@ -6,7 +6,7 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, Insptectable, ThenResult, ManyResult, ThenKind, NamedResult
+from syncraft.algebra import Algebra, Error, Either, ThenResult, ManyResult, ThenKind, NamedResult
 from types import MethodType, FunctionType
 
 
@@ -18,7 +18,7 @@ C = TypeVar('C')  # Result type for else branch
 S = TypeVar('S')  # State type
 
 @dataclass(frozen=True)
-class Description(Insptectable):
+class Description:
     name: Optional[str] = None
     newline: Optional[str] = None
     fixity: Literal['infix', 'prefix', 'postfix'] = 'infix'
@@ -67,7 +67,7 @@ class Description(Insptectable):
 
 
 @dataclass(frozen=True)
-class Syntax(Generic[A, S], Insptectable):
+class Syntax(Generic[A, S]):
     alg: Callable[[Type[Algebra[Any, Any]]], Algebra[A, S]]
     meta: Description = field(default_factory=Description, repr=False)
 

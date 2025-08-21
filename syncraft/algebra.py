@@ -1,122 +1,54 @@
-"""
-We want to parse a token stream into an AST, and then generate a new token stream from that AST.
-The generation should be a dual to the parsing. By 'dual' we mean that the generation algebra should be 
-as close as possible to the parsing algebra. The closest algebra to the parsing algebra is the parsing 
-algebra itself. 
-
-Given:
-AST = Syntax(Parser)(ParserState([Token, ...]))
-AST =?= Syntax(Parser)(GenState(AST))
-
-where =?= means the LHS and RHS induce the same text output, e.g. the same token stream 
-inspite of the token metadata, token types, and/or potentially different structure of the AST.
-
-With the above setting, Generator as a dual to Parser, can reuse most of the parsing combinator, the 
-change needed is to introduce randomness in the generation process, e.g. to generate a random variable name, etc.
-
-[Token, ...] == Syntax(Generator)(GenState(AST))
-
-"""
-
-
 from __future__ import annotations
-
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, 
-    Dict, Type, ClassVar, Hashable,
-    Mapping, Iterator
+    Dict, Type, ClassVar, Hashable
 )
 
 import traceback
-from dataclasses import dataclass, fields, replace, field
-from functools import cached_property
+from dataclasses import dataclass, replace
 from weakref import WeakKeyDictionary
-from abc import ABC, abstractmethod
+from abc import ABC
 from enum import Enum
 
 
-
-
-class Insptectable(ABC):
-    @abstractmethod
-    def to_string(self, interested: Callable[[Any], bool]) -> Optional[str]:
-        raise NotImplementedError("Subclasses must implement to_string")
-    
-    @cached_property
-    def _string(self)->Optional[str]:
-        return self.to_string(lambda _: True)
-
-    def __repr__(self) -> str:
-        return self._string or self.__class__.__name__
-    def __str__(self) -> str:
-        return self._string or self.__class__.__name__
-
-
-A = TypeVar('A')  # Result type
-B = TypeVar('B')  # Result type for mapping
-
-S = TypeVar('S')  # State type for the Algebra
-
-    
-    
-class FrozenDict(Generic[A]):
-    def __init__(self, items: Mapping[str, A]):
-        for k, v in items.items():
-            if not isinstance(k, Hashable) or not isinstance(v, Hashable):
-                raise TypeError(f"Metadata key or value not hashable: {k} = {v}")
-        self._items = tuple(sorted(items.items()))
-
-    def __getitem__(self, key: str) -> A:
-        return dict(self._items)[key]
-
-    def __contains__(self, key: str) -> bool:
-        return key in dict(self._items)
-
-    def items(self) -> Iterator[tuple[str, A]]:
-        return iter(self._items)
-
-    def to_dict(self) -> dict[str, A]:
-        return dict(self._items)
-
-    def __hash__(self) -> int:
-        return hash(self._items)
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, FrozenDict) and self._items == other._items
-
-    def __repr__(self) -> str:
-        return f"FrozenDict({dict(self._items)})"
-
+A = TypeVar('A')  
+B = TypeVar('B')  
+C = TypeVar('C')  
+S = TypeVar('S')  
 
 
 @dataclass(frozen=True)
-class Lens(Generic[S, A]):
-    get: Callable[[S], A]
-    set: Callable[[S, A], S]    
-
-    def modify(self, source: S, f: Callable[[A], A]) -> S:
-        return self.set(source, f(self.get(source)))
+class Biducer(Generic[S, A]):
+    forward: Callable[[S, A], S]    
+    inverse: Callable[[S], Tuple[A, S]]  
     
-    def bimap(self, ff: Callable[[A], B], bf: Callable[[B], A]) -> Lens[S, B]:
-        def getf(data: S) -> B:
-            return ff(self.get(data))
 
-        def setf(data: S, value: B) -> S:
-            return self.set(data, bf(value))
+@dataclass(frozen=True)
+class Bitrans(Generic[S, A, B]):
+    trans: Callable[[Biducer[S, B]], Biducer[S, A]]  
+    def __call__(self, biducer: Biducer[S, B]) -> Biducer[S, A]:
+        return self.trans(biducer)
+    def __and__(self, other: Bitrans[S, B, C]) -> Bitrans[S, A, C]:
+        def composed(biducer: Biducer[S, C]) -> Biducer[S, A]:
+            return self.trans(other.trans(biducer))
+        return Bitrans(trans=composed)
 
-        return Lens(get=getf, set=setf)
-
-    def __truediv__(self, other: Lens[A, B]) -> Lens[S, B]:
-        def get_composed(obj: S) -> B:
-            return other.get(self.get(obj))        
-        def set_composed(obj: S, value: B) -> S:
-            return self.set(obj, other.set(self.get(obj), value))
-        return Lens(get=get_composed, set=set_composed)
-    
-    def __rtruediv__(self, other: Lens[B, S])->Lens[B, A]:
-        return other.__truediv__(self)
+    @staticmethod
+    def bitrans(value: A) -> Bitrans[S, A, A]:
+        def trans(b: Biducer[S, A]) -> Biducer[S, A]:
+            def forward(acc: S, node: A) -> S:
+                return b.forward(acc, value)
+            def inverse(acc: S) -> Tuple[A, S]:
+                v, acc = b.inverse(acc)
+                return value, acc
+            return Biducer(forward=forward, inverse=inverse)
+        return Bitrans(trans=trans)
+            
         
 class StructuralResult:
+    def bitrans(self)->Bitrans[Any, Any, Any]:
+        return Bitrans(lambda x: x)
+    
     def bimap(self, ctx: Any)->Tuple[Any, Callable[[Any], StructuralResult]]:
         return (self, lambda x: self)
 
@@ -168,6 +100,25 @@ class ThenResult(Generic[A, B], StructuralResult):
     kind: ThenKind
     left: A
     right: B
+    def bitrans(self) -> Bitrans[Any, ThenResult[A, B], ThenResult[A, B]]:
+        def trans(b: Biducer[Any, C]) -> Biducer[Any, ThenResult[A, B]]:
+            def forward(acc: Any, node: ThenResult[A, B]) -> Any:
+                lt = node.left.bitrans() if isinstance(node.left, StructuralResult) else Bitrans.bitrans(node.left)
+                acc = lt(b).forward(acc, node.left)
+                rt = node.right.bitrans() if isinstance(node.right, StructuralResult) else Bitrans.bitrans(node.right)
+                return rt(b).forward(acc, node.right)
+            
+            def inverse(acc: Any) -> Tuple[ThenResult[A, B], Any]:
+                lt = self.left.bitrans() if isinstance(self.left, StructuralResult) else Bitrans.bitrans(self.left)
+                left_value, acc = lt(b).inverse(acc)
+                rt = self.right.bitrans() if isinstance(self.right, StructuralResult) else Bitrans.bitrans(self.right)
+                right_value, acc = rt(b).inverse(acc)
+                return ThenResult(self.kind, left_value, right_value), acc
+            return Biducer(forward=forward, inverse=inverse)
+        return Bitrans(trans=trans)        
+
+
+
     def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
         def branch(b: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
             return b.bimap(ctx) if isinstance(b, StructuralResult) else (b, lambda x: x)
@@ -233,7 +184,7 @@ class Right(Either[L, R]):
 
 
 @dataclass(frozen=True)
-class Error(Insptectable):
+class Error:
     this: Any
     message: Optional[str] = None
     error: Optional[Any] = None    
@@ -254,59 +205,9 @@ class Error(Insptectable):
             state=state,
             previous=self
         )
-    
 
 
 
-    def to_list(self, interested: Callable[[Any], bool]) -> List[Dict[str, str]]:
-
-        def to_dict() -> Dict[str, str]:
-            data: Dict[str, str] = {}
-            for f in fields(self):
-                value = getattr(self, f.name)
-                if isinstance(value, Error):
-                    # self.previous
-                    pass
-                elif isinstance(value, Insptectable):
-                    # self.this
-                    def inst(x: Any) -> bool:
-                        return x in self.algebras
-                    s = value.to_string(inst) 
-                    data[f.name] = s if s is not None else repr(value)
-                elif value is not None:
-                    # self.committed, self.message, self.expect, self.exception
-                    data[f.name] = repr(value)
-            return data
-        ret = []
-        tmp : None | Error = self
-        while tmp is not None:
-            ret.append(to_dict())
-            tmp = tmp.previous
-        return ret
-
-    def find(self, predicate: Callable[[Error], bool]) -> Optional[Error]:
-        if predicate(self):
-            return self
-        if self.previous is not None:
-            return self.previous.find(predicate)
-        return None
-    
-    def to_string(self, interested: Callable[[Any], bool])->str:
-        lst = self.to_list(interested)
-        root, leaf = lst[0], lst[-1]
-        root_fields = ',\n  '.join([f"{key}: {value}" for key, value in root.items() if value is not None])
-        leaf_fields = ',\n  '.join([f"{key}: {value}" for key, value in leaf.items() if value is not None])
-
-        return  f"{self.__class__.__name__}: ROOT\n"\
-                f"  {root_fields}\n"\
-                f"\u25cf \u25cf \u25cf  LEAF\n"\
-                f"  {leaf_fields}\n"
-
-
-    @cached_property
-    def algebras(self) -> List[Any]:
-        return [self.this] + (self.previous.algebras if self.previous is not None else [])
-        
 @dataclass(frozen=True)        
 class Algebra(ABC, Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
