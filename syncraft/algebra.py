@@ -66,6 +66,22 @@ class NamedResult(Generic[A], StructuralResult):
             else:
                 return NamedResult(name=self.name, value=v)
         return NamedResult(self.name, value), named_back
+    
+    def bitrans(self) -> Bitrans[Any, NamedResult[A], NamedResult[A]]:
+        def trans(b: Biducer[Any, C]) -> Biducer[Any, NamedResult[A]]:
+            def forward(acc: Any, node: NamedResult[A]) -> Any:
+                t = node.value.bitrans() if isinstance(node.value, StructuralResult) else Bitrans.bitrans(node.value)
+                return t(b).forward(acc, node.value)
+            def inverse(acc: Any) -> Tuple[NamedResult[A], Any]:
+                t = self.value.bitrans() if isinstance(self.value, StructuralResult) else Bitrans.bitrans(self.value)
+                value, acc = t(b).inverse(acc)
+                if isinstance(value, NamedResult):
+                    return replace(value, name=self.name), acc
+                else:
+                    return NamedResult(name=self.name, value=value), acc 
+            return Biducer(forward=forward, inverse=inverse)
+        return Bitrans(trans=trans)
+
 
 @dataclass(eq=True, frozen=True)
 class ManyResult(Generic[A], StructuralResult):
@@ -80,7 +96,22 @@ class ManyResult(Generic[A], StructuralResult):
             return ManyResult(value=tuple([backmaps[i](x) for i, x in enumerate(data)]))
         return ret, lambda data: backward(data)
 
-
+    def bitrans(self) -> Bitrans[Any, ManyResult[A], ManyResult[A]]:
+        def trans(b: Biducer[Any, C]) -> Biducer[Any, ManyResult[A]]:
+            def forward(acc: Any, node: ManyResult[A]) -> Any:
+                for v in node.value:
+                    t = v.bitrans() if isinstance(v, StructuralResult) else Bitrans.bitrans(v)
+                    acc = t(b).forward(acc, v)
+                return acc
+            def inverse(acc: Any) -> Tuple[ManyResult[A], Any]:
+                result = []
+                for v in self.value:
+                    t = v.bitrans() if isinstance(v, StructuralResult) else Bitrans.bitrans(v)
+                    value, acc = t(b).inverse(acc)
+                    result.append(value)
+                return ManyResult(value=tuple(result)), acc
+            return Biducer(forward=forward, inverse=inverse)
+        return Bitrans(trans=trans)
 
 @dataclass(eq=True, frozen=True)
 class OrResult(Generic[A], StructuralResult):
@@ -88,6 +119,20 @@ class OrResult(Generic[A], StructuralResult):
     def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
         value, backward = self.value.bimap(ctx) if isinstance(self.value, StructuralResult) else (self.value, lambda x: x)
         return value, lambda data: OrResult(value=backward(data))
+
+    def bitrans(self) -> Bitrans[Any, OrResult[A], OrResult[A]]:
+        def trans(b: Biducer[Any, C]) -> Biducer[Any, OrResult[A]]:
+            def forward(acc: Any, node: OrResult[A]) -> Any:
+                t = node.value.bitrans() if isinstance(node.value, StructuralResult) else Bitrans.bitrans(node.value)
+                return t(b).forward(acc, node.value)
+
+            def inverse(acc: Any) -> Tuple[OrResult[A], Any]:
+                t = self.value.bitrans() if isinstance(self.value, StructuralResult) else Bitrans.bitrans(self.value)
+                value, acc = t(b).inverse(acc)
+                return OrResult(value=value), acc
+
+            return Biducer(forward=forward, inverse=inverse)
+        return Bitrans(trans=trans)
 
 
 class ThenKind(Enum):
@@ -103,17 +148,35 @@ class ThenResult(Generic[A, B], StructuralResult):
     def bitrans(self) -> Bitrans[Any, ThenResult[A, B], ThenResult[A, B]]:
         def trans(b: Biducer[Any, C]) -> Biducer[Any, ThenResult[A, B]]:
             def forward(acc: Any, node: ThenResult[A, B]) -> Any:
-                lt = node.left.bitrans() if isinstance(node.left, StructuralResult) else Bitrans.bitrans(node.left)
-                acc = lt(b).forward(acc, node.left)
-                rt = node.right.bitrans() if isinstance(node.right, StructuralResult) else Bitrans.bitrans(node.right)
-                return rt(b).forward(acc, node.right)
+                if node.kind == ThenKind.BOTH:
+                    lt = node.left.bitrans() if isinstance(node.left, StructuralResult) else Bitrans.bitrans(node.left)
+                    acc = lt(b).forward(acc, node.left)
+                    rt = node.right.bitrans() if isinstance(node.right, StructuralResult) else Bitrans.bitrans(node.right)
+                    return rt(b).forward(acc, node.right)
+                elif node.kind == ThenKind.LEFT:
+                    lt = node.left.bitrans() if isinstance(node.left, StructuralResult) else Bitrans.bitrans(node.left)
+                    return lt(b).forward(acc, node.left)
+                elif node.kind == ThenKind.RIGHT:
+                    rt = node.right.bitrans() if isinstance(node.right, StructuralResult) else Bitrans.bitrans(node.right)
+                    return rt(b).forward(acc, node.right)
+                raise ValueError(f"Unknown ThenKind: {node.kind}")
             
             def inverse(acc: Any) -> Tuple[ThenResult[A, B], Any]:
-                lt = self.left.bitrans() if isinstance(self.left, StructuralResult) else Bitrans.bitrans(self.left)
-                left_value, acc = lt(b).inverse(acc)
-                rt = self.right.bitrans() if isinstance(self.right, StructuralResult) else Bitrans.bitrans(self.right)
-                right_value, acc = rt(b).inverse(acc)
-                return ThenResult(self.kind, left_value, right_value), acc
+                if self.kind == ThenKind.BOTH:
+                    lt = self.left.bitrans() if isinstance(self.left, StructuralResult) else Bitrans.bitrans(self.left)
+                    left_value, acc = lt(b).inverse(acc)
+                    rt = self.right.bitrans() if isinstance(self.right, StructuralResult) else Bitrans.bitrans(self.right)
+                    right_value, acc = rt(b).inverse(acc)
+                    return ThenResult(self.kind, left_value, right_value), acc
+                elif self.kind == ThenKind.LEFT:
+                    lt = self.left.bitrans() if isinstance(self.left, StructuralResult) else Bitrans.bitrans(self.left)
+                    left_value, acc = lt(b).inverse(acc)
+                    return ThenResult(self.kind, left_value, self.right), acc
+                elif self.kind == ThenKind.RIGHT:
+                    rt = self.right.bitrans() if isinstance(self.right, StructuralResult) else Bitrans.bitrans(self.right)
+                    right_value, acc = rt(b).inverse(acc)
+                    return ThenResult(self.kind, self.left, right_value), acc
+                raise ValueError(f"Unknown ThenKind: {self.kind}")
             return Biducer(forward=forward, inverse=inverse)
         return Bitrans(trans=trans)        
 
