@@ -70,15 +70,14 @@ class NamedResult(Generic[A], StructuralResult):
     name: str
     value: A
     def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, NamedResult[A], NamedResult[Any]]:
+        inner_b = self.value.biarrow(arr) if isinstance(self.value, StructuralResult) else arr
         def fwd(s: S, a: NamedResult[A])-> Tuple[S, NamedResult[Any]]:
             assert a == self, f"Expected {self}, got {a}"
-            inner_b = a.value.biarrow(arr) if isinstance(a.value, StructuralResult) else arr
             inner_s, inner_v = inner_b.forward(s, a.value)
             return (inner_s, replace(a, value=inner_v)) if not isinstance(inner_v, NamedResult) else (inner_s, inner_v)
         
         def inv(s: S, a: NamedResult[Any]) -> Tuple[S, NamedResult[A]]:
             assert isinstance(a, NamedResult), f"Expected NamedResult, got {type(a)}"
-            inner_b = a.value.biarrow(arr) if isinstance(a.value, StructuralResult) else arr
             inner_s, inner_v = inner_b.inverse(s, a.value)
             return (inner_s, replace(self, value=inner_v)) if not isinstance(inner_v, NamedResult) else (inner_s, replace(self, value=inner_v.value))
         
@@ -103,19 +102,15 @@ class NamedResult(Generic[A], StructuralResult):
 class ManyResult(Generic[A], StructuralResult):
     value: Tuple[A, ...]
     def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, ManyResult[A], List[A]]:
+        inner_b = [v.biarrow(arr) if isinstance(v, StructuralResult) else arr for v in self.value]
         def fwd(s: Any, a: ManyResult[A]) -> Tuple[Any, List[A]]:
             assert a == self, f"Expected {self}, got {a}"
-            inner_s_a: List[Tuple[Any, Any]] = [
-                v.biarrow(arr).forward(s, v) if isinstance(v, StructuralResult) else 
-                arr.forward(s, v) for v in a.value]
-            return s, [v for (_, v) in inner_s_a]
+            return s, [inner_b[i].forward(s, v)[1] for i, v in enumerate(a.value)]
             
         def inv(s: Any, a: List[A]) -> Tuple[Any, ManyResult[A]]:
             assert isinstance(a, list), f"Expected list, got {type(a)}"
-            inner_s_a: List[Tuple[Any, Any]] = [
-                v.biarrow(arr).inverse(s, v) if isinstance(v, StructuralResult) else 
-                arr.inverse(s, v) for v in a]
-            return s, ManyResult(value=tuple([v for (_, v) in inner_s_a]))
+            assert len(a) == len(inner_b), f"Expected {len(inner_b)} elements, got {len(a)}"
+            return s, ManyResult(value=tuple(inner_b[i].inverse(s, v)[1] for i, v in enumerate(a)))
         return Biarrow(
             forward=fwd,
             inverse=inv
@@ -138,13 +133,12 @@ class ManyResult(Generic[A], StructuralResult):
 class OrResult(Generic[A], StructuralResult):
     value: A
     def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, OrResult[A], Any]:
+        inner_b = self.value.biarrow(arr) if isinstance(self.value, StructuralResult) else arr
         def fwd(s: Any, a: OrResult[A]) -> Tuple[Any, Any]:
             assert a == self, f"Expected {self}, got {a}"
-            inner_b = a.value.biarrow(arr) if isinstance(a.value, StructuralResult) else arr
             return inner_b.forward(s, a.value)
         
         def inv(s: Any, a: Any) -> Tuple[Any, OrResult[A]]:
-            inner_b = a.biarrow(arr) if isinstance(a, StructuralResult) else arr
             inner_s, inner_v = inner_b.inverse(s, a)
             return inner_s, OrResult(value=inner_v) 
         
