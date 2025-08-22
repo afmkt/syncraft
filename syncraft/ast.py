@@ -3,11 +3,11 @@
 from __future__ import annotations
 import re
 from typing import (
-    Optional, Any, TypeVar, Tuple, runtime_checkable, Dict,
+    Optional, Any, TypeVar, Tuple, runtime_checkable, 
     Protocol, Generic, Callable, Union, cast
 )
 from syncraft.algebra import (
-    OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult
+    OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult, Biarrow
 )
 from dataclasses import dataclass, replace, is_dataclass, asdict
 from enum import Enum
@@ -66,12 +66,25 @@ class AST(Generic[T]):
     pruned: bool = False
     parent: Optional[AST[T]] = None
 
-
+    def biarrow(self)->Tuple[Any, Callable[[Any], AST[T]]]:
+        if isinstance(self.focus, StructuralResult):
+            b = self.focus.biarrow() 
+            s, v = b.forward(None, self.focus)
+            def inverse(data: Any) -> AST[T]:
+                s1, v1 = b.inverse(None, data)
+                return replace(self, focus=v1)
+            return v, inverse
+        else:
+            return self.focus, lambda x: replace(self, focus=x)
+        
     def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], AST[T]]]:
-        value, backward = self.focus.bimap(ctx) if isinstance(self.focus, StructuralResult) else (self.focus, lambda x: x)
-        def back2ast(data: Any) -> AST[T]:
-            return replace(self, focus=backward(data)) # type: ignore
-        return value, back2ast
+        return self.biarrow()
+
+    # def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], AST[T]]]:
+    #     value, backward = self.focus.bimap(ctx) if isinstance(self.focus, StructuralResult) else (self.focus, lambda x: x)
+    #     def back2ast(data: Any) -> AST[T]:
+    #         return replace(self, focus=backward(data)) # type: ignore
+    #     return value, back2ast
 
     def wrapper(self)-> Callable[[Any], Any]:
         if isinstance(self.focus, NamedResult):
