@@ -1,5 +1,6 @@
 from __future__ import annotations
-from syncraft.algebra import NamedResult, Error, ManyResult, OrResult, ThenResult, ThenKind
+from typing import Any, List, Tuple
+from syncraft.algebra import NamedResult, Error, ManyResult, OrResult, ThenResult, ThenKind, Bimap
 from syncraft.parser import literal, parse
 import syncraft.generator as gen
 from syncraft.generator import TokenGen
@@ -17,7 +18,7 @@ def test1_simple_then() -> None:
     print("---" * 40)
     print(generated)
     assert ast == generated
-    value, bmap = generated.bimap(None)
+    value, bmap = generated.bimap()
     print(value)
     assert bmap(value) == generated
 
@@ -33,7 +34,7 @@ def test2_named_results() -> None:
     print("---" * 40)
     print(generated)
     assert ast == generated
-    value, bmap = generated.bimap(None)
+    value, bmap = generated.bimap()
     print(value)
     print(bmap(value))
     assert bmap(value) == generated
@@ -50,7 +51,7 @@ def test3_many_literals() -> None:
     print("---" * 40)
     print(generated)
     assert ast == generated
-    value, bmap = generated.bimap(None)
+    value, bmap = generated.bimap()
     print(value)
     assert bmap(value) == generated
 
@@ -67,7 +68,7 @@ def test4_mixed_many_named() -> None:
     print("---" * 40)
     print(generated)
     assert ast == generated
-    value, bmap = generated.bimap(None)
+    value, bmap = generated.bimap()
     print(value)
     assert bmap(value) == generated
 
@@ -83,7 +84,7 @@ def test5_nested_then_many() -> None:
     print("---" * 40)
     print(generated)
     # assert ast == generated
-    value, bmap = generated.bimap(None)
+    value, bmap = generated.bimap()
     print(value)
     assert bmap(value) == generated
 
@@ -97,7 +98,7 @@ def test_then_flatten():
     print(ast)
     generated = gen.generate(syntax, ast)
     assert ast == generated
-    value, bmap = ast.bimap(None)
+    value, bmap = ast.bimap()
     assert bmap(value) == ast    
 
 
@@ -112,7 +113,7 @@ def test_named_in_then():
     print(ast)
     generated = gen.generate(syntax, ast)
     assert ast == generated
-    value, bmap = ast.bimap(None)
+    value, bmap = ast.bimap()
     assert isinstance(value, tuple)
     print(value)
     assert set(x.name for x in value if isinstance(x, NamedResult)) == {"first", "second", "third"}
@@ -127,7 +128,7 @@ def test_named_in_many():
     print(ast)
     generated = gen.generate(syntax, ast)
     assert ast == generated
-    value, bmap = ast.bimap(None)
+    value, bmap = ast.bimap()
     assert isinstance(value, list)
     assert all(isinstance(v, NamedResult) for v in value if isinstance(v, NamedResult))
     assert bmap(value) == ast
@@ -142,7 +143,7 @@ def test_named_in_or():
     print(ast)
     generated = gen.generate(syntax, ast)
     assert ast == generated
-    value, bmap = ast.bimap(None)
+    value, bmap = ast.bimap()
     assert isinstance(value, NamedResult)
     assert value.name == "b"
     assert bmap(value) == ast    
@@ -163,7 +164,7 @@ def test_deep_mix():
     print('---' * 40)
     print(generated)
     assert ast == generated
-    value, bmap = ast.bimap(None)
+    value, bmap = ast.bimap()
     assert bmap(value) == ast
 
 
@@ -181,7 +182,7 @@ def test_backtracking_many() -> None:
     syntax = (A.many() + B)  # must not eat the final "a" needed for B
     sql = "a a a a b"
     ast = parse(syntax, sql, dialect="sqlite")
-    value, bmap = ast.bimap(None)
+    value, bmap = ast.bimap()
     assert value[-1] == TokenGen.from_string("b")
 
 def test_deep_nesting() -> None:
@@ -208,7 +209,7 @@ def test_named_many() -> None:
     sql = "a a"
     ast = parse(syntax, sql, dialect="sqlite")
     # Expect [NamedResult("alpha", "a"), NamedResult("alpha", "a")]
-    flattened, _ = ast.bimap(None)
+    flattened, _ = ast.bimap()
     assert all(isinstance(x, NamedResult) for x in flattened)
 
 
@@ -220,7 +221,7 @@ def test_or_named() -> None:
     ast = parse(syntax, sql, dialect="sqlite")
     # Either NamedResult("y", "b") or just "b", depending on your design
     assert isinstance(ast.focus, OrResult)
-    value, _ = ast.bimap(None)
+    value, _ = ast.bimap()
     assert value == NamedResult(name="y", value=TokenGen.from_string("b"))
 
 
@@ -264,10 +265,128 @@ def test_optional():
     A = literal("a").bind("a")
     syntax = A.optional()
     ast1 = parse(syntax, "", dialect="sqlite")
-    v1, _ = ast1.bimap(None)
+    v1, _ = ast1.bimap()
     assert v1 is None
     ast2 = parse(syntax, "a", dialect="sqlite")
-    v2, _ = ast2.bimap(None)
+    v2, _ = ast2.bimap()
     assert v2 == NamedResult(name='a', value=TokenGen.from_string('a'))
+
+
+def test_or()->None:
+    inc: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, x: (s, x - 1),
+    )
+    data  = OrResult(value=1)
+    b = data.bimap()
+    b = b >> inc
+    s, x = b.forward(None, data)
+    assert x == 2
+    s, y = b.inverse(s, x)
+    assert y == data
+
+def test_named()->None:
+    inc: Bimap[Any, NamedResult[int], int] = Bimap(
+        forward=lambda s, x: (s, x.value + 1),
+        inverse=lambda s, y: (s, NamedResult(name="", value=y - 1)),
+    )
+    data  = NamedResult(name="test", value=1)
+    b = data.bimap()
+    c = b >> inc
+    s, x = c.forward(None, data)
+    assert x == 2
+    s, y = c.inverse(s, x)
+    assert y == data
+
+def test_many()->None:
+    inc: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, y: (s, y - 1),
+    )
+
+    inc2: Bimap[Any, List[int], List[int]] = Bimap(
+        forward=lambda s, x: (s, [xx + 1 for xx in x]),
+        inverse=lambda s, y: (s, [yy - 1 for yy in y]),
+    )
+    data  = ManyResult(value=(1,2))
+    b = data.bimap(inc)
+    c = b >> inc2
+    s, x = c.forward(None, data)
+    assert x == [3,4]
+    s, y = c.inverse(s, x)
+    assert y == data
+
+def test_then()->None:
+    inc: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, y: (s, y - 1),
+    )
+    inc2: Bimap[Any, Tuple[int, ...], Tuple[int, ...]] = Bimap(
+        forward=lambda s, x: (s, tuple(xx + 1 for xx in x)),
+        inverse=lambda s, y: (s, tuple(yy - 1 for yy in y)),
+    )
+
+    data  = ThenResult(kind=ThenKind.BOTH, left=1, right=2)
+    b = data.bimap(inc)
+    c = b >> inc2
+    s, x = c.forward(None, data)
+    assert x == (3, 4)
+    s, y = c.inverse(s, x)
+    assert y == data
+
+
+def test_left()->None:
+    inc: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, y: (s, y - 1),
+    )
+    inc2: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, y: (s, y - 1),
+    )
+
+    data  = ThenResult(kind=ThenKind.LEFT, left=1, right=2)
+    b = data.bimap(inc)
+    c = b >> inc2
+    s, x = c.forward(None, data)
+    assert x == 3
+    s, y = c.inverse(s, x)
+    assert y == data
+
+def test_right()->None:
+    inc: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, y: (s, y - 1),
+    )
+    inc2: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, y: (s, y - 1),
+    )
+
+    data  = ThenResult(kind=ThenKind.RIGHT, left=1, right=2)
+    b = data.bimap(inc)
+    c = b >> inc2
+    s, x = c.forward(None, data)
+    assert x == 4
+    s, y = c.inverse(s, x)
+    assert y == data
+
+def test_nested()->None:
+    inc: Bimap[Any, int, int] = Bimap(
+        forward=lambda s, x: (s, x + 1),
+        inverse=lambda s, y: (s, y - 1),
+    )
+    inc2: Bimap[Any, Tuple[int, ...], Tuple[int, ...]] = Bimap(
+        forward=lambda s, x: (s, tuple(xx + 1 for xx in x)),
+        inverse=lambda s, y: (s, tuple(yy - 1 for yy in y)),
+    )
+
+    data  = ThenResult(kind=ThenKind.BOTH, left=ThenResult(kind=ThenKind.BOTH, left=0, right=1), right=ThenResult(kind=ThenKind.BOTH, left=2, right=3))
+    b = data.bimap(inc)
+    c = b >> inc2
+    s, x = c.forward(None, data)
+    assert x == (2,3,4,5)
+    s, y = c.inverse(s, x)
+    assert y == data
 
 
