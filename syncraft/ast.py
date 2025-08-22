@@ -7,7 +7,7 @@ from typing import (
     Protocol, Generic, Callable, Union, cast
 )
 from syncraft.algebra import (
-    OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult, Biarrow
+    OrResult,ThenResult, ManyResult, ThenKind,NamedResult, StructuralResult
 )
 from dataclasses import dataclass, replace, is_dataclass, asdict
 from enum import Enum
@@ -66,9 +66,9 @@ class AST(Generic[T]):
     pruned: bool = False
     parent: Optional[AST[T]] = None
 
-    def biarrow(self)->Tuple[Any, Callable[[Any], AST[T]]]:
+    def bimap(self)->Tuple[Any, Callable[[Any], AST[T]]]:
         if isinstance(self.focus, StructuralResult):
-            b = self.focus.biarrow() 
+            b = self.focus.bimap() 
             s, v = b.forward(None, self.focus)
             def inverse(data: Any) -> AST[T]:
                 s1, v1 = b.inverse(None, data)
@@ -77,15 +77,6 @@ class AST(Generic[T]):
         else:
             return self.focus, lambda x: replace(self, focus=x)
         
-    def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], AST[T]]]:
-        return self.biarrow()
-
-    # def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], AST[T]]]:
-    #     value, backward = self.focus.bimap(ctx) if isinstance(self.focus, StructuralResult) else (self.focus, lambda x: x)
-    #     def back2ast(data: Any) -> AST[T]:
-    #         return replace(self, focus=backward(data)) # type: ignore
-    #     return value, back2ast
-
     def wrapper(self)-> Callable[[Any], Any]:
         if isinstance(self.focus, NamedResult):
             focus = cast(NamedResult[Any], self.focus)

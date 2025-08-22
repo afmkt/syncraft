@@ -19,58 +19,54 @@ S = TypeVar('S')
 
 
 @dataclass(frozen=True)
-class Biarrow(Generic[S, A, B]):
+class Bimap(Generic[S, A, B]):
     forward: Callable[[S, A], Tuple[S, B]]
     inverse: Callable[[S, B], Tuple[S, A]]
-    def __rshift__(self, other: Biarrow[S, B, C]) -> Biarrow[S, A, C]:
+    def __rshift__(self, other: Bimap[S, B, C]) -> Bimap[S, A, C]:
         def fwd(s: S, a: A) -> Tuple[S, C]:
             s1, b = self.forward(s, a)
             return other.forward(s1, b)
         def inv(s: S, c: C) -> Tuple[S, A]:
             s1, b = other.inverse(s, c)
             return self.inverse(s1, b)
-        return Biarrow(
+        return Bimap(
             forward=fwd,
             inverse=inv
         )
     @staticmethod
-    def identity()->Biarrow[S, A, A]:
-        return Biarrow(
+    def identity()->Bimap[S, A, A]:
+        return Bimap(
             forward=lambda s, x: (s, x),
             inverse=lambda s, y: (s, y)
         )
     @staticmethod
-    def variable(value: A)->Biarrow[S, A, A]:
-        return Biarrow(
+    def variable(value: A)->Bimap[S, A, A]:
+        return Bimap(
             forward=lambda s, _: (s, value),
             inverse=lambda s, y: (s, y)
         )
     @staticmethod
-    def const(state: S, value: A)->Biarrow[Any, A, A]:
-        return Biarrow(
+    def const(state: S, value: A)->Bimap[Any, A, A]:
+        return Bimap(
             forward=lambda s, _: (state, value),
             inverse=lambda s, y: (state, value)
         )
     @staticmethod
-    def combine(*biarrows: Biarrow[Any, Any, Any]) -> Biarrow[Any, Any, Any]:
-        return reduce(lambda a, b: a >> b, biarrows, Biarrow.identity()) 
+    def combine(*biarrows: Bimap[Any, Any, Any]) -> Bimap[Any, Any, Any]:
+        return reduce(lambda a, b: a >> b, biarrows, Bimap.identity()) 
             
     
         
 class StructuralResult:
-    def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, Any, Any]:
-        return Biarrow.identity()
-
-    def bimap(self, ctx: Any)->Tuple[Any, Callable[[Any], StructuralResult]]:
-        return (self, lambda x: self)
-
+    def bimap(self, arr: Bimap[Any, Any, Any] = Bimap.identity()) -> Bimap[Any, Any, Any]:
+        return Bimap.identity()
         
 @dataclass(frozen=True)
 class NamedResult(Generic[A], StructuralResult):
     name: str
     value: A
-    def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, NamedResult[A], NamedResult[Any]]:
-        inner_b = self.value.biarrow(arr) if isinstance(self.value, StructuralResult) else arr
+    def bimap(self, arr: Bimap[Any, Any, Any] = Bimap.identity()) -> Bimap[Any, NamedResult[A], NamedResult[Any]]:
+        inner_b = self.value.bimap(arr) if isinstance(self.value, StructuralResult) else arr
         def fwd(s: S, a: NamedResult[A])-> Tuple[S, NamedResult[Any]]:
             assert a == self, f"Expected {self}, got {a}"
             inner_s, inner_v = inner_b.forward(s, a.value)
@@ -81,28 +77,15 @@ class NamedResult(Generic[A], StructuralResult):
             inner_s, inner_v = inner_b.inverse(s, a.value)
             return (inner_s, replace(self, value=inner_v)) if not isinstance(inner_v, NamedResult) else (inner_s, replace(self, value=inner_v.value))
         
-        return Biarrow(
+        return Bimap(
             forward=fwd,
             inverse=inv
-        )
-
-
-    def bimap(self, ctx: Any)->Tuple[NamedResult[Any], Callable[[NamedResult[Any]], StructuralResult]]:
-        value, backward = self.value.bimap(ctx) if isinstance(self.value, StructuralResult) else (self.value, lambda x: x)
-        def named_back(data: Any)->NamedResult[Any]:
-            v = backward(data)
-            if isinstance(v, NamedResult):
-                return replace(v, name=self.name)
-            else:
-                return NamedResult(name=self.name, value=v)
-        return NamedResult(self.name, value), named_back
-    
-
+        )    
 @dataclass(eq=True, frozen=True)
 class ManyResult(Generic[A], StructuralResult):
     value: Tuple[A, ...]
-    def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, ManyResult[A], List[A]]:
-        inner_b = [v.biarrow(arr) if isinstance(v, StructuralResult) else arr for v in self.value]
+    def bimap(self, arr: Bimap[Any, Any, Any] = Bimap.identity()) -> Bimap[Any, ManyResult[A], List[A]]:
+        inner_b = [v.bimap(arr) if isinstance(v, StructuralResult) else arr for v in self.value]
         def fwd(s: Any, a: ManyResult[A]) -> Tuple[Any, List[A]]:
             assert a == self, f"Expected {self}, got {a}"
             return s, [inner_b[i].forward(s, v)[1] for i, v in enumerate(a.value)]
@@ -111,29 +94,15 @@ class ManyResult(Generic[A], StructuralResult):
             assert isinstance(a, list), f"Expected list, got {type(a)}"
             assert len(a) == len(inner_b), f"Expected {len(inner_b)} elements, got {len(a)}"
             return s, ManyResult(value=tuple(inner_b[i].inverse(s, v)[1] for i, v in enumerate(a)))
-        return Biarrow(
+        return Bimap(
             forward=fwd,
             inverse=inv
-        )
-
-
-    def bimap(self, ctx: Any)->Tuple[List[Any], Callable[[List[Any]], StructuralResult]]:
-        transformed = [v.bimap(ctx) if isinstance(v, StructuralResult) else (v, lambda x: x) for v in self.value]
-        backmaps = [b for (_, b) in transformed]
-        ret = [a for (a, _) in transformed]
-        def backward(data: List[Any]) -> StructuralResult:
-            if len(data) != len(transformed):
-                raise ValueError("Incompatible data length")
-            return ManyResult(value=tuple([backmaps[i](x) for i, x in enumerate(data)]))
-        return ret, lambda data: backward(data)
-    
-
-
+        )    
 @dataclass(eq=True, frozen=True)
 class OrResult(Generic[A], StructuralResult):
     value: A
-    def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, OrResult[A], Any]:
-        inner_b = self.value.biarrow(arr) if isinstance(self.value, StructuralResult) else arr
+    def bimap(self, arr: Bimap[Any, Any, Any] = Bimap.identity()) -> Bimap[Any, OrResult[A], Any]:
+        inner_b = self.value.bimap(arr) if isinstance(self.value, StructuralResult) else arr
         def fwd(s: Any, a: OrResult[A]) -> Tuple[Any, Any]:
             assert a == self, f"Expected {self}, got {a}"
             return inner_b.forward(s, a.value)
@@ -142,16 +111,10 @@ class OrResult(Generic[A], StructuralResult):
             inner_s, inner_v = inner_b.inverse(s, a)
             return inner_s, OrResult(value=inner_v) 
         
-        return Biarrow(
+        return Bimap(
             forward=fwd,
             inverse=inv
-        )
-
-    def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
-        value, backward = self.value.bimap(ctx) if isinstance(self.value, StructuralResult) else (self.value, lambda x: x)
-        return value, lambda data: OrResult(value=backward(data))
-    
-
+        )    
 class ThenKind(Enum):
     BOTH = '+'
     LEFT = '//'
@@ -174,10 +137,10 @@ class ThenResult(Generic[A, B], StructuralResult):
         else:
             return 1
                 
-    def biarrow(self, arr: Biarrow[Any, Any, Any] = Biarrow.identity()) -> Biarrow[Any, ThenResult[A, B], Tuple[Any, ...] | Any]:
+    def bimap(self, arr: Bimap[Any, Any, Any] = Bimap.identity()) -> Bimap[Any, ThenResult[A, B], Tuple[Any, ...] | Any]:
         kind = self.kind
-        lb = self.left.biarrow(arr) if isinstance(self.left, StructuralResult) else arr
-        rb = self.right.biarrow(arr) if isinstance(self.right, StructuralResult) else arr
+        lb = self.left.bimap(arr) if isinstance(self.left, StructuralResult) else arr
+        rb = self.right.bimap(arr) if isinstance(self.right, StructuralResult) else arr
         left_size = self.left.arity() if isinstance(self.left, ThenResult) else 1
         right_size = self.right.arity() if isinstance(self.right, ThenResult) else 1
         def fwd(s : S, a : ThenResult[A, B]) -> Tuple[S, Tuple[Any, ...] | Any]:
@@ -211,57 +174,11 @@ class ThenResult(Generic[A, B], StructuralResult):
                     s2, rv = rb.inverse(s1, rraw)
                     return s2, replace(self, left=lv, right=rv)
             
-        return Biarrow(
+        return Bimap(
             forward=fwd,
             inverse=inv
         )
-        
     
-
-    def bimap(self, ctx: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
-        def branch(b: Any) -> Tuple[Any, Callable[[Any], StructuralResult]]:
-            return b.bimap(ctx) if isinstance(b, StructuralResult) else (b, lambda x: x)
-        match self.kind:
-            case ThenKind.BOTH:
-                left_value, left_bmap = branch(self.left)
-                right_value, right_bmap = branch(self.right)
-                def backward(x: Tuple[Any, Any]) -> StructuralResult:
-                    return ThenResult(self.kind, left_bmap(x[0]), right_bmap(x[1]))
-                x, y = ThenResult.flat((left_value, right_value))
-                return x, lambda data: backward(y(data))
-            case ThenKind.LEFT:
-                left_value, left_bmap = branch(self.left)
-                return left_value, lambda data: ThenResult(self.kind, left_bmap(data), self.right)
-            case ThenKind.RIGHT:
-                right_value, right_bmap = branch(self.right)
-                return right_value, lambda data: ThenResult(self.kind, self.left, right_bmap(data))
-            
-    @staticmethod
-    def flat(array: Tuple[Any, Any]) -> Tuple[Tuple[Any, ...], Callable[[Tuple[Any, ...]], Tuple[Any, Any]]]:
-        index: Dict[int, int] = {}
-        ret: List[Any] = []
-        for e in array:
-            if isinstance(e, tuple):
-                index[len(ret)] = len(e)
-                ret.extend(e)
-            else:
-                ret.append(e)
-        def backward(data: Tuple[Any, ...]) -> Tuple[Any, Any]:
-            tmp: List[Any] = []
-            skip: int = 0
-            for i, e in enumerate(data):
-                if skip <= 0:
-                    if i in index:
-                        tmp.append(tuple(data[i:i + index[i]]))
-                        skip = index[i] - 1
-                    else:
-                        tmp.append(e)
-                else:
-                    skip -= 1
-            return tuple(tmp)
-        return tuple(ret), backward
-
-
 InProgress = object()  # Marker for in-progress state, used to prevent re-entrance in recursive calls
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results

@@ -40,13 +40,6 @@ class ParserState(Generic[T]):
     def after(self, length: Optional[int] = 5)->str:
         length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
         return " ".join(token.text for token in self.input[self.index:self.index + length])
- 
-    # def to_string(self, interested: Callable[[Any], bool])->str:
-    #     return f"ParserState(\n"\
-    #            f"index={self.index}, \n"\
-    #            f"input({len(self.input)})=[{self.token_sample_string()}, ...]), \n"\
-    #            f"before=({self.before()}), \n"\
-    #            f"after=({self.after()})"  
 
 
     def current(self)->T:
