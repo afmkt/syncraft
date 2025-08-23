@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, List, Tuple
-from syncraft.algebra import NamedResult, Error, ManyResult, OrResult, ThenResult, ThenKind, Bimap
+from syncraft.algebra import NamedResult, Error, ManyResult, OrResult, ThenResult, ThenKind, Bimap, StructuralResult
 from syncraft.parser import literal, parse
 import syncraft.generator as gen
 from syncraft.generator import TokenGen
@@ -309,7 +309,7 @@ def test_many()->None:
         inverse=lambda s, y: (s, [yy - 1 for yy in y]),
     )
     data  = ManyResult(value=(1,2))
-    b = data.bimap(inc)
+    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == [3,4]
@@ -327,7 +327,7 @@ def test_then()->None:
     )
 
     data  = ThenResult(kind=ThenKind.BOTH, left=1, right=2)
-    b = data.bimap(inc)
+    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == (3, 4)
@@ -346,7 +346,7 @@ def test_left()->None:
     )
 
     data  = ThenResult(kind=ThenKind.LEFT, left=1, right=2)
-    b = data.bimap(inc)
+    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == 3
@@ -364,7 +364,7 @@ def test_right()->None:
     )
 
     data  = ThenResult(kind=ThenKind.RIGHT, left=1, right=2)
-    b = data.bimap(inc)
+    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == 4
@@ -382,7 +382,7 @@ def test_nested()->None:
     )
 
     data  = ThenResult(kind=ThenKind.BOTH, left=ThenResult(kind=ThenKind.BOTH, left=0, right=1), right=ThenResult(kind=ThenKind.BOTH, left=2, right=3))
-    b = data.bimap(inc)
+    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == (2,3,4,5)
