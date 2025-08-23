@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, 
-    List, Generator as YieldGen
+    Any, TypeVar, Tuple, Optional,  Callable, Generic, 
+    List, 
 )
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
-    Algebra, ThenResult, Either, Left, Right, Error, 
-    OrResult, ManyResult, NamedResult
+    Algebra, Either, Left, Right, Error, 
+    OrResult, ManyResult
 )
 
 from syncraft.ast import T, ParseResult, AST, Token, TokenSpec
@@ -274,27 +274,4 @@ def generate(syntax: Syntax[Any, Any], data: Optional[AST[Any]] = None, seed: in
     return result.value
 
 
-def matches(syntax: Syntax[Any, Any], data: AST[Any])-> bool:
-    gen = syntax(Generator)
-    state = GenState.from_ast(data)
-    result = gen.run(state, use_cache=True)
-    return isinstance(result, Right)
-
-
-def search(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, None]:
-    if matches(syntax, data):
-        yield data
-    match data.focus:
-        case ThenResult(left = left, right=right):
-            yield from search(syntax, AST(left))
-            yield from search(syntax, AST(right))
-        case ManyResult(value = value):
-            for e in value:
-                yield from search(syntax, AST(e))
-        case NamedResult(value=value):
-            yield from search(syntax, AST(value))
-        case OrResult(value=value):
-            yield from search(syntax, AST(value))
-        case _:
-            pass
     

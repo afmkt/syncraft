@@ -7,16 +7,17 @@ from typing import (
 from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra, Either, Left, Right, Error, 
-    OrResult, ManyResult
+    OrResult, ManyResult, ThenResult, NamedResult
 )
 
-from syncraft.ast import T, ParseResult, Token
+from syncraft.ast import T, ParseResult, Token, AST
 from syncraft.generator import GenState, TokenGen, B
 from sqlglot import TokenType
+from syncraft.syntax import Syntax
 import re
 
 @dataclass(frozen=True)
-class Generator(Algebra[ParseResult[T], GenState[T]]):  
+class Finder(Algebra[ParseResult[T], GenState[T]]):  
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         def flat_map_run(original: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
             wrapper = original.wrapper()
@@ -41,7 +42,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     state=original,
                     error=e
                 ))
-        return Generator(run_f = flat_map_run, name=self.name) # type: ignore
+        return Finder(run_f = flat_map_run, name=self.name) # type: ignore
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[ManyResult[ParseResult[T]], GenState[T]]:
@@ -135,3 +136,30 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 return Right((wrapper(current), input))
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
+
+
+
+
+def matches(syntax: Syntax[Any, Any], data: AST[Any])-> bool:
+    gen = syntax(Finder)
+    state = GenState.from_ast(data)
+    result = gen.run(state, use_cache=True)
+    return isinstance(result, Right)
+
+
+def search(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, None]:
+    if matches(syntax, data):
+        yield data
+    match data.focus:
+        case ThenResult(left = left, right=right):
+            yield from search(syntax, AST(left))
+            yield from search(syntax, AST(right))
+        case ManyResult(value = value):
+            for e in value:
+                yield from search(syntax, AST(e))
+        case NamedResult(value=value):
+            yield from search(syntax, AST(value))
+        case OrResult(value=value):
+            yield from search(syntax, AST(value))
+        case _:
+            pass
