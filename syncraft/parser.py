@@ -16,13 +16,6 @@ from syncraft.syntax import Syntax
 from syncraft.ast import Token, TokenSpec, AST, T
 
 
-
-
-
-
-
-
-
 @dataclass(frozen=True)
 class ParserState(Generic[T]):
     input: Tuple[T, ...] = field(default_factory=tuple)

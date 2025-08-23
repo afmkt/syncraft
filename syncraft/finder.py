@@ -1,145 +1,19 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, Union, 
+    Any, Tuple, Optional,  Callable,
     List, Generator as YieldGen
 )
-from functools import cached_property
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from syncraft.algebra import (
-    Algebra, ThenResult, Either, Left, Right, Error, 
-    OrResult, ManyResult, NamedResult
+    Algebra, Either, Left, Right, Error, 
+    OrResult, ManyResult
 )
 
-from syncraft.ast import T, ParseResult, AST, Token, TokenSpec
-from syncraft.syntax import Syntax
+from syncraft.ast import T, ParseResult, Token
+from syncraft.generator import GenState, TokenGen, B
 from sqlglot import TokenType
 import re
-import rstr
-from functools import lru_cache
-import random
-
-B = TypeVar('B')
-
-
-@dataclass(frozen=True)
-class GenState(Generic[T]):
-    ast: Optional[AST[T]]
-    seed: int
-
-    def fork(self, tag: Any) -> GenState[T]:
-        return replace(self, seed=hash((self.seed, tag)))
-
-    def rng(self, tag: Any = None) -> random.Random:
-        return random.Random(self.seed if tag is None else hash((self.seed, tag)))
-
-    def to_string(self, interested: Callable[[Any], bool]) -> str | None:
-        return f"GenState(current={self.focus})"
-
-    @cached_property
-    def pruned(self)->bool:
-        return self.ast is None or self.ast.pruned
-    
-
-    @property
-    def focus(self) -> Optional[ParseResult[T]]:
-        if self.ast is None:
-            return None
-        return self.ast.focus
-
-    @property
-    def is_named(self)->bool:
-        return self.ast is not None and self.ast.is_named()
-    
-    def wrapper(self)->Callable[[Any], Any]:
-        if self.ast is not None:
-            return self.ast.wrapper()
-        else:
-            return lambda x: x
-
-    def left(self)-> GenState[T]:
-        if self.ast is None:
-            return self
-        return replace(self, ast=self.ast.left())
-
-    def right(self) -> GenState[T]:
-        if self.ast is None:
-            return self
-        return replace(self, ast=self.ast.right())
-    
-
-    
-    def down(self, index: int) -> GenState[T]:
-        if self.ast is None:
-            return self
-        return replace(self, ast=self.ast.down(index))
-    
-    @cached_property
-    def how_many(self) -> int:
-        if self.ast is None:
-            return 0
-        return self.ast.how_many()
-
-    @classmethod
-    def from_ast(cls, ast: Optional[AST[T]], seed: int = 0) -> GenState[T]:
-        return cls(ast=ast, seed=seed)
-
-
-    @classmethod
-    def from_parse_result(cls, parse_result: Optional[ParseResult[T]], seed: int = 0) -> GenState[T]:
-        return cls.from_ast(AST(parse_result) if parse_result else None, seed)
-
-
-
-
-
-@lru_cache(maxsize=None)
-def token_type_from_string(token_type: Optional[TokenType], text: str, case_sensitive:bool)-> TokenType:
-    if not isinstance(token_type, TokenType) or token_type == TokenType.VAR:
-        for t in TokenType:
-            if t.value == text or str(t.value).lower() == text.lower():
-                return t
-        return TokenType.VAR
-    return token_type
-
-
-@dataclass(frozen=True)
-class TokenGen(TokenSpec):
-
-    def __str__(self) -> str:
-        tt = self.token_type.name if self.token_type else ""
-        txt = self.text if self.text else ""
-        reg = self.regex.pattern if self.regex else ""
-        return f"TokenGen({tt}, {txt}, {self.case_sensitive}, {reg})"
-        
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def gen(self) -> Token:
-        text: str
-        if self.text is not None:
-            text = self.text
-        elif self.regex is not None:
-            try:
-                text = rstr.xeger(self.regex)
-            except Exception as e:
-                # If the regex is invalid or generation fails
-                text = self.regex.pattern  # fallback to pattern string
-        elif self.token_type is not None:
-            text = str(self.token_type.value)
-        else:
-            text = "VALUE"
-
-        return Token(token_type= token_type_from_string(self.token_type,
-                                                        text, 
-                                                        self.case_sensitive), 
-                     text=text)        
-
-    @staticmethod
-    def from_string(string: str)->Token:
-        return Token(token_type=token_type_from_string(None, string, case_sensitive=False), text=string)
-
 
 @dataclass(frozen=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):  
@@ -261,40 +135,3 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 return Right((wrapper(current), input))
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
-
-
-
-def generate(syntax: Syntax[Any, Any], data: Optional[AST[Any]] = None, seed: int = 0) -> AST[Any] | Any:
-    gen = syntax(Generator)
-    state = GenState.from_ast(data, seed)
-    result = gen.run(state, use_cache=False)
-    if isinstance(result, Right):
-        return AST(result.value[0])
-    assert isinstance(result, Left), "Generator must return Either[Any, Tuple[Any, Any]]"
-    return result.value
-
-
-def matches(syntax: Syntax[Any, Any], data: AST[Any])-> bool:
-    gen = syntax(Generator)
-    state = GenState.from_ast(data)
-    result = gen.run(state, use_cache=True)
-    return isinstance(result, Right)
-
-
-def search(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, None]:
-    if matches(syntax, data):
-        yield data
-    match data.focus:
-        case ThenResult(left = left, right=right):
-            yield from search(syntax, AST(left))
-            yield from search(syntax, AST(right))
-        case ManyResult(value = value):
-            for e in value:
-                yield from search(syntax, AST(e))
-        case NamedResult(value=value):
-            yield from search(syntax, AST(value))
-        case OrResult(value=value):
-            yield from search(syntax, AST(value))
-        case _:
-            pass
-    
