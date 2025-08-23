@@ -39,21 +39,6 @@ class Bimap(Generic[S, A, B]):
             forward=lambda s, x: (s, x),
             inverse=lambda s, y: (s, y)
         )
-    @staticmethod
-    def variable(value: A)->Bimap[S, A, A]:
-        return Bimap(
-            forward=lambda s, _: (s, value),
-            inverse=lambda s, y: (s, y)
-        )
-    @staticmethod
-    def const(state: S, value: A)->Bimap[Any, A, A]:
-        return Bimap(
-            forward=lambda s, _: (state, value),
-            inverse=lambda s, y: (state, value)
-        )
-    @staticmethod
-    def combine(*biarrows: Bimap[Any, Any, Any]) -> Bimap[Any, Any, Any]:
-        return reduce(lambda a, b: a >> b, biarrows, Bimap.identity()) 
             
     
         
@@ -85,6 +70,9 @@ class NamedResult(Generic[A], StructuralResult):
 class ManyResult(Generic[A], StructuralResult):
     value: Tuple[A, ...]
     def bimap(self, arr: Bimap[Any, Any, Any] = Bimap.identity()) -> Bimap[Any, ManyResult[A], List[A]]:
+        # We don't allow zero length ManyResult e.g. many(at_least >= 1) at the syntax level
+        # so inner_b has at least 1 element
+        assert len(self.value) > 0, "ManyResult must have at least one element"
         inner_b = [v.bimap(arr) if isinstance(v, StructuralResult) else arr for v in self.value]
         def fwd(s: Any, a: ManyResult[A]) -> Tuple[Any, List[A]]:
             assert a == self, f"Expected {self}, got {a}"
@@ -92,8 +80,13 @@ class ManyResult(Generic[A], StructuralResult):
             
         def inv(s: Any, a: List[A]) -> Tuple[Any, ManyResult[A]]:
             assert isinstance(a, list), f"Expected list, got {type(a)}"
-            assert len(a) == len(inner_b), f"Expected {len(inner_b)} elements, got {len(a)}"
-            return s, ManyResult(value=tuple(inner_b[i].inverse(s, v)[1] for i, v in enumerate(a)))
+            ret = [inner_b[i].inverse(s, v)[1] for i, v in enumerate(a)]
+            if len(ret) <= len(inner_b):
+                return s, ManyResult(value=tuple(ret))
+            else:
+                extra = [inner_b[-1].inverse(s, v)[1] for v in a[len(inner_b):]]
+                return s, ManyResult(value=tuple(ret + extra))
+
         return Bimap(
             forward=fwd,
             inverse=inv
