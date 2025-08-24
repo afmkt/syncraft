@@ -26,6 +26,7 @@ B = TypeVar('B')
 class GenState(Generic[T]):
     ast: Optional[AST[T]]
     seed: int
+    is_pruned: Optional[bool] = None
 
     def fork(self, tag: Any) -> GenState[T]:
         return replace(self, seed=hash((self.seed, tag)))
@@ -38,7 +39,10 @@ class GenState(Generic[T]):
 
     @cached_property
     def pruned(self)->bool:
-        return self.ast is None or self.ast.pruned
+        if self.is_pruned is None:
+            return self.ast is None or self.ast.pruned
+        else:
+            return self.is_pruned
     
 
     @property
@@ -167,7 +171,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     state=original,
                     error=e
                 ))
-        return Generator(run_f = flat_map_run, name=self.name) # type: ignore
+        return self.__class__(run_f = flat_map_run, name=self.name) # type: ignore
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[ManyResult[ParseResult[T]], GenState[T]]:
