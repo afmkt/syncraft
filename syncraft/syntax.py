@@ -17,6 +17,33 @@ B = TypeVar('B')  # Result type for mapping
 C = TypeVar('C')  # Result type for else branch
 S = TypeVar('S')  # State type
 
+
+class Variable(Generic[A]):
+    def __init__(self, name: Optional[str] = None):
+        self.name = name
+        self.initialized = False
+        self._value = None
+    def __call__(self, a: Any) -> Any:
+        if self.initialized:
+            if self._value != a:
+                raise ValueError(f"Variable {self.name or ''} is already initialized")
+            else:
+                return a
+        elif self.name is not None and isinstance(a, NamedResult):
+            if a.name == self.name:
+                self._value = a.value
+                self.initialized = True
+        else:
+            self._value = a
+            self.initialized = True
+        return a
+    @property
+    def value(self) -> A:
+        if self.initialized is False or self._value is None:
+            raise ValueError(f"Variable {self.name or ''} is not initialized")
+        return self._value
+
+
 @dataclass(frozen=True)
 class Description:
     name: Optional[str] = None
@@ -97,8 +124,6 @@ class Syntax(Generic[A, S]):
                 return a
         return self.__class__(alg=algebra_run, meta=self.meta)
                 
-
-
 
     def as_(self, typ: Type[B])->B:
         return cast(typ, self) # type: ignore
@@ -234,6 +259,8 @@ class Syntax(Generic[A, S]):
                 return NamedResult(name=name, value=value)
         return self.map(bind_f).describe(name=f'bind("{name}")', fixity='postfix', parameter=[self]) 
 
+    def assign(self, var: Variable[A]) -> Syntax[A, S]:
+        return self.map(var).describe(name=f'assign({var.name or ""})', fixity='postfix', parameter=[self])
 
     def dump_error(self, formatter: Optional[Callable[[Error], None]] = None) -> Syntax[A, S]:
         def dump_error_run(err: Any)->Any:
@@ -261,12 +288,6 @@ def success(value: Any) -> Syntax[Any, Any]:
 
 def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(None)
-
-
-
-
-
-
 
 
 def all(*parsers: Syntax[Any, S]) -> Syntax[ThenResult[Any, Any], S]:
