@@ -51,39 +51,26 @@ class Finder(Algebra[ParseResult[T], GenState[T]]):
         def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ManyResult[ParseResult[T]], GenState[T]]]:
             wrapper = input.wrapper()
             input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
-            if input.pruned:
-                upper = at_most if at_most is not None else at_least + 2
-                count = input.rng("many").randint(at_least, upper)
-                ret: List[Any] = []
-                for i in range(count):
-                    forked_input = input.down(0).fork(tag=len(ret))
-                    match self.run(forked_input, use_cache):
-                        case Right((value, next_input)):
-                            ret.append(value)
-                        case Left(_):
-                            pass
-                return Right((wrapper(ManyResult(tuple(ret))), input))
-            else:
-                ret = []
-                for index in range(input.how_many): 
-                    match self.run(input.down(index), use_cache):
-                        case Right((value, next_input)):
-                            ret.append(value)
-                            if at_most is not None and len(ret) > at_most:
-                                return Left(Error(
-                                        message=f"Expected at most {at_most} matches, got {len(ret)}",
-                                        this=self,
-                                        state=input.down(index)
-                                    ))                             
-                        case Left(_):
-                            pass
-                if len(ret) < at_least:
-                    return Left(Error(
-                        message=f"Expected at least {at_least} matches, got {len(ret)}",
-                        this=self,
-                        state=input.down(index)
-                    )) 
-                return Right((wrapper(ManyResult(tuple(ret))), input))
+            ret = []
+            for index in range(input.how_many): 
+                match self.run(input.down(index), use_cache):
+                    case Right((value, next_input)):
+                        ret.append(value)
+                        if at_most is not None and len(ret) > at_most:
+                            return Left(Error(
+                                    message=f"Expected at most {at_most} matches, got {len(ret)}",
+                                    this=self,
+                                    state=input.down(index)
+                                ))                             
+                    case Left(_):
+                        pass
+            if len(ret) < at_least:
+                return Left(Error(
+                    message=f"Expected at least {at_least} matches, got {len(ret)}",
+                    this=self,
+                    state=input.down(index)
+                )) 
+            return Right((wrapper(ManyResult(tuple(ret))), input))
         return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
     
  
@@ -93,23 +80,15 @@ class Finder(Algebra[ParseResult[T], GenState[T]]):
         def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[OrResult[ParseResult[T]], GenState[T]]]:
             wrapper = input.wrapper()
             input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
-            if input.pruned:
-                forked_input = input.fork(tag="or_else")
-                match forked_input.rng("or_else").choice((self, other)).run(forked_input, use_cache):
-                    case Right((value, next_input)):
-                        return Right((wrapper(OrResult(value)), next_input))
-                    case Left(error):
-                        return Left(error)
-            else:
-                match self.run(input.down(0), use_cache):
-                    case Right((value, next_input)):
-                        return Right((wrapper(OrResult(value)), next_input))
-                    case Left(error):
-                        match other.run(input.down(0), use_cache):
-                            case Right((value, next_input)):
-                                return Right((wrapper(OrResult(value)), next_input))
-                            case Left(error):
-                                return Left(error)
+            match self.run(input.down(0), use_cache):
+                case Right((value, next_input)):
+                    return Right((wrapper(OrResult(value)), next_input))
+                case Left(error):
+                    match other.run(input.down(0), use_cache):
+                        case Right((value, next_input)):
+                            return Right((wrapper(OrResult(value)), next_input))
+                        case Left(error):
+                            return Left(error)
             raise ValueError("or_else should always return a value or an error.")
         return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})") # type: ignore
 
@@ -125,20 +104,25 @@ class Finder(Algebra[ParseResult[T], GenState[T]]):
         def token_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ParseResult[Token], GenState[T]]]:
             wrapper = input.wrapper()
             input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
-            if input.pruned:
-                return Right((gen.gen(), input))
-            else:
-                current = input.focus
-                if not isinstance(current, Token) or not gen.is_valid(current):
-                    return Left(Error(None, 
-                                      message=f"Expected a Token, but got {type(current)}.", 
-                                      state=input))
-                return Right((wrapper(current), input))
+            current = input.focus
+            if not isinstance(current, Token) or not gen.is_valid(current):
+                return Left(Error(None, 
+                                    message=f"Expected a Token, but got {type(current)}.", 
+                                    state=input))
+            return Right((wrapper(current), input))
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
 
+    @classmethod
+    def anything(cls)->Algebra[ParseResult[T], GenState[T]]:
+        def anything_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ParseResult[T], GenState[T]]]:
+            wrapper = input.wrapper()
+            return Right((wrapper(input.focus), input))
+        return cls(anything_run, name=cls.__name__ + '.anything()')
 
 
+
+anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
 
 def matches(syntax: Syntax[Any, Any], data: AST[Any])-> bool:
     gen = syntax(Finder)
@@ -147,19 +131,19 @@ def matches(syntax: Syntax[Any, Any], data: AST[Any])-> bool:
     return isinstance(result, Right)
 
 
-def search(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, None]:
+def find(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, None]:
     if matches(syntax, data):
         yield data
     match data.focus:
         case ThenResult(left = left, right=right):
-            yield from search(syntax, AST(left))
-            yield from search(syntax, AST(right))
+            yield from find(syntax, AST(left))
+            yield from find(syntax, AST(right))
         case ManyResult(value = value):
             for e in value:
-                yield from search(syntax, AST(e))
+                yield from find(syntax, AST(e))
         case NamedResult(value=value):
-            yield from search(syntax, AST(value))
+            yield from find(syntax, AST(value))
         case OrResult(value=value):
-            yield from search(syntax, AST(value))
+            yield from find(syntax, AST(value))
         case _:
             pass
