@@ -8,11 +8,12 @@ import traceback
 from dataclasses import dataclass, replace, asdict
 from weakref import WeakKeyDictionary
 from abc import ABC
-from enum import Enum
-from functools import reduce
-
-from syncraft.ast import MarkedResult, ThenKind, ThenResult, ManyResult, OrResult, A, B, C, S
+from syncraft.ast import ThenKind, ThenResult, ManyResult, OrResult, S
     
+A = TypeVar('A')  # Result type
+B = TypeVar('B')  # Mapped result type
+
+
 InProgress = object()  # Marker for in-progress state, used to prevent re-entrance in recursive calls
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results

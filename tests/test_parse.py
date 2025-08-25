@@ -1,4 +1,5 @@
-from syncraft.parser import AST, literal, variable, parse
+from syncraft.ast import AST
+from syncraft.parser import literal, variable, parse
 import syncraft.generator as gen
 from typing import Any
 

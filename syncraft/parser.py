@@ -13,14 +13,14 @@ from enum import Enum
 from functools import reduce
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, T, ParseResult, Binding, Variable
+from syncraft.ast import Token, TokenSpec, AST, T, ParseResult, Binding, Variable, Bindable
 
 
 @dataclass(frozen=True)
-class ParserState(Generic[T]):
+class ParserState(Bindable, Generic[T]):
     input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
-    binding: Binding[T] = Binding()
+    binding: Binding[ParseResult[T]] = Binding()
     def bind(self, var: Variable, node:ParseResult[T])->ParserState[T]:
         return replace(self, binding=self.binding.bind(var, node))
     

@@ -6,8 +6,9 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, ThenResult, ManyResult, ThenKind, MarkedResult, Right
-from syncraft.ast import Variable, Bindable
+from syncraft.algebra import Algebra, Error, Either, Right
+from syncraft.constraint import Variable, Bindable
+from syncraft.ast import ThenResult, ManyResult, ThenKind, MarkedResult
 from types import MethodType, FunctionType
 
 
@@ -287,35 +288,40 @@ def first(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
 def last(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     return reduce(lambda a, b: a >> b, parsers) if len(parsers) > 0 else success(None)
 
-# def named(* parsers: Syntax[Any, S] | Tuple[str, Syntax[Any, S]]) -> Syntax[Any, S]:
-#     def is_named_parser(x: Any) -> bool:
-#         return isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax)
+def bound(* parsers: Syntax[Any, S] | Tuple[str|Variable, Syntax[Any, S]]) -> Syntax[Any, S]:
+    def is_named_parser(x: Any) -> bool:
+        return isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], (str, Variable)) and isinstance(x[1], Syntax)
     
-#     def to_parser(x: Syntax[Any, S] | Tuple[str, Syntax[Any, S]])->Syntax[Any, S]:
-#         if isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax):
-#             return x[1].bind(x[0])
-#         elif isinstance(x, Syntax):
-#             return x
-#         else:
-#             raise ValueError(f"Invalid parser or tuple: {x}", x)
-#     ret: Optional[Syntax[Any, S]] = None
-#     has_data = False
-#     for p in parsers:
-#         just_parser = to_parser(p)
-#         if has_data:
-#             if ret is not None:
-#                 if is_named_parser(p):
-#                     ret = ret + just_parser
-#                 else:
-#                     ret = ret // just_parser
-#             else:
-#                 ret = just_parser
-#         else:
-#             has_data = is_named_parser(p)
-#             if ret is None:
-#                 ret = just_parser
-#             else:
-#                 ret = ret >> just_parser
+    def to_parser(x: Syntax[Any, S] | Tuple[str|Variable, Syntax[Any, S]])->Syntax[Any, S]:
+        if isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], (str, Variable)) and isinstance(x[1], Syntax):
+            if isinstance(x[0], str):
+                return x[1].mark(x[0])
+            elif isinstance(x[0], Variable):
+                return x[1].bind(x[0])
+            else:
+                raise ValueError(f"Invalid variable type(must be str | Variable): {x[0]}", x)
+        elif isinstance(x, Syntax):
+            return x
+        else:
+            raise ValueError(f"Invalid parser or tuple: {x}", x)
+    ret: Optional[Syntax[Any, S]] = None
+    has_data = False
+    for p in parsers:
+        just_parser = to_parser(p)
+        if has_data:
+            if ret is not None:
+                if is_named_parser(p):
+                    ret = ret + just_parser
+                else:
+                    ret = ret // just_parser
+            else:
+                ret = just_parser
+        else:
+            has_data = is_named_parser(p)
+            if ret is None:
+                ret = just_parser
+            else:
+                ret = ret >> just_parser
     
-#     return ret if ret is not None else success(None) 
+    return ret if ret is not None else success(None) 
 

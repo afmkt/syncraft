@@ -6,23 +6,16 @@ from typing import (
     Optional, Any, TypeVar, Tuple, runtime_checkable, 
     Protocol, Generic, Callable, Union, cast, List
 )
-import collections.abc
-from collections import defaultdict
+
 
 from dataclasses import dataclass, replace, is_dataclass, asdict
 from enum import Enum
 from functools import cached_property
+from syncraft.constraint import Binding, Variable, Bindable
 
 
-@dataclass(frozen=True)
-class Variable:
-    name: str
 
-class Bindable(Protocol):
-    def bind(self, var: Variable, node: ParseResult[Any]) -> Any: ...
-
-
-A = TypeVar('A')  
+A = TypeVar('A')
 B = TypeVar('B')  
 C = TypeVar('C')  
 S = TypeVar('S', bound=Bindable)  
@@ -419,51 +412,6 @@ ParseResult = Union[
     T,
 ]
 
-
-
-K = TypeVar('K')
-V = TypeVar('V')
-class FrozenDict(collections.abc.Mapping, Generic[K, V]):
-    def __init__(self, *args, **kwargs):
-        self._data = dict(*args, **kwargs)
-        self._hash = None
-    def __getitem__(self, key):
-        return self._data[key]
-
-    def __iter__(self):
-        return iter(self._data)
-
-    def __len__(self):
-        return len(self._data)
-        
-    def __hash__(self):
-        if self._hash is None:
-            self._hash = hash(frozenset(self._data.items()))
-        return self._hash
-
-    def __eq__(self, other):
-        if isinstance(other, collections.abc.Mapping):
-            return self._data == other
-        return NotImplemented
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self._data})"
-    
-
-@dataclass(frozen=True)
-class Binding(Generic[T]):
-    bindings : frozenset[Tuple[Variable, Union[ParseResult[T], Tuple[ParseResult[T], ...]]]] = frozenset()
-    def bind(self, var: Variable, node: ParseResult[T]) -> Binding[T]:
-        new_binding = set(self.bindings)
-        new_binding.add((var, node))
-        return Binding(bindings=frozenset(new_binding))
-    
-    def to_dict(self)->FrozenDict[Variable, Tuple[ParseResult[T], ...]]:
-        ret = defaultdict(list)
-        for var, node in self.bindings:
-            ret[var].append(node)
-        return FrozenDict({k: tuple(vs) for k, vs in ret.items()})
-    
 
 
 @dataclass(frozen=True)
