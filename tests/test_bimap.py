@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, List, Tuple
-from syncraft.algebra import NamedResult, Error, ManyResult, OrResult, ThenResult, ThenKind, Bimap, StructuralResult
+from syncraft.ast import NamedResult, ManyResult, OrResult, ThenResult, ThenKind, Biarrow, StructuralResult
+from syncraft.algebra import Error
 from syncraft.parser import literal, parse
 import syncraft.generator as gen
 from syncraft.generator import TokenGen
@@ -273,12 +274,12 @@ def test_optional():
 
 
 def test_or()->None:
-    inc: Bimap[Any, int, int] = Bimap(
+    inc: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, x: (s, x - 1),
     )
     data  = OrResult(value=1)
-    b = data.bimap()
+    b = data.biarrow()
     b = b >> inc
     s, x = b.forward(None, data)
     assert x == 2
@@ -286,12 +287,12 @@ def test_or()->None:
     assert y == data
 
 def test_named()->None:
-    inc: Bimap[Any, NamedResult[int], int] = Bimap(
+    inc: Biarrow[Any, NamedResult[int], int] = Biarrow(
         forward=lambda s, x: (s, x.value + 1),
         inverse=lambda s, y: (s, NamedResult(name="", value=y - 1)),
     )
     data  = NamedResult(name="test", value=1)
-    b = data.bimap()
+    b = data.biarrow()
     c = b >> inc
     s, x = c.forward(None, data)
     assert x == 2
@@ -299,17 +300,17 @@ def test_named()->None:
     assert y == data
 
 def test_many()->None:
-    inc: Bimap[Any, int, int] = Bimap(
+    inc: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, y: (s, y - 1),
     )
 
-    inc2: Bimap[Any, List[int], List[int]] = Bimap(
+    inc2: Biarrow[Any, List[int], List[int]] = Biarrow(
         forward=lambda s, x: (s, [xx + 1 for xx in x]),
         inverse=lambda s, y: (s, [yy - 1 for yy in y]),
     )
     data  = ManyResult(value=(1,2))
-    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
+    b = data.biarrow(Biarrow.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == [3,4]
@@ -317,17 +318,17 @@ def test_many()->None:
     assert y == data
 
 def test_then()->None:
-    inc: Bimap[Any, int, int] = Bimap(
+    inc: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, y: (s, y - 1),
     )
-    inc2: Bimap[Any, Tuple[int, ...], Tuple[int, ...]] = Bimap(
+    inc2: Biarrow[Any, Tuple[int, ...], Tuple[int, ...]] = Biarrow(
         forward=lambda s, x: (s, tuple(xx + 1 for xx in x)),
         inverse=lambda s, y: (s, tuple(yy - 1 for yy in y)),
     )
 
     data  = ThenResult(kind=ThenKind.BOTH, left=1, right=2)
-    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
+    b = data.biarrow(Biarrow.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == (3, 4)
@@ -336,17 +337,17 @@ def test_then()->None:
 
 
 def test_left()->None:
-    inc: Bimap[Any, int, int] = Bimap(
+    inc: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, y: (s, y - 1),
     )
-    inc2: Bimap[Any, int, int] = Bimap(
+    inc2: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, y: (s, y - 1),
     )
 
     data  = ThenResult(kind=ThenKind.LEFT, left=1, right=2)
-    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
+    b = data.biarrow(Biarrow.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == 3
@@ -354,17 +355,17 @@ def test_left()->None:
     assert y == data
 
 def test_right()->None:
-    inc: Bimap[Any, int, int] = Bimap(
+    inc: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, y: (s, y - 1),
     )
-    inc2: Bimap[Any, int, int] = Bimap(
+    inc2: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, y: (s, y - 1),
     )
 
     data  = ThenResult(kind=ThenKind.RIGHT, left=1, right=2)
-    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
+    b = data.biarrow(Biarrow.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == 4
@@ -372,17 +373,17 @@ def test_right()->None:
     assert y == data
 
 def test_nested()->None:
-    inc: Bimap[Any, int, int] = Bimap(
+    inc: Biarrow[Any, int, int] = Biarrow(
         forward=lambda s, x: (s, x + 1),
         inverse=lambda s, y: (s, y - 1),
     )
-    inc2: Bimap[Any, Tuple[int, ...], Tuple[int, ...]] = Bimap(
+    inc2: Biarrow[Any, Tuple[int, ...], Tuple[int, ...]] = Biarrow(
         forward=lambda s, x: (s, tuple(xx + 1 for xx in x)),
         inverse=lambda s, y: (s, tuple(yy - 1 for yy in y)),
     )
 
     data  = ThenResult(kind=ThenKind.BOTH, left=ThenResult(kind=ThenKind.BOTH, left=0, right=1), right=ThenResult(kind=ThenKind.BOTH, left=2, right=3))
-    b = data.bimap(Bimap.when(lambda a: not isinstance(a, StructuralResult), inc))
+    b = data.biarrow(Biarrow.when(lambda a: not isinstance(a, StructuralResult), inc))
     c = b >> inc2
     s, x = c.forward(None, data)
     assert x == (2,3,4,5)

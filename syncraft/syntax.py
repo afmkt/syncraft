@@ -6,7 +6,8 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, ThenResult, ManyResult, ThenKind, NamedResult
+from syncraft.algebra import Algebra, Error, Either, ThenResult, ManyResult, ThenKind, NamedResult, Right
+from syncraft.ast import Variable, Bindable
 from types import MethodType, FunctionType
 
 
@@ -15,7 +16,7 @@ from types import MethodType, FunctionType
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Result type for mapping
 C = TypeVar('C')  # Result type for else branch
-S = TypeVar('S')  # State type
+S = TypeVar('S', bound=Bindable)  # State type
 
 
 
@@ -133,11 +134,15 @@ class Syntax(Generic[A, S]):
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).map(f), meta = self.meta) # type: ignore
 
+    def map_all(self, f: Callable[[Either[Any, Tuple[A, S]]], Either[Any, Tuple[B, S]]]) -> Syntax[B, S]:
+        return self.__class__(lambda cls: self.alg(cls).map_all(f), meta=self.meta) # type: ignore
+
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
         return self.__class__(lambda cls: self.alg(cls).map_error(f), meta=self.meta)
     
     def map_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
         return self.__class__(lambda cls: self.alg(cls).map_state(f), meta=self.meta)
+    
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).flat_map(f)) # type: ignore
@@ -227,16 +232,26 @@ class Syntax(Generic[A, S]):
 
 
 ######################################################################## data processing combinators #########################################################
-    def bind(self, name: str) -> Syntax[NamedResult[A], S]:
-        def bind_f(value: A) -> NamedResult[A]:
-            if isinstance(value, NamedResult):
-                return replace(value, name=name)    
-            else:
-                return NamedResult(name=name, value=value)
-        return self.map(bind_f).describe(name=f'bind("{name}")', fixity='postfix', parameter=[self]) 
+    def bind(self, var: Variable | str) -> Syntax[A | NamedResult[A], S]:
+        if isinstance(var, str):
+            def bind_s(value: A) -> NamedResult[A]:
+                if isinstance(value, NamedResult):
+                    return replace(value, name=var)    
+                else:
+                    return NamedResult(name=var, value=value)
+            return self.map(bind_s).describe(name=f'bind("{var}")', fixity='postfix', parameter=[self]) 
 
-    def assign(self, var: Variable[A]) -> Syntax[A, S]:
-        return self.map(var).describe(name=f'assign({var.name or ""})', fixity='postfix', parameter=[self])
+        else:
+            def bind_v(result: Either[Any, Tuple[A, S]])->Either[Any, Tuple[A, S]]:
+                if isinstance(result, Right):
+                    value, state = result.value
+                    return Right((value, state.bind(var, value)))
+                return result
+            return self.map_all(bind_v).describe(name=f'bind({var.name})', fixity='postfix', parameter=[self])  
+
+
+
+
 
     def dump_error(self, formatter: Optional[Callable[[Error], None]] = None) -> Syntax[A, S]:
         def dump_error_run(err: Any)->Any:
@@ -275,35 +290,35 @@ def first(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
 def last(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     return reduce(lambda a, b: a >> b, parsers) if len(parsers) > 0 else success(None)
 
-def named(* parsers: Syntax[Any, S] | Tuple[str, Syntax[Any, S]]) -> Syntax[Any, S]:
-    def is_named_parser(x: Any) -> bool:
-        return isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax)
+# def named(* parsers: Syntax[Any, S] | Tuple[str, Syntax[Any, S]]) -> Syntax[Any, S]:
+#     def is_named_parser(x: Any) -> bool:
+#         return isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax)
     
-    def to_parser(x: Syntax[Any, S] | Tuple[str, Syntax[Any, S]])->Syntax[Any, S]:
-        if isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax):
-            return x[1].bind(x[0])
-        elif isinstance(x, Syntax):
-            return x
-        else:
-            raise ValueError(f"Invalid parser or tuple: {x}", x)
-    ret: Optional[Syntax[Any, S]] = None
-    has_data = False
-    for p in parsers:
-        just_parser = to_parser(p)
-        if has_data:
-            if ret is not None:
-                if is_named_parser(p):
-                    ret = ret + just_parser
-                else:
-                    ret = ret // just_parser
-            else:
-                ret = just_parser
-        else:
-            has_data = is_named_parser(p)
-            if ret is None:
-                ret = just_parser
-            else:
-                ret = ret >> just_parser
+#     def to_parser(x: Syntax[Any, S] | Tuple[str, Syntax[Any, S]])->Syntax[Any, S]:
+#         if isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax):
+#             return x[1].bind(x[0])
+#         elif isinstance(x, Syntax):
+#             return x
+#         else:
+#             raise ValueError(f"Invalid parser or tuple: {x}", x)
+#     ret: Optional[Syntax[Any, S]] = None
+#     has_data = False
+#     for p in parsers:
+#         just_parser = to_parser(p)
+#         if has_data:
+#             if ret is not None:
+#                 if is_named_parser(p):
+#                     ret = ret + just_parser
+#                 else:
+#                     ret = ret // just_parser
+#             else:
+#                 ret = just_parser
+#         else:
+#             has_data = is_named_parser(p)
+#             if ret is None:
+#                 ret = just_parser
+#             else:
+#                 ret = ret >> just_parser
     
-    return ret if ret is not None else success(None) 
+#     return ret if ret is not None else success(None) 
 

@@ -3,7 +3,7 @@ import re
 from sqlglot import tokenize, TokenType, Parser as GlotParser, exp
 from typing import (
     Optional, List, Any, Tuple,
-    Generic, Callable
+    Generic, Callable, Hashable
 )
 from syncraft.algebra import (
     Either, Left, Right, Error, Algebra
@@ -13,13 +13,16 @@ from enum import Enum
 from functools import reduce
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, T
+from syncraft.ast import Token, TokenSpec, AST, T, ParseResult, Binding, Variable
 
 
 @dataclass(frozen=True)
 class ParserState(Generic[T]):
     input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
+    binding: Binding[T] = Binding()
+    def bind(self, var: Variable, node:ParseResult[T])->ParserState[T]:
+        return replace(self, binding=self.binding.bind(var, node))
     
     def token_sample_string(self)-> str:
         def encode_tokens(*tokens:T) -> str:

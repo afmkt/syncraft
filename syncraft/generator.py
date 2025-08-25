@@ -11,7 +11,8 @@ from syncraft.algebra import (
     OrResult, ManyResult
 )
 
-from syncraft.ast import T, ParseResult, AST, Token, TokenSpec
+from syncraft.ast import T, ParseResult, AST, Token, TokenSpec, Binding, Variable
+
 from syncraft.syntax import Syntax
 from sqlglot import TokenType
 import re
@@ -27,6 +28,9 @@ class GenState(Generic[T]):
     ast: Optional[AST[T]]
     seed: int
     is_pruned: Optional[bool] = None
+    binding: Binding[T] = Binding()
+    def bind(self, var: Variable, node:ParseResult[T])->GenState[T]:
+        return replace(self, binding=self.binding.bind(var, node))
 
     def fork(self, tag: Any) -> GenState[T]:
         return replace(self, seed=hash((self.seed, tag)))
