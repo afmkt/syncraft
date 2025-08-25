@@ -25,7 +25,7 @@ def test1_simple_then() -> None:
 
 
 def test2_named_results() -> None:
-    A, B = literal("a").bind("x").bind('z'), literal("b").bind("y")
+    A, B = literal("a").mark("x").mark('z'), literal("b").mark("y")
     syntax = A // B
     sql = "a b"
     ast = parse(syntax, sql, dialect="sqlite")
@@ -58,7 +58,7 @@ def test3_many_literals() -> None:
 
 
 def test4_mixed_many_named() -> None:
-    A = literal("a").bind("x")
+    A = literal("a").mark("x")
     B = literal("b")
     syntax = (A | B).many()
     sql = "a b a"
@@ -105,9 +105,9 @@ def test_then_flatten():
 
 
 def test_named_in_then():
-    A = literal("a").bind("first")
-    B = literal("b").bind("second")
-    C = literal("c").bind("third")
+    A = literal("a").mark("first")
+    B = literal("b").mark("second")
+    C = literal("c").mark("third")
     syntax = A + B + C
     sql = "a b c"
     ast = parse(syntax, sql, dialect='sqlite')
@@ -122,7 +122,7 @@ def test_named_in_then():
 
 
 def test_named_in_many():
-    A = literal("x").bind("x")
+    A = literal("x").mark("x")
     syntax = A.many()
     sql = "x x x"
     ast = parse(syntax, sql, dialect='sqlite')
@@ -136,8 +136,8 @@ def test_named_in_many():
 
 
 def test_named_in_or():
-    A = literal("a").bind("a")
-    B = literal("b").bind("b")
+    A = literal("a").mark("a")
+    B = literal("b").mark("b")
     syntax = A | B
     sql = "b"
     ast = parse(syntax, sql, dialect='sqlite')
@@ -154,9 +154,9 @@ def test_named_in_or():
 
 
 def test_deep_mix():
-    A = literal("a").bind("a")
+    A = literal("a").mark("a")
     B = literal("b")
-    C = literal("c").bind("c")
+    C = literal("c").mark("c")
     syntax = ((A + B) | C).many() + B
     sql = "a b a b c b"
     ast = parse(syntax, sql, dialect='sqlite')
@@ -205,7 +205,7 @@ def test_nested_many() -> None:
 
 
 def test_named_many() -> None:
-    A = literal("a").bind("alpha")
+    A = literal("a").mark("alpha")
     syntax = A.many()
     sql = "a a"
     ast = parse(syntax, sql, dialect="sqlite")
@@ -215,8 +215,8 @@ def test_named_many() -> None:
 
 
 def test_or_named() -> None:
-    A = literal("a").bind("x")
-    B = literal("b").bind("y")
+    A = literal("a").mark("x")
+    B = literal("b").mark("y")
     syntax = A | B
     sql = "b"
     ast = parse(syntax, sql, dialect="sqlite")
@@ -252,9 +252,9 @@ def test_ambiguous() -> None:
 
 
 def test_combo() -> None:
-    A = literal("a").bind("a")
+    A = literal("a").mark("a")
     B = literal("b")
-    C = literal("c").bind("c")
+    C = literal("c").mark("c")
     syntax = ((A + B).many() | C) + B
     sql = "a b a b c b"
     # Should fail, as we discussed earlier
@@ -263,7 +263,7 @@ def test_combo() -> None:
 
 
 def test_optional():
-    A = literal("a").bind("a")
+    A = literal("a").mark("a")
     syntax = A.optional()
     ast1 = parse(syntax, "", dialect="sqlite")
     v1, _ = ast1.bimap()

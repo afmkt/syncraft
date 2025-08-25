@@ -232,24 +232,21 @@ class Syntax(Generic[A, S]):
 
 
 ######################################################################## data processing combinators #########################################################
-    def bind(self, var: Variable | str) -> Syntax[A | NamedResult[A], S]:
-        if isinstance(var, str):
-            def bind_s(value: A) -> NamedResult[A]:
-                if isinstance(value, NamedResult):
-                    return replace(value, name=var)    
-                else:
-                    return NamedResult(name=var, value=value)
-            return self.map(bind_s).describe(name=f'bind("{var}")', fixity='postfix', parameter=[self]) 
+    def bind(self, var: Variable) -> Syntax[A, S]:
+        def bind_v(result: Either[Any, Tuple[A, S]])->Either[Any, Tuple[A, S]]:
+            if isinstance(result, Right):
+                value, state = result.value
+                return Right((value, state.bind(var, value)))
+            return result
+        return self.map_all(bind_v).describe(name=f'bind({var.name})', fixity='postfix', parameter=[self])  
 
-        else:
-            def bind_v(result: Either[Any, Tuple[A, S]])->Either[Any, Tuple[A, S]]:
-                if isinstance(result, Right):
-                    value, state = result.value
-                    return Right((value, state.bind(var, value)))
-                return result
-            return self.map_all(bind_v).describe(name=f'bind({var.name})', fixity='postfix', parameter=[self])  
-
-
+    def mark(self, var: str) -> Syntax[NamedResult[A], S]:
+        def bind_s(value: A) -> NamedResult[A]:
+            if isinstance(value, NamedResult):
+                return replace(value, name=var)    
+            else:
+                return NamedResult(name=var, value=value)
+        return self.map(bind_s).describe(name=f'bind("{var}")', fixity='postfix', parameter=[self]) 
 
 
 

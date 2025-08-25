@@ -5,7 +5,7 @@ from typing import (
 )
 
 import traceback
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, asdict
 from weakref import WeakKeyDictionary
 from abc import ABC
 from enum import Enum
@@ -56,7 +56,14 @@ class Error:
             state=state,
             previous=self
         )
-
+    def to_list(self)->List[Dict[str, Any]]:
+        lst = []
+        current: Optional[Error] = self
+        while current is not None:
+            d = asdict(current)
+            lst.append({k:v for k,v in d.items() if v is not None and k != 'previous'})
+            current = current.previous
+        return lst
 
 
 @dataclass(frozen=True)        

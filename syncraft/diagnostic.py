@@ -10,7 +10,7 @@ from sqlglot.expressions import Expression
 
 
 def rich_error(err: Error)->None:
-    lst = err.to_list(lambda _: True)
+    lst = err.to_list()
     root, leaf = lst[0], lst[-1]
     tbl = RichTable(title="Parser Error", show_lines=True)
     tbl.add_column("Root Parser Field", style="blue")
@@ -26,9 +26,9 @@ def rich_error(err: Error)->None:
     print(tbl)
 
 
-def rich_parser(p: Any)-> None:
+def rich_parser(p: Syntax)-> None:
     print("Parser Debug Information:")
-    print(p._string or repr(p))
+    print(p.meta.to_string(lambda _ : True) or repr(p))
 
 def rich_debug(this: Algebra[Any, ParserState[Any]], 
                state: ParserState[Any], 
@@ -44,8 +44,8 @@ def rich_debug(this: Algebra[Any, ParserState[Any]],
                 return prefix + value.sql()
             elif isinstance(value, Token):
                 return prefix + f"{value.token_type.name}({value.text})"
-            elif isinstance(value, (Error, ParserState, Syntax)):
-                return prefix + (value._string or 'N/A')
+            elif isinstance(value, Syntax):
+                return prefix + (value.meta.to_string(lambda _ : True) or 'N/A')
             else:
                 return prefix + str(value)
 
