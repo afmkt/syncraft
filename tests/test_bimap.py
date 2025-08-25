@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, List, Tuple
-from syncraft.ast import NamedResult, ManyResult, OrResult, ThenResult, ThenKind, Biarrow, StructuralResult
+from syncraft.ast import MarkedResult, ManyResult, OrResult, ThenResult, ThenKind, Biarrow, StructuralResult
 from syncraft.algebra import Error
 from syncraft.parser import literal, parse
 import syncraft.generator as gen
@@ -117,7 +117,7 @@ def test_named_in_then():
     value, bmap = ast.bimap()
     assert isinstance(value, tuple)
     print(value)
-    assert set(x.name for x in value if isinstance(x, NamedResult)) == {"first", "second", "third"}
+    assert set(x.name for x in value if isinstance(x, MarkedResult)) == {"first", "second", "third"}
     assert bmap(value) == ast
 
 
@@ -131,7 +131,7 @@ def test_named_in_many():
     assert ast == generated
     value, bmap = ast.bimap()
     assert isinstance(value, list)
-    assert all(isinstance(v, NamedResult) for v in value if isinstance(v, NamedResult))
+    assert all(isinstance(v, MarkedResult) for v in value if isinstance(v, MarkedResult))
     assert bmap(value) == ast
 
 
@@ -145,7 +145,7 @@ def test_named_in_or():
     generated = gen.generate(syntax, ast)
     assert ast == generated
     value, bmap = ast.bimap()
-    assert isinstance(value, NamedResult)
+    assert isinstance(value, MarkedResult)
     assert value.name == "b"
     assert bmap(value) == ast    
 
@@ -209,9 +209,9 @@ def test_named_many() -> None:
     syntax = A.many()
     sql = "a a"
     ast = parse(syntax, sql, dialect="sqlite")
-    # Expect [NamedResult("alpha", "a"), NamedResult("alpha", "a")]
+    # Expect [MarkedResult("alpha", "a"), MarkedResult("alpha", "a")]
     flattened, _ = ast.bimap()
-    assert all(isinstance(x, NamedResult) for x in flattened)
+    assert all(isinstance(x, MarkedResult) for x in flattened)
 
 
 def test_or_named() -> None:
@@ -220,10 +220,10 @@ def test_or_named() -> None:
     syntax = A | B
     sql = "b"
     ast = parse(syntax, sql, dialect="sqlite")
-    # Either NamedResult("y", "b") or just "b", depending on your design
+    # Either MarkedResult("y", "b") or just "b", depending on your design
     assert isinstance(ast.focus, OrResult)
     value, _ = ast.bimap()
-    assert value == NamedResult(name="y", value=TokenGen.from_string("b"))
+    assert value == MarkedResult(name="y", value=TokenGen.from_string("b"))
 
 
 def test_then_associativity() -> None:
@@ -270,7 +270,7 @@ def test_optional():
     assert v1 is None
     ast2 = parse(syntax, "a", dialect="sqlite")
     v2, _ = ast2.bimap()
-    assert v2 == NamedResult(name='a', value=TokenGen.from_string('a'))
+    assert v2 == MarkedResult(name='a', value=TokenGen.from_string('a'))
 
 
 def test_or()->None:
@@ -287,11 +287,11 @@ def test_or()->None:
     assert y == data
 
 def test_named()->None:
-    inc: Biarrow[Any, NamedResult[int], int] = Biarrow(
+    inc: Biarrow[Any, MarkedResult[int], int] = Biarrow(
         forward=lambda s, x: (s, x.value + 1),
-        inverse=lambda s, y: (s, NamedResult(name="", value=y - 1)),
+        inverse=lambda s, y: (s, MarkedResult(name="", value=y - 1)),
     )
-    data  = NamedResult(name="test", value=1)
+    data  = MarkedResult(name="test", value=1)
     b = data.biarrow()
     c = b >> inc
     s, x = c.forward(None, data)

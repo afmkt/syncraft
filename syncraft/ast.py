@@ -141,35 +141,35 @@ class StructuralResult:
         return Bimap.identity()
         
 @dataclass(frozen=True)
-class NamedResult(Generic[A], StructuralResult):
+class MarkedResult(Generic[A], StructuralResult):
     name: str
     value: A
     @classmethod
-    def bimap(cls, f: Bimap[A, B])->Bimap[NamedResult[A], NamedResult[B]]:
-        def namedf(a: NamedResult[A], s: Any) -> Tuple[NamedResult[B], Any, Callable[[NamedResult[B], Any], Tuple[NamedResult[A], Any]]]:
+    def bimap(cls, f: Bimap[A, B])->Bimap[MarkedResult[A], MarkedResult[B]]:
+        def namedf(a: MarkedResult[A], s: Any) -> Tuple[MarkedResult[B], Any, Callable[[MarkedResult[B], Any], Tuple[MarkedResult[A], Any]]]:
             newf = a.value.bimap(f) if isinstance(a.value, StructuralResult) else f                
             b, s1, inv = newf(a.value, s)
-            def invf(b: NamedResult[B], s2: Any) -> Tuple[NamedResult[A], Any]:
+            def invf(b: MarkedResult[B], s2: Any) -> Tuple[MarkedResult[A], Any]:
                 a2, s3 = inv(b.value, s2)
-                return NamedResult(name=a.name, value=a2), s3
-            return NamedResult(name=a.name, value=b), s1, invf
+                return MarkedResult(name=a.name, value=a2), s3
+            return MarkedResult(name=a.name, value=b), s1, invf
         return Bimap(namedf)
     
     def biarrow(self, 
               before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
               after: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity()
-              ) -> Biarrow[Any, NamedResult[A], NamedResult[Any]]:
+              ) -> Biarrow[Any, MarkedResult[A], MarkedResult[Any]]:
         
         inner_b = self.value.biarrow(before, after) if isinstance(self.value, StructuralResult) else before(self.value) >> after(self.value)
-        def fwd(s: S, a: NamedResult[A])-> Tuple[S, NamedResult[Any]]:
+        def fwd(s: S, a: MarkedResult[A])-> Tuple[S, MarkedResult[Any]]:
             assert a == self, f"Expected {self}, got {a}"
             inner_s, inner_v = inner_b.forward(s, a.value)
-            return (inner_s, replace(a, value=inner_v)) if not isinstance(inner_v, NamedResult) else (inner_s, inner_v)
+            return (inner_s, replace(a, value=inner_v)) if not isinstance(inner_v, MarkedResult) else (inner_s, inner_v)
         
-        def inv(s: S, a: NamedResult[Any]) -> Tuple[S, NamedResult[A]]:
-            assert isinstance(a, NamedResult), f"Expected NamedResult, got {type(a)}"
+        def inv(s: S, a: MarkedResult[Any]) -> Tuple[S, MarkedResult[A]]:
+            assert isinstance(a, MarkedResult), f"Expected MarkedResult, got {type(a)}"
             inner_s, inner_v = inner_b.inverse(s, a.value)
-            return (inner_s, replace(self, value=inner_v)) if not isinstance(inner_v, NamedResult) else (inner_s, replace(self, value=inner_v.value))
+            return (inner_s, replace(self, value=inner_v)) if not isinstance(inner_v, MarkedResult) else (inner_s, replace(self, value=inner_v.value))
         ret: Biarrow[Any, Any, Any]  = Biarrow(
             forward=fwd,
             inverse=inv
@@ -413,7 +413,7 @@ T = TypeVar('T', bound=TokenProtocol)
 
 ParseResult = Union[
     ThenResult['ParseResult[T]', 'ParseResult[T]'], 
-    NamedResult['ParseResult[T]'],
+    MarkedResult['ParseResult[T]'],
     ManyResult['ParseResult[T]'],
     OrResult['ParseResult[T]'],
     T,
@@ -484,14 +484,14 @@ class AST(Generic[T]):
             return self.focus, lambda x: replace(self, focus=x)
         
     def wrapper(self)-> Callable[[Any], Any]:
-        if isinstance(self.focus, NamedResult):
-            focus = cast(NamedResult[Any], self.focus)
-            return lambda x: NamedResult(name = focus.name, value = x)
+        if isinstance(self.focus, MarkedResult):
+            focus = cast(MarkedResult[Any], self.focus)
+            return lambda x: MarkedResult(name = focus.name, value = x)
         else:
             return lambda x: x
         
     def is_named(self) -> bool: 
-        return isinstance(self.focus, NamedResult)
+        return isinstance(self.focus, MarkedResult)
 
     def left(self) -> Optional[AST[T]]:
         match self.focus:
@@ -520,13 +520,13 @@ class AST(Generic[T]):
                     return replace(self, focus=value, parent=self, pruned=self.pruned)
                 else:
                     raise IndexError(f"Index {index} out of bounds for OrResult")
-            case NamedResult(value=value):
+            case MarkedResult(value=value):
                 return replace(self, focus=value, parent=self, pruned=self.pruned)
             case _:
                 raise TypeError(f"Invalid focus type({self.focus}) for down traversal")
 
     def how_many(self)->int:
-        focus = self.focus.value if isinstance(self.focus, NamedResult) else self.focus
+        focus = self.focus.value if isinstance(self.focus, MarkedResult) else self.focus
         match focus:
             case ManyResult(value=children):
                 return len(children)

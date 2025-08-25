@@ -11,7 +11,7 @@ from abc import ABC
 from enum import Enum
 from functools import reduce
 
-from syncraft.ast import NamedResult, ThenKind, ThenResult, ManyResult, OrResult, A, B, C, S
+from syncraft.ast import MarkedResult, ThenKind, ThenResult, ManyResult, OrResult, A, B, C, S
     
 InProgress = object()  # Marker for in-progress state, used to prevent re-entrance in recursive calls
 L = TypeVar('L')  # Left type for combined results

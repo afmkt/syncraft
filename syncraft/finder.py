@@ -6,7 +6,7 @@ from typing import (
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Either, Right, 
-    OrResult, ManyResult, ThenResult, NamedResult
+    OrResult, ManyResult, ThenResult, MarkedResult
 )
 
 from syncraft.ast import T, ParseResult, AST
@@ -71,7 +71,7 @@ def find(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, N
         case ManyResult(value = value):
             for e in value:
                 yield from find(syntax, AST(e))
-        case NamedResult(value=value):
+        case MarkedResult(value=value):
             yield from find(syntax, AST(value))
         case OrResult(value=value):
             yield from find(syntax, AST(value))

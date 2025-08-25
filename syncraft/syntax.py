@@ -6,7 +6,7 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, ThenResult, ManyResult, ThenKind, NamedResult, Right
+from syncraft.algebra import Algebra, Error, Either, ThenResult, ManyResult, ThenKind, MarkedResult, Right
 from syncraft.ast import Variable, Bindable
 from types import MethodType, FunctionType
 
@@ -240,12 +240,12 @@ class Syntax(Generic[A, S]):
             return result
         return self.map_all(bind_v).describe(name=f'bind({var.name})', fixity='postfix', parameter=[self])  
 
-    def mark(self, var: str) -> Syntax[NamedResult[A], S]:
-        def bind_s(value: A) -> NamedResult[A]:
-            if isinstance(value, NamedResult):
+    def mark(self, var: str) -> Syntax[MarkedResult[A], S]:
+        def bind_s(value: A) -> MarkedResult[A]:
+            if isinstance(value, MarkedResult):
                 return replace(value, name=var)    
             else:
-                return NamedResult(name=var, value=value)
+                return MarkedResult(name=var, value=value)
         return self.map(bind_s).describe(name=f'bind("{var}")', fixity='postfix', parameter=[self]) 
 
 
