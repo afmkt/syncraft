@@ -101,18 +101,11 @@ class Biarrow(Generic[S, A, B]):
 
     
 class StructuralResult:
-    def biarrow(self, 
-              before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
-              after: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity()
-              ) -> Biarrow[Any, Any, Any]:
-        return Biarrow.identity()
+
     def bimap(self, f: Bimap[Any, Any]=Bimap.identity())->Tuple[Any, Callable[[Any], Any]]:
         return f(self)
 
-    def traverse(self, r: Reducer[Any, Any], s: Any) -> Any:
-        return s
-
-        
+    
 @dataclass(frozen=True)
 class MarkedResult(Generic[A], StructuralResult):
     name: str
@@ -121,62 +114,19 @@ class MarkedResult(Generic[A], StructuralResult):
         b, inv = self.value.bimap(f) if isinstance(self.value, StructuralResult) else f(self.value)
         return MarkedResult(name=self.name, value=b), lambda b: replace(self, value=inv(b.value))
 
-    
-    def biarrow(self, 
-              before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
-              after: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity()
-              ) -> Biarrow[Any, MarkedResult[A], MarkedResult[Any]]:
-        
-        inner_b = self.value.biarrow(before, after) if isinstance(self.value, StructuralResult) else before(self.value) >> after(self.value)
-        def fwd(s: S, a: MarkedResult[A])-> Tuple[S, MarkedResult[Any]]:
-            assert a == self, f"Expected {self}, got {a}"
-            inner_s, inner_v = inner_b.forward(s, a.value)
-            return (inner_s, replace(a, value=inner_v)) if not isinstance(inner_v, MarkedResult) else (inner_s, inner_v)
-        
-        def inv(s: S, a: MarkedResult[Any]) -> Tuple[S, MarkedResult[A]]:
-            assert isinstance(a, MarkedResult), f"Expected MarkedResult, got {type(a)}"
-            inner_s, inner_v = inner_b.inverse(s, a.value)
-            return (inner_s, replace(self, value=inner_v)) if not isinstance(inner_v, MarkedResult) else (inner_s, replace(self, value=inner_v.value))
-        ret: Biarrow[Any, Any, Any]  = Biarrow(
-            forward=fwd,
-            inverse=inv
-        )    
-        return before(self) >> ret >> after(self)
+
 @dataclass(eq=True, frozen=True)
 class ManyResult(Generic[A], StructuralResult):
     value: Tuple[A, ...]
     def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[List[B], Callable[[List[B]], ManyResult[A]]]:
         assert self.value
         forward = [v.bimap(f) if isinstance(v, StructuralResult) else f(v) for v in self.value]
-        return [b for b, _ in forward], lambda b: replace(self, value=tuple([forward[-1][1](bb) for bb in b]))
+        def invf(b: List[B]) -> ManyResult[A]:
+            assert len(b) <= len(forward)
+            return replace(self, value=tuple([forward[i][1](bb) for i, bb in enumerate(b)]))
+        return [b for b, _ in forward], invf
 
 
-    def biarrow(self, 
-              before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
-              after: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity()
-              ) -> Biarrow[Any, ManyResult[A], List[A]]:
-        # We don't allow zero length ManyResult e.g. many(at_least >= 1) at the syntax level
-        # so inner_b has at least 1 element
-        assert len(self.value) > 0, "ManyResult must have at least one element"
-        inner_b = [v.biarrow(before, after) if isinstance(v, StructuralResult) else before(v) >> after(v) for v in self.value]
-        def fwd(s: Any, a: ManyResult[A]) -> Tuple[Any, List[A]]:
-            assert a == self, f"Expected {self}, got {a}"
-            return s, [inner_b[i].forward(s, v)[1] for i, v in enumerate(a.value)]
-            
-        def inv(s: Any, a: List[A]) -> Tuple[Any, ManyResult[A]]:
-            assert isinstance(a, list), f"Expected list, got {type(a)}"
-            ret = [inner_b[i].inverse(s, v)[1] for i, v in enumerate(a)]
-            if len(ret) <= len(inner_b):
-                return s, ManyResult(value=tuple(ret))
-            else:
-                extra = [inner_b[-1].inverse(s, v)[1] for v in a[len(inner_b):]]
-                return s, ManyResult(value=tuple(ret + extra))
-
-        ret = Biarrow(
-            forward=fwd,
-            inverse=inv
-        )    
-        return before(self) >> ret >> after(self)
 
 @dataclass(eq=True, frozen=True)
 class OrResult(Generic[A], StructuralResult):
@@ -184,26 +134,7 @@ class OrResult(Generic[A], StructuralResult):
     def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[B, Callable[[B], OrResult[A]]]:
         b, inv = self.value.bimap(f) if isinstance(self.value, StructuralResult) else f(self.value)
         return b, lambda b: replace(self, value=inv(b))
-        
 
-    def biarrow(self, 
-              before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
-              after: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity()              
-              ) -> Biarrow[Any, OrResult[A], Any]:
-        inner_b = self.value.biarrow(before, after) if isinstance(self.value, StructuralResult) else before(self.value) >> after(self.value)
-        def fwd(s: Any, a: OrResult[A]) -> Tuple[Any, Any]:
-            assert a == self, f"Expected {self}, got {a}"
-            return inner_b.forward(s, a.value)
-        
-        def inv(s: Any, a: Any) -> Tuple[Any, OrResult[A]]:
-            inner_s, inner_v = inner_b.inverse(s, a)
-            return inner_s, OrResult(value=inner_v) 
-        
-        ret = Biarrow(
-            forward=fwd,
-            inverse=inv
-        )    
-        return before(self) >> ret >> after(self)
 class ThenKind(Enum):
     BOTH = '+'
     LEFT = '//'
@@ -290,53 +221,7 @@ class ThenResult(Generic[A, B], StructuralResult):
             return left_arity + right_arity
         else:
             return 1
-                
-    def biarrow(self, 
-              before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
-              after: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity()            
-              ) -> Biarrow[Any, ThenResult[A, B], Tuple[Any, ...] | Any]:
-        kind = self.kind
-        lb = self.left.biarrow(before, after) if isinstance(self.left, StructuralResult) else before(self.left) >> after(self.left)
-        rb = self.right.biarrow(before, after) if isinstance(self.right, StructuralResult) else before(self.right) >> after(self.right)
-        left_size = self.left.arity() if isinstance(self.left, ThenResult) else 1
-        right_size = self.right.arity() if isinstance(self.right, ThenResult) else 1
-        def fwd(s : S, a : ThenResult[A, B]) -> Tuple[S, Tuple[Any, ...] | Any]:
-            assert a == self, f"Expected {self}, got {a}"
-            match kind:
-                case ThenKind.LEFT:
-                    return lb.forward(s, a.left)
-                case ThenKind.RIGHT:
-                    return rb.forward(s, a.right)
-                case ThenKind.BOTH:
-                    s1, left_v = lb.forward(s, a.left)
-                    s2, right_v = rb.forward(s1, a.right)
-                    left_v = (left_v,) if not isinstance(a.left, ThenResult) else left_v
-                    right_v = (right_v,) if not isinstance(a.right, ThenResult) else right_v
-                    return s2, left_v + right_v
-
-        def inv(s: S, b: Tuple[Any, ...] | Any) -> Tuple[S, ThenResult[A, B]]:
-            match kind:
-                case ThenKind.LEFT:
-                    s1, lv = lb.inverse(s, b)
-                    return s1, replace(self, left=lv)
-                case ThenKind.RIGHT:
-                    s1, rv = rb.inverse(s, b)
-                    return s1, replace(self, right=rv)
-                case ThenKind.BOTH:
-                    lraw = b[:left_size]
-                    rraw = b[left_size:left_size + right_size]
-                    lraw = lraw[0] if left_size == 1 else lraw
-                    rraw = rraw[0] if right_size == 1 else rraw
-                    s1, lv = lb.inverse(s, lraw)
-                    s2, rv = rb.inverse(s1, rraw)
-                    return s2, replace(self, left=lv, right=rv)
-            
-        ret: Biarrow[Any, Any, Any] = Biarrow(
-            forward=fwd,
-            inverse=inv
-        )
-        return before(self) >> ret >> after(self)
-
+        
 @runtime_checkable
 class TokenProtocol(Protocol):
     @property

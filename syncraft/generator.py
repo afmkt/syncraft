@@ -28,7 +28,7 @@ class GenState(Bindable, Generic[T]):
     ast: Optional[AST[T]]
     seed: int
     is_pruned: Optional[bool] = None
-    binding: Binding[ParseResult[T]] = Binding()
+    binding: Binding = Binding()
     def bind(self, var: Variable, node:ParseResult[T])->GenState[T]:
         return replace(self, binding=self.binding.bind(var, node))
 
