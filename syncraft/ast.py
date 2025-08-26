@@ -182,7 +182,7 @@ class ThenResult(Generic[A, B], StructuralResult):
             return tuple(ret)
         return ret, invf
 
-    def bimap(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[MarkedThen, Callable[[MarkedThen], ThenResult[A, B]]]:
+    def bimap(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[FlatThen, Callable[[FlatThen], ThenResult[A, B]]]:
         match self.kind:
             case ThenKind.LEFT:
                 lb, linv = self.left.bimap(f) if isinstance(self.left, StructuralResult) else f(self.left)
@@ -206,8 +206,11 @@ class ThenResult(Generic[A, B], StructuralResult):
                     ra = rinv(rraw)
                     return replace(self, left=la, right=ra)
                 return left_v + right_v, invf
-                # data, func = ThenResult.collect_marked(left_v + right_v)
-                # return data, lambda d: invf(func(d))
+            
+    def bimap_collected(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[MarkedThen, Callable[[MarkedThen], ThenResult[A, B]]]:
+        data, invf = self.bimap(f)                
+        data, func = ThenResult.collect_marked(data)
+        return data, lambda d: invf(func(d))
 
 
     def arity(self)->int:
