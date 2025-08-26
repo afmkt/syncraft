@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import (
     Optional, Any, TypeVar, Tuple, runtime_checkable, 
-    Protocol, Generic, Callable, Union, cast, List
+    Dict, Generic, Callable, Union, cast, List, Protocol, Type
 )
 
 
@@ -20,76 +20,53 @@ B = TypeVar('B')
 C = TypeVar('C')  
 S = TypeVar('S', bound=Bindable)  
 
+@dataclass(frozen=True)
+class Reducer(Generic[A, S]):
+    run_f: Callable[[A, S], S]
+    def __call__(self, a: A, s: S) -> S:
+        return self.run_f(a, s)
+    
+    def map(self, f: Callable[[B], A]) -> Reducer[B, S]:
+        def map_run(b: B, s: S) -> S:
+            return self(f(b), s)
+        return Reducer(map_run)
+    
 
+    
 @dataclass(frozen=True)
 class Bimap(Generic[A, B]):
-    run_f: Callable[[A, Any], Tuple[B, Any, Callable[[B, Any], Tuple[A, Any]]]]
-    def __call__(self, a: A, s: Any) -> Tuple[B, Any, Callable[[B, Any], Tuple[A, Any]]]:
-        return self.run_f(a, s)    
+    run_f: Callable[[A], Tuple[B, Callable[[B], A]]]
+    def __call__(self, a: A) -> Tuple[B, Callable[[B], A]]:
+        return self.run_f(a)    
     def __rshift__(self, other: Bimap[B, C]) -> Bimap[A, C]:
-        def then_run(a: A, s: Any) -> Tuple[C, Any, Callable[[C, Any], Tuple[A, Any]]]:
-            b, s1, inv1 = self(a, s)
-            c, s2, inv2 = other(b, s1)
-            def inv(c2: C, s3: Any) -> Tuple[A, Any]:
-                b2, s4 = inv2(c2, s3)
-                a2, s5 = inv1(b2, s4)
-                return a2, s5
-            return c, s2, inv
+        def then_run(a: A) -> Tuple[C, Callable[[C], A]]:
+            b, inv1 = self(a)
+            c, inv2 = other(b)
+            def inv(c2: C) -> A:
+                return inv1(inv2(c2))
+            return c, inv
         return Bimap(then_run)
     @staticmethod
     def const(a: B)->Bimap[B, B]:
-        return Bimap(lambda _, s: (a, s, lambda b, s1: (b, s1)))
+        return Bimap(lambda _: (a, lambda b: b))
 
     @staticmethod
     def identity()->Bimap[Any, Any]:
-        return Bimap(lambda a, s: (a, s, lambda b, s1: (b, s1)))
+        return Bimap(lambda a: (a, lambda b: b))
 
     @staticmethod
-    def when(cond: Callable[[A, Any], bool],
+    def when(cond: Callable[[A], bool],
              then: Bimap[A, B],
              otherwise: Optional[Bimap[A, C]] = None) -> Bimap[A, A | B | C]:
-        def when_run(a:A, s:Any) -> Tuple[A | B | C, Any, Callable[[A | B | C, Any], Tuple[A, Any]]]:
-            bimap = then if cond(a, s) else (otherwise if otherwise is not None else Bimap.identity())
-            abc, s1, inv = bimap(a, s)
-            def inv_f(b: Any, s2: Any) -> Tuple[A, Any]:
-                return inv(b, s2)
-            return abc, s1, inv_f
+        def when_run(a:A) -> Tuple[A | B | C, Callable[[A | B | C], A]]:
+            bimap = then if cond(a) else (otherwise if otherwise is not None else Bimap.identity())
+            abc, inv = bimap(a)
+            def inv_f(b: Any) -> A:
+                return inv(b)
+            return abc, inv_f
         return Bimap(when_run)
     
-    @staticmethod
-    def aggregate(f: Callable[[A, Any], Any])->Bimap[A, A]:
-        def agg_run(a: A, s: Any) -> Tuple[A, Any, Callable[[A, Any], Tuple[A, Any]]]:
-            s1 = f(a, s)
-            return a, s1, lambda b, s2: (b, s2)
-        return Bimap(agg_run)
     
-    @staticmethod
-    def peek(f: Callable[[A, Any], None]) -> Bimap[A, A]:
-        def peek_run(a: A, s: Any) -> Tuple[A, Any, Callable[[A, Any], Tuple[A, Any]]]:
-            f(a, s)
-            return a, s, lambda b, s1: (b, s1)
-        return Bimap(peek_run)
-    
-    @staticmethod
-    def map(f: Callable[[A], B], g: Callable[[B], A]) -> Bimap[A, B]:
-        def map_run(a: A, s: Any) -> Tuple[B, Any, Callable[[B, Any], Tuple[A, Any]]]:
-            b = f(a)
-            return b, s, lambda b2, s1: (g(b2), s1)
-        return Bimap(map_run)
-    
-    @staticmethod
-    def zip(f: Bimap[A, B], g: Bimap[A, C]) -> Bimap[A, Tuple[B, C]]:
-        def zip_run(a: A, s: Any) -> Tuple[Tuple[B, C], Any, Callable[[Tuple[B, C], Any], Tuple[A, Any]]]:
-            a1, s1, inv1 = f(a, s)
-            a2, s2, inv2 = g(a, s1)
-            def inv(aa: Tuple[B, C], ss)->Tuple[A, Any]:
-                a1b, a2b = aa
-                a1c, s5 = inv1(a1b, ss)
-                a2c, s6 = inv2(a2b, s5)
-                assert a1c == a2c, f"Expected {a1c} == {a2c}"
-                return a1c, s6
-            return (a1, a2), s2, inv
-        return Bimap(zip_run)
 
 @dataclass(frozen=True)
 class Biarrow(Generic[S, A, B]):
@@ -129,24 +106,21 @@ class StructuralResult:
               after: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity()
               ) -> Biarrow[Any, Any, Any]:
         return Biarrow.identity()
-    @classmethod
-    def bimap(cls, f: Bimap[Any, Any])->Bimap[Any, Any]:
-        return Bimap.identity()
+    def bimap(self, f: Bimap[Any, Any]=Bimap.identity())->Tuple[Any, Callable[[Any], Any]]:
+        return f(self)
+
+    def traverse(self, r: Reducer[Any, Any], s: Any) -> Any:
+        return s
+
         
 @dataclass(frozen=True)
 class MarkedResult(Generic[A], StructuralResult):
     name: str
     value: A
-    @classmethod
-    def bimap(cls, f: Bimap[A, B])->Bimap[MarkedResult[A], MarkedResult[B]]:
-        def namedf(a: MarkedResult[A], s: Any) -> Tuple[MarkedResult[B], Any, Callable[[MarkedResult[B], Any], Tuple[MarkedResult[A], Any]]]:
-            newf = a.value.bimap(f) if isinstance(a.value, StructuralResult) else f                
-            b, s1, inv = newf(a.value, s)
-            def invf(b: MarkedResult[B], s2: Any) -> Tuple[MarkedResult[A], Any]:
-                a2, s3 = inv(b.value, s2)
-                return MarkedResult(name=a.name, value=a2), s3
-            return MarkedResult(name=a.name, value=b), s1, invf
-        return Bimap(namedf)
+    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[MarkedResult[B], Callable[[MarkedResult[B]], MarkedResult[A]]]:
+        b, inv = self.value.bimap(f) if isinstance(self.value, StructuralResult) else f(self.value)
+        return MarkedResult(name=self.name, value=b), lambda b: replace(self, value=inv(b.value))
+
     
     def biarrow(self, 
               before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
@@ -171,33 +145,11 @@ class MarkedResult(Generic[A], StructuralResult):
 @dataclass(eq=True, frozen=True)
 class ManyResult(Generic[A], StructuralResult):
     value: Tuple[A, ...]
-    @classmethod
-    def bimap(cls, f: Bimap[A, B])->Bimap[ManyResult[A], List[B]]:
-        def manyf(a: ManyResult[A], s: Any) -> Tuple[List[B], Any, Callable[[List[B], Any], Tuple[ManyResult[A], Any]]]:
-            assert len(a.value) > 0, "ManyResult must have at least one element"
-            newf = a.value.bimap(f) if isinstance(a.value, StructuralResult) else f
-            forward = []
-            for item in a.value:
-                b, s, inv = newf(item, s)
-                forward.append((b, s, inv))
-            def invf(b: List[B], s2: Any) -> Tuple[ManyResult[A], Any]:
-                if len(b) <= len(forward):
-                    ret = []
-                    for i, item in enumerate(b):
-                        aa, s2 = forward[i][2](item, s2)
-                        ret.append(aa)
-                    return ManyResult(value=tuple(ret)), s2
-                else: 
-                    ret = []
-                    for i in range(len(forward)):
-                        aa, s2 = forward[i][2](b[i], s2)
-                        ret.append(aa)
+    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[List[B], Callable[[List[B]], ManyResult[A]]]:
+        assert self.value
+        forward = [v.bimap(f) if isinstance(v, StructuralResult) else f(v) for v in self.value]
+        return [b for b, _ in forward], lambda b: replace(self, value=tuple([forward[-1][1](bb) for bb in b]))
 
-                    for item in b[len(forward):]:
-                        aa, s2 = forward[-1][2](item, s2)
-                    return ManyResult(value=tuple(ret)), s2
-            return [b for b, s, inv in forward], s, invf
-        return Bimap(manyf)
 
     def biarrow(self, 
               before: Callable[[Any], Biarrow[Any, Any, Any]] = lambda _: Biarrow.identity(),
@@ -229,16 +181,9 @@ class ManyResult(Generic[A], StructuralResult):
 @dataclass(eq=True, frozen=True)
 class OrResult(Generic[A], StructuralResult):
     value: A
-    @classmethod
-    def bimap(cls, f: Bimap[A, B])->Bimap[OrResult[A], B]:
-        def orf(a: OrResult[A], s: Any) -> Tuple[B, Any, Callable[[B, Any], Tuple[OrResult[A], Any]]]:
-            newf = a.value.bimap(f) if isinstance(a.value, StructuralResult) else f
-            b, s1, inv = newf(a.value, s)
-            def invf(b2: B, s2: Any) -> Tuple[OrResult[A], Any]:
-                a2, s3 = inv(b2, s2)
-                return OrResult(value=a2), s3
-            return b, s1, invf
-        return Bimap(orf)
+    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[B, Callable[[B], OrResult[A]]]:
+        b, inv = self.value.bimap(f) if isinstance(self.value, StructuralResult) else f(self.value)
+        return b, lambda b: replace(self, value=inv(b))
         
 
     def biarrow(self, 
@@ -264,46 +209,74 @@ class ThenKind(Enum):
     LEFT = '//'
     RIGHT = '>>'
     
+FlatThen = Tuple[Any, ...]
+MarkedThen = Tuple[Dict[str, Any] | Any, FlatThen]
+
 @dataclass(eq=True, frozen=True)
 class ThenResult(Generic[A, B], StructuralResult):
     kind: ThenKind
     left: A
     right: B
-    @classmethod
-    def bimap(cls, f: Bimap[Any, Any]) -> Bimap[Any, Any]:
-        def thenf(a: ThenResult[A, B], s: Any)->Tuple[Any, Any, Callable[[Any, Any], Tuple[ThenResult[A, B], Any]]]:
-            left_size = a.left.arity() if isinstance(a.left, ThenResult) else 1
-            right_size = a.right.arity() if isinstance(a.right, ThenResult) else 1
-            new_leftf = a.left.bimap(f) if isinstance(a.left, StructuralResult) else f
-            new_rightf = a.right.bimap(f) if isinstance(a.right, StructuralResult) else f
-            match a.kind:
-                case ThenKind.LEFT:
-                    lb, ls, linv = new_leftf(a.left, s)
-                    def invf_left(aa: Any, s: Any) -> Tuple[ThenResult[A, B], Any]:
-                        ll, s = linv(aa, s)
-                        return ThenResult(kind=ThenKind.LEFT, left=ll, right=a.right), s
-                    return lb, ls, invf_left
-                case ThenKind.RIGHT:
-                    rb, rs, rinv = new_rightf(a.right, s)
-                    def invf_right(aa: Any, s: Any) -> Tuple[ThenResult[A, B], Any]:
-                        rr, s = rinv(aa, s)
-                        return ThenResult(kind=ThenKind.RIGHT, left=a.left, right=rr), s
-                    return rb, rs, invf_right
-                case ThenKind.BOTH:
-                    lb, ls, linv = new_leftf(a.left, s)
-                    rb, rs, rinv = new_rightf(a.right, ls)
-                    left_v = (lb,) if not isinstance(a.left, ThenResult) else lb
-                    right_v = (rb,) if not isinstance(a.right, ThenResult) else rb
-                    def invf(b: Tuple[Any, ...], s: Any) -> Tuple[ThenResult[A, B], Any]:
-                        lraw = b[:left_size]
-                        rraw = b[left_size:left_size + right_size]
-                        lraw = lraw[0] if left_size == 1 else lraw
-                        rraw = rraw[0] if right_size == 1 else rraw
-                        la, ls = linv(lraw, s)
-                        ra, rs = rinv(rraw, ls)
-                        return ThenResult(kind=a.kind, left=la, right=ra), rs
-                    return left_v + right_v, s, invf
-        return Bimap(thenf)
+    @staticmethod
+    def collect_marked(a: FlatThen, f: Optional[Callable[..., Any]] = None)->Tuple[MarkedThen, Callable[[MarkedThen], FlatThen]]:
+        index: List[str | int] = []
+        named_count = 0
+        for i, v in enumerate(a):
+            if isinstance(v, MarkedResult):
+                index.append(v.name)
+                named_count += 1
+            else:
+                index.append(i - named_count)
+        named = {v.name: v.value for v in a if isinstance(v, MarkedResult)}
+        unnamed = [v for v in a if not isinstance(v, MarkedResult)]
+        if f is None:
+            ret = (named, tuple(unnamed))
+        else:
+            ret = (f(**named), tuple(unnamed))
+        def invf(b: MarkedThen) -> Tuple[Any, ...]:
+            named_value, unnamed_value = b 
+            assert isinstance(named_value, dict) or is_dataclass(named_value), f"Expected dict or dataclass for named values, got {type(named_value)}"
+            if is_dataclass(named_value):
+                named_dict = named | asdict(cast(Any, named_value))    
+            else:
+                named_dict = named | named_value
+            ret = []
+            for x in index:
+                if isinstance(x, str):
+                    assert x in named_dict, f"Missing named value: {x}"
+                    ret.append(named_dict[x])
+                else:
+                    assert 0 <= x < len(unnamed_value), f"Missing unnamed value at index: {x}"
+                    ret.append(unnamed_value[x])
+            return tuple(ret)
+        return ret, invf
+
+    def bimap(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[MarkedThen, Callable[[MarkedThen], ThenResult[A, B]]]:
+        match self.kind:
+            case ThenKind.LEFT:
+                lb, linv = self.left.bimap(f) if isinstance(self.left, StructuralResult) else f(self.left)
+                return lb, lambda b: replace(self, left=linv(b))
+            case ThenKind.RIGHT:
+                rb, rinv = self.right.bimap(f) if isinstance(self.right, StructuralResult) else f(self.right)
+                return rb, lambda b: replace(self, right=rinv(b))
+            case ThenKind.BOTH:
+                lb, linv = self.left.bimap(f) if isinstance(self.left, StructuralResult) else f(self.left)
+                rb, rinv = self.right.bimap(f) if isinstance(self.right, StructuralResult) else f(self.right)
+                left_v = (lb,) if not isinstance(self.left, ThenResult) else lb
+                right_v = (rb,) if not isinstance(self.right, ThenResult) else rb
+                def invf(b: Tuple[Any, ...]) -> ThenResult[A, B]:
+                    left_size = self.left.arity() if isinstance(self.left, ThenResult) else 1
+                    right_size = self.right.arity() if isinstance(self.right, ThenResult) else 1
+                    lraw = b[:left_size]
+                    rraw = b[left_size:left_size + right_size]
+                    lraw = lraw[0] if left_size == 1 else lraw
+                    rraw = rraw[0] if right_size == 1 else rraw
+                    la = linv(lraw)
+                    ra = rinv(rraw)
+                    return replace(self, left=la, right=ra)
+                return left_v + right_v, invf
+                # data, func = ThenResult.collect_marked(left_v + right_v)
+                # return data, lambda d: invf(func(d))
 
 
     def arity(self)->int:
@@ -422,12 +395,8 @@ class AST(Generic[T]):
 
     def bimap(self)->Tuple[Any, Callable[[Any], AST[T]]]:
         if isinstance(self.focus, StructuralResult):
-            b = self.focus.biarrow() 
-            s, v = b.forward(None, self.focus)
-            def inverse(data: Any) -> AST[T]:
-                s1, v1 = b.inverse(None, data)
-                return replace(self, focus=v1)
-            return v, inverse
+            data, invf = self.focus.bimap()
+            return data, lambda x: replace(self, focus=invf(x))
         else:
             return self.focus, lambda x: replace(self, focus=x)
         

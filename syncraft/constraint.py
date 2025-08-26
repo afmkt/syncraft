@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Callable, Generic, Tuple, TypeVar, Optional, Any, Protocol
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import collections.abc
 from collections import defaultdict
 from itertools import product
@@ -35,13 +35,65 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
         return f"{self.__class__.__name__}({self._data})"
 
 
+
+
+@dataclass(frozen=True)
+class Expr:
+    left: Any
+    op: str
+    right: Any
+
+
 @dataclass(frozen=True)
 class Variable:
-    name: str
+    name: Optional[str] = None
+    _root: Optional[Variable] = field(default=None, compare=False, repr=False)
+    _mapf: Optional[Callable[[Any], Any]] = field(default=None, compare=False, repr=False)
 
+    def __post_init__(self):
+        if self._root is None:
+            object.__setattr__(self, '_root', self)
 
+    def raw(self, b:'BoundVar') -> Tuple[Any, ...]:
+        assert self._root is not None, "_rawf can not be None"
+        return b.get(self._root, ())
+    
+
+    def map(self, f: Callable[[Any], Any]) -> "Variable":
+        if self._mapf is None:
+            return replace(self, _mapf=f)
+        else:
+            oldf = self._mapf
+            return replace(self, _mapf=lambda a: f(oldf(a)))
+    
+    def get(self, b: 'BoundVar') -> Tuple[Any, ...]:
+        vals = self.raw(b)
+        if self._mapf is not None:
+            return tuple(self._mapf(v) for v in vals)
+        else:
+            return vals
+        
+    def __call__(self, b:'BoundVar', raw:bool=False) -> Any:
+        if raw:
+            return self.raw(b)
+        else:
+            return self.get(b)
+        
+    def __eq__(self, other): 
+        return Expr(self, '==', other)
+    def __ne__(self, other): 
+        return Expr(self, '!=', other)
+    def __lt__(self, other): 
+        return Expr(self, '<', other)
+    def __le__(self, other): 
+        return Expr(self, '<=', other)
+    def __gt__(self, other): 
+        return Expr(self, '>', other)
+    def __ge__(self, other): 
+        return Expr(self, '>=', other)    
 
 BoundVar = FrozenDict[Variable, Tuple[Any, ...]]
+
 
 @dataclass(frozen=True)
 class Binding:
@@ -101,12 +153,12 @@ class Constraint:
             def run_f(bound: BoundVar) -> bool:
                 # positional argument values
                 pos_values = [
-                    bound.get(arg, ()) if isinstance(arg, Variable) else (arg,)
+                    arg.get(bound) if isinstance(arg, Variable) else (arg,)
                     for arg in arg_list
                 ]
                 # keyword argument values
                 kw_keys, kw_values = zip(*[
-                    (k, bound.get(v, ()) if isinstance(v, Variable) else (v,))
+                    (k, v.get(bound) if isinstance(v, Variable) else (v,))
                     for k, v in kw_list
                 ]) if kw_list else ([], [])
 
@@ -135,69 +187,3 @@ class Constraint:
         return cls.predicate(f, name=name, quant=Quantifier.EXISTS)
 
 
-"""
-
-# -----------------------------
-# Variable with projection
-# -----------------------------
-@dataclass(frozen=True)
-class Variable:
-    name: str
-    projector: Callable[[Any], Any] = lambda x: x
-
-    def map(self, f: Callable[[Any], Any]) -> "Variable":
-        return Variable(self.name, lambda x: f(self.projector(x)))
-
-
-
-# Helper proxy to capture variable access
-class _BindingProxy:
-    def __init__(self, binding, captured_vars):
-        self._binding = binding
-        self._captured_vars = captured_vars
-
-    def __getitem__(self, var: Variable):
-        self._captured_vars.add(var)
-        return self._binding[var]
-
-
-# -----------------------------
-# DSL operator overloads for Variable
-# -----------------------------
-def _binary_op(a: Variable, b, op: Callable[[Any, Any], bool], quant=forall):
-    b_expr = b if isinstance(b, Variable) else b
-    return quant((a,) if not isinstance(b, Variable) else (a,b),
-                 lambda *vals: op(*vals),
-                 name=f"({a.name} {op.__name__} {getattr(b,'name',b)})")
-
-Variable.__lt__ = lambda self, other: _binary_op(self, other, lambda x, y: x < y)
-Variable.__le__ = lambda self, other: _binary_op(self, other, lambda x, y: x <= y)
-Variable.__gt__ = lambda self, other: _binary_op(self, other, lambda x, y: x > y)
-Variable.__ge__ = lambda self, other: _binary_op(self, other, lambda x, y: x >= y)
-Variable.__eq__ = lambda self, other: _binary_op(self, other, lambda x, y: x == y)
-
-# -----------------------------
-# Demo
-# -----------------------------
-if __name__ == "__main__":
-    # define variables with projection
-    x = Variable("x").map(lambda t: int(t.text))
-    y = Variable("y").map(lambda t: int(t.text))
-
-    # fake parser state
-    state = ParserState()
-    state.bind(x, Token("5"))
-    state.bind(x, Token("10"))
-    state.bind(y, Token("7"))
-
-    # constraints from DSL
-    c1 = x > 0          # forall x>0
-    c2 = exists((x, y), lambda a, b: a < b, "x<y")  # exists x,y: a<b
-
-    c = c1 & c2
-
-    print("Check:", c(state.binding))   # True
-    print("Variables:", [v.name for v in c.variables])
-
-
-"""    
