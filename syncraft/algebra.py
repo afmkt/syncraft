@@ -8,7 +8,7 @@ import traceback
 from dataclasses import dataclass, replace, asdict
 from weakref import WeakKeyDictionary
 from abc import ABC
-from syncraft.ast import ThenKind, Then, S
+from syncraft.ast import ThenKind, Then, S, Choice, Many, ChoiceKind
     
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Mapped result type
@@ -284,17 +284,17 @@ class Algebra(ABC, Generic[A, S]):
         return self.__class__(flat_map_run, name=self.name)  # type: ignore
 
     
-    def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[A | B, S]:
-        def or_else_run(input: S, use_cache:bool) -> Either[Any, Tuple[A | B, S]]:
+    def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
+        def or_else_run(input: S, use_cache:bool) -> Either[Any, Tuple[Choice[A, B], S]]:
             match self.run(input, use_cache):
                 case Right((value, state)):
-                    return Right((value, state))
+                    return Right((Choice(kind=ChoiceKind.LEFT, left=value, right=None), state))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
                         return Left(err)
                     match other.run(input, use_cache):
                         case Right((other_value, other_state)):
-                            return Right((other_value, other_state))
+                            return Right((Choice(kind=ChoiceKind.RIGHT, left=None, right=other_value), other_state))
                         case Left(other_err):
                             return Left(other_err)
                     raise TypeError(f"Unexpected result type from {other}")
@@ -322,10 +322,10 @@ class Algebra(ABC, Generic[A, S]):
             return other.fmap(combine)
         return self.flat_map(then_right_f).named(f'{self.name} >> {other.name}')
 
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Tuple[A, ...], S]:
+    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
         assert at_least > 0, "at_least must be greater than 0"
         assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
-        def many_run(input: S, use_cache:bool) -> Either[Any, Tuple[Tuple[A, ...], S]]:
+        def many_run(input: S, use_cache:bool) -> Either[Any, Tuple[Many[A], S]]:
             ret: List[A] = []
             current_input = input
             while True:
@@ -349,7 +349,7 @@ class Algebra(ABC, Generic[A, S]):
                         this=self,
                         state=current_input
                     )) 
-            return Right((tuple(ret), current_input))
+            return Right((Many(value=tuple(ret)), current_input))
         return self.__class__(many_run, name=f'*({self.name})') # type: ignore
 
     

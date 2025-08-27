@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind
+from syncraft.ast import Then, ThenKind, Many
 from syncraft.algebra import Error
 from syncraft.parser import literal, parse
 import syncraft.generator as gen
@@ -81,7 +81,7 @@ def test5_nested_then_many() -> None:
     ast = parse(syntax, sql, dialect="sqlite")
     print("---" * 40)
     print(ast)
-    generated = gen.generate(syntax, ast)
+    generated = gen.generate(syntax, ast, restore_pruned=True)
     print("---" * 40)
     print(generated)
     assert ast == generated
@@ -201,7 +201,7 @@ def test_nested_many() -> None:
     syntax = (A.many().many())  # groups of groups of "a"
     sql = "a a a"
     ast = parse(syntax, sql, dialect="sqlite")
-    assert isinstance(ast, tuple)
+    assert isinstance(ast, Many)
 
 
 def test_named_many() -> None:

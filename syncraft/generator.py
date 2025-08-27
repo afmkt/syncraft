@@ -13,7 +13,7 @@ from syncraft.algebra import (
 from syncraft.ast import (
     T, ParseResult, AST, Token, TokenSpec, Binding, Variable, 
     Bindable, 
-    # Choice, Many, 
+    Choice, Many, ChoiceKind,
     Then, ThenKind, Marked
 )
 
@@ -136,6 +136,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
             try:
+                if not isinstance(input.ast, Then):
+                    return Left(Error(this=self, 
+                                      message=f"Expect Then got {input.ast}",
+                                      state=input))
                 lft = input.left() 
                 match self.run(lft, use_cache=use_cache):
                     case Left(error):
@@ -158,10 +162,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         return self.__class__(run_f = flat_map_run, name=self.name) # type: ignore
 
 
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Tuple[ParseResult[T],...], GenState[T]]:
+    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
         assert at_least > 0, "at_least must be greater than 0"
         assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
-        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Tuple[ParseResult[T],...], GenState[T]]]:
+        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]:
             if input.pruned:
                 upper = at_most if at_most is not None else at_least + 2
                 count = input.rng("many").randint(at_least, upper)
@@ -173,11 +177,14 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             ret.append(value)
                         case Left(_):
                             pass
-                return Right((tuple(ret), input))
+                return Right((Many(value=tuple(ret)), input))
             else:
+                if not isinstance(input.ast, Many):
+                    return Left(Error(this=self, 
+                                      message=f"Expect Many got {input.ast}",
+                                      state=input))
                 ret = []
-                assert isinstance(input.ast, tuple)
-                for x in input.ast: 
+                for x in input.ast.value: 
                     match self.run(input.inject(x), use_cache):
                         case Right((value, next_input)):
                             ret.append(value)
@@ -195,32 +202,45 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         this=self,
                         state=input.inject(x)
                     )) 
-                return Right((tuple(ret), input))
+                return Right((Many(value=tuple(ret)), input))
         return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
     
  
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[ParseResult[T], GenState[T]]: 
-        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ParseResult[T], GenState[T]]]:
-            if input.pruned:
-                forked_input = input.fork(tag="or_else")
-                match forked_input.rng("or_else").choice((self, other)).run(forked_input, use_cache):
-                    case Right((value, next_input)):
-                        return Right((value, next_input))
-                    case Left(error):
-                        return Left(error)
-            else:
-                match self.run(input, use_cache):
-                    case Right((value, next_input)):
-                        return Right((value, next_input))
-                    case Left(error):
-                        match other.run(input, use_cache):
+                ) -> Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: 
+        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]:
+            def exec(kind: ChoiceKind, 
+                     left: GenState[T], 
+                     right: GenState[T])->Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]:
+                match kind:
+                    case ChoiceKind.LEFT:
+                        match self.run(left, use_cache):
                             case Right((value, next_input)):
-                                return Right((value, next_input))
+                                return Right((Choice(kind=ChoiceKind.LEFT, left=value, right=None), next_input))
                             case Left(error):
                                 return Left(error)
-            raise ValueError("or_else should always return a value or an error.")
+                    case ChoiceKind.RIGHT:
+                        match other.run(right, use_cache):
+                            case Right((value, next_input)):
+                                return Right((Choice(kind=ChoiceKind.RIGHT, left=None, right=value), next_input))
+                            case Left(error):
+                                return Left(error)
+                raise ValueError(f"Invalid ChoiceKind: {kind}")
+
+            if input.pruned:
+                forked_input = input.fork(tag="or_else")
+                which = forked_input.rng("or_else").choice((ChoiceKind.LEFT, ChoiceKind.RIGHT))
+                return exec(which, forked_input, forked_input)
+            else:
+                if isinstance(input.ast, Choice):
+                    return exec(input.ast.kind, 
+                                input.inject(input.ast.left), 
+                                input.inject(input.ast.right))
+                else:
+                    return Left(Error(this=self, 
+                                      message=f"Expect Choice got {input.ast}",
+                                      state=input))
         return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})") # type: ignore
 
     @classmethod
@@ -247,7 +267,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
 
-def generate(syntax: Syntax[Any, Any], data: Optional[ParseResult[Any]] = None, seed: int = 0, restore_pruned: bool = False) -> AST | Any:
+def generate(syntax: Syntax[Any, Any], 
+            data: Optional[ParseResult[Any]] = None, 
+            seed: int = 0, 
+            restore_pruned: bool = False) -> AST | Any:
     gen = syntax(Generator)
     state = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
     result = gen.run(state, use_cache=False)

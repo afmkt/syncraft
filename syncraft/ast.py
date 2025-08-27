@@ -99,10 +99,24 @@ class Biarrow(Generic[S, A, B]):
         return _when
     
 
-    
+@dataclass(frozen=True)    
 class AST:
     pass
-    
+
+class ChoiceKind(Enum):
+    LEFT = 'left'
+    RIGHT = 'right'
+@dataclass(frozen=True)
+class Choice(Generic[A, B], AST):
+    kind: ChoiceKind
+    left: Optional[A] 
+    right: Optional[B] 
+
+
+@dataclass(frozen=True)
+class Many(Generic[A], AST):
+    value: Tuple[A, ...]
+
 @dataclass(frozen=True)
 class Marked(Generic[A], AST):
     name: str
@@ -164,6 +178,8 @@ T = TypeVar('T', bound=TokenProtocol)
 ParseResult = Union[
     Then['ParseResult[T]', 'ParseResult[T]'], 
     Marked['ParseResult[T]'],
+    Choice['ParseResult[T]', 'ParseResult[T]'],
+    Many['ParseResult[T]'],
     T,
 ]
 
