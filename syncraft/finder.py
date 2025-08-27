@@ -16,32 +16,7 @@ import re
 
 
 @dataclass(frozen=True)
-class Finder(Generator[T]):      
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
-        assert at_least > 0, "at_least must be greater than 0"
-        assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
-        return self.map_state(lambda s: replace(s, restore_pruned = True)).many(at_least=at_least, at_most=at_most)
-    
- 
-    def or_else(self, # type: ignore
-                other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[Choice[ParseResult[T]], GenState[T]]: 
-        return self.map_state(lambda s: replace(s, restore_pruned = True)).or_else(other) 
-        
-
-    @classmethod
-    def token(cls, 
-              token_type: Optional[TokenType] = None, 
-              text: Optional[str] = None, 
-              case_sensitive: bool = False,
-              regex: Optional[re.Pattern[str]] = None
-              )-> Algebra[ParseResult[T], GenState[T]]: 
-        return super().token(token_type=token_type, 
-                               text=text, 
-                               case_sensitive=case_sensitive, 
-                               regex=regex).map_state(lambda s: replace(s, restore_pruned = True)) # type: ignore
-
-
+class Finder(Generator[T]):
     @classmethod
     def anything(cls)->Algebra[Any, GenState[T]]:
         def anything_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Any, GenState[T]]]:
@@ -54,7 +29,7 @@ anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything",
 
 def matches(syntax: Syntax[Any, Any], data: ParseResult[T])-> bool:
     gen = syntax(Finder)
-    state = GenState.from_ast(ast = data)
+    state = GenState.from_ast(ast = data, restore_pruned=True)
     result = gen.run(state, use_cache=True)
     return isinstance(result, Right)
 
