@@ -134,6 +134,12 @@ class Syntax(Generic[A, S]):
 ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).map(f), meta = self.meta) # type: ignore
+    
+    def imap(self, f: Callable[[B], A]) -> Syntax[A, S]:
+        return self.__class__(lambda cls: self.alg(cls).imap(f), meta=self.meta)
+    
+    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[A, S]:
+        return self.__class__(lambda cls: self.alg(cls).bimap(f, i), meta=self.meta)
 
     def map_all(self, f: Callable[[Either[Any, Tuple[A, S]]], Either[Any, Tuple[B, S]]]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).map_all(f), meta=self.meta) # type: ignore
@@ -179,9 +185,6 @@ class Syntax(Generic[A, S]):
 
 
 ####################################################### operator overloading #############################################
-    def __ge__(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
-        return self.flat_map(f).describe(name='>=', fixity='infix', parameter=[self])
-
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, None], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return self.__class__(

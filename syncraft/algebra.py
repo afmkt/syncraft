@@ -248,11 +248,9 @@ class Algebra(ABC, Generic[A, S]):
     def imap(self, f: Callable[[B], A]) -> Algebra[A, S]:
         return self.map_state(lambda s: s.map(f))
     
-    def fmap(self, f: Callable[[A], B]) -> Algebra[B, S]:
-        return self.map(f)
-
+    
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[A, S]:
-        return self.fmap(f).as_(Algebra[A, S]).imap(i)
+        return self.map(f).as_(Algebra[A, S]).imap(i)
 
     def map_all(self, f: Callable[[Either[Any, Tuple[A, S]]], Either[Any, Tuple[B, S]]])->Algebra[B, S]:
         def map_all_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
