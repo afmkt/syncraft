@@ -166,12 +166,11 @@ class Syntax(Generic[A, S]):
     def between(self, left: Syntax[Any, S], right: Syntax[Any, S]) -> Syntax[Then[Any, Then[A, Any]], S]:
         return left >> self // right
 
-    def sep_by(self, sep: Syntax[Any, S]) -> Syntax[Then[A, Tuple[Then[Any, A], ...]], S]:
-        return (self + (sep >> self).many()).describe(
-            name='sep_by',
-            fixity='prefix',
-            parameter=(self, sep)
-        )
+    def sep_by(self, sep: Syntax[Any, S]) -> Syntax[Tuple[A, ...], S]:
+        return (self + (sep >> self).many().optional()).describe( # type: ignore
+                    name='sep_by',
+                    fixity='prefix',
+                    parameter=(self, sep))
     
     def parens(self, sep: Syntax[Any, S], open: Syntax[Any, S], close: Syntax[Any, S]) -> Syntax[Any, S]:
         return self.sep_by(sep=sep).between(left=open, right=close)

@@ -236,21 +236,23 @@ class Algebra(ABC, Generic[A, S]):
 
 
 ######################################################## fundamental combinators ############################################    
-    def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
-        def map_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
+    def fmap(self, f: Callable[[A], B]) -> Algebra[B, S]:
+        def fmap_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
             parsed = self.run(input, use_cache)
             if isinstance(parsed, Right):
                 return Right((f(parsed.value[0]), parsed.value[1]))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        return self.__class__(map_run, name=self.name)  # type: ignore
+        return self.__class__(fmap_run, name=self.name)  # type: ignore
 
     def imap(self, f: Callable[[B], A]) -> Algebra[A, S]:
         return self.map_state(lambda s: s.map(f))
     
+    def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
+        return self.fmap(f)
     
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[A, S]:
-        return self.map(f).as_(Algebra[A, S]).imap(i)
+        return self.fmap(f).as_(Algebra[A, S]).imap(i)
 
     def map_all(self, f: Callable[[Either[Any, Tuple[A, S]]], Either[Any, Tuple[B, S]]])->Algebra[B, S]:
         def map_all_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
@@ -303,15 +305,22 @@ class Algebra(ABC, Generic[A, S]):
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
-            return other.map(combine)
+            return other.fmap(combine)
         return self.flat_map(then_both_f).named(f'{self.name} + {other.name}')
-            
-    def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        return self.then_both(other).map(lambda b: replace(b, kind = ThenKind.LEFT, right=None)).named(f'{self.name} // {other.name}')
 
-    def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        return self.then_both(other).map(lambda b: replace(b, kind=ThenKind.RIGHT, left=None)).named(f'{self.name} >> {other.name}')
+    def then_left(self, other: Algebra[B, S]) -> 'Algebra[Then[A, B], S]':
+        def then_left_f(a: A) -> Algebra[Then[A, B], S]:
+            def combine(b: B) -> Then[A, B]:
+                return Then(left=a, right=b, kind=ThenKind.LEFT)
+            return other.fmap(combine)
+        return self.flat_map(then_left_f).named(f'{self.name} // {other.name}')
 
+    def then_right(self, other: Algebra[B, S]) -> 'Algebra[Then[A, B], S]':
+        def then_right_f(a: A) -> Algebra[Then[A, B], S]:
+            def combine(b: B) -> Then[A, B]:
+                return Then(left=a, right=b, kind=ThenKind.RIGHT)
+            return other.fmap(combine)
+        return self.flat_map(then_right_f).named(f'{self.name} >> {other.name}')
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Tuple[A, ...], S]:
         assert at_least > 0, "at_least must be greater than 0"

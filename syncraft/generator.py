@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, 
+    Any, TypeVar, Tuple, Optional,  Callable, Generic, cast,
     List, 
 )
 from functools import cached_property
@@ -30,6 +30,7 @@ B = TypeVar('B')
 @dataclass(frozen=True)
 class GenState(Bindable, Generic[T]):
     ast: Optional[ParseResult[T]] = None
+    restore_pruned: bool = False
     seed: int = 0
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
         return replace(self, ast=f(self.ast))
@@ -52,14 +53,16 @@ class GenState(Bindable, Generic[T]):
     def left(self)-> GenState[T]:
         if self.ast is None:
             return self
-        assert isinstance(self.ast, Then), "Can only go left on Then"  
-        return replace(self, ast=self.ast.left)
+        if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.RIGHT or self.restore_pruned):
+            return replace(self, ast=self.ast.left)
+        return replace(self, ast=None) 
 
     def right(self) -> GenState[T]:
         if self.ast is None:
             return self
-        assert isinstance(self.ast, Then), "Can only go right on Then"
-        return replace(self, ast=self.ast.right)
+        if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.LEFT or self.restore_pruned):
+            return replace(self, ast=self.ast.right)
+        return replace(self, ast=None)
     
 
     
@@ -73,8 +76,8 @@ class GenState(Bindable, Generic[T]):
                 raise TypeError(f"Invalid AST type({self.ast}) for down traversal")
     
     @classmethod
-    def from_ast(cls, ast: Optional[ParseResult[T]], seed: int = 0) -> GenState[T]:
-        return cls(ast=ast, seed=seed)
+    def from_ast(cls, *, ast: Optional[ParseResult[T]], seed: int = 0, restore_pruned:bool=False) -> GenState[T]:
+        return cls(ast=ast, seed=seed, restore_pruned=restore_pruned)
     
 
 
@@ -244,9 +247,9 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
 
-def generate(syntax: Syntax[Any, Any], data: Optional[ParseResult[Any]] = None, seed: int = 0) -> AST | Any:
+def generate(syntax: Syntax[Any, Any], data: Optional[ParseResult[Any]] = None, seed: int = 0, restore_pruned: bool = False) -> AST | Any:
     gen = syntax(Generator)
-    state = GenState.from_ast(data, seed)
+    state = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
     result = gen.run(state, use_cache=False)
     if isinstance(result, Right):
         return result.value[0]
