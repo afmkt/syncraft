@@ -246,7 +246,8 @@ class Algebra(ABC, Generic[A, S]):
         return self.__class__(map_run, name=self.name)  # type: ignore
 
     def imap(self, f: Callable[[B], A]) -> Algebra[A, S]:
-        return self
+        return self.map_state(lambda s: s.map(f))
+    
     def fmap(self, f: Callable[[A], B]) -> Algebra[B, S]:
         return self.map(f)
 

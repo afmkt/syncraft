@@ -182,11 +182,6 @@ class Syntax(Generic[A, S]):
     def __ge__(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         return self.flat_map(f).describe(name='>=', fixity='infix', parameter=[self])
 
-
-    def __gt__(self, other: Callable[[A], B])->Syntax[B, S]:
-        return self.map(other)
-
-
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, None], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return self.__class__(
@@ -239,7 +234,9 @@ class Syntax(Generic[A, S]):
                 value, state = result.value
                 return Right((value, state.bind(var, value)))
             return result
-        return self.map_all(bind_v).describe(name=f'bind({var.name})', fixity='postfix', parameter=[self])  
+        
+        ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v) # type: ignore
+        return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=[self])
 
     def mark(self, var: str) -> Syntax[Marked[A], S]:
         def bind_s(value: A) -> Marked[A]:

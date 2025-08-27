@@ -27,13 +27,11 @@ B = TypeVar('B')
 
 @dataclass(frozen=True)
 class GenState(Bindable, Generic[T]):
-    ast: Optional[ParseResult[T]]
-    seed: int
-    # is_pruned: Optional[bool] = None
-    binding: Binding = Binding()
-    def bind(self, var: Variable, node:ParseResult[T])->GenState[T]:
-        return replace(self, binding=self.binding.bind(var, node))
-
+    ast: Optional[ParseResult[T]] = None
+    seed: int = 0
+    def map(self, f: Callable[[Any], Any]) -> GenState[T]:
+        return replace(self, ast=f(self.ast))
+    
     def fork(self, tag: Any) -> GenState[T]:
         return replace(self, seed=hash((self.seed, tag)))
 
@@ -54,7 +52,7 @@ class GenState(Bindable, Generic[T]):
 
     @property
     def is_named(self)->bool:
-        return self.ast is not None and isinstance(self.ast, Marked)
+        return isinstance(self.ast, Marked)
     
     def wrapper(self)->Callable[[Any], Any]:
         if isinstance(self.ast, Marked):

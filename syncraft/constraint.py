@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Generic, Tuple, TypeVar, Optional, Any, Protocol
+from typing import Callable, Generic, Tuple, TypeVar, Optional, Any, Self
 from enum import Enum
 from dataclasses import dataclass, field, replace
 import collections.abc
@@ -109,9 +109,17 @@ class Binding:
             ret[var].append(node)
         return FrozenDict({k: tuple(vs) for k, vs in ret.items()})
 
-class Bindable(Protocol):
-    binding: Binding
-    def bind(self, var: Variable, node: Any) -> Any: ...
+
+A = TypeVar('A')
+@dataclass(frozen=True)
+class Bindable:
+    binding: Binding = field(default_factory=Binding)
+
+    def map(self, f: Callable[[Any], Any])->Self: 
+        return self
+    
+    def bind(self, var: Variable, node:Any)->Self:
+        return replace(self, binding=self.binding.bind(var, node))
 
 
 class Quantifier(Enum):

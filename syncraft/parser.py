@@ -20,9 +20,7 @@ from syncraft.ast import Token, TokenSpec, AST, T, ParseResult, Binding, Variabl
 class ParserState(Bindable, Generic[T]):
     input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
-    binding: Binding = Binding()
-    def bind(self, var: Variable, node:ParseResult[T])->ParserState[T]:
-        return replace(self, binding=self.binding.bind(var, node))
+
     
     def token_sample_string(self)-> str:
         def encode_tokens(*tokens:T) -> str:
