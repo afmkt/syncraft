@@ -7,11 +7,13 @@ from typing import (
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
-    Algebra, Either, Left, Right, Error, 
-    OrResult, ManyResult
+    Algebra, Either, Left, Right, Error
 )
 
-from syncraft.ast import T, ParseResult, AST, Token, TokenSpec, Binding, Variable, Bindable
+from syncraft.ast import (
+    T, ParseResult, AST, Token, TokenSpec, Binding, Variable, 
+    Bindable, Choice, Many, Then, ThenKind, Marked
+)
 
 from syncraft.syntax import Syntax
 from sqlglot import TokenType
@@ -25,9 +27,9 @@ B = TypeVar('B')
 
 @dataclass(frozen=True)
 class GenState(Bindable, Generic[T]):
-    ast: Optional[AST[T]]
+    ast: Optional[ParseResult[T]]
     seed: int
-    is_pruned: Optional[bool] = None
+    # is_pruned: Optional[bool] = None
     binding: Binding = Binding()
     def bind(self, var: Variable, node:ParseResult[T])->GenState[T]:
         return replace(self, binding=self.binding.bind(var, node))
@@ -43,60 +45,67 @@ class GenState(Bindable, Generic[T]):
 
     @cached_property
     def pruned(self)->bool:
-        if self.is_pruned is None:
-            return self.ast is None or self.ast.pruned
-        else:
-            return self.is_pruned
+        return self.ast is None
     
 
     @property
     def focus(self) -> Optional[ParseResult[T]]:
-        if self.ast is None:
-            return None
-        return self.ast.focus
+        return self.ast
 
     @property
     def is_named(self)->bool:
-        return self.ast is not None and self.ast.is_named()
+        return self.ast is not None and isinstance(self.ast, Marked)
     
     def wrapper(self)->Callable[[Any], Any]:
-        if self.ast is not None:
-            return self.ast.wrapper()
+        if isinstance(self.ast, Marked):
+            return lambda x: Marked(name=self.ast.name, value=x) # type: ignore
         else:
             return lambda x: x
 
     def left(self)-> GenState[T]:
         if self.ast is None:
             return self
-        return replace(self, ast=self.ast.left())
+        assert isinstance(self.ast, Then), "Can only go left on Then"  
+        return replace(self, ast=self.ast.left)
 
     def right(self) -> GenState[T]:
         if self.ast is None:
             return self
-        return replace(self, ast=self.ast.right())
+        assert isinstance(self.ast, Then), "Can only go right on Then"
+        return replace(self, ast=self.ast.right)
     
 
     
     def down(self, index: int) -> GenState[T]:
         if self.ast is None:
-            return self
-        return replace(self, ast=self.ast.down(index))
+            return self        
+        match self.ast:
+            case Many(value=children):
+                if 0 <= index < len(children):
+                    return replace(self, ast=children[index])
+                else:
+                    raise IndexError(f"Index {index} out of bounds for Many with {len(children)} children")
+            case Choice(value=value):
+                if index == 0:
+                    return replace(self, ast=value)
+                else:
+                    raise IndexError(f"Index {index} out of bounds for Choice")
+            case Marked(value=value):
+                return replace(self, ast=value)
+            case _:
+                raise TypeError(f"Invalid focus type({self.focus}) for down traversal")
     
     @cached_property
     def how_many(self) -> int:
         if self.ast is None:
             return 0
-        return self.ast.how_many()
+        assert isinstance(self.ast, Many), "Can only get how_many on Many"
+        return len(self.ast.value)
 
     @classmethod
-    def from_ast(cls, ast: Optional[AST[T]], seed: int = 0) -> GenState[T]:
+    def from_ast(cls, ast: Optional[ParseResult[T]], seed: int = 0) -> GenState[T]:
         return cls(ast=ast, seed=seed)
-
-
-    @classmethod
-    def from_parse_result(cls, parse_result: Optional[ParseResult[T]], seed: int = 0) -> GenState[T]:
-        return cls.from_ast(AST(parse_result) if parse_result else None, seed)
-
+    
 
 
 
@@ -178,10 +187,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         return self.__class__(run_f = flat_map_run, name=self.name) # type: ignore
 
 
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[ManyResult[ParseResult[T]], GenState[T]]:
+    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
         assert at_least > 0, "at_least must be greater than 0"
         assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
-        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ManyResult[ParseResult[T]], GenState[T]]]:
+        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]:
             wrapper = input.wrapper()
             input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
             if input.pruned:
@@ -195,7 +204,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             ret.append(value)
                         case Left(_):
                             pass
-                return Right((wrapper(ManyResult(tuple(ret))), input))
+                return Right((wrapper(Many(tuple(ret))), input))
             else:
                 ret = []
                 for index in range(input.how_many): 
@@ -216,31 +225,31 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         this=self,
                         state=input.down(index)
                     )) 
-                return Right((wrapper(ManyResult(tuple(ret))), input))
+                return Right((wrapper(Many(tuple(ret))), input))
         return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
     
  
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[OrResult[ParseResult[T]], GenState[T]]: 
-        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[OrResult[ParseResult[T]], GenState[T]]]:
+                ) -> Algebra[Choice[ParseResult[T]], GenState[T]]: 
+        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Choice[ParseResult[T]], GenState[T]]]:
             wrapper = input.wrapper()
             input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
             if input.pruned:
                 forked_input = input.fork(tag="or_else")
                 match forked_input.rng("or_else").choice((self, other)).run(forked_input, use_cache):
                     case Right((value, next_input)):
-                        return Right((wrapper(OrResult(value)), next_input))
+                        return Right((wrapper(Choice(value)), next_input))
                     case Left(error):
                         return Left(error)
             else:
                 match self.run(input.down(0), use_cache):
                     case Right((value, next_input)):
-                        return Right((wrapper(OrResult(value)), next_input))
+                        return Right((wrapper(Choice(value)), next_input))
                     case Left(error):
                         match other.run(input.down(0), use_cache):
                             case Right((value, next_input)):
-                                return Right((wrapper(OrResult(value)), next_input))
+                                return Right((wrapper(Choice(value)), next_input))
                             case Left(error):
                                 return Left(error)
             raise ValueError("or_else should always return a value or an error.")
@@ -272,12 +281,12 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
 
-def generate(syntax: Syntax[Any, Any], data: Optional[AST[Any]] = None, seed: int = 0) -> AST[Any] | Any:
+def generate(syntax: Syntax[Any, Any], data: Optional[ParseResult[Any]] = None, seed: int = 0) -> AST | Any:
     gen = syntax(Generator)
     state = GenState.from_ast(data, seed)
     result = gen.run(state, use_cache=False)
     if isinstance(result, Right):
-        return AST(result.value[0])
+        return result.value[0]
     assert isinstance(result, Left), "Generator must return Either[Any, Tuple[Any, Any]]"
     return result.value
 

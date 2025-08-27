@@ -6,10 +6,9 @@ from typing import (
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Either, Right, 
-    OrResult, ManyResult, ThenResult, MarkedResult
 )
+from syncraft.ast import T, ParseResult, AST, Choice, Many, Then, Marked
 
-from syncraft.ast import T, ParseResult, AST
 from syncraft.generator import GenState, Generator
 from sqlglot import TokenType
 from syncraft.syntax import Syntax
@@ -18,7 +17,7 @@ import re
 
 @dataclass(frozen=True)
 class Finder(Generator[T]):      
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[ManyResult[ParseResult[T]], GenState[T]]:
+    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
         assert at_least > 0, "at_least must be greater than 0"
         assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
         return self.map_state(lambda s: replace(s, is_pruned = False)).many(at_least=at_least, at_most=at_most)
@@ -26,7 +25,7 @@ class Finder(Generator[T]):
  
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[OrResult[ParseResult[T]], GenState[T]]: 
+                ) -> Algebra[Choice[ParseResult[T]], GenState[T]]: 
         return self.map_state(lambda s: replace(s, is_pruned = False)).or_else(other) 
         
 
@@ -54,26 +53,26 @@ class Finder(Generator[T]):
 
 anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
 
-def matches(syntax: Syntax[Any, Any], data: AST[Any])-> bool:
+def matches(syntax: Syntax[Any, Any], data: AST)-> bool:
     gen = syntax(Finder)
     state = GenState.from_ast(data)
     result = gen.run(state, use_cache=True)
     return isinstance(result, Right)
 
 
-def find(syntax: Syntax[Any, Any], data: AST[Any]) -> YieldGen[AST[Any], None, None]:
+def find(syntax: Syntax[Any, Any], data: AST) -> YieldGen[AST, None, None]:
     if matches(syntax, data):
         yield data
-    match data.focus:
-        case ThenResult(left = left, right=right):
-            yield from find(syntax, AST(left))
-            yield from find(syntax, AST(right))
-        case ManyResult(value = value):
+    match data:
+        case Then(left = left, right=right):
+            yield from find(syntax, left)
+            yield from find(syntax, right)
+        case Many(value = value):
             for e in value:
-                yield from find(syntax, AST(e))
-        case MarkedResult(value=value):
-            yield from find(syntax, AST(value))
-        case OrResult(value=value):
-            yield from find(syntax, AST(value))
+                yield from find(syntax, e)
+        case Marked(value=value):
+            yield from find(syntax, value)
+        case Choice(value=value):
+            yield from find(syntax, value)
         case _:
             pass

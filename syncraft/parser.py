@@ -20,7 +20,7 @@ from syncraft.ast import Token, TokenSpec, AST, T, ParseResult, Binding, Variabl
 class ParserState(Bindable, Generic[T]):
     input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
-    binding: Binding[ParseResult[T]] = Binding()
+    binding: Binding = Binding()
     def bind(self, var: Variable, node:ParseResult[T])->ParserState[T]:
         return replace(self, binding=self.binding.bind(var, node))
     
@@ -184,12 +184,12 @@ def sqlglot(parser: Syntax[Any, Any],
 
 def parse(syntax: Syntax[Any, Any], 
           sql: str, 
-          dialect: str) -> AST[Any] | Any:
+          dialect: str) -> AST | Any:
     parser = syntax(Parser)
     input: ParserState[Token] = token_state(sql, dialect=dialect)
     result = parser.run(input, True)
     if isinstance(result, Right):
-        return AST(result.value[0])
+        return result.value[0]
     assert isinstance(result, Left), "Parser must return Either[E, Tuple[A, S]]"
     return result.value
 

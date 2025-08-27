@@ -10,7 +10,7 @@ from typing import (
 
 from dataclasses import dataclass, replace, is_dataclass, asdict
 from enum import Enum
-from functools import cached_property
+
 from syncraft.constraint import Binding, Variable, Bindable
 
 
@@ -100,28 +100,28 @@ class Biarrow(Generic[S, A, B]):
     
 
     
-class StructuralResult:
+class AST:
 
     def bimap(self, f: Bimap[Any, Any]=Bimap.identity())->Tuple[Any, Callable[[Any], Any]]:
         return f(self)
 
     
 @dataclass(frozen=True)
-class MarkedResult(Generic[A], StructuralResult):
+class Marked(Generic[A], AST):
     name: str
     value: A
-    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[MarkedResult[B], Callable[[MarkedResult[B]], MarkedResult[A]]]:
-        b, inv = self.value.bimap(f) if isinstance(self.value, StructuralResult) else f(self.value)
-        return MarkedResult(name=self.name, value=b), lambda b: replace(self, value=inv(b.value))
+    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[Marked[B], Callable[[Marked[B]], Marked[A]]]:
+        b, inv = self.value.bimap(f) if isinstance(self.value, AST) else f(self.value)
+        return Marked(name=self.name, value=b), lambda b: replace(self, value=inv(b.value))
 
 
 @dataclass(eq=True, frozen=True)
-class ManyResult(Generic[A], StructuralResult):
+class Many(Generic[A], AST):
     value: Tuple[A, ...]
-    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[List[B], Callable[[List[B]], ManyResult[A]]]:
+    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[List[B], Callable[[List[B]], Many[A]]]:
         assert self.value
-        forward = [v.bimap(f) if isinstance(v, StructuralResult) else f(v) for v in self.value]
-        def invf(b: List[B]) -> ManyResult[A]:
+        forward = [v.bimap(f) if isinstance(v, AST) else f(v) for v in self.value]
+        def invf(b: List[B]) -> Many[A]:
             assert len(b) <= len(forward)
             return replace(self, value=tuple([forward[i][1](bb) for i, bb in enumerate(b)]))
         return [b for b, _ in forward], invf
@@ -129,10 +129,10 @@ class ManyResult(Generic[A], StructuralResult):
 
 
 @dataclass(eq=True, frozen=True)
-class OrResult(Generic[A], StructuralResult):
+class Choice(Generic[A], AST):
     value: A
-    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[B, Callable[[B], OrResult[A]]]:
-        b, inv = self.value.bimap(f) if isinstance(self.value, StructuralResult) else f(self.value)
+    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[B, Callable[[B], Choice[A]]]:
+        b, inv = self.value.bimap(f) if isinstance(self.value, AST) else f(self.value)
         return b, lambda b: replace(self, value=inv(b))
 
 class ThenKind(Enum):
@@ -144,7 +144,7 @@ FlatThen = Tuple[Any, ...]
 MarkedThen = Tuple[Dict[str, Any] | Any, FlatThen]
 
 @dataclass(eq=True, frozen=True)
-class ThenResult(Generic[A, B], StructuralResult):
+class Then(Generic[A, B], AST):
     kind: ThenKind
     left: A
     right: B
@@ -153,13 +153,13 @@ class ThenResult(Generic[A, B], StructuralResult):
         index: List[str | int] = []
         named_count = 0
         for i, v in enumerate(a):
-            if isinstance(v, MarkedResult):
+            if isinstance(v, Marked):
                 index.append(v.name)
                 named_count += 1
             else:
                 index.append(i - named_count)
-        named = {v.name: v.value for v in a if isinstance(v, MarkedResult)}
-        unnamed = [v for v in a if not isinstance(v, MarkedResult)]
+        named = {v.name: v.value for v in a if isinstance(v, Marked)}
+        unnamed = [v for v in a if not isinstance(v, Marked)]
         if f is None:
             ret = (named, tuple(unnamed))
         else:
@@ -182,22 +182,22 @@ class ThenResult(Generic[A, B], StructuralResult):
             return tuple(ret)
         return ret, invf
 
-    def bimap(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[FlatThen, Callable[[FlatThen], ThenResult[A, B]]]:
+    def bimap(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[FlatThen, Callable[[FlatThen], Then[A, B]]]:
         match self.kind:
             case ThenKind.LEFT:
-                lb, linv = self.left.bimap(f) if isinstance(self.left, StructuralResult) else f(self.left)
+                lb, linv = self.left.bimap(f) if isinstance(self.left, AST) else f(self.left)
                 return lb, lambda b: replace(self, left=linv(b))
             case ThenKind.RIGHT:
-                rb, rinv = self.right.bimap(f) if isinstance(self.right, StructuralResult) else f(self.right)
+                rb, rinv = self.right.bimap(f) if isinstance(self.right, AST) else f(self.right)
                 return rb, lambda b: replace(self, right=rinv(b))
             case ThenKind.BOTH:
-                lb, linv = self.left.bimap(f) if isinstance(self.left, StructuralResult) else f(self.left)
-                rb, rinv = self.right.bimap(f) if isinstance(self.right, StructuralResult) else f(self.right)
-                left_v = (lb,) if not isinstance(self.left, ThenResult) else lb
-                right_v = (rb,) if not isinstance(self.right, ThenResult) else rb
-                def invf(b: Tuple[Any, ...]) -> ThenResult[A, B]:
-                    left_size = self.left.arity() if isinstance(self.left, ThenResult) else 1
-                    right_size = self.right.arity() if isinstance(self.right, ThenResult) else 1
+                lb, linv = self.left.bimap(f) if isinstance(self.left, AST) else f(self.left)
+                rb, rinv = self.right.bimap(f) if isinstance(self.right, AST) else f(self.right)
+                left_v = (lb,) if not isinstance(self.left, Then) else lb
+                right_v = (rb,) if not isinstance(self.right, Then) else rb
+                def invf(b: Tuple[Any, ...]) -> Then[A, B]:
+                    left_size = self.left.arity() if isinstance(self.left, Then) else 1
+                    right_size = self.right.arity() if isinstance(self.right, Then) else 1
                     lraw = b[:left_size]
                     rraw = b[left_size:left_size + right_size]
                     lraw = lraw[0] if left_size == 1 else lraw
@@ -207,20 +207,20 @@ class ThenResult(Generic[A, B], StructuralResult):
                     return replace(self, left=la, right=ra)
                 return left_v + right_v, invf
             
-    def bimap_collected(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[MarkedThen, Callable[[MarkedThen], ThenResult[A, B]]]:
+    def bimap_collected(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[MarkedThen, Callable[[MarkedThen], Then[A, B]]]:
         data, invf = self.bimap(f)                
-        data, func = ThenResult.collect_marked(data)
+        data, func = Then.collect_marked(data)
         return data, lambda d: invf(func(d))
 
 
     def arity(self)->int:
         if self.kind == ThenKind.LEFT:
-            return self.left.arity() if isinstance(self.left, ThenResult) else 1
+            return self.left.arity() if isinstance(self.left, Then) else 1
         elif self.kind == ThenKind.RIGHT:
-            return self.right.arity() if isinstance(self.right, ThenResult) else 1
+            return self.right.arity() if isinstance(self.right, Then) else 1
         elif self.kind == ThenKind.BOTH:
-            left_arity = self.left.arity() if isinstance(self.left, ThenResult) else 1
-            right_arity = self.right.arity() if isinstance(self.right, ThenResult) else 1
+            left_arity = self.left.arity() if isinstance(self.left, Then) else 1
+            right_arity = self.right.arity() if isinstance(self.right, Then) else 1
             return left_arity + right_arity
         else:
             return 1
@@ -266,83 +266,12 @@ T = TypeVar('T', bound=TokenProtocol)
 
 
 ParseResult = Union[
-    ThenResult['ParseResult[T]', 'ParseResult[T]'], 
-    MarkedResult['ParseResult[T]'],
-    ManyResult['ParseResult[T]'],
-    OrResult['ParseResult[T]'],
+    Then['ParseResult[T]', 'ParseResult[T]'], 
+    Marked['ParseResult[T]'],
+    Many['ParseResult[T]'],
+    Choice['ParseResult[T]'],
     T,
 ]
 
 
 
-@dataclass(frozen=True)
-class AST(Generic[T]):
-    focus: ParseResult[T]
-    pruned: bool = False
-    parent: Optional[AST[T]] = None
-
-    def bimap(self)->Tuple[Any, Callable[[Any], AST[T]]]:
-        if isinstance(self.focus, StructuralResult):
-            data, invf = self.focus.bimap()
-            return data, lambda x: replace(self, focus=invf(x))
-        else:
-            return self.focus, lambda x: replace(self, focus=x)
-        
-    def wrapper(self)-> Callable[[Any], Any]:
-        if isinstance(self.focus, MarkedResult):
-            focus = cast(MarkedResult[Any], self.focus)
-            return lambda x: MarkedResult(name = focus.name, value = x)
-        else:
-            return lambda x: x
-        
-    def is_named(self) -> bool: 
-        return isinstance(self.focus, MarkedResult)
-
-    def left(self) -> Optional[AST[T]]:
-        match self.focus:
-            case ThenResult(left=left, kind=kind):
-                return replace(self, focus=left, parent=self, pruned = self.pruned or kind == ThenKind.RIGHT)
-            case _:
-                raise TypeError(f"Invalid focus type({self.focus}) for left traversal")
-
-    def right(self) -> Optional[AST[T]]:
-        match self.focus:
-            case ThenResult(right=right, kind=kind):
-                return replace(self, focus=right, parent=self, pruned = self.pruned or kind == ThenKind.LEFT)
-            case _:
-                raise TypeError(f"Invalid focus type({self.focus}) for right traversal")
-
-
-    def down(self, index: int) -> Optional[AST[T]]:
-        match self.focus:
-            case ManyResult(value=children):
-                if 0 <= index < len(children):
-                    return replace(self, focus=children[index], parent=self, pruned=self.pruned)
-                else:
-                    raise IndexError(f"Index {index} out of bounds for ManyResult with {len(children)} children")
-            case OrResult(value=value):
-                if index == 0:
-                    return replace(self, focus=value, parent=self, pruned=self.pruned)
-                else:
-                    raise IndexError(f"Index {index} out of bounds for OrResult")
-            case MarkedResult(value=value):
-                return replace(self, focus=value, parent=self, pruned=self.pruned)
-            case _:
-                raise TypeError(f"Invalid focus type({self.focus}) for down traversal")
-
-    def how_many(self)->int:
-        focus = self.focus.value if isinstance(self.focus, MarkedResult) else self.focus
-        match focus:
-            case ManyResult(value=children):
-                return len(children)
-            case _:
-                raise TypeError(f"Invalid focus type({self.focus}) for how_many")
-            
-    
-
-    @cached_property
-    def root(self) -> AST[T]:
-        while self.parent is not None:
-            self = self.parent  
-        return self
-    

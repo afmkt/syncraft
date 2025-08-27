@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, List, Tuple
-from syncraft.ast import MarkedResult, ManyResult, OrResult, ThenResult, ThenKind, Biarrow, StructuralResult
+from syncraft.ast import Marked, Many, Choice, Then, ThenKind, Biarrow, AST
 from syncraft.algebra import Error
 from syncraft.parser import literal, parse
 import syncraft.generator as gen
@@ -117,7 +117,7 @@ def test_named_in_then():
     value, bmap = ast.bimap()
     assert isinstance(value, tuple)
     print(value)
-    assert set(x.name for x in value if isinstance(x, MarkedResult)) == {"first", "second", "third"}
+    assert set(x.name for x in value if isinstance(x, Marked)) == {"first", "second", "third"}
     assert bmap(value) == ast
 
 
@@ -131,7 +131,7 @@ def test_named_in_many():
     assert ast == generated
     value, bmap = ast.bimap()
     assert isinstance(value, list)
-    assert all(isinstance(v, MarkedResult) for v in value if isinstance(v, MarkedResult))
+    assert all(isinstance(v, Marked) for v in value if isinstance(v, Marked))
     assert bmap(value) == ast
 
 
@@ -145,7 +145,7 @@ def test_named_in_or():
     generated = gen.generate(syntax, ast)
     assert ast == generated
     value, bmap = ast.bimap()
-    assert isinstance(value, MarkedResult)
+    assert isinstance(value, Marked)
     assert value.name == "b"
     assert bmap(value) == ast    
 
@@ -201,7 +201,7 @@ def test_nested_many() -> None:
     syntax = (A.many().many())  # groups of groups of "a"
     sql = "a a a"
     ast = parse(syntax, sql, dialect="sqlite")
-    assert isinstance(ast.focus, ManyResult)
+    assert isinstance(ast, Many)
 
 
 def test_named_many() -> None:
@@ -209,9 +209,9 @@ def test_named_many() -> None:
     syntax = A.many()
     sql = "a a"
     ast = parse(syntax, sql, dialect="sqlite")
-    # Expect [MarkedResult("alpha", "a"), MarkedResult("alpha", "a")]
+    # Expect [Marked("alpha", "a"), Marked("alpha", "a")]
     flattened, _ = ast.bimap()
-    assert all(isinstance(x, MarkedResult) for x in flattened)
+    assert all(isinstance(x, Marked) for x in flattened)
 
 
 def test_or_named() -> None:
@@ -220,10 +220,10 @@ def test_or_named() -> None:
     syntax = A | B
     sql = "b"
     ast = parse(syntax, sql, dialect="sqlite")
-    # Either MarkedResult("y", "b") or just "b", depending on your design
-    assert isinstance(ast.focus, OrResult)
+    # Either Marked("y", "b") or just "b", depending on your design
+    assert isinstance(ast, Choice)
     value, _ = ast.bimap()
-    assert value == MarkedResult(name="y", value=TokenGen.from_string("b"))
+    assert value == Marked(name="y", value=TokenGen.from_string("b"))
 
 
 def test_then_associativity() -> None:
@@ -233,9 +233,9 @@ def test_then_associativity() -> None:
     syntax = A + B + C
     sql = "a b c"
     ast = parse(syntax, sql, dialect="sqlite")
-    # Should be ThenResult(ThenResult(A,B),C)
-    assert ast.focus == ThenResult(kind=ThenKind.BOTH, 
-                                   left=ThenResult(kind=ThenKind.BOTH, 
+    # Should be Then(Then(A,B),C)
+    assert ast == Then(kind=ThenKind.BOTH, 
+                                   left=Then(kind=ThenKind.BOTH, 
                                                    left=TokenGen.from_string('a'), 
                                                    right=TokenGen.from_string('b')), 
                                     right=TokenGen.from_string('c'))
@@ -248,7 +248,7 @@ def test_ambiguous() -> None:
     sql = "a"
     ast = parse(syntax, sql, dialect="sqlite")
     # Does it prefer A (shorter) or B (fails)? Depends on design.
-    assert ast.focus == OrResult(TokenGen.from_string("a"))
+    assert ast == Choice(TokenGen.from_string("a"))
 
 
 def test_combo() -> None:
@@ -270,7 +270,7 @@ def test_optional():
     assert v1 is None
     ast2 = parse(syntax, "a", dialect="sqlite")
     v2, _ = ast2.bimap()
-    assert v2 == MarkedResult(name='a', value=TokenGen.from_string('a'))
+    assert v2 == Marked(name='a', value=TokenGen.from_string('a'))
 
 
 

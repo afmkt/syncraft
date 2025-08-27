@@ -10,8 +10,8 @@ LB, RB = literal("["), literal("]")
 def test_until_accepts_proper_nesting() -> None:
     sql = "([])"
     syntax = until((LP, RP), (LB, RB))
-    ast: AST[Any] | Any = parse(syntax, sql, dialect="sqlite")
-    assert isinstance(ast, AST), f"Expected AST for proper nesting, got {ast}"
+    ast: AST | Any = parse(syntax, sql, dialect="sqlite")
+    assert isinstance(ast, tuple), f"Expected AST for proper nesting, got {ast}"
 
 
 def test_until_rejects_mismatched_pairs() -> None:
