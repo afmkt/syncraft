@@ -4,14 +4,13 @@ from __future__ import annotations
 import re
 from typing import (
     Optional, Any, TypeVar, Tuple, runtime_checkable, 
-    Dict, Generic, Callable, Union, cast, List, Protocol, Type
+    Dict, Generic, Callable, Union, Protocol
 )
 
 
-from dataclasses import dataclass, replace, is_dataclass, asdict
+from dataclasses import dataclass
 from enum import Enum
-
-from syncraft.constraint import Binding, Variable, Bindable
+from syncraft.constraint import Bindable
 
 
 
@@ -106,6 +105,7 @@ class AST:
 class ChoiceKind(Enum):
     LEFT = 'left'
     RIGHT = 'right'
+    
 @dataclass(frozen=True)
 class Choice(Generic[A, B], AST):
     kind: ChoiceKind

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Tuple, Optional, Generator as YieldGen
+    Any, Tuple, Generator as YieldGen
 )
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra, Either, Right, 
 )
 from syncraft.ast import T, ParseResult, Choice, Many, Then, Marked
 
 from syncraft.generator import GenState, Generator
-from sqlglot import TokenType
+
 from syncraft.syntax import Syntax
-import re
+
 
 
 @dataclass(frozen=True)

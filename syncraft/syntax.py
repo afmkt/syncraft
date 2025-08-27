@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast,
+    Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
     Type, Literal
 )
 from dataclasses import dataclass, field, replace

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, cast,
+    Any, TypeVar, Tuple, Optional,  Callable, Generic, 
     List, 
 )
 from functools import cached_property
@@ -11,7 +11,7 @@ from syncraft.algebra import (
 )
 
 from syncraft.ast import (
-    T, ParseResult, AST, Token, TokenSpec, Binding, Variable, 
+    T, ParseResult, AST, Token, TokenSpec, 
     Bindable, 
     Choice, Many, ChoiceKind,
     Then, ThenKind, Marked
