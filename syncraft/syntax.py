@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Right
 from syncraft.constraint import Variable, Bindable
-from syncraft.ast import Then, Many, ThenKind, Marked
+from syncraft.ast import Then, ThenKind, Marked
 from types import MethodType, FunctionType
 
 
@@ -27,14 +27,14 @@ class Description:
     name: Optional[str] = None
     newline: Optional[str] = None
     fixity: Literal['infix', 'prefix', 'postfix'] = 'infix'
-    parameter: List[Any] = field(default_factory=list)
+    parameter: Tuple[Any, ...] = field(default_factory=tuple)
 
     def update(self, 
                *,
                newline: Optional[str] = None,
                name: Optional[str] = None,
                fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
-               parameter: Optional[List[Any]] = None) -> 'Description':
+               parameter: Optional[Tuple[Any, ...]] = None) -> 'Description':
         return Description(
             name=name if name is not None else self.name,
             newline= newline if newline is not None else self.newline,
@@ -118,7 +118,7 @@ class Syntax(Generic[A, S]):
                  newline: Optional[str] = None,
                  name: Optional[str] = None, 
                  fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None, 
-                 parameter: Optional[List[Syntax[Any, S]]] = None) -> Syntax[A, S]:
+                 parameter: Optional[Tuple[Syntax[Any, S], ...]] = None) -> Syntax[A, S]:
         return self.__class__(alg=self.alg,
                               meta=self.meta.update(name=name,
                                     newline=newline,
@@ -129,7 +129,7 @@ class Syntax(Generic[A, S]):
         return self.describe(newline=info)
 
     def terminal(self, name: str)->Syntax[A, S]:
-        return self.describe(name=name, fixity='prefix', parameter=[])
+        return self.describe(name=name, fixity='prefix')
 
 ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
@@ -154,30 +154,30 @@ class Syntax(Generic[A, S]):
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).flat_map(f)) # type: ignore
 
-    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Many[A], S]:
+    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Tuple[A, ...], S]:
         return self.__class__(lambda cls:self.alg(cls).many(at_least=at_least, at_most=at_most)).describe(name='*', # type: ignore
                                                  fixity='prefix', 
-                                                 parameter=[self])  
+                                                 parameter=(self,))  
     
 ################################################ facility combinators ############################################################
 
 
 
-    def between(self, left: Syntax[Any, S], right: Syntax[Any, S]) -> Syntax[Then[None, Then[A, None]], S]:
+    def between(self, left: Syntax[Any, S], right: Syntax[Any, S]) -> Syntax[Then[Any, Then[A, Any]], S]:
         return left >> self // right
 
-    def sep_by(self, sep: Syntax[Any, S]) -> Syntax[Then[A, Many[Then[None, A]]], S]:
+    def sep_by(self, sep: Syntax[Any, S]) -> Syntax[Then[A, Tuple[Then[Any, A], ...]], S]:
         return (self + (sep >> self).many()).describe(
             name='sep_by',
             fixity='prefix',
-            parameter=[self, sep]
+            parameter=(self, sep)
         )
     
     def parens(self, sep: Syntax[Any, S], open: Syntax[Any, S], close: Syntax[Any, S]) -> Syntax[Any, S]:
         return self.sep_by(sep=sep).between(left=open, right=close)
             
     def optional(self, default: Optional[B] = None) -> Syntax[Optional[A | B], S]:
-        return (self | success(default)).describe(name='~', fixity='prefix', parameter=[self])
+        return (self | success(default)).describe(name='~', fixity='prefix', parameter=(self,))
 
 
     def cut(self) -> Syntax[A, S]:
@@ -189,7 +189,7 @@ class Syntax(Generic[A, S]):
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return self.__class__(
             lambda cls: self.alg(cls).then_left(other.alg(cls))   # type: ignore
-            ).describe(name=ThenKind.LEFT.value, fixity='infix', parameter=[self, other]).as_(Syntax[Then[A, None], S]) 
+            ).describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, None], S]) 
 
     def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, None], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
@@ -206,13 +206,13 @@ class Syntax(Generic[A, S]):
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return self.__class__( 
             lambda cls: self.alg(cls).then_both(other.alg(cls)) # type: ignore
-            ).describe(name=ThenKind.BOTH.value, fixity='infix', parameter=[self, other])
+            ).describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other))
 
     def __rshift__(self, other: Syntax[B, S]) -> Syntax[Then[None, B], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return self.__class__(
             lambda cls: self.alg(cls).then_right(other.alg(cls))   # type: ignore
-            ).describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=[self, other]).as_(Syntax[Then[None, B], S])   
+            ).describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[None, B], S])   
 
 
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[None, A], S]:
@@ -239,15 +239,18 @@ class Syntax(Generic[A, S]):
             return result
         
         ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v) # type: ignore
-        return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=[self])
+        return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=(self,))
 
-    def mark(self, var: str) -> Syntax[Marked[A], S]:
+    def mark(self, var: str) -> Syntax[A, S]:
         def bind_s(value: A) -> Marked[A]:
             if isinstance(value, Marked):
                 return replace(value, name=var)    
             else:
                 return Marked(name=var, value=value)
-        return self.map(bind_s).describe(name=f'bind("{var}")', fixity='postfix', parameter=[self]) 
+        def ibind_s(m : Marked[A]) -> A:
+            return m.value if isinstance(m, Marked) else m
+            
+        return self.bimap(bind_s, ibind_s).describe(name=f'bind("{var}")', fixity='postfix', parameter=(self,))
 
 
 

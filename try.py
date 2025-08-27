@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, List, Tuple
-from syncraft.ast import Marked, Many, Choice, Then, ThenKind
+from syncraft.ast import Marked, Then, ThenKind
 from syncraft.parser import literal, variable, parse, Parser, Token
 from syncraft.generator import TokenGen
 from rich import print
@@ -18,8 +18,8 @@ if __name__ == "__main__":
     print('---' * 40)
     print(generated)
     assert ast == generated
-    value, bmap = ast.bimap()
-    print('---' * 40)
-    print(value)
-    assert bmap(value) == ast
+    # value, bmap = ast.bimap()
+    # print('---' * 40)
+    # print(value)
+    # assert bmap(value) == ast
 

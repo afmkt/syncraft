@@ -3,7 +3,7 @@ import re
 from sqlglot import tokenize, TokenType, Parser as GlotParser, exp
 from typing import (
     Optional, List, Any, Tuple,
-    Generic, Callable, Hashable
+    Generic
 )
 from syncraft.algebra import (
     Either, Left, Right, Error, Algebra
@@ -13,7 +13,7 @@ from enum import Enum
 from functools import reduce
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, T, ParseResult, Binding, Variable, Bindable
+from syncraft.ast import Token, TokenSpec, AST, T, Bindable
 
 
 @dataclass(frozen=True)

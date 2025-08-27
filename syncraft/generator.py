@@ -12,7 +12,9 @@ from syncraft.algebra import (
 
 from syncraft.ast import (
     T, ParseResult, AST, Token, TokenSpec, Binding, Variable, 
-    Bindable, Choice, Many, Then, ThenKind, Marked
+    Bindable, 
+    # Choice, Many, 
+    Then, ThenKind, Marked
 )
 
 from syncraft.syntax import Syntax
@@ -32,34 +34,21 @@ class GenState(Bindable, Generic[T]):
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
         return replace(self, ast=f(self.ast))
     
+    def inject(self, a: Any) -> GenState[T]:
+        return self.map(lambda _: a)
+    
     def fork(self, tag: Any) -> GenState[T]:
         return replace(self, seed=hash((self.seed, tag)))
 
     def rng(self, tag: Any = None) -> random.Random:
         return random.Random(self.seed if tag is None else hash((self.seed, tag)))
 
-    def to_string(self, interested: Callable[[Any], bool]) -> str | None:
-        return f"GenState(current={self.focus})"
+
 
     @cached_property
     def pruned(self)->bool:
         return self.ast is None
     
-
-    @property
-    def focus(self) -> Optional[ParseResult[T]]:
-        return self.ast
-
-    @property
-    def is_named(self)->bool:
-        return isinstance(self.ast, Marked)
-    
-    def wrapper(self)->Callable[[Any], Any]:
-        if isinstance(self.ast, Marked):
-            return lambda x: Marked(name=self.ast.name, value=x) # type: ignore
-        else:
-            return lambda x: x
-
     def left(self)-> GenState[T]:
         if self.ast is None:
             return self
@@ -78,28 +67,11 @@ class GenState(Bindable, Generic[T]):
         if self.ast is None:
             return self        
         match self.ast:
-            case Many(value=children):
-                if 0 <= index < len(children):
-                    return replace(self, ast=children[index])
-                else:
-                    raise IndexError(f"Index {index} out of bounds for Many with {len(children)} children")
-            case Choice(value=value):
-                if index == 0:
-                    return replace(self, ast=value)
-                else:
-                    raise IndexError(f"Index {index} out of bounds for Choice")
             case Marked(value=value):
                 return replace(self, ast=value)
             case _:
-                raise TypeError(f"Invalid focus type({self.focus}) for down traversal")
+                raise TypeError(f"Invalid AST type({self.ast}) for down traversal")
     
-    @cached_property
-    def how_many(self) -> int:
-        if self.ast is None:
-            return 0
-        assert isinstance(self.ast, Many), "Can only get how_many on Many"
-        return len(self.ast.value)
-
     @classmethod
     def from_ast(cls, ast: Optional[ParseResult[T]], seed: int = 0) -> GenState[T]:
         return cls(ast=ast, seed=seed)
@@ -159,9 +131,7 @@ class TokenGen(TokenSpec):
 @dataclass(frozen=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):  
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
-        def flat_map_run(original: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
-            wrapper = original.wrapper()
-            input = original if not original.is_named else original.down(0)  # If the input is named, we need to go down to the first child
+        def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
             try:
                 lft = input.left() 
                 match self.run(lft, use_cache=use_cache):
@@ -173,47 +143,46 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             case Left(e):
                                 return Left(e)
                             case Right((result, next_input)):
-                                return Right((wrapper(result), next_input))
+                                return Right((result, next_input))
                 raise ValueError("flat_map should always return a value or an error.")
             except Exception as e:
                 return Left(Error(
                     message=str(e),
                     this=self,
-                    state=original,
+                    state=input,
                     error=e
                 ))
         return self.__class__(run_f = flat_map_run, name=self.name) # type: ignore
 
 
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
+    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Tuple[ParseResult[T],...], GenState[T]]:
         assert at_least > 0, "at_least must be greater than 0"
         assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
-        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]:
-            wrapper = input.wrapper()
-            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
+        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Tuple[ParseResult[T],...], GenState[T]]]:
             if input.pruned:
                 upper = at_most if at_most is not None else at_least + 2
                 count = input.rng("many").randint(at_least, upper)
                 ret: List[Any] = []
                 for i in range(count):
-                    forked_input = input.down(0).fork(tag=len(ret))
+                    forked_input = input.fork(tag=len(ret))
                     match self.run(forked_input, use_cache):
                         case Right((value, next_input)):
                             ret.append(value)
                         case Left(_):
                             pass
-                return Right((wrapper(Many(tuple(ret))), input))
+                return Right((tuple(ret), input))
             else:
                 ret = []
-                for index in range(input.how_many): 
-                    match self.run(input.down(index), use_cache):
+                assert isinstance(input.ast, tuple)
+                for x in input.ast: 
+                    match self.run(input.inject(x), use_cache):
                         case Right((value, next_input)):
                             ret.append(value)
                             if at_most is not None and len(ret) > at_most:
                                 return Left(Error(
                                         message=f"Expected at most {at_most} matches, got {len(ret)}",
                                         this=self,
-                                        state=input.down(index)
+                                        state=input.inject(x)
                                     ))                             
                         case Left(_):
                             pass
@@ -221,33 +190,31 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     return Left(Error(
                         message=f"Expected at least {at_least} matches, got {len(ret)}",
                         this=self,
-                        state=input.down(index)
+                        state=input.inject(x)
                     )) 
-                return Right((wrapper(Many(tuple(ret))), input))
+                return Right((tuple(ret), input))
         return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
     
  
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[Choice[ParseResult[T]], GenState[T]]: 
-        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Choice[ParseResult[T]], GenState[T]]]:
-            wrapper = input.wrapper()
-            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
+                ) -> Algebra[ParseResult[T], GenState[T]]: 
+        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ParseResult[T], GenState[T]]]:
             if input.pruned:
                 forked_input = input.fork(tag="or_else")
                 match forked_input.rng("or_else").choice((self, other)).run(forked_input, use_cache):
                     case Right((value, next_input)):
-                        return Right((wrapper(Choice(value)), next_input))
+                        return Right((value, next_input))
                     case Left(error):
                         return Left(error)
             else:
-                match self.run(input.down(0), use_cache):
+                match self.run(input, use_cache):
                     case Right((value, next_input)):
-                        return Right((wrapper(Choice(value)), next_input))
+                        return Right((value, next_input))
                     case Left(error):
-                        match other.run(input.down(0), use_cache):
+                        match other.run(input, use_cache):
                             case Right((value, next_input)):
-                                return Right((wrapper(Choice(value)), next_input))
+                                return Right((value, next_input))
                             case Left(error):
                                 return Left(error)
             raise ValueError("or_else should always return a value or an error.")
@@ -263,17 +230,15 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
         lazy_self: Algebra[ParseResult[T], GenState[T]]
         def token_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ParseResult[Token], GenState[T]]]:
-            wrapper = input.wrapper()
-            input = input if not input.is_named else input.down(0)  # If the input is named, we need to go down to the first child
             if input.pruned:
                 return Right((gen.gen(), input))
             else:
-                current = input.focus
+                current = input.ast
                 if not isinstance(current, Token) or not gen.is_valid(current):
                     return Left(Error(None, 
                                       message=f"Expected a Token, but got {type(current)}.", 
                                       state=input))
-                return Right((wrapper(current), input))
+                return Right((current, input))
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
 

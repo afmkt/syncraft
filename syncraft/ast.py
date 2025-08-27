@@ -101,40 +101,12 @@ class Biarrow(Generic[S, A, B]):
 
     
 class AST:
-
-    def bimap(self, f: Bimap[Any, Any]=Bimap.identity())->Tuple[Any, Callable[[Any], Any]]:
-        return f(self)
-
+    pass
     
 @dataclass(frozen=True)
 class Marked(Generic[A], AST):
     name: str
     value: A
-    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[Marked[B], Callable[[Marked[B]], Marked[A]]]:
-        b, inv = self.value.bimap(f) if isinstance(self.value, AST) else f(self.value)
-        return Marked(name=self.name, value=b), lambda b: replace(self, value=inv(b.value))
-
-
-@dataclass(eq=True, frozen=True)
-class Many(Generic[A], AST):
-    value: Tuple[A, ...]
-    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[List[B], Callable[[List[B]], Many[A]]]:
-        assert self.value
-        forward = [v.bimap(f) if isinstance(v, AST) else f(v) for v in self.value]
-        def invf(b: List[B]) -> Many[A]:
-            assert len(b) <= len(forward)
-            return replace(self, value=tuple([forward[i][1](bb) for i, bb in enumerate(b)]))
-        return [b for b, _ in forward], invf
-
-
-
-@dataclass(eq=True, frozen=True)
-class Choice(Generic[A], AST):
-    value: A
-    def bimap(self, f: Bimap[A, B]=Bimap.identity())->Tuple[B, Callable[[B], Choice[A]]]:
-        b, inv = self.value.bimap(f) if isinstance(self.value, AST) else f(self.value)
-        return b, lambda b: replace(self, value=inv(b))
-
 class ThenKind(Enum):
     BOTH = '+'
     LEFT = '//'
@@ -146,84 +118,8 @@ MarkedThen = Tuple[Dict[str, Any] | Any, FlatThen]
 @dataclass(eq=True, frozen=True)
 class Then(Generic[A, B], AST):
     kind: ThenKind
-    left: A
-    right: B
-    @staticmethod
-    def collect_marked(a: FlatThen, f: Optional[Callable[..., Any]] = None)->Tuple[MarkedThen, Callable[[MarkedThen], FlatThen]]:
-        index: List[str | int] = []
-        named_count = 0
-        for i, v in enumerate(a):
-            if isinstance(v, Marked):
-                index.append(v.name)
-                named_count += 1
-            else:
-                index.append(i - named_count)
-        named = {v.name: v.value for v in a if isinstance(v, Marked)}
-        unnamed = [v for v in a if not isinstance(v, Marked)]
-        if f is None:
-            ret = (named, tuple(unnamed))
-        else:
-            ret = (f(**named), tuple(unnamed))
-        def invf(b: MarkedThen) -> Tuple[Any, ...]:
-            named_value, unnamed_value = b 
-            assert isinstance(named_value, dict) or is_dataclass(named_value), f"Expected dict or dataclass for named values, got {type(named_value)}"
-            if is_dataclass(named_value):
-                named_dict = named | asdict(cast(Any, named_value))    
-            else:
-                named_dict = named | named_value
-            ret = []
-            for x in index:
-                if isinstance(x, str):
-                    assert x in named_dict, f"Missing named value: {x}"
-                    ret.append(named_dict[x])
-                else:
-                    assert 0 <= x < len(unnamed_value), f"Missing unnamed value at index: {x}"
-                    ret.append(unnamed_value[x])
-            return tuple(ret)
-        return ret, invf
-
-    def bimap(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[FlatThen, Callable[[FlatThen], Then[A, B]]]:
-        match self.kind:
-            case ThenKind.LEFT:
-                lb, linv = self.left.bimap(f) if isinstance(self.left, AST) else f(self.left)
-                return lb, lambda b: replace(self, left=linv(b))
-            case ThenKind.RIGHT:
-                rb, rinv = self.right.bimap(f) if isinstance(self.right, AST) else f(self.right)
-                return rb, lambda b: replace(self, right=rinv(b))
-            case ThenKind.BOTH:
-                lb, linv = self.left.bimap(f) if isinstance(self.left, AST) else f(self.left)
-                rb, rinv = self.right.bimap(f) if isinstance(self.right, AST) else f(self.right)
-                left_v = (lb,) if not isinstance(self.left, Then) else lb
-                right_v = (rb,) if not isinstance(self.right, Then) else rb
-                def invf(b: Tuple[Any, ...]) -> Then[A, B]:
-                    left_size = self.left.arity() if isinstance(self.left, Then) else 1
-                    right_size = self.right.arity() if isinstance(self.right, Then) else 1
-                    lraw = b[:left_size]
-                    rraw = b[left_size:left_size + right_size]
-                    lraw = lraw[0] if left_size == 1 else lraw
-                    rraw = rraw[0] if right_size == 1 else rraw
-                    la = linv(lraw)
-                    ra = rinv(rraw)
-                    return replace(self, left=la, right=ra)
-                return left_v + right_v, invf
-            
-    def bimap_collected(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[MarkedThen, Callable[[MarkedThen], Then[A, B]]]:
-        data, invf = self.bimap(f)                
-        data, func = Then.collect_marked(data)
-        return data, lambda d: invf(func(d))
-
-
-    def arity(self)->int:
-        if self.kind == ThenKind.LEFT:
-            return self.left.arity() if isinstance(self.left, Then) else 1
-        elif self.kind == ThenKind.RIGHT:
-            return self.right.arity() if isinstance(self.right, Then) else 1
-        elif self.kind == ThenKind.BOTH:
-            left_arity = self.left.arity() if isinstance(self.left, Then) else 1
-            right_arity = self.right.arity() if isinstance(self.right, Then) else 1
-            return left_arity + right_arity
-        else:
-            return 1
+    left: Optional[A]
+    right: Optional[B]
         
 @runtime_checkable
 class TokenProtocol(Protocol):
@@ -268,8 +164,6 @@ T = TypeVar('T', bound=TokenProtocol)
 ParseResult = Union[
     Then['ParseResult[T]', 'ParseResult[T]'], 
     Marked['ParseResult[T]'],
-    Many['ParseResult[T]'],
-    Choice['ParseResult[T]'],
     T,
 ]
 
