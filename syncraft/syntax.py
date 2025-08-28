@@ -192,9 +192,15 @@ class Syntax(Generic[A, S]):
         ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self.alg(cls).then_left(other.alg(cls))) # type: ignore
         return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S]) 
 
+    def __lshift__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
+        return self.__floordiv__(other)
+
     def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return other.__floordiv__(self)
+        
+    def __rlshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
+        return self.__rfloordiv__(other)
 
     def __add__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
@@ -213,7 +219,7 @@ class Syntax(Generic[A, S]):
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return other.__rshift__(self)  
-
+        
     def __or__(self, other: Syntax[B, S]) -> Syntax[Choice[A, B], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         ret: Syntax[Choice[A, B], S] = self.__class__(lambda cls: self.alg(cls).or_else(other.alg(cls))) # type: ignore
