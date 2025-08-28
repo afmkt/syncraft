@@ -228,15 +228,27 @@ class Syntax(Generic[A, S]):
 
 
 ######################################################################## data processing combinators #########################################################
-    def bind(self, var: Variable) -> Syntax[A, S]:
-        def bind_v(v: A, s: S)->Tuple[A, S]:
+    def bind(self, 
+             var: Variable, 
+             collector: Optional[Callable[..., E]]=None) -> Syntax[A | 
+                                                                   Marked[A] | 
+                                                                   Marked[Collect[A, E]] | 
+                                                                   Collect[A, E], S]:
+        def bind_v(v: A | Marked[A] | Marked[Collect[A, E]] | Collect[A, E], 
+                   s: S)->Tuple[A | Marked[A] | Marked[Collect[A, E]] | Collect[A, E], S]:
             return v, s.bind(var, v)
-        ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v) # type: ignore
+        if callable(collector):
+            ret = self.to(collector).mark(var.name).map_all(bind_v) if var.name else self.to(collector).map_all(bind_v) 
+        else:
+            ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v)
         return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=(self,))
 
     def to(self, f: Callable[..., E])-> Syntax[Collect[A, E], S]:
         def to_f(v: A) -> Collect[A, E]:
-            return Collect(collector=f, value=v)
+            if isinstance(v, Collect):
+                return replace(v, collector=f)
+            else:
+                return Collect(collector=f, value=v)
         def ito_f(c: Collect[A, E]) -> A:
             return c.value if isinstance(c, Collect) else c
         return self.bimap(to_f, ito_f).describe(name=f'to({f})', fixity='postfix', parameter=(self,))
