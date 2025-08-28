@@ -128,10 +128,7 @@ class Algebra(ABC, Generic[A, S]):
         def lazy_run(input: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
             return thunk().run(input, use_cache)
         return cls(lazy_run, name=cls.__name__ + '.lazy')
-
-
-
-
+    
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:
         def fail_run(input: S, use_cache:bool) -> Either[Any, Tuple[Any, S]]:
@@ -141,6 +138,7 @@ class Algebra(ABC, Generic[A, S]):
                 state=input
             ))
         return cls(fail_run, name=cls.__name__ + '.fail')
+    
     @classmethod
     def success(cls, value: Any) -> Algebra[Any, S]:
         def success_run(input: S, use_cache:bool) -> Either[Any, Tuple[Any, S]]:
@@ -234,7 +232,35 @@ class Algebra(ABC, Generic[A, S]):
         lazy_self = self.__class__(debug_run, name=label)  
         return lazy_self
 
+######################################################## map on state ###########################################
+    def post_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
+        def post_state_run(input: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
+            match self.run(input, use_cache):
+                case Right((value, state)):
+                    return Right((value, f(state)))
+                case Left(err):
+                    return Left(err)
+                case x:
+                    raise ValueError(f"Unexpected result from self.run {x}")
+        return self.__class__(post_state_run, name=self.name) 
 
+    def pre_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
+        def pre_state_run(state: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
+            return self.run(f(state), use_cache)
+        return self.__class__(pre_state_run, name=self.name) 
+
+
+    def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
+        def map_all_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
+            match self.run(input, use_cache):
+                case Right((value, state)):
+                    new_value, new_state = f(value, state)
+                    return Right((new_value, new_state))
+                case Left(err):
+                    return Left(err)
+                case x:
+                    raise ValueError(f"Unexpected result from self.run {x}")
+        return self.__class__(map_all_run, name=self.name) # type: ignore
 ######################################################## fundamental combinators ############################################    
     def fmap(self, f: Callable[[A], B]) -> Algebra[B, S]:
         def fmap_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
@@ -245,20 +271,12 @@ class Algebra(ABC, Generic[A, S]):
                 return cast(Either[Any, Tuple[B, S]], parsed)
         return self.__class__(fmap_run, name=self.name)  # type: ignore
 
-    def imap(self, f: Callable[[B], A]) -> Algebra[A, S]:
-        return self.map_state(lambda s: s.map(f))
     
     def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
         return self.fmap(f)
     
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[A, S]:
-        return self.fmap(f).as_(Algebra[A, S]).imap(i)
-
-    def map_all(self, f: Callable[[Either[Any, Tuple[A, S]]], Either[Any, Tuple[B, S]]])->Algebra[B, S]:
-        def map_all_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
-            parsed = self.run(input, use_cache)
-            return f(parsed)
-        return self.__class__(map_all_run, name=self.name) # type: ignore
+        return self.fmap(f).as_(Algebra[A, S]).pre_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
@@ -267,12 +285,6 @@ class Algebra(ABC, Generic[A, S]):
                 return Left(f(parsed.value))
             return parsed
         return self.__class__(map_error_run, name=self.name)  
-
-    def map_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
-        def map_state_run(state: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
-            return self.run(f(state), use_cache)
-        return self.__class__(map_state_run, name=self.name) 
-
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Algebra[B, S]:
         def flat_map_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
@@ -288,34 +300,34 @@ class Algebra(ABC, Generic[A, S]):
         def or_else_run(input: S, use_cache:bool) -> Either[Any, Tuple[Choice[A, B], S]]:
             match self.run(input, use_cache):
                 case Right((value, state)):
-                    return Right((Choice(kind=ChoiceKind.LEFT, left=value, right=None), state))
+                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
                         return Left(err)
                     match other.run(input, use_cache):
                         case Right((other_value, other_state)):
-                            return Right((Choice(kind=ChoiceKind.RIGHT, left=None, right=other_value), other_state))
+                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
                         case Left(other_err):
                             return Left(other_err)
                     raise TypeError(f"Unexpected result type from {other}")
             raise TypeError(f"Unexpected result type from {self}")
         return self.__class__(or_else_run, name=f'{self.name} | {other.name}')  # type: ignore
 
-    def then_both(self, other: 'Algebra[B, S]') -> 'Algebra[Then[A, B], S]':
+    def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
             return other.fmap(combine)
         return self.flat_map(then_both_f).named(f'{self.name} + {other.name}')
 
-    def then_left(self, other: Algebra[B, S]) -> 'Algebra[Then[A, B], S]':
+    def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_left_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
             return other.fmap(combine)
         return self.flat_map(then_left_f).named(f'{self.name} // {other.name}')
 
-    def then_right(self, other: Algebra[B, S]) -> 'Algebra[Then[A, B], S]':
+    def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)

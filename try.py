@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any, List, Tuple
+from syncraft.algebra import Either, Left, Right, Error
 from syncraft.ast import Marked, Then, ThenKind, Many
 from syncraft.parser import literal, variable, parse, Parser, Token
 from syncraft.generator import TokenGen
@@ -20,8 +21,22 @@ def test5_nested_then_many() -> None:
     assert ast == generated
 
 if __name__ == "__main__":
-    test5_nested_then_many()
     pass
+
+    # A = literal('a')
+    # B = literal('b')
+    # C = literal('c')
+    # D = literal('d')
+    # sql = 'a b c'
+    # syntax = ~D + (A | B | C).many()
+    # syntax = (A | B | C).many()
+    # ast = parse(syntax, sql, dialect='sqlite')    
+    # print('---' * 40)
+    # print(ast)
+    # generated = gen.generate(syntax, ast)
+    # print('---' * 40)
+    # print(generated)
+
     # IF = literal("if")
     # ELSE = literal("else")
     # THEN = literal("then")
@@ -44,3 +59,16 @@ if __name__ == "__main__":
     # print('---' * 40)
     # print(generated)
     # assert ast == generated
+
+
+    A = literal("a").mark("a")
+    B = literal("b")
+    C = literal("c").mark("c")
+    syntax:Any = ((A + B) | C).many() + B
+    sql = "a b a b c b"
+    ast = parse(syntax, sql, dialect='sqlite')
+    print(ast)
+    generated = gen.generate(syntax, ast)
+    print('---' * 40)
+    print(generated)
+    assert ast == generated

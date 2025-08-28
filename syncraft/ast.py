@@ -3,7 +3,7 @@
 from __future__ import annotations
 import re
 from typing import (
-    Optional, Any, TypeVar, Tuple, runtime_checkable, 
+    Optional, Any, TypeVar, Tuple, runtime_checkable, Self,
     Dict, Generic, Callable, Union, Protocol
 )
 
@@ -17,7 +17,38 @@ from syncraft.constraint import Bindable
 A = TypeVar('A')
 B = TypeVar('B')  
 C = TypeVar('C')  
+D = TypeVar('D')
 S = TypeVar('S', bound=Bindable)  
+
+@dataclass(frozen=True)
+class Biarrow(Generic[A, B]):
+    forward: Callable[[A], B]
+    inverse: Callable[[B], A]
+    def __rshift__(self, other: Biarrow[B, C]) -> Biarrow[A, C]:
+        def fwd(a: A) -> C:
+            b = self.forward(a)
+            return other.forward(b)
+        def inv(c: C) -> A:
+            b = other.inverse(c)
+            return self.inverse(b)
+        return Biarrow(
+            forward=fwd,
+            inverse=inv
+        )
+    @staticmethod
+    def identity()->Biarrow[A, A]:
+        return Biarrow(
+            forward=lambda x: x,
+            inverse=lambda y: y
+        )
+            
+    @staticmethod
+    def when(condition: Callable[..., bool], 
+             then: Biarrow[A, B], 
+             otherwise: Optional[Biarrow[A, B]] = None) -> Callable[..., Biarrow[A, B]]:
+        def _when(*args:Any, **kwargs:Any) -> Biarrow[A, B]:
+            return then if condition(*args, **kwargs) else (otherwise or Biarrow.identity())
+        return _when
 
 @dataclass(frozen=True)
 class Reducer(Generic[A, S]):
@@ -30,27 +61,63 @@ class Reducer(Generic[A, S]):
             return self(f(b), s)
         return Reducer(map_run)
     
-
+    def __rshift__(self, other: Reducer[A, S]) -> Reducer[A, S]:
+        return Reducer(lambda a, s: other(a, self(a, s)))
     
 @dataclass(frozen=True)
 class Bimap(Generic[A, B]):
     run_f: Callable[[A], Tuple[B, Callable[[B], A]]]
     def __call__(self, a: A) -> Tuple[B, Callable[[B], A]]:
         return self.run_f(a)    
-    def __rshift__(self, other: Bimap[B, C]) -> Bimap[A, C]:
-        def then_run(a: A) -> Tuple[C, Callable[[C], A]]:
-            b, inv1 = self(a)
-            c, inv2 = other(b)
-            def inv(c2: C) -> A:
-                return inv1(inv2(c2))
-            return c, inv
-        return Bimap(then_run)
+    def __rshift__(self, other: Bimap[B, C] | Biarrow[B, C]) -> Bimap[A, C]:
+        if isinstance(other, Biarrow):
+            def biarrow_then_run(a: A) -> Tuple[C, Callable[[C], A]]:
+                b, inv1 = self(a)
+                c = other.forward(b)
+                def inv(c2: C) -> A:
+                    b2 = other.inverse(c2)
+                    return inv1(b2)
+                return c, inv
+            return Bimap(biarrow_then_run)
+        elif isinstance(other, Bimap):
+            def bimap_then_run(a: A) -> Tuple[C, Callable[[C], A]]:
+                b, inv1 = self(a)
+                c, inv2 = other(b)
+                def inv(c2: C) -> A:
+                    return inv1(inv2(c2))
+                return c, inv
+            return Bimap(bimap_then_run)
+        else:
+            raise TypeError(f"Unsupported type for Bimap >>: {type(other)}")
+    def __rrshift__(self, other: Bimap[C, A] | Biarrow[C, A]) -> Bimap[C, B]:
+        if isinstance(other, Biarrow):
+            def biarrow_then_run(c: C) -> Tuple[B, Callable[[B], C]]:
+                a = other.forward(c)
+                b2, inv1 = self(a)
+                def inv(a2: B) -> C:
+                    a3 = inv1(a2)
+                    return other.inverse(a3)
+                return b2, inv
+            return Bimap(biarrow_then_run)
+        elif isinstance(other, Bimap):
+            def bimap_then_run(c: C)->Tuple[B, Callable[[B], C]]:
+                a, a2c = other(c)
+                b2, b2a = self(a)
+                def inv(b3: B) -> C:
+                    a2 = b2a(b3)
+                    return a2c(a2)
+                return b2, inv
+            return Bimap(bimap_then_run)
+        else:
+            raise TypeError(f"Unsupported type for Bimap <<: {type(other)}")
+
+
     @staticmethod
     def const(a: B)->Bimap[B, B]:
         return Bimap(lambda _: (a, lambda b: b))
 
     @staticmethod
-    def identity()->Bimap[Any, Any]:
+    def identity()->Bimap[A, A]:
         return Bimap(lambda a: (a, lambda b: b))
 
     @staticmethod
@@ -67,40 +134,20 @@ class Bimap(Generic[A, B]):
     
     
 
-@dataclass(frozen=True)
-class Biarrow(Generic[S, A, B]):
-    forward: Callable[[S, A], Tuple[S, B]]
-    inverse: Callable[[S, B], Tuple[S, A]]
-    def __rshift__(self, other: Biarrow[S, B, C]) -> Biarrow[S, A, C]:
-        def fwd(s: S, a: A) -> Tuple[S, C]:
-            s1, b = self.forward(s, a)
-            return other.forward(s1, b)
-        def inv(s: S, c: C) -> Tuple[S, A]:
-            s1, b = other.inverse(s, c)
-            return self.inverse(s1, b)
-        return Biarrow(
-            forward=fwd,
-            inverse=inv
-        )
-    @staticmethod
-    def identity()->Biarrow[S, A, A]:
-        return Biarrow(
-            forward=lambda s, x: (s, x),
-            inverse=lambda s, y: (s, y)
-        )
-            
-    @staticmethod
-    def when(condition: Callable[..., bool], 
-             then: Biarrow[S, A, B], 
-             otherwise: Optional[Biarrow[S, A, B]] = None) -> Callable[..., Biarrow[S, A, B]]:
-        def _when(*args:Any, **kwargs:Any) -> Biarrow[S, A, B]:
-            return then if condition(*args, **kwargs) else (otherwise or Biarrow.identity())
-        return _when
     
 
 @dataclass(frozen=True)    
 class AST:
     pass
+
+@dataclass(frozen=True)
+class Nothing(AST):
+    def __str__(self)->str:
+        return self.__class__.__name__
+    def __repr__(self)->str:
+        return self.__str__()
+    
+
 
 class ChoiceKind(Enum):
     LEFT = 'left'
@@ -108,19 +155,22 @@ class ChoiceKind(Enum):
     
 @dataclass(frozen=True)
 class Choice(Generic[A, B], AST):
-    kind: ChoiceKind
-    left: Optional[A] 
-    right: Optional[B] 
+    kind: Optional[ChoiceKind]
+    value: Optional[A | B] = None
 
 
 @dataclass(frozen=True)
 class Many(Generic[A], AST):
     value: Tuple[A, ...]
 
+
+
 @dataclass(frozen=True)
 class Marked(Generic[A], AST):
     name: str
     value: A
+
+
 class ThenKind(Enum):
     BOTH = '+'
     LEFT = '//'
@@ -132,19 +182,12 @@ MarkedThen = Tuple[Dict[str, Any] | Any, FlatThen]
 @dataclass(eq=True, frozen=True)
 class Then(Generic[A, B], AST):
     kind: ThenKind
-    left: Optional[A]
-    right: Optional[B]
-        
-@runtime_checkable
-class TokenProtocol(Protocol):
-    @property
-    def token_type(self) -> Enum: ...
-    @property
-    def text(self) -> str: ...
-    
+    left: A
+    right: B
+
 
 @dataclass(frozen=True)
-class Token:
+class Token(AST):
     token_type: Enum
     text: str
     def __str__(self) -> str:
@@ -153,7 +196,16 @@ class Token:
     def __repr__(self) -> str:
         return self.__str__()
 
-    
+        
+@runtime_checkable
+class TokenProtocol(Protocol):
+    @property
+    def token_type(self) -> Enum: ...
+    @property
+    def text(self) -> str: ...
+
+T = TypeVar('T', bound=TokenProtocol)  
+
 
 @dataclass(frozen=True)
 class TokenSpec:
@@ -170,16 +222,12 @@ class TokenSpec:
         return type_match and value_match
 
 
-
-
-T = TypeVar('T', bound=TokenProtocol)  
-
-
 ParseResult = Union[
     Then['ParseResult[T]', 'ParseResult[T]'], 
     Marked['ParseResult[T]'],
     Choice['ParseResult[T]', 'ParseResult[T]'],
     Many['ParseResult[T]'],
+    Nothing,
     T,
 ]
 

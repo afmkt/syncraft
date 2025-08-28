@@ -8,16 +8,18 @@ from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Right
 from syncraft.constraint import Variable, Bindable
-from syncraft.ast import Then, ThenKind, Marked
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing
 from types import MethodType, FunctionType
 
-
+from rich import print
 
 
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Result type for mapping
 C = TypeVar('C')  # Result type for else branch
+D = TypeVar('D')  # Result type for else branch
 S = TypeVar('S', bound=Bindable)  # State type
+
 
 
 
@@ -134,49 +136,50 @@ class Syntax(Generic[A, S]):
 ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).map(f), meta = self.meta) # type: ignore
-    
-    def imap(self, f: Callable[[B], A]) -> Syntax[A, S]:
-        return self.__class__(lambda cls: self.alg(cls).imap(f), meta=self.meta)
-    
+        
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[A, S]:
         return self.__class__(lambda cls: self.alg(cls).bimap(f, i), meta=self.meta)
 
-    def map_all(self, f: Callable[[Either[Any, Tuple[A, S]]], Either[Any, Tuple[B, S]]]) -> Syntax[B, S]:
+    def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).map_all(f), meta=self.meta) # type: ignore
-
+    
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
         return self.__class__(lambda cls: self.alg(cls).map_error(f), meta=self.meta)
     
-    def map_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
-        return self.__class__(lambda cls: self.alg(cls).map_state(f), meta=self.meta)
+    def pre_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
+        return self.__class__(lambda cls: self.alg(cls).pre_state(f), meta=self.meta)
     
+    def post_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
+        return self.__class__(lambda cls: self.alg(cls).post_state(f), meta=self.meta)
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).flat_map(f)) # type: ignore
 
-    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Tuple[A, ...], S]:
+    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Many[A], S]:
         return self.__class__(lambda cls:self.alg(cls).many(at_least=at_least, at_most=at_most)).describe(name='*', # type: ignore
                                                  fixity='prefix', 
                                                  parameter=(self,))  
     
 ################################################ facility combinators ############################################################
 
-
-
-    def between(self, left: Syntax[Any, S], right: Syntax[Any, S]) -> Syntax[Then[Any, Then[A, Any]], S]:
+    def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Then[B, Then[A, C]], S]:
         return left >> self // right
 
-    def sep_by(self, sep: Syntax[Any, S]) -> Syntax[Tuple[A, ...], S]:
-        return (self + (sep >> self).many().optional()).describe( # type: ignore
+    def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
+        ret: Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S] = (self + (sep >> self).many().optional())
+        return ret.describe( 
                     name='sep_by',
                     fixity='prefix',
                     parameter=(self, sep))
-    
-    def parens(self, sep: Syntax[Any, S], open: Syntax[Any, S], close: Syntax[Any, S]) -> Syntax[Any, S]:
+
+    def parens(self, 
+               sep: Syntax[C, S], 
+               open: Syntax[B, S], 
+               close: Syntax[D, S]) -> Syntax[Then[B, Then[Then[A, Choice[Many[Then[C, A]], Optional[Nothing]]], D]], S]:
         return self.sep_by(sep=sep).between(left=open, right=close)
             
-    def optional(self, default: Optional[B] = None) -> Syntax[Optional[A | B], S]:
-        return (self | success(default)).describe(name='~', fixity='prefix', parameter=(self,))
+    def optional(self) -> Syntax[Choice[A, Optional[Nothing]], S]:
+        return (self | success(Nothing())).describe(name='~', fixity='prefix', parameter=(self,))
 
 
     def cut(self) -> Syntax[A, S]:
@@ -184,59 +187,50 @@ class Syntax(Generic[A, S]):
 
 
 ####################################################### operator overloading #############################################
-    def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, None], S]:
+    def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
-        return self.__class__(
-            lambda cls: self.alg(cls).then_left(other.alg(cls))   # type: ignore
-            ).describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, None], S]) 
+        ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self.alg(cls).then_left(other.alg(cls))) # type: ignore
+        return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S]) 
 
-    def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, None], S]:
+    def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return other.__floordiv__(self)
 
-    def __invert__(self) -> Syntax[A | None, S]:
-        return self.optional()
+    def __add__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
+        other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
+        ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self.alg(cls).then_both(other.alg(cls))) # type: ignore
+        return ret.describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S]) 
 
     def __radd__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return other.__add__(self)
 
-    def __add__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
+    def __rshift__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
-        return self.__class__( 
-            lambda cls: self.alg(cls).then_both(other.alg(cls)) # type: ignore
-            ).describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other))
+        ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self.alg(cls).then_right(other.alg(cls))) # type: ignore
+        return ret.describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])   
 
-    def __rshift__(self, other: Syntax[B, S]) -> Syntax[Then[None, B], S]:
-        other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
-        return self.__class__(
-            lambda cls: self.alg(cls).then_right(other.alg(cls))   # type: ignore
-            ).describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[None, B], S])   
-
-
-    def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[None, A], S]:
+    def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return other.__rshift__(self)  
 
-
-    def __or__(self, other: Syntax[B, S]) -> Syntax[A | B, S]:
+    def __or__(self, other: Syntax[B, S]) -> Syntax[Choice[A, B], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
-        return self.__class__(lambda cls: self.alg(cls).or_else(other.alg(cls))).describe(name='|', fixity='infix', parameter=[self, other]) # type: ignore
+        ret: Syntax[Choice[A, B], S] = self.__class__(lambda cls: self.alg(cls).or_else(other.alg(cls))) # type: ignore
+        return ret.describe(name='|', fixity='infix', parameter=(self, other))
 
-
-    def __ror__(self, other: Syntax[B, S]) -> Syntax[A | B, S]:
+    def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
-        return other.__or__(self).as_(Syntax[A | B, S]) 
+        return other.__or__(self)
+
+    def __invert__(self) -> Syntax[Choice[A, Optional[Nothing]], S]:
+        return self.optional()
 
 
 ######################################################################## data processing combinators #########################################################
     def bind(self, var: Variable) -> Syntax[A, S]:
-        def bind_v(result: Either[Any, Tuple[A, S]])->Either[Any, Tuple[A, S]]:
-            if isinstance(result, Right):
-                value, state = result.value
-                return Right((value, state.bind(var, value)))
-            return result
-        
+        def bind_v(v: A, s: S)->Tuple[A, S]:
+            return v, s.bind(var, v)
         ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v) # type: ignore
         return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=(self,))
 
@@ -278,17 +272,17 @@ def success(value: Any) -> Syntax[Any, Any]:
     return Syntax(lambda alg: alg.success(value)).describe(name=f'success({value})', fixity='prefix')
 
 def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-    return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(None)
+    return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(Nothing())
 
 
 def all(*parsers: Syntax[Any, S]) -> Syntax[Then[Any, Any], S]:
-    return reduce(lambda a, b: a + b, parsers) if len(parsers) > 0 else success(None)
+    return reduce(lambda a, b: a + b, parsers) if len(parsers) > 0 else success(Nothing())
 
 def first(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-    return reduce(lambda a, b: a // b, parsers) if len(parsers) > 0 else success(None)
+    return reduce(lambda a, b: a // b, parsers) if len(parsers) > 0 else success(Nothing())
 
 def last(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-    return reduce(lambda a, b: a >> b, parsers) if len(parsers) > 0 else success(None)
+    return reduce(lambda a, b: a >> b, parsers) if len(parsers) > 0 else success(Nothing())
 
 def bound(* parsers: Syntax[Any, S] | Tuple[str|Variable, Syntax[Any, S]]) -> Syntax[Any, S]:
     def is_named_parser(x: Any) -> bool:
@@ -325,5 +319,5 @@ def bound(* parsers: Syntax[Any, S] | Tuple[str|Variable, Syntax[Any, S]]) -> Sy
             else:
                 ret = ret >> just_parser
     
-    return ret if ret is not None else success(None) 
+    return ret if ret is not None else success(Nothing()) 
 

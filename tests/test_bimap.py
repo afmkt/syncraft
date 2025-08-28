@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind, Many
+from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token
 from syncraft.algebra import Error
 from syncraft.parser import literal, parse
 import syncraft.generator as gen
@@ -248,7 +248,7 @@ def test_ambiguous() -> None:
     sql = "a"
     ast = parse(syntax, sql, dialect="sqlite")
     # Does it prefer A (shorter) or B (fails)? Depends on design.
-    # assert ast == Choice(TokenGen.from_string("a"))
+    assert ast == Choice[Token, Token](value=TokenGen.from_string("a"), kind=ChoiceKind.LEFT)
 
 
 def test_combo() -> None:
@@ -258,8 +258,11 @@ def test_combo() -> None:
     syntax = ((A + B).many() | C) + B
     sql = "a b a b c b"
     # Should fail, as we discussed earlier
+    # the working syntax should be ((A + B) | C).many() + B
     ast = parse(syntax, sql, dialect="sqlite")
     assert isinstance(ast, Error)
+    ast = parse(((A + B) | C).many() + B, sql, dialect="sqlite")
+    assert not isinstance(ast, Error)
 
 
 def test_optional():

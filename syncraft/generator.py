@@ -12,7 +12,7 @@ from syncraft.algebra import (
 
 from syncraft.ast import (
     T, ParseResult, AST, Token, TokenSpec, 
-    Bindable, 
+    Bindable, Nothing,
     Choice, Many, ChoiceKind,
     Then, ThenKind, Marked
 )
@@ -23,7 +23,7 @@ import re
 import rstr
 from functools import lru_cache
 import random
-
+from rich import print
 B = TypeVar('B')
 
 
@@ -136,7 +136,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
             try:
-                if not isinstance(input.ast, Then):
+                if not isinstance(input.ast, Then) or isinstance(input.ast, Nothing):
                     return Left(Error(this=self, 
                                       message=f"Expect Then got {input.ast}",
                                       state=input))
@@ -179,7 +179,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             pass
                 return Right((Many(value=tuple(ret)), input))
             else:
-                if not isinstance(input.ast, Many):
+                if not isinstance(input.ast, Many) or isinstance(input.ast, Nothing):
                     return Left(Error(this=self, 
                                       message=f"Expect Many got {input.ast}",
                                       state=input))
@@ -194,7 +194,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                         this=self,
                                         state=input.inject(x)
                                     ))                             
-                        case Left(_):
+                        case Left(e):
                             pass
                 if len(ret) < at_least:
                     return Left(Error(
@@ -210,22 +210,34 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 other: Algebra[ParseResult[T], GenState[T]]
                 ) -> Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: 
         def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]:
-            def exec(kind: ChoiceKind, 
+            def exec(kind: ChoiceKind | None, 
                      left: GenState[T], 
                      right: GenState[T])->Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]:
                 match kind:
                     case ChoiceKind.LEFT:
                         match self.run(left, use_cache):
                             case Right((value, next_input)):
-                                return Right((Choice(kind=ChoiceKind.LEFT, left=value, right=None), next_input))
+                                return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
                             case Left(error):
                                 return Left(error)
                     case ChoiceKind.RIGHT:
                         match other.run(right, use_cache):
                             case Right((value, next_input)):
-                                return Right((Choice(kind=ChoiceKind.RIGHT, left=None, right=value), next_input))
+                                return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
                             case Left(error):
                                 return Left(error)
+                    case None:
+                        match self.run(left, use_cache):
+                            case Right((value, next_input)):
+                                return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
+                            case Left(error):
+                                if isinstance(error, Error) and error.committed:
+                                    return Left(error)
+                                match other.run(left, use_cache):
+                                    case Right((value, next_input)):
+                                        return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
+                                    case Left(error):
+                                        return Left(error)
                 raise ValueError(f"Invalid ChoiceKind: {kind}")
 
             if input.pruned:
@@ -233,14 +245,14 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 which = forked_input.rng("or_else").choice((ChoiceKind.LEFT, ChoiceKind.RIGHT))
                 return exec(which, forked_input, forked_input)
             else:
-                if isinstance(input.ast, Choice):
-                    return exec(input.ast.kind, 
-                                input.inject(input.ast.left), 
-                                input.inject(input.ast.right))
-                else:
+                if not isinstance(input.ast, Choice) or isinstance(input.ast, Nothing):
                     return Left(Error(this=self, 
                                       message=f"Expect Choice got {input.ast}",
                                       state=input))
+                else:
+                    return exec(input.ast.kind, 
+                                input.inject(input.ast.value), 
+                                input.inject(input.ast.value))
         return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})") # type: ignore
 
     @classmethod
@@ -259,7 +271,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 current = input.ast
                 if not isinstance(current, Token) or not gen.is_valid(current):
                     return Left(Error(None, 
-                                      message=f"Expected a Token, but got {type(current)}.", 
+                                      message=f"Expected a Token({gen.text}), but got {current}.", 
                                       state=input))
                 return Right((current, input))
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
