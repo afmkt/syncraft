@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Right
 from syncraft.constraint import Variable, Bindable
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E
 from types import MethodType, FunctionType
 
 from rich import print
@@ -137,8 +137,8 @@ class Syntax(Generic[A, S]):
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).map(f), meta = self.meta) # type: ignore
         
-    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[A, S]:
-        return self.__class__(lambda cls: self.alg(cls).bimap(f, i), meta=self.meta)
+    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
+        return self.__class__(lambda cls: self.alg(cls).bimap(f, i), meta=self.meta) # type: ignore
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).map_all(f), meta=self.meta) # type: ignore
@@ -234,7 +234,15 @@ class Syntax(Generic[A, S]):
         ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v) # type: ignore
         return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=(self,))
 
-    def mark(self, var: str) -> Syntax[A, S]:
+    def to(self, f: Callable[..., E])-> Syntax[Collect[A, E], S]:
+        def to_f(v: A) -> Collect[A, E]:
+            return Collect(collector=f, value=v)
+        def ito_f(c: Collect[A, E]) -> A:
+            return c.value if isinstance(c, Collect) else c
+        return self.bimap(to_f, ito_f).describe(name=f'to({f})', fixity='postfix', parameter=(self,))
+
+
+    def mark(self, var: str) -> Syntax[Marked[A], S]:
         def bind_s(value: A) -> Marked[A]:
             if isinstance(value, Marked):
                 return replace(value, name=var)    

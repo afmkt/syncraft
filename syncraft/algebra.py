@@ -275,8 +275,8 @@ class Algebra(ABC, Generic[A, S]):
     def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
         return self.fmap(f)
     
-    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[A, S]:
-        return self.fmap(f).as_(Algebra[A, S]).pre_state(lambda s: s.map(i))
+    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
+        return self.fmap(f).pre_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
