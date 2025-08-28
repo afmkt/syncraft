@@ -232,7 +232,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
                             case Left(error):
                                 if isinstance(error, Error) and error.committed:
-                                    return Left(error)
+                                    return Left(replace(error, committed=False))
                                 match other.run(left, use_cache):
                                     case Right((value, next_input)):
                                         return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))

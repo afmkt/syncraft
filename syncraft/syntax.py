@@ -236,7 +236,7 @@ class Syntax(Generic[A, S]):
 ######################################################################## data processing combinators #########################################################
     def bind(self, 
              var: Variable, 
-             collector: Optional[Callable[..., E]]=None) -> Syntax[A | 
+             collector: Optional[Type[E]]=None) -> Syntax[A | 
                                                                    Marked[A] | 
                                                                    Marked[Collect[A, E]] | 
                                                                    Collect[A, E], S]:
@@ -249,7 +249,7 @@ class Syntax(Generic[A, S]):
             ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v)
         return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=(self,))
 
-    def to(self, f: Callable[..., E])-> Syntax[Collect[A, E], S]:
+    def to(self, f: Type[E])-> Syntax[Collect[A, E], S]:
         def to_f(v: A) -> Collect[A, E]:
             if isinstance(v, Collect):
                 return replace(v, collector=f)

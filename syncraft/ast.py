@@ -189,10 +189,10 @@ class Marked(Generic[A], AST):
 class DataclassProtocol(Protocol):
     __dataclass_fields__: dict
 
-E = TypeVar("E", bound=DataclassProtocol)
+E = TypeVar("E")
 @dataclass(frozen=True)
 class Collect(Generic[A, E], AST): 
-    collector: Callable[..., E]
+    collector: Type[E]
     value: A
 
 class ChoiceKind(Enum):

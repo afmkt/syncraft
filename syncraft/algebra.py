@@ -303,7 +303,7 @@ class Algebra(ABC, Generic[A, S]):
                     return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
-                        return Left(err)
+                        return Left(replace(err, committed=False))
                     match other.run(input, use_cache):
                         case Right((other_value, other_state)):
                             return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))

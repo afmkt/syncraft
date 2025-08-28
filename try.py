@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
 
     A = literal("a").mark("a")
-    B = literal("b")
+    B = literal("b").to(dict)
     C = literal("c").mark("c")
     syntax:Any = ((A + B) | C).many() + B
     sql = "a b a b c b"
