@@ -4,6 +4,7 @@ from syncraft.algebra import Either, Left, Right, Error
 from syncraft.ast import Marked, Then, ThenKind, Many, Nothing
 from syncraft.parser import literal, variable, parse, Parser, Token
 from syncraft.generator import TokenGen
+from syncraft.constraint import Variable, Expr, FrozenDict
 from rich import print
 import syncraft.generator as gen
 from dataclasses import dataclass
@@ -32,10 +33,11 @@ def test_find()->None:
     D = literal('d')
     M = literal(',')
     var = A | B | C | D
+    a = Variable()
     condition = var.sep_by(M).mark('condition') 
     ifthenelse = (IF >> condition
               // THEN 
-              + var.sep_by(M).mark('then') 
+              + var.sep_by(M).bind(a) 
               // ELSE 
               + var.sep_by(M).mark('otherwise') 
               // END).to(IfThenElse).many()

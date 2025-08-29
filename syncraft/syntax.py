@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, Literal, List
+    Type, Literal, List, overload
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -250,14 +250,20 @@ class Syntax(Generic[A, S]):
 
 
 ######################################################################## data processing combinators #########################################################
+    @overload
+    def bind(self,
+             var: Variable, 
+             collector: None = None)-> Syntax[A | Marked[A], S]: ...
+    
+    @overload
+    def bind(self,
+             var: Variable,
+             collector: Type[E]) -> Syntax[Collect[A, E] | Marked[Collect[A, E]], S]: ...
+             
     def bind(self, 
              var: Variable, 
-             collector: Optional[Type[E]]=None) -> Syntax[A | 
-                                                                   Marked[A] | 
-                                                                   Marked[Collect[A, E]] | 
-                                                                   Collect[A, E], S]:
-        def bind_v(v: A | Marked[A] | Marked[Collect[A, E]] | Collect[A, E], 
-                   s: S)->Tuple[A | Marked[A] | Marked[Collect[A, E]] | Collect[A, E], S]:
+             collector: Optional[Type[E]]=None) -> Syntax[Any, S]:
+        def bind_v(v: Any, s: S)->Tuple[Any, S]:
             return v, s.bind(var, v)
         if callable(collector):
             ret = self.to(collector).mark(var.name).map_all(bind_v) if var.name else self.to(collector).map_all(bind_v) 
