@@ -42,10 +42,20 @@ def test_to() -> None:
     syntax = (WHILE >> condition
             + ifthenelse.mark('body')
             // ~END).to(While)
-    sql = 'while b,c,c if a,b then c,d else a,d end if a,b then c,d else a,d end'
+    sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
     ast = parse(syntax, sql, dialect='sqlite')
+    print(ast)
     g = gen.generate(syntax, ast, restore_pruned=True)
     assert ast == g
     x, f = g.bimap()
-    print(x)
+    print(1, x)
     assert gen.generate(syntax, f(x), restore_pruned=True) == ast
+    x.body.append(x.body[0])
+    print(2, x)
+    print(f(x))
+    ast2 = gen.generate(syntax, f(x), restore_pruned=True) 
+    print(ast2)
+    y, fy = ast2.bimap()
+    print(3, y)
+    assert y == x
+    assert gen.generate(syntax, fy(y), restore_pruned=True) == ast2
