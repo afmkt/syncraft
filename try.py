@@ -23,8 +23,22 @@ var = variable()
 
 
 
+def test_sep_by()->None:
+    sql = "if then if then if then if"
+    syntax = IF.sep_by(THEN)
+    ast = parse(syntax, sql, dialect='sqlite')   
+    print(ast) 
+    generated = gen.generate(syntax, ast)
+    print(generated)
+    x, f = ast.bimap()
+    print(x)
+    print(f(x))
+    print(gen.generate(syntax, f(x)))
+    assert gen.generate(syntax, f(x)) == ast
+    assert ast == generated, "Parsed and generated results do not match."
 
 
 if __name__ == "__main__":
     pass
+    test_sep_by()
 
