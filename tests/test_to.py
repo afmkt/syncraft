@@ -9,9 +9,6 @@ import syncraft.generator as gen
 from dataclasses import dataclass
 
 
-
-
-
 def test_to() -> None:
     @dataclass
     class IfThenElse:
@@ -52,13 +49,3 @@ def test_to() -> None:
     x, f = g.bimap()
     print(x)
     assert gen.generate(syntax, f(x), restore_pruned=True) == ast
-
-
-
-
-
-
-if __name__ == "__main__":
-    pass
-    test_to()
-
