@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, Literal
+    Type, Literal, List
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -168,21 +168,27 @@ class Syntax(Generic[A, S]):
     def sep_by(self, 
                sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
         ret: Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S] = (self + (sep >> self).many().optional())
-        def f(a: Then[A, Choice[Many[A], Optional[Nothing]]]) -> Many[A]:
-            if a.right.kind == ChoiceKind.LEFT and isinstance(a.right.value, Many):
-                if len(a.right.value.value) == 0:
-                    return Many(value = (a.left,))
-                else:
-                    return Many(value = (a.left,) + a.right.value.value)
-            else:
-                return Many(value = (a.left,))
-        def i(a: Many[A]) -> Then[A, Choice[Many[A], Optional[Nothing]]]:
+        def f(a: Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]]) -> Many[A]:
+            match a:
+                case Then(kind=ThenKind.BOTH, left=left, right=Choice(kind=ChoiceKind.RIGHT, value=Nothing())):
+                    return Many(value = (left,))
+                case Then(kind=ThenKind.BOTH, left=left, right=Choice(kind=ChoiceKind.LEFT, value=Many(value=bs))):                    
+                    return Many(value = (left,) + tuple([b.right for b in bs]))
+                case _:
+                    raise ValueError(f"Bad data shape {a}")
+                
+        def i(a: Many[A]) -> Then[A, Choice[Many[Then[B|None, A]], Optional[Nothing]]]:
             assert len(a.value) >= 1, f"sep_by expect at least one element, got {len(a.value)}. {a}"
             if len(a.value) == 1:
                 return Then(kind=ThenKind.BOTH, left=a.value[0], right=Choice(kind=ChoiceKind.RIGHT, value=Nothing()))
             else:
-                return Then(kind= ThenKind.BOTH, left=a.value[0], right=Choice(kind=ChoiceKind.LEFT, value=Many(value=a.value[1:])))
-        return ret.bimap(f,i).describe( # type: ignore
+                v: List[Then[B|None, A]] = [Then(kind=ThenKind.RIGHT, right=x, left=None) for x in a.value[1:]]
+                return Then(kind= ThenKind.BOTH, 
+                            left=a.value[0], 
+                            right=Choice(kind=ChoiceKind.LEFT, 
+                                         value=Many(value=tuple(v))))
+        ret = ret.bimap(f,i) # type: ignore
+        return ret.describe( 
                     name='sep_by',
                     fixity='prefix',
                     parameter=(self, sep))

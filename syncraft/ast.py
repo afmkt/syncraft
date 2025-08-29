@@ -188,6 +188,11 @@ class AST:
 
 @dataclass(frozen=True)
 class Nothing(AST):
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(Nothing, cls).__new__(cls)
+        return cls._instance
     def __str__(self)->str:
         return self.__class__.__name__
     def __repr__(self)->str:
@@ -226,8 +231,8 @@ class Many(Generic[A], AST):
             if len(bs) <= len(ret):
                 return Many(value = tuple(ret[i][1](bs[i]) for i in range(len(bs)))) 
             else:
-                half = [ret[i][1](bs[i]) for i in range(len(bs))]
-                tmp = [ret[-1][1](bs[i]) for i in range(len(ret)-1, len(bs))]
+                half = [ret[i][1](bs[i]) for i in range(len(ret))]
+                tmp = [ret[-1][1](bs[i]) for i in range(len(ret), len(bs))]
                 return Many(value = tuple(half + tmp))
         return [v[0] for v in ret], inv
 
