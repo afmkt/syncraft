@@ -44,7 +44,6 @@ def test_find()->None:
             // ~END).to(While)
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
     ast = parse(syntax, sql, dialect='sqlite')
-    print(ast)
     for i in find(condition, ast):
         ii, f = i.bimap()
         print("found", ii)
