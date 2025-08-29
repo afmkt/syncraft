@@ -21,11 +21,11 @@ class Finder(Generator[T]):
     def anything(cls)->Algebra[Any, GenState[T]]:
         def anything_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Any, GenState[T]]]:
             return Right((input.ast, input))
-        return cls(anything_run, name=cls.__name__ + '.anything()')
+        return cls(anything_run, name=cls.__name__ + '.anything')
 
 
 
-anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
+anything = Syntax(lambda cls: cls.factory('anything')).describe(name="Anything", fixity='infix') 
 
 def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
     gen = syntax(Finder)

@@ -135,13 +135,10 @@ class TokenGen(TokenSpec):
         else:
             text = "VALUE"
 
-        return Token(token_type= token_type_from_string(self.token_type,
-                                                        text, 
-                                                        self.case_sensitive), 
-                     text=text)        
+        return Token(token_type=token_type_from_string(self.token_type, text, case_sensitive=False), text=text)        
 
     @staticmethod
-    def from_string(string: str)->Token:
+    def from_string(string: str) -> Token:
         return Token(token_type=token_type_from_string(None, string, case_sensitive=False), text=string)
 
 

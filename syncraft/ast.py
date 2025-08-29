@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import (
     Optional, Any, TypeVar, Tuple, runtime_checkable, cast,
-    Dict, Generic, Callable, Union, Protocol, Type, List, ClassVar
+    Generic, Callable, Union, Protocol, Type, List, ClassVar
 )
 
 
@@ -195,52 +195,7 @@ class Marked(Generic[A], AST):
     def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[Marked[B], Callable[[Marked[B]], Marked[A]]]:
         v, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
         return Marked(name=self.name, value=v), lambda b: Marked(name = b.name, value=inner_f(b.value))
-
-
-class DataclassInstance(Protocol):
-    __dataclass_fields__: ClassVar[dict[str, Any]]
-
-
-E = TypeVar("E", bound=DataclassInstance)
-
-Collector = Type[E] | Callable[..., E]
-@dataclass(frozen=True)
-class Collect(Generic[A, E], AST): 
-    collector: Collector
-    value: A
-    def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[B | E, Callable[[B | E], Collect[A, E]]]:
-        b, inner_f = r(self.value)
-        if isinstance(self.value, Then) and self.value.kind == ThenKind.BOTH:
-            assert isinstance(b, tuple), f"Expected tuple from Then.BOTH combinator, got {type(b)}"
-            index: List[str | int] = []
-            named_count = 0
-            for i, v in enumerate(b):
-                if isinstance(v, Marked):
-                    index.append(v.name)
-                    named_count += 1
-                else:
-                    index.append(i - named_count)
-            named = {v.name: v.value for v in b if isinstance(v, Marked)}
-            unnamed = [v for v in b if not isinstance(v, Marked)]
-            ret: E = self.collector(*unnamed, **named)
-            def invf(e: E) -> Tuple[Any, ...]:
-                assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
-                named_dict = asdict(e)     
-                unnamed = []           
-                for f in fields(e):
-                    if f.name not in named:
-                        unnamed.append(named_dict[f.name])
-                tmp = []
-                for x in index:
-                    if isinstance(x, str):
-                        tmp.append(Marked(name=x, value=named_dict[x]))
-                    else:
-                        tmp.append(unnamed[x])
-                return tuple(tmp)
-            return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore
-        else:
-            return b, lambda e: replace(self, value=inner_f(e)) # type: ignore
-
+    
 class ChoiceKind(Enum):
     LEFT = 'left'
     RIGHT = 'right'
@@ -293,6 +248,8 @@ class Then(Generic[A, B], AST):
             return 1
 
     def bimap(self, r: Bimap[A|B, Any]=Bimap.identity()) -> Tuple[Any | Tuple[Any, ...], Callable[[Any | Tuple[Any, ...]], Then[A, B]]]:
+        def need_wrap(x: Any) -> bool:
+            return not (isinstance(x, Then) and x.kind == ThenKind.BOTH)
         match self.kind:
             case ThenKind.LEFT:
                 lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
@@ -303,8 +260,8 @@ class Then(Generic[A, B], AST):
             case ThenKind.BOTH:
                 lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
                 rb, rinv = self.right.bimap(r) if isinstance(self.right, AST) else r(self.right)
-                left_v = (lb,) if not isinstance(self.left, Then) else lb
-                right_v = (rb,) if not isinstance(self.right, Then) else rb
+                left_v = (lb,) if need_wrap(self.left) else lb
+                right_v = (rb,) if need_wrap(self.right) else rb
                 def invf(b: Tuple[C, ...]) -> Then[A, B]:
                     left_size = self.left.arity() if isinstance(self.left, Then) else 1
                     right_size = self.right.arity() if isinstance(self.right, Then) else 1
@@ -317,6 +274,52 @@ class Then(Generic[A, B], AST):
                     return replace(self, left=cast(A, la), right=cast(B, ra))
                 return left_v + right_v, invf
 
+
+class DataclassInstance(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Any]]
+
+
+E = TypeVar("E", bound=DataclassInstance)
+
+Collector = Type[E] | Callable[..., E]
+@dataclass(frozen=True)
+class Collect(Generic[A, E], AST): 
+    collector: Collector
+    value: A
+    def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[B | E, Callable[[B | E], Collect[A, E]]]:
+        b, inner_f = r(self.value)
+        if isinstance(self.value, Then) and self.value.kind == ThenKind.BOTH:
+            assert isinstance(b, tuple), f"Expected tuple from Then.BOTH combinator, got {type(b)}"
+            index: List[str | int] = []
+            named_count = 0
+            for i, v in enumerate(b):
+                if isinstance(v, Marked):
+                    index.append(v.name)
+                    named_count += 1
+                else:
+                    index.append(i - named_count)
+            named = {v.name: v.value for v in b if isinstance(v, Marked)}
+            unnamed = [v for v in b if not isinstance(v, Marked)]
+            ret: E = self.collector(*unnamed, **named)
+            def invf(e: E) -> Tuple[Any, ...]:
+                assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
+                named_dict = asdict(e)     
+                unnamed = []           
+                for f in fields(e):
+                    if f.name not in named:
+                        unnamed.append(named_dict[f.name])
+                tmp = []
+                for x in index:
+                    if isinstance(x, str):
+                        tmp.append(Marked(name=x, value=named_dict[x]))
+                    else:
+                        tmp.append(unnamed[x])
+                return tuple(tmp)
+            return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore
+        else:
+            return b, lambda e: replace(self, value=inner_f(e)) # type: ignore
+
+#########################################################################################################################
 @dataclass(frozen=True)
 class Token(AST):
     token_type: Enum
@@ -326,11 +329,7 @@ class Token(AST):
     
     def __repr__(self) -> str:
         return self.__str__()
-    
-    def bimap(self, r: Bimap['Token', A]=Bimap.identity()) -> Tuple[A, Callable[[A], 'Token']]:
-        return r(self)
-
-        
+            
 @runtime_checkable
 class TokenProtocol(Protocol):
     @property
