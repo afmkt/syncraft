@@ -178,7 +178,8 @@ class Syntax(Generic[A, S]):
                     raise ValueError(f"Bad data shape {a}")
                 
         def i(a: Many[A]) -> Then[A, Choice[Many[Then[B|None, A]], Optional[Nothing]]]:
-            assert len(a.value) >= 1, f"sep_by expect at least one element, got {len(a.value)}. {a}"
+            if not isinstance(a, Many) or len(a.value) < 1:
+                raise ValueError(f"sep_by inverse expect Many with at least one element, got {a}")
             if len(a.value) == 1:
                 return Then(kind=ThenKind.BOTH, left=a.value[0], right=Choice(kind=ChoiceKind.RIGHT, value=Nothing()))
             else:

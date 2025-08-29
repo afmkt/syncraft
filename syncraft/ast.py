@@ -14,7 +14,8 @@ from enum import Enum
 
 
 def shallow_dict(a: Any)->Dict[str, Any]:
-    assert is_dataclass(a), f"Expected dataclass instance for collector inverse, got {type(a)}"
+    if not is_dataclass(a):
+        raise ValueError(f"Expected dataclass instance for collector inverse, got {type(a)}")
     return {f.name: getattr(a, f.name) for f in fields(a)}
 
 
@@ -300,7 +301,8 @@ class Collect(Generic[A, E], AST):
     def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[B | E, Callable[[B | E], Collect[A, E]]]:
 
         def inv_one_positional(e: E) -> B:
-            assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
+            if not is_dataclass(e):
+                raise ValueError(f"Expected dataclass instance for collector inverse, got {type(e)}")
             named_dict = shallow_dict(e)
             return named_dict[fields(e)[0].name]
 
@@ -319,7 +321,8 @@ class Collect(Generic[A, E], AST):
                 unnamed = [v for v in b if not isinstance(v, Marked)]
                 ret: E = self.collector(*unnamed, **named)
                 def invf(e: E) -> Tuple[Any, ...]:
-                    assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
+                    if not is_dataclass(e):
+                        raise ValueError(f"Expected dataclass instance for collector inverse, got {type(e)}")
                     named_dict = shallow_dict(e)     
                     unnamed = []           
                     for f in fields(e):

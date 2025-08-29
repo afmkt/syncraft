@@ -55,7 +55,8 @@ class Variable:
             object.__setattr__(self, '_root', self)
 
     def raw(self, b:'BoundVar') -> Tuple[Any, ...]:
-        assert self._root is not None, "_rawf can not be None"
+        if self._root is None:
+            raise ValueError("_rawf can not be None")
         return b.get(self._root, ())
     
 

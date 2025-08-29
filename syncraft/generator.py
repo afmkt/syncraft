@@ -174,8 +174,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
-        assert at_least > 0, "at_least must be greater than 0"
-        assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
+        if at_least <=0 or (at_most is not None and at_most < at_least):
+            raise ValueError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}")
         def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]:
             if input.pruned:
                 upper = at_most if at_most is not None else at_least + 2

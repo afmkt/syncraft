@@ -48,6 +48,7 @@ class Error:
     error: Optional[Any] = None    
     state: Optional[Any] = None
     committed: bool = False
+    stack: Optional[str] = None
     previous: Optional[Error] = None
     
     def attach( self, 
@@ -115,14 +116,15 @@ class Algebra(ABC, Generic[A, S]):
                     result = Left(result.value.attach(this=self, state=input))
         except Exception as e:
             cache.pop(input, None)  # Clear the cache entry on exception
-            traceback.print_exc()
-            print(f"Exception from self.run(S): {e}")
+            # traceback.print_exc()
+            # print(f"Exception from self.run(S): {e}")
             return Left(
                 Error(
                     message="Exception from self.run(S): {e}",
                     this=self,
                     state=input,
-                    error=e
+                    error=e,
+                    stack=traceback.format_exc()
                 ))
         return result
 
@@ -341,8 +343,8 @@ class Algebra(ABC, Generic[A, S]):
         return self.flat_map(then_right_f).named(f'{self.name} >> {other.name}')
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
-        assert at_least > 0, "at_least must be greater than 0"
-        assert at_most is None or at_least <= at_most, "at_least must be less than or equal to at_most"
+        if at_least <=0 or (at_most is not None and at_most < at_least):
+            raise ValueError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}")
         def many_run(input: S, use_cache:bool) -> Either[Any, Tuple[Many[A], S]]:
             ret: List[A] = []
             current_input = input
