@@ -35,8 +35,8 @@ def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
 
 
 def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> YieldGen[ParseResult[Any], None, None]:
-    if matches(syntax, data):
-        if not isinstance(data, Marked):
+    if not isinstance(data, Marked):
+        if matches(syntax, data):
             yield data
     match data:
         case Then(left=left, right=right):
