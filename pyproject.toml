@@ -1,6 +1,6 @@
 [project]
 name = "syncraft"
-version = "0.1.32"
+version = "0.1.33"
 description = "Parser combinator library"
 license = "MIT"
 license-files = ["LICENSE"]
