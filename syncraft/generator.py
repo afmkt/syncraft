@@ -71,9 +71,7 @@ class GenState(Bindable, Generic[T]):
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.LEFT or self.restore_pruned):
             return replace(self, ast=self.ast.right)
         return replace(self, ast=None)
-    
 
-    
     def down(self, index: int) -> GenState[T]:
         if self.ast is None:
             return self        
@@ -84,19 +82,27 @@ class GenState(Bindable, Generic[T]):
                 raise TypeError(f"Invalid AST type({self.ast}) for down traversal")
     
     @classmethod
-    def from_ast(cls, *, ast: Optional[ParseResult[T]], seed: int = 0, restore_pruned:bool=False) -> GenState[T]:
+    def from_ast(cls, 
+                 *, 
+                 ast: Optional[ParseResult[T]], 
+                 seed: int = 0, 
+                 restore_pruned:bool=False) -> GenState[T]:
         return cls(ast=ast, seed=seed, restore_pruned=restore_pruned)
     
-
-
-
-
 @lru_cache(maxsize=None)
-def token_type_from_string(token_type: Optional[TokenType], text: str, case_sensitive:bool)-> TokenType:
+def token_type_from_string(token_type: Optional[TokenType], 
+                           text: str, 
+                           case_sensitive:bool = False)-> TokenType:
     if not isinstance(token_type, TokenType) or token_type == TokenType.VAR:
-        for t in TokenType:
-            if t.value == text or str(t.value).lower() == text.lower():
-                return t
+        if case_sensitive:
+            for t in TokenType:
+                if t.value == text:
+                    return t
+        else:
+            text = text.lower()
+            for t in TokenType:
+                if t.value == text or str(t.value).lower() == text:
+                    return t
         return TokenType.VAR
     return token_type
 

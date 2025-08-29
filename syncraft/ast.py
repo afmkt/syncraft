@@ -361,6 +361,7 @@ ParseResult = Union[
     Marked['ParseResult[T]'],
     Choice['ParseResult[T]', 'ParseResult[T]'],
     Many['ParseResult[T]'],
+    Collect['ParseResult[T]', Any],
     Nothing,
     T,
 ]

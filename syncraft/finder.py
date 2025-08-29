@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra, Either, Right, 
 )
-from syncraft.ast import TokenProtocol, ParseResult, Choice, Many, Then, Marked
+from syncraft.ast import TokenProtocol, ParseResult, Choice, Many, Then, Marked, Collect
 
 from syncraft.generator import GenState, Generator
 
@@ -27,14 +27,14 @@ class Finder(Generator[T]):
 
 anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
 
-def matches(syntax: Syntax[Any, Any], data: ParseResult[T])-> bool:
+def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
     gen = syntax(Finder)
-    state = GenState.from_ast(ast = data, restore_pruned=True)
+    state = GenState[Any].from_ast(ast = data, restore_pruned=True)
     result = gen.run(state, use_cache=True)
     return isinstance(result, Right)
 
 
-def find(syntax: Syntax[Any, Any], data: ParseResult[T]) -> YieldGen[ParseResult[T], None, None]:
+def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> YieldGen[ParseResult[Any], None, None]:
     if matches(syntax, data):
         yield data
     match data:
@@ -48,10 +48,10 @@ def find(syntax: Syntax[Any, Any], data: ParseResult[T]) -> YieldGen[ParseResult
                 yield from find(syntax, e)
         case Marked(value=value):
             yield from find(syntax, value)
-        case Choice(left=left, right=right):
-            if left is not None:
-                yield from find(syntax, left)
-            if right is not None:
-                yield from find(syntax, right)
+        case Choice(value=value):
+            if value is not None:
+                yield from find(syntax, value)
+        case Collect(value=value):
+            yield from find(syntax, value)
         case _:
             pass
