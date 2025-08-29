@@ -16,6 +16,8 @@ def test_between()->None:
     ast:AST = parse(syntax, sql, dialect='sqlite')    
     generated = gen.generate(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
+    x, f = generated.bimap()
+    assert gen.generate(syntax, f(x)) == ast
 
 
 def test_sep_by()->None:
@@ -24,6 +26,8 @@ def test_sep_by()->None:
     ast:AST = parse(syntax, sql, dialect='sqlite')    
     generated = gen.generate(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
+    x, f = generated.bimap()
+    assert gen.generate(syntax, f(x)) == ast
 
 def test_many_or()->None:
     IF = literal("if")
@@ -34,3 +38,5 @@ def test_many_or()->None:
     ast:AST = parse(syntax, sql, dialect='sqlite')
     generated = gen.generate(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
+    x, f = generated.bimap()
+    assert gen.generate(syntax, f(x)) == ast
