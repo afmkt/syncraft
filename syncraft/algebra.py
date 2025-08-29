@@ -8,7 +8,10 @@ import traceback
 from dataclasses import dataclass, replace, asdict
 from weakref import WeakKeyDictionary
 from abc import ABC
-from syncraft.ast import ThenKind, Then, S, Choice, Many, ChoiceKind
+from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind
+from syncraft.constraint import Bindable
+
+S = TypeVar('S', bound=Bindable)
     
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Mapped result type

@@ -3,14 +3,14 @@
 from __future__ import annotations
 import re
 from typing import (
-    Optional, Any, TypeVar, Tuple, runtime_checkable, Self,
-    Dict, Generic, Callable, Union, Protocol, Type
+    Optional, Any, TypeVar, Tuple, runtime_checkable, cast,
+    Dict, Generic, Callable, Union, Protocol, Type, List, ClassVar
 )
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace, is_dataclass, asdict, fields
 from enum import Enum
-from syncraft.constraint import Bindable
+
 
 
 
@@ -18,7 +18,9 @@ A = TypeVar('A')
 B = TypeVar('B')  
 C = TypeVar('C')  
 D = TypeVar('D')
-S = TypeVar('S', bound=Bindable)  
+S = TypeVar('S')  
+S1 = TypeVar('S1')
+
 
 @dataclass(frozen=True)
 class Biarrow(Generic[A, B]):
@@ -79,20 +81,6 @@ class Lens(Generic[C, A]):
         return other.__truediv__(self)
     
 
-@dataclass(frozen=True)
-class Reducer(Generic[A, S]):
-    run_f: Callable[[A, S], S]
-    def __call__(self, a: A, s: S) -> S:
-        return self.run_f(a, s)
-    
-    def map(self, f: Callable[[B], A]) -> Reducer[B, S]:
-        def map_run(b: B, s: S) -> S:
-            return self(f(b), s)
-        return Reducer(map_run)
-    
-    def __rshift__(self, other: Reducer[A, S]) -> Reducer[A, S]:
-        return Reducer(lambda a, s: other(a, self(a, s)))
-    
 @dataclass(frozen=True)
 class Bimap(Generic[A, B]):
     run_f: Callable[[A], Tuple[B, Callable[[B], A]]]
@@ -161,14 +149,36 @@ class Bimap(Generic[A, B]):
             return abc, inv_f
         return Bimap(when_run)
     
-    
 
+@dataclass(frozen=True)
+class Reducer(Generic[A, S]):
+    run_f: Callable[[A, S], S]
+    def __call__(self, a: A, s: S) -> S:
+        return self.run_f(a, s)
     
+    def map(self, f: Callable[[B], A]) -> Reducer[B, S]:
+        def map_run(b: B, s: S) -> S:
+            return self(f(b), s)
+        return Reducer(map_run)
+    
+    def __rshift__(self, other: Reducer[A, S]) -> Reducer[A, S]:
+        return Reducer(lambda a, s: other(a, self(a, s)))
+    
+    def zip(self, other: Reducer[A, S1])-> Reducer[A, Tuple[S, S1]]:
+        return Reducer(lambda a, s: (self(a, s[0]), other(a, s[1])))
+    
+    def diff(self, other: Reducer[B, S]) -> Reducer[Tuple[A, B], S]:
+        return Reducer(lambda ab, s: other(ab[1], self(ab[0], s)))
+    
+    def filter(self, f: Callable[[A, S], bool]) -> Reducer[A, S]:
+        return Reducer(lambda a, s: self(a, s) if f(a, s) else s)
+
+
 
 @dataclass(frozen=True)    
 class AST:
-    def walk(self, r: Reducer[Any, S], s: S) -> S:
-        return s
+    def bimap(self, r: Bimap[Any, Any]=Bimap.identity()) -> Tuple[Any, Callable[[Any], Any]]:
+        return r(self)
 
 @dataclass(frozen=True)
 class Nothing(AST):
@@ -182,18 +192,54 @@ class Nothing(AST):
 class Marked(Generic[A], AST):
     name: str
     value: A
-    def walk(self, r: Reducer[A, S], s: S) -> S:
-        return self.value.walk(r, s) if isinstance(self.value, AST) else r(self.value, s)
+    def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[Marked[B], Callable[[Marked[B]], Marked[A]]]:
+        v, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
+        return Marked(name=self.name, value=v), lambda b: Marked(name = b.name, value=inner_f(b.value))
 
 
-class DataclassProtocol(Protocol):
-    __dataclass_fields__: dict
+class DataclassInstance(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Any]]
 
-E = TypeVar("E")
+
+E = TypeVar("E", bound=DataclassInstance)
+
+Collector = Type[E] | Callable[..., E]
 @dataclass(frozen=True)
 class Collect(Generic[A, E], AST): 
-    collector: Type[E]
+    collector: Collector
     value: A
+    def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[B | E, Callable[[B | E], Collect[A, E]]]:
+        b, inner_f = r(self.value)
+        if isinstance(self.value, Then) and self.value.kind == ThenKind.BOTH:
+            assert isinstance(b, tuple), f"Expected tuple from Then.BOTH combinator, got {type(b)}"
+            index: List[str | int] = []
+            named_count = 0
+            for i, v in enumerate(b):
+                if isinstance(v, Marked):
+                    index.append(v.name)
+                    named_count += 1
+                else:
+                    index.append(i - named_count)
+            named = {v.name: v.value for v in b if isinstance(v, Marked)}
+            unnamed = [v for v in b if not isinstance(v, Marked)]
+            ret: E = self.collector(*unnamed, **named)
+            def invf(e: E) -> Tuple[Any, ...]:
+                assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
+                named_dict = asdict(e)     
+                unnamed = []           
+                for f in fields(e):
+                    if f.name not in named:
+                        unnamed.append(named_dict[f.name])
+                tmp = []
+                for x in index:
+                    if isinstance(x, str):
+                        tmp.append(Marked(name=x, value=named_dict[x]))
+                    else:
+                        tmp.append(unnamed[x])
+                return tuple(tmp)
+            return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore
+        else:
+            return b, lambda e: replace(self, value=inner_f(e)) # type: ignore
 
 class ChoiceKind(Enum):
     LEFT = 'left'
@@ -203,48 +249,73 @@ class ChoiceKind(Enum):
 class Choice(Generic[A, B], AST):
     kind: Optional[ChoiceKind]
     value: Optional[A | B] = None
-    def walk(self, r: Reducer[A | B, S], s: S) -> S:
-        if self.value is not None:
-            if isinstance(self.value, AST):
-                return self.value.walk(r, s)
-            else:
-                return r(self.value, s)
-        return s
+    def bimap(self, r: Bimap[A | B, C]=Bimap.identity()) -> Tuple[Optional[C], Callable[[Optional[C]], Choice[A, B]]]:
+        if self.value is None:
+            return None, lambda c: replace(self, value=None, kind=None)
+        else:
+            v, inv = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
+            return v, lambda c: replace(self, value=inv(c) if c is not None else None, kind=None)
 
 @dataclass(frozen=True)
 class Many(Generic[A], AST):
     value: Tuple[A, ...]
-    def walk(self, r: Reducer[A, S], s: S) -> S:
-        for item in self.value:
-            if isinstance(item, AST):
-                s = item.walk(r, s)
+    def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[List[B], Callable[[List[B]], Many[A]]]:
+        ret = [v.bimap(r) if isinstance(v, AST) else r(v) for v in self.value]
+        def inv(bs: List[B]) -> Many[A]:
+            if len(bs) <= len(ret):
+                return Many(value = tuple(ret[i][1](bs[i]) for i in range(len(bs)))) 
             else:
-                s = r(item, s)
-        return s
+                half = [ret[i][1](bs[i]) for i in range(len(bs))]
+                tmp = [ret[-1][1](bs[i]) for i in range(len(ret)-1, len(bs))]
+                return Many(value = tuple(half + tmp))
+        return [v[0] for v in ret], inv
 
 class ThenKind(Enum):
     BOTH = '+'
     LEFT = '//'
     RIGHT = '>>'
     
-FlatThen = Tuple[Any, ...]
-MarkedThen = Tuple[Dict[str, Any] | Any, FlatThen]
-
 @dataclass(eq=True, frozen=True)
 class Then(Generic[A, B], AST):
     kind: ThenKind
     left: A
     right: B
-    def walk(self, r: Reducer[A | B, S], s: S) -> S:
-        if isinstance(self.left, AST):
-            s = self.left.walk(r, s)
+    def arity(self)->int:
+        if self.kind == ThenKind.LEFT:
+            return self.left.arity() if isinstance(self.left, Then) else 1
+        elif self.kind == ThenKind.RIGHT:
+            return self.right.arity() if isinstance(self.right, Then) else 1
+        elif self.kind == ThenKind.BOTH:
+            left_arity = self.left.arity() if isinstance(self.left, Then) else 1
+            right_arity = self.right.arity() if isinstance(self.right, Then) else 1
+            return left_arity + right_arity
         else:
-            s = r(self.left, s)
-        if isinstance(self.right, AST):
-            s = self.right.walk(r, s)
-        else:
-            s = r(self.right, s)
-        return s
+            return 1
+
+    def bimap(self, r: Bimap[A|B, Any]=Bimap.identity()) -> Tuple[Any | Tuple[Any, ...], Callable[[Any | Tuple[Any, ...]], Then[A, B]]]:
+        match self.kind:
+            case ThenKind.LEFT:
+                lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
+                return lb, lambda c: replace(self, left=cast(A, linv(c)))
+            case ThenKind.RIGHT:
+                rb, rinv = self.right.bimap(r) if isinstance(self.right, AST) else r(self.right)
+                return rb, lambda c: replace(self, right=cast(B, rinv(c)))
+            case ThenKind.BOTH:
+                lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
+                rb, rinv = self.right.bimap(r) if isinstance(self.right, AST) else r(self.right)
+                left_v = (lb,) if not isinstance(self.left, Then) else lb
+                right_v = (rb,) if not isinstance(self.right, Then) else rb
+                def invf(b: Tuple[C, ...]) -> Then[A, B]:
+                    left_size = self.left.arity() if isinstance(self.left, Then) else 1
+                    right_size = self.right.arity() if isinstance(self.right, Then) else 1
+                    lraw: Tuple[Any, ...] = b[:left_size]
+                    rraw: Tuple[Any, ...] = b[left_size:left_size + right_size]
+                    lraw = lraw[0] if left_size == 1 else lraw
+                    rraw = rraw[0] if right_size == 1 else rraw
+                    la = linv(lraw)
+                    ra = rinv(rraw)
+                    return replace(self, left=cast(A, la), right=cast(B, ra))
+                return left_v + right_v, invf
 
 @dataclass(frozen=True)
 class Token(AST):
@@ -256,8 +327,8 @@ class Token(AST):
     def __repr__(self) -> str:
         return self.__str__()
     
-    def walk(self, r: Reducer['Token', S], s: S) -> S:
-        return r(self, s)
+    def bimap(self, r: Bimap['Token', A]=Bimap.identity()) -> Tuple[A, Callable[[A], 'Token']]:
+        return r(self)
 
         
 @runtime_checkable
@@ -296,83 +367,3 @@ ParseResult = Union[
 
 
 
-"""
-    @staticmethod
-    def collect_marked(a: FlatThen, f: Optional[Callable[..., Any]] = None)->Tuple[MarkedThen, Callable[[MarkedThen], FlatThen]]:
-        index: List[str | int] = []
-        named_count = 0
-        for i, v in enumerate(a):
-            if isinstance(v, Marked):
-                index.append(v.name)
-                named_count += 1
-            else:
-                index.append(i - named_count)
-        named = {v.name: v.value for v in a if isinstance(v, Marked)}
-        unnamed = [v for v in a if not isinstance(v, Marked)]
-        if f is None:
-            ret = (named, tuple(unnamed))
-        else:
-            ret = (f(**named), tuple(unnamed))
-        def invf(b: MarkedThen) -> Tuple[Any, ...]:
-            named_value, unnamed_value = b 
-            assert isinstance(named_value, dict) or is_dataclass(named_value), f"Expected dict or dataclass for named values, got {type(named_value)}"
-            if is_dataclass(named_value):
-                named_dict = named | asdict(cast(Any, named_value))    
-            else:
-                named_dict = named | named_value
-            ret = []
-            for x in index:
-                if isinstance(x, str):
-                    assert x in named_dict, f"Missing named value: {x}"
-                    ret.append(named_dict[x])
-                else:
-                    assert 0 <= x < len(unnamed_value), f"Missing unnamed value at index: {x}"
-                    ret.append(unnamed_value[x])
-            return tuple(ret)
-        return ret, invf
-
-    def bimap(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[FlatThen, Callable[[FlatThen], Then[A, B]]]:
-        match self.kind:
-            case ThenKind.LEFT:
-                lb, linv = self.left.bimap(f) if isinstance(self.left, AST) else f(self.left)
-                return lb, lambda b: replace(self, left=linv(b))
-            case ThenKind.RIGHT:
-                rb, rinv = self.right.bimap(f) if isinstance(self.right, AST) else f(self.right)
-                return rb, lambda b: replace(self, right=rinv(b))
-            case ThenKind.BOTH:
-                lb, linv = self.left.bimap(f) if isinstance(self.left, AST) else f(self.left)
-                rb, rinv = self.right.bimap(f) if isinstance(self.right, AST) else f(self.right)
-                left_v = (lb,) if not isinstance(self.left, Then) else lb
-                right_v = (rb,) if not isinstance(self.right, Then) else rb
-                def invf(b: Tuple[Any, ...]) -> Then[A, B]:
-                    left_size = self.left.arity() if isinstance(self.left, Then) else 1
-                    right_size = self.right.arity() if isinstance(self.right, Then) else 1
-                    lraw = b[:left_size]
-                    rraw = b[left_size:left_size + right_size]
-                    lraw = lraw[0] if left_size == 1 else lraw
-                    rraw = rraw[0] if right_size == 1 else rraw
-                    la = linv(lraw)
-                    ra = rinv(rraw)
-                    return replace(self, left=la, right=ra)
-                return left_v + right_v, invf
-            
-    def bimap_collected(self, f: Bimap[Any, Any]=Bimap.identity()) -> Tuple[MarkedThen, Callable[[MarkedThen], Then[A, B]]]:
-        data, invf = self.bimap(f)                
-        data, func = Then.collect_marked(data)
-        return data, lambda d: invf(func(d))
-
-
-    def arity(self)->int:
-        if self.kind == ThenKind.LEFT:
-            return self.left.arity() if isinstance(self.left, Then) else 1
-        elif self.kind == ThenKind.RIGHT:
-            return self.right.arity() if isinstance(self.right, Then) else 1
-        elif self.kind == ThenKind.BOTH:
-            left_arity = self.left.arity() if isinstance(self.left, Then) else 1
-            right_arity = self.right.arity() if isinstance(self.right, Then) else 1
-            return left_arity + right_arity
-        else:
-            return 1
-
-
-"""

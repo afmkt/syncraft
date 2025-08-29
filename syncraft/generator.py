@@ -11,8 +11,8 @@ from syncraft.algebra import (
 )
 
 from syncraft.ast import (
-    T, ParseResult, AST, Token, TokenSpec, 
-    Bindable, Nothing,
+    ParseResult, AST, Token, TokenSpec, 
+    Nothing, TokenProtocol,
     Choice, Many, ChoiceKind,
     Then, ThenKind, Marked
 )
@@ -24,6 +24,14 @@ import rstr
 from functools import lru_cache
 import random
 from rich import print
+from syncraft.constraint import Bindable
+
+T = TypeVar('T', bound=TokenProtocol)  
+
+S = TypeVar('S', bound=Bindable)
+
+
+
 B = TypeVar('B')
 
 

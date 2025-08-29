@@ -6,23 +6,33 @@ from syncraft.parser import literal, variable, parse, Parser, Token
 from syncraft.generator import TokenGen
 from rich import print
 import syncraft.generator as gen
+from dataclasses import dataclass
 
-
-def test5_nested_then_many() -> None:
-    IF, THEN, END = literal("if"), literal("then"), literal("end")
-    syntax = (IF.many() // THEN.many()).many() // END
-    sql = "if if then end"
-    ast = parse(syntax, sql, dialect="sqlite")
-    print("---" * 40)
-    print(ast)
-    generated = gen.generate(syntax, ast, restore_pruned=True)
-    print("---" * 40)
-    print(generated)
-    assert ast == generated
+@dataclass
+class ACls:
+    a: str | None
+    b: str | None
+    c: str | None
 
 if __name__ == "__main__":
     pass
-
+    A = literal('a')
+    B = literal('b')
+    C = literal('c')
+    D = literal('d')
+    E = literal('e')
+    F = literal('f')
+    sql = 'a b c d e f'
+    syntax = (A >> B) + (C + D) + (E + F)
+    ast = parse(syntax, sql, dialect='sqlite')
+    print('---' * 40)
+    print(ast)
+    generated = gen.generate(syntax, ast)
+    assert ast == generated
+    x, f = generated.bimap()
+    print(x)
+    y = f(x)
+    assert y == ast
     # A = literal('a')
     # B = literal('b')
     # C = literal('c')
@@ -61,14 +71,19 @@ if __name__ == "__main__":
     # assert ast == generated
 
 
-    A = literal("a").mark("a")
-    B = literal("b").to(dict)
-    C = literal("c").mark("c")
-    syntax:Any = ((A + B) | C).many() + B
-    sql = "a b a b c b"
-    ast = parse(syntax, sql, dialect='sqlite')
-    print(ast)
-    generated = gen.generate(syntax, ast)
-    print('---' * 40)
-    print(generated)
-    assert ast == generated
+    # A = literal("a").mark("a")
+    # B = literal("b")
+    # C = literal("c").mark("c")
+    # syntax:Any = ((A + B) | C).many() + B
+    # sql = "a b a b c b"
+    # ast = parse(syntax, sql, dialect='sqlite')
+    # print(ast)
+    # generated = gen.generate(syntax, ast)
+    # print('---' * 40)
+    # print(generated)
+    # assert ast == generated
+    # v, f = generated.bimap()
+    # print(v)
+    # print(f(v))
+    # x = gen.generate(syntax, f(v))
+    # assert x == ast

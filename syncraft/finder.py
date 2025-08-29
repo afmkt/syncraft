@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Tuple, Generator as YieldGen
+    Any, Tuple, Generator as YieldGen, TypeVar
 )
 from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra, Either, Right, 
 )
-from syncraft.ast import T, ParseResult, Choice, Many, Then, Marked
+from syncraft.ast import TokenProtocol, ParseResult, Choice, Many, Then, Marked
 
 from syncraft.generator import GenState, Generator
 
 from syncraft.syntax import Syntax
 
 
-
+T=TypeVar('T', bound=TokenProtocol)
 @dataclass(frozen=True)
 class Finder(Generator[T]):
     @classmethod

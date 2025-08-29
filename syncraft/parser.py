@@ -2,7 +2,7 @@ from __future__ import annotations
 import re
 from sqlglot import tokenize, TokenType, Parser as GlotParser, exp
 from typing import (
-    Optional, List, Any, Tuple,
+    Optional, List, Any, Tuple, TypeVar,
     Generic
 )
 from syncraft.algebra import (
@@ -13,9 +13,11 @@ from enum import Enum
 from functools import reduce
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, T, Bindable
+from syncraft.ast import Token, TokenSpec, AST, TokenProtocol
+from syncraft.constraint import Bindable
 
 
+T = TypeVar('T', bound=TokenProtocol)
 @dataclass(frozen=True)
 class ParserState(Bindable, Generic[T]):
     input: Tuple[T, ...] = field(default_factory=tuple)

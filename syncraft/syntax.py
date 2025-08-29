@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Right
 from syncraft.constraint import Variable, Bindable
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector
 from types import MethodType, FunctionType
 
 from rich import print
@@ -249,7 +249,7 @@ class Syntax(Generic[A, S]):
             ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v)
         return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=(self,))
 
-    def to(self, f: Type[E])-> Syntax[Collect[A, E], S]:
+    def to(self, f: Collector[E])-> Syntax[Collect[A, E], S]:
         def to_f(v: A) -> Collect[A, E]:
             if isinstance(v, Collect):
                 return replace(v, collector=f)
