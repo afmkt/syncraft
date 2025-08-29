@@ -10,35 +10,45 @@ from dataclasses import dataclass
 
 @dataclass
 class ACls:
-    a: str | None
-    b: str | None
-    c: str | None
+    condition: Any
+    then: Any
+    otherwise: Any
 
 
-IF = literal("if")
-ELSE = literal("else")
-THEN = literal("then")
-END = literal("end")
-var = variable()
 
 
-def test5_nested_then_many() -> None:
-    IF, THEN, END = literal("if"), literal("then"), literal("end")
-    syntax = (IF.many() // THEN.many()).many() // END
-    sql = "if if then end"
-    ast = parse(syntax, sql, dialect="sqlite")
-    print("---" * 40)
-    print(ast)
-    generated = gen.generate(syntax, ast, restore_pruned=True)
-    print("---" * 40)
-    print(generated)
-    assert ast == generated
-    value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value), restore_pruned=True) == generated
+def test() -> None:
+    IF = literal("if")
+    ELSE = literal("else")
+    THEN = literal("then")
+    END = literal("end")
+    A = literal('a')
+    B = literal('b')
+    C = literal('c')
+    D = literal('d')
+    M = literal(',')
+    var = A | B | C | D
+    syntax = (IF >> var.sep_by(M).mark('condition') 
+              // THEN 
+              + var.sep_by(M).mark('then') 
+              // ELSE 
+              + var.sep_by(M).mark('otherwise') 
+              // END).to(ACls).many()
+    sql = 'if a,b then c,d else a,d end'
+    ast = parse(syntax, sql, dialect='sqlite')
+    g = gen.generate(syntax, ast, restore_pruned=True)
+    assert ast == g
+    x, f = g.bimap()
+    print(x)
+    print(f(x))
+    assert gen.generate(syntax, f(x), restore_pruned=True) == ast
+
+
+
 
 
 
 if __name__ == "__main__":
     pass
-    test5_nested_then_many()
+    test()
 

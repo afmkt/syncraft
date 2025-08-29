@@ -165,9 +165,24 @@ class Syntax(Generic[A, S]):
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Then[B, Then[A, C]], S]:
         return left >> self // right
 
-    def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
+    def sep_by(self, 
+               sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
         ret: Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S] = (self + (sep >> self).many().optional())
-        return ret.describe( 
+        def f(a: Then[A, Choice[Many[A], Optional[Nothing]]]) -> Many[A]:
+            if a.right.kind == ChoiceKind.LEFT and isinstance(a.right.value, Many):
+                if len(a.right.value.value) == 0:
+                    return Many(value = (a.left,))
+                else:
+                    return Many(value = (a.left,) + a.right.value.value)
+            else:
+                return Many(value = (a.left,))
+        def i(a: Many[A]) -> Then[A, Choice[Many[A], Optional[Nothing]]]:
+            assert len(a.value) >= 1, f"sep_by expect at least one element, got {len(a.value)}. {a}"
+            if len(a.value) == 1:
+                return Then(kind=ThenKind.BOTH, left=a.value[0], right=Choice(kind=ChoiceKind.RIGHT, value=Nothing()))
+            else:
+                return Then(kind= ThenKind.BOTH, left=a.value[0], right=Choice(kind=ChoiceKind.LEFT, value=Many(value=a.value[1:])))
+        return ret.bimap(f,i).describe( # type: ignore
                     name='sep_by',
                     fixity='prefix',
                     parameter=(self, sep))
@@ -191,17 +206,11 @@ class Syntax(Generic[A, S]):
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self.alg(cls).then_left(other.alg(cls))) # type: ignore
         return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S]) 
-
-    def __lshift__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
-        return self.__floordiv__(other)
-
+    
     def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         return other.__floordiv__(self)
         
-    def __rlshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
-        return self.__rfloordiv__(other)
-
     def __add__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
         other = other if isinstance(other, Syntax) else self.lift(other).as_(Syntax[B, S])
         ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self.alg(cls).then_both(other.alg(cls))) # type: ignore
@@ -260,16 +269,16 @@ class Syntax(Generic[A, S]):
         return self.bimap(to_f, ito_f).describe(name=f'to({f})', fixity='postfix', parameter=(self,))
 
 
-    def mark(self, var: str) -> Syntax[Marked[A], S]:
+    def mark(self, name: str) -> Syntax[Marked[A], S]:
         def bind_s(value: A) -> Marked[A]:
             if isinstance(value, Marked):
-                return replace(value, name=var)    
+                return replace(value, name=name)    
             else:
-                return Marked(name=var, value=value)
+                return Marked(name=name, value=value)
         def ibind_s(m : Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m
             
-        return self.bimap(bind_s, ibind_s).describe(name=f'bind("{var}")', fixity='postfix', parameter=(self,))
+        return self.bimap(bind_s, ibind_s).describe(name=f'bind("{name}")', fixity='postfix', parameter=(self,))
 
 
 

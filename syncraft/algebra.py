@@ -5,11 +5,14 @@ from typing import (
 )
 
 import traceback
-from dataclasses import dataclass, replace, asdict
+from dataclasses import dataclass, replace
 from weakref import WeakKeyDictionary
 from abc import ABC
-from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind
+from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict
 from syncraft.constraint import Bindable
+
+
+
 
 S = TypeVar('S', bound=Bindable)
     
@@ -64,7 +67,7 @@ class Error:
         lst = []
         current: Optional[Error] = self
         while current is not None:
-            d = asdict(current)
+            d = shallow_dict(current)
             lst.append({k:v for k,v in d.items() if v is not None and k != 'previous'})
             current = current.previous
         return lst

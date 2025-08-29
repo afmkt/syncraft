@@ -4,12 +4,18 @@ from __future__ import annotations
 import re
 from typing import (
     Optional, Any, TypeVar, Tuple, runtime_checkable, cast,
-    Generic, Callable, Union, Protocol, Type, List, ClassVar
+    Generic, Callable, Union, Protocol, Type, List, ClassVar,
+    Dict
 )
 
 
-from dataclasses import dataclass, replace, is_dataclass, asdict, fields
+from dataclasses import dataclass, replace, is_dataclass, fields
 from enum import Enum
+
+
+def shallow_dict(a: Any)->Dict[str, Any]:
+    assert is_dataclass(a), f"Expected dataclass instance for collector inverse, got {type(a)}"
+    return {f.name: getattr(a, f.name) for f in fields(a)}
 
 
 
@@ -287,37 +293,42 @@ class Collect(Generic[A, E], AST):
     collector: Collector
     value: A
     def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[B | E, Callable[[B | E], Collect[A, E]]]:
-        b, inner_f = r(self.value)
-        if isinstance(self.value, Then) and self.value.kind == ThenKind.BOTH:
-            assert isinstance(b, tuple), f"Expected tuple from Then.BOTH combinator, got {type(b)}"
-            index: List[str | int] = []
-            named_count = 0
-            for i, v in enumerate(b):
-                if isinstance(v, Marked):
-                    index.append(v.name)
-                    named_count += 1
-                else:
-                    index.append(i - named_count)
-            named = {v.name: v.value for v in b if isinstance(v, Marked)}
-            unnamed = [v for v in b if not isinstance(v, Marked)]
-            ret: E = self.collector(*unnamed, **named)
-            def invf(e: E) -> Tuple[Any, ...]:
-                assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
-                named_dict = asdict(e)     
-                unnamed = []           
-                for f in fields(e):
-                    if f.name not in named:
-                        unnamed.append(named_dict[f.name])
-                tmp = []
-                for x in index:
-                    if isinstance(x, str):
-                        tmp.append(Marked(name=x, value=named_dict[x]))
+
+        def inv_one_positional(e: E) -> B:
+            assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
+            named_dict = shallow_dict(e)
+            return named_dict[fields(e)[0].name]
+
+        b, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value) 
+        if isinstance(self.value, Then):
+            if isinstance(b, tuple):
+                index: List[str | int] = []
+                named_count = 0
+                for i, v in enumerate(b):
+                    if isinstance(v, Marked):
+                        index.append(v.name)
+                        named_count += 1
                     else:
-                        tmp.append(unnamed[x])
-                return tuple(tmp)
-            return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore
-        else:
-            return b, lambda e: replace(self, value=inner_f(e)) # type: ignore
+                        index.append(i - named_count)
+                named = {v.name: v.value for v in b if isinstance(v, Marked)}
+                unnamed = [v for v in b if not isinstance(v, Marked)]
+                ret: E = self.collector(*unnamed, **named)
+                def invf(e: E) -> Tuple[Any, ...]:
+                    assert is_dataclass(e), f"Expected dataclass instance for collector inverse, got {type(e)}"
+                    named_dict = shallow_dict(e)     
+                    unnamed = []           
+                    for f in fields(e):
+                        if f.name not in named:
+                            unnamed.append(named_dict[f.name])
+                    tmp = []
+                    for x in index:
+                        if isinstance(x, str):
+                            tmp.append(Marked(name=x, value=named_dict[x]))
+                        else:
+                            tmp.append(unnamed[x])
+                    return tuple(tmp)
+                return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore                
+        return self.collector(b), lambda e: replace(self, value=inner_f(inv_one_positional(e))) # type: ignore
 
 #########################################################################################################################
 @dataclass(frozen=True)
