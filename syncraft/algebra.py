@@ -93,8 +93,38 @@ class Algebra(Generic[A, S]):
     def __call__(self, input: S, use_cache: bool) -> Either[Any, Tuple[A, S]]:
         return self.run(input, use_cache=use_cache)
 
-    
     def run(self, input: S, use_cache: bool) -> Either[Any, Tuple[A, S]]:
+        """Execute this algebra on the given state with optional memoization.
+
+        This is the core evaluation entry point used by all combinators. It
+        supports per-"parser" memoization and protects against infinite
+        recursion by detecting left-recursive re-entrance.
+
+        Args:
+            input: The initial state to run against. Must be hashable as it's
+                used as a cache key.
+            use_cache: When True, memoize results for ``(self.run_f, input)``
+                so repeated calls short-circuit. When False, the cache entry is
+                cleared after the run to effectively disable the cache. 
+
+        Returns:
+            Either[Error, Tuple[A, S]]: On success, ``Right((value, next_state))``.
+            On failure, ``Left(Error)``. Errors produced downstream are
+            automatically enriched with ``this=self`` and ``state=input`` to
+            preserve context. If an exception escapes the user code, it's
+            captured and returned as ``Left(Error)`` with a traceback in
+            ``stack``.
+
+        Notes:
+            - Left recursion: if a re-entrant call is observed on the same
+              ``input`` while an evaluation is in progress, a ``Left(Error)``
+              is returned indicating left-recursion was detected.
+            - Memoization scope: results are cached per ``run_f`` (the concrete
+              compiled function of this algebra) and keyed by the input state.
+            - Commitment: downstream combinators (e.g. ``cut``) may set the
+              ``committed`` flag in ``Error``; ``run`` preserves that flag but
+              does not set it itself.
+        """
         cache = self._cache[self.run_f]
         assert cache is not None, "Cache should be initialized in __post_init__"
         if input in cache:
@@ -244,21 +274,10 @@ class Algebra(Generic[A, S]):
         return lazy_self
 
 ######################################################## map on state ###########################################
-    def post_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
-        def post_state_run(input: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
-            match self.run(input, use_cache):
-                case Right((value, state)):
-                    return Right((value, f(state)))
-                case Left(err):
-                    return Left(err)
-                case x:
-                    raise ValueError(f"Unexpected result from self.run {x}")
-        return self.__class__(post_state_run, name=self.name) 
-
-    def pre_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
-        def pre_state_run(state: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
+    def map_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
+        def map_state_run(state: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
             return self.run(f(state), use_cache)
-        return self.__class__(pre_state_run, name=self.name) 
+        return self.__class__(map_state_run, name=self.name) 
 
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
@@ -273,21 +292,18 @@ class Algebra(Generic[A, S]):
                     raise ValueError(f"Unexpected result from self.run {x}")
         return self.__class__(map_all_run, name=self.name) # type: ignore
 ######################################################## fundamental combinators ############################################    
-    def fmap(self, f: Callable[[A], B]) -> Algebra[B, S]:
-        def fmap_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
+    def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
+        def map_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
             parsed = self.run(input, use_cache)
             if isinstance(parsed, Right):
                 return Right((f(parsed.value[0]), parsed.value[1]))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        return self.__class__(fmap_run, name=self.name)  # type: ignore
+        return self.__class__(map_run, name=self.name)  # type: ignore
 
-    
-    def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
-        return self.fmap(f)
-    
+        
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
-        return self.fmap(f).pre_state(lambda s: s.map(i))
+        return self.map(f).map_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, use_cache:bool) -> Either[Any, Tuple[A, S]]:
@@ -328,21 +344,21 @@ class Algebra(Generic[A, S]):
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
-            return other.fmap(combine)
+            return other.map(combine)
         return self.flat_map(then_both_f).named(f'{self.name} + {other.name}')
 
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_left_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
-            return other.fmap(combine)
+            return other.map(combine)
         return self.flat_map(then_left_f).named(f'{self.name} // {other.name}')
 
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
-            return other.fmap(combine)
+            return other.map(combine)
         return self.flat_map(then_right_f).named(f'{self.name} >> {other.name}')
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:

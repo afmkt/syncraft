@@ -151,12 +151,9 @@ class Syntax(Generic[A, S]):
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
         return self.__class__(lambda cls: self.alg(cls).map_error(f), meta=self.meta)
     
-    def pre_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
-        return self.__class__(lambda cls: self.alg(cls).pre_state(f), meta=self.meta)
+    def map_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
+        return self.__class__(lambda cls: self.alg(cls).map_state(f), meta=self.meta)
     
-    def post_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
-        return self.__class__(lambda cls: self.alg(cls).post_state(f), meta=self.meta)
-
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         return self.__class__(lambda cls: self.alg(cls).flat_map(f)) # type: ignore
 

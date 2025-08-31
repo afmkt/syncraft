@@ -11,3 +11,5 @@
 ::: syncraft.finder
 
 ::: syncraft.constraint
+
+::: syncraft.algebra
