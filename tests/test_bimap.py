@@ -21,7 +21,8 @@ def test1_simple_then() -> None:
     assert ast == generated
     value, bmap = generated.bimap()
     print(value)
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 def test2_named_results() -> None:
@@ -36,7 +37,8 @@ def test2_named_results() -> None:
     print(generated)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u,v = gen.generate(syntax, bmap(value))
+    assert u == generated
     
 
 
@@ -52,7 +54,8 @@ def test3_many_literals() -> None:
     print(generated)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 def test4_mixed_many_named() -> None:
@@ -68,7 +71,8 @@ def test4_mixed_many_named() -> None:
     print(generated)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 def test5_nested_then_many() -> None:
@@ -83,7 +87,8 @@ def test5_nested_then_many() -> None:
     print(generated)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value), restore_pruned=True) == generated
+    u, v = gen.generate(syntax, bmap(value), restore_pruned=True)
+    assert u == generated
 
 
 
@@ -96,7 +101,8 @@ def test_then_flatten():
     generated, bound = gen.generate(syntax, ast)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 
@@ -111,7 +117,8 @@ def test_named_in_then():
     generated, bound = gen.generate(syntax, ast)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 def test_named_in_many():
@@ -123,7 +130,8 @@ def test_named_in_many():
     generated, bound = gen.generate(syntax, ast)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 def test_named_in_or():
@@ -136,7 +144,8 @@ def test_named_in_or():
     generated, bound = gen.generate(syntax, ast)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 
@@ -155,7 +164,8 @@ def test_deep_mix():
     print(generated)
     assert ast == generated
     value, bmap = generated.bimap()
-    assert gen.generate(syntax, bmap(value)) == generated
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == generated
 
 
 def test_empty_many() -> None:
@@ -173,7 +183,8 @@ def test_backtracking_many() -> None:
     sql = "a a a a b"
     ast, bound = parse(syntax, sql, dialect="sqlite")
     value, bmap = ast.bimap()
-    assert gen.generate(syntax, bmap(value)) == ast
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == ast
 
 def test_deep_nesting() -> None:
     A = literal("a")
@@ -199,7 +210,8 @@ def test_named_many() -> None:
     sql = "a a"
     ast, bound = parse(syntax, sql, dialect="sqlite")
     value, bmap = ast.bimap()
-    assert gen.generate(syntax, bmap(value)) == ast
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == ast
 
 
 def test_or_named() -> None:
@@ -209,7 +221,8 @@ def test_or_named() -> None:
     sql = "b"
     ast, bound = parse(syntax, sql, dialect="sqlite")
     value, bmap = ast.bimap()
-    assert gen.generate(syntax, bmap(value)) == ast
+    u, v = gen.generate(syntax, bmap(value))
+    assert u == ast
 
 
 def test_then_associativity() -> None:

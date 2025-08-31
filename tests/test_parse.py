@@ -17,7 +17,8 @@ def test_between()->None:
     generated, bound = gen.generate(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
     x, f = generated.bimap()
-    assert gen.generate(syntax, f(x)) == ast
+    u, v = gen.generate(syntax, f(x))
+    assert u == ast
 
 
 def test_sep_by()->None:
@@ -27,7 +28,8 @@ def test_sep_by()->None:
     generated, bound = gen.generate(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
     x, f = generated.bimap()
-    assert gen.generate(syntax, f(x)) == ast
+    u, v = gen.generate(syntax, f(x))
+    assert u == ast
 
 def test_many_or()->None:
     IF = literal("if")
@@ -39,4 +41,5 @@ def test_many_or()->None:
     generated, bound = gen.generate(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
     x, f = generated.bimap()
-    assert gen.generate(syntax, f(x)) == ast
+    u, v = gen.generate(syntax, f(x))
+    assert u == ast

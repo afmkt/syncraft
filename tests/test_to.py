@@ -49,7 +49,8 @@ def test_to() -> None:
     assert ast == g
     x, f = g.bimap()
     print(1, x)
-    assert gen.generate(syntax, f(x), restore_pruned=True) == ast
+    u,v = gen.generate(syntax, f(x), restore_pruned=True)
+    assert u == ast
     x.body.append(x.body[0])
     print(2, x)
     print(f(x))
