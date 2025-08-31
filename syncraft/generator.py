@@ -144,6 +144,10 @@ class TokenGen(TokenSpec):
 
 @dataclass(frozen=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):  
+    @classmethod
+    def state(cls, ast: Optional[ParseResult[T]] = None, seed: int = 0, restore_pruned: bool = False)->GenState[T]:
+        return GenState.from_ast(ast=ast, seed=seed, restore_pruned=restore_pruned)
+
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
             try:
@@ -294,13 +298,8 @@ def generate(syntax: Syntax[Any, Any],
             data: Optional[ParseResult[Any]] = None, 
             seed: int = 0, 
             restore_pruned: bool = False) -> Tuple[AST, FrozenDict[str, AST]] | Tuple[Any, None]:
-    gen = syntax(Generator)
-    state = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
-    result = gen.run(state, use_cache=False)
-    if isinstance(result, Right):
-        return result.value[0], result.value[1].binding.bound()
-    assert isinstance(result, Left), "Generator must return Either[Any, Tuple[Any, Any]]"
-    return result.value, None
+    from syncraft.syntax import run
+    return run(syntax, Generator, False, ast=data, seed=seed, restore_pruned=restore_pruned)
 
 
     

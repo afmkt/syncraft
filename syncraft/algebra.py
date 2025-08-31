@@ -7,7 +7,6 @@ from typing import (
 import traceback
 from dataclasses import dataclass, replace
 from weakref import WeakKeyDictionary
-
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict
 from syncraft.constraint import Bindable
 
@@ -81,6 +80,10 @@ class Algebra(Generic[A, S]):
     name: Hashable
     _cache: ClassVar[WeakKeyDictionary[Any, Dict[Any, object | Either[Any, Tuple[Any, Any]]]]] = WeakKeyDictionary()
 
+    @classmethod
+    def state(cls, *args:Any, **kwargs:Any)->Optional[S]: 
+        return None
+        
     def named(self, name: Hashable) -> 'Algebra[A, S]':
         return replace(self, name=name)
 

@@ -6,8 +6,8 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either
-from syncraft.constraint import Bindable
+from syncraft.algebra import Algebra, Error, Either, Right, Left
+from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector
 from types import MethodType, FunctionType
 import keyword
@@ -318,4 +318,16 @@ def success(value: Any) -> Syntax[Any, Any]:
 
 def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(Nothing())
+
+def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: Any, **kwargs: Any) -> Tuple[Any, FrozenDict[str, Any]] | Tuple[Any, None]:
+    parser = syntax(alg)
+    input: Optional[S] = alg.state(*args, **kwargs)
+    if input:
+        result = parser.run(input, use_cache=use_cache)
+        if isinstance(result, Right):
+            return result.value[0], result.value[1].binding.bound()
+        assert isinstance(result, Left), "Algebra must return Either[E, Tuple[A, S]]"
+        return result.value, None
+    else:
+        return Error(this=None, message="Algebra failed to create initial state"), None
 

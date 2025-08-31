@@ -69,6 +69,11 @@ class ParserState(Bindable, Generic[T]):
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
     @classmethod
+    def state(cls, sql: str, dialect: str) -> ParserState[Token]:
+        tokens = tuple([Token(token_type=token.token_type, text=token.text) for token in tokenize(sql, dialect=dialect)])
+        return ParserState.from_tokens(tokens) 
+
+    @classmethod
     def token(cls, 
               token_type: Optional[Enum] = None, 
               text: Optional[str] = None, 
@@ -184,18 +189,11 @@ def sqlglot(parser: Syntax[Any, Any],
 
 
 def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[AST, FrozenDict[str, AST]] | Tuple[Any, None]:
-    parser = syntax(Parser)
-    input: ParserState[Token] = token_state(sql, dialect=dialect)
-    result = parser.run(input, True)
-    if isinstance(result, Right):
-        return result.value[0], result.value[1].binding.bound()
-    assert isinstance(result, Left), "Parser must return Either[E, Tuple[A, S]]"
-    return result.value, None
+    from syncraft.syntax import run
+    return run(syntax, Parser, True, sql=sql, dialect=dialect)
 
 
-def token_state(sql: str, dialect: str) -> ParserState[Token]:
-    tokens = tuple([Token(token_type=token.token_type, text=token.text) for token in tokenize(sql, dialect=dialect)])
-    return ParserState.from_tokens(tokens) 
+
 
 def token(token_type: Optional[Enum] = None, 
           text: Optional[str] = None, 
