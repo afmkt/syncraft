@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, Literal, List, overload
+    Type, Literal, List
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, Right
+from syncraft.algebra import Algebra, Error, Either
 from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector
 from types import MethodType, FunctionType
 import keyword
 
-from rich import print
+
 
 def valid_name(name: str) -> bool:
     return (name.isidentifier() 
