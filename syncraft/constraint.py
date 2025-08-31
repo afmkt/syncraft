@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 import collections.abc
 from collections import defaultdict
 from itertools import product
+import inspect
 
 K = TypeVar('K')
 V = TypeVar('V')
@@ -33,85 +34,23 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self._data})"
-
-
-
-
-@dataclass(frozen=True)
-class Expr:
-    left: Any
-    op: str
-    right: Any
-
-
-@dataclass(frozen=True)
-class Variable:
-    name: Optional[str] = None
-    _root: Optional[Variable] = field(default=None, compare=False, repr=False)
-    _mapf: Optional[Callable[[Any], Any]] = field(default=None, compare=False, repr=False)
-
-    def __post_init__(self):
-        if self._root is None:
-            object.__setattr__(self, '_root', self)
-
-    def raw(self, b:'BoundVar') -> Tuple[Any, ...]:
-        if self._root is None:
-            raise ValueError("_rawf can not be None")
-        return b.get(self._root, ())
     
-
-    def map(self, f: Callable[[Any], Any]) -> "Variable":
-        if self._mapf is None:
-            return replace(self, _mapf=f)
-        else:
-            oldf = self._mapf
-            return replace(self, _mapf=lambda a: f(oldf(a)))
-    
-    def get(self, b: 'BoundVar') -> Tuple[Any, ...]:
-        vals = self.raw(b)
-        if self._mapf is not None:
-            return tuple(self._mapf(v) for v in vals)
-        else:
-            return vals
-        
-    def __call__(self, b:'BoundVar', raw:bool=False) -> Any:
-        if raw:
-            return self.raw(b)
-        else:
-            return self.get(b)
-        
-    def __eq__(self, other): 
-        return Expr(self, '==', other)
-    def __ne__(self, other): 
-        return Expr(self, '!=', other)
-    def __lt__(self, other): 
-        return Expr(self, '<', other)
-    def __le__(self, other): 
-        return Expr(self, '<=', other)
-    def __gt__(self, other): 
-        return Expr(self, '>', other)
-    def __ge__(self, other): 
-        return Expr(self, '>=', other)    
-
-BoundVar = FrozenDict[Variable, Tuple[Any, ...]]
-
-
 @dataclass(frozen=True)
 class Binding:
-    bindings : frozenset[Tuple[Variable, Any]] = frozenset()
-    def bind(self, var: Variable, node: Any) -> Binding:
+    bindings : frozenset[Tuple[str, Any]] = frozenset()
+    def bind(self, name: str, node: Any) -> Binding:
         new_binding = set(self.bindings)
-        new_binding.add((var, node))
+        new_binding.add((name, node))
         return Binding(bindings=frozenset(new_binding))
     
-    def to_dict(self)->BoundVar:
+    def bound(self)->FrozenDict[str, Tuple[Any, ...]]:
         ret = defaultdict(list)
-        for var, node in self.bindings:
-            ret[var].append(node)
+        for name, node in self.bindings:
+            ret[name].append(node)
         return FrozenDict({k: tuple(vs) for k, vs in ret.items()})
 
 
-A = TypeVar('A')
+
 @dataclass(frozen=True)
 class Bindable:
     binding: Binding = field(default_factory=Binding)
@@ -119,8 +58,8 @@ class Bindable:
     def map(self, f: Callable[[Any], Any])->Self: 
         return self
     
-    def bind(self, var: Variable, node:Any)->Self:
-        return replace(self, binding=self.binding.bind(var, node))
+    def bind(self, name: str, node:Any)->Self:
+        return replace(self, binding=self.binding.bind(name, node))
 
 
 class Quantifier(Enum):
@@ -128,71 +67,105 @@ class Quantifier(Enum):
     EXISTS = "exists"
 
 @dataclass(frozen=True)
+class ConstraintResult:
+    result: bool
+    unbound: frozenset[str] = frozenset()
+@dataclass(frozen=True)
 class Constraint:
-    run_f: Callable[[BoundVar], bool]
+    run_f: Callable[[FrozenDict[str, Tuple[Any, ...]]], ConstraintResult]
     name: str = ""
-    def __call__(self, bound: BoundVar)->bool:
+    def __call__(self, bound: FrozenDict[str, Tuple[Any, ...]])->ConstraintResult:
         return self.run_f(bound)
     def __and__(self, other: Constraint) -> Constraint:
+        def and_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
+            res1 = self(bound)
+            res2 = other(bound)
+            combined_result = res1.result and res2.result
+            combined_unbound = res1.unbound.union(res2.unbound)
+            return ConstraintResult(result=combined_result, unbound=combined_unbound)
         return Constraint(
-            run_f=lambda bound: self(bound) and other(bound),
+            run_f=and_run,
             name=f"({self.name} && {other.name})"
         )
     def __or__(self, other: Constraint) -> Constraint:
+        def or_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
+            res1 = self(bound)
+            res2 = other(bound)
+            combined_result = res1.result or res2.result
+            combined_unbound = res1.unbound.union(res2.unbound)
+            return ConstraintResult(result=combined_result, unbound=combined_unbound)
         return Constraint(
-            run_f=lambda bound: self(bound) or other(bound),
+            run_f=or_run,
             name=f"({self.name} || {other.name})"
         )
     def __xor__(self, other: Constraint) -> Constraint:
+        def xor_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
+            res1 = self(bound)
+            res2 = other(bound) 
+            combined_result = res1.result ^ res2.result
+            combined_unbound = res1.unbound.union(res2.unbound)
+            return ConstraintResult(result=combined_result, unbound=combined_unbound)
         return Constraint(
-            run_f=lambda bound: self(bound) ^ other(bound),
+            run_f=xor_run,
             name=f"({self.name} ^ {other.name})"
         )
     def __invert__(self) -> Constraint:
+        def invert_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
+            res = self(bound)
+            return ConstraintResult(result=not res.result, unbound=res.unbound)
         return Constraint(
-            run_f=lambda bound: not self(bound),
+            run_f=invert_run,
             name=f"!({self.name})"
         )        
 
     @classmethod
-    def predicate(cls, f: Callable[..., bool],*, name: Optional[str] = None, quant: Quantifier = Quantifier.FORALL)->Callable[..., Constraint]:
-        def wrapper(*args: Any, **kwargs:Any) -> Constraint:
-            arg_list = list(args)
-            kw_list = [(k, v) for k, v in kwargs.items()]
-            def run_f(bound: BoundVar) -> bool:
-                # positional argument values
-                pos_values = [
-                    arg.get(bound) if isinstance(arg, Variable) else (arg,)
-                    for arg in arg_list
-                ]
-                # keyword argument values
-                kw_keys, kw_values = zip(*[
-                    (k, v.get(bound) if isinstance(v, Variable) else (v,))
-                    for k, v in kw_list
-                ]) if kw_list else ([], [])
+    def predicate(cls, 
+                  f: Callable[..., bool],
+                  *, 
+                  name: Optional[str] = None, 
+                  quant: Quantifier = Quantifier.FORALL)->Constraint:
+        sig = inspect.signature(f)
+        pos_params = []
+        kw_params = []
+        for pname, param in sig.parameters.items():
+            if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+                pos_params.append(pname)
+            elif param.kind == inspect.Parameter.KEYWORD_ONLY:
+                kw_params.append(pname)
+            else:
+                raise TypeError(f"Unsupported parameter kind: {param.kind}")
+        def run_f(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
+            # positional argument values
+            pos_values = [bound.get(pname, ()) for pname in pos_params]
+            # keyword argument values
+            kw_values = [bound.get(pname, ()) for pname in kw_params]
 
-                # Cartesian product over all argument values
-                all_combos = product(*pos_values, *kw_values)
+            # If any param is unbound, fail
+            all_params = pos_params + kw_params
+            all_values = pos_values + kw_values
+            unbound_args = [p for p, vs in zip(all_params, all_values) if not vs]
+            if unbound_args:
+                return ConstraintResult(result=quant is Quantifier.FORALL, unbound=frozenset(unbound_args))
 
-                # evaluate predicate on each combination
-                def eval_combo(combo):
-                    pos_args = combo[:len(pos_values)]
-                    kw_args = dict(zip(kw_keys, combo[len(pos_values):]))
-                    return f(*pos_args, **kw_args)
+            # Cartesian product
+            all_combos = product(*pos_values, *kw_values)
 
-                if quant is Quantifier.EXISTS:
-                    return any(eval_combo(c) for c in all_combos)
-                else:
-                    return all(eval_combo(c) for c in all_combos)
-            return cls(run_f=run_f, name = name or f.__name__)
-        return wrapper
+            def eval_combo(combo):
+                pos_args = combo[: len(pos_values)]
+                kw_args = dict(zip(kw_params, combo[len(pos_values) :]))
+                return f(*pos_args, **kw_args)
 
-    @classmethod
-    def forall(cls, f: Callable[..., bool], name: Optional[str] = None) -> Callable[..., Constraint]:
-        return cls.predicate(f, name=name, quant=Quantifier.FORALL)
+            if quant is Quantifier.EXISTS:
+                return ConstraintResult(result = any(eval_combo(c) for c in all_combos), unbound=frozenset())
+            else:
+                return ConstraintResult(result = all(eval_combo(c) for c in all_combos), unbound=frozenset())
+
+        return cls(run_f=run_f, name=name or f.__name__)
+
+def forall(f: Callable[..., bool], name: Optional[str] = None) -> Constraint:
+    return Constraint.predicate(f, name=name, quant=Quantifier.FORALL)
     
-    @classmethod
-    def exists(cls, f: Callable[..., bool], name: Optional[str] = None):
-        return cls.predicate(f, name=name, quant=Quantifier.EXISTS)
+def exists(f: Callable[..., bool], name: Optional[str] = None) -> Constraint:
+    return Constraint.predicate(f, name=name, quant=Quantifier.EXISTS)
 
 

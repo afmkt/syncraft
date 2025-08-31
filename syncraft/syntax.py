@@ -7,12 +7,17 @@ from typing import (
 from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Right
-from syncraft.constraint import Variable, Bindable
+from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector
 from types import MethodType, FunctionType
+import keyword
 
 from rich import print
 
+def valid_name(name: str) -> bool:
+    return (name.isidentifier() 
+            and not keyword.iskeyword(name)
+            and not (name.startswith('__') and name.endswith('__')))
 
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Result type for mapping
@@ -249,27 +254,18 @@ class Syntax(Generic[A, S]):
         return self.optional()
 
 
-######################################################################## data processing combinators #########################################################
-    @overload
-    def bind(self,
-             var: Variable, 
-             collector: None = None)-> Syntax[A | Marked[A], S]: ...
-    
-    @overload
-    def bind(self,
-             var: Variable,
-             collector: Type[E]) -> Syntax[Collect[A, E] | Marked[Collect[A, E]], S]: ...
-             
-    def bind(self, 
-             var: Variable, 
-             collector: Optional[Type[E]]=None) -> Syntax[Any, S]:
+######################################################################## data processing combinators #########################################################             
+    def bind(self, name: Optional[str] = None) -> Syntax[A, S]:
+        if name:
+            assert valid_name(name), f"Invalid mark name: {name}"
         def bind_v(v: Any, s: S)->Tuple[Any, S]:
-            return v, s.bind(var, v)
-        if callable(collector):
-            ret = self.to(collector).mark(var.name).map_all(bind_v) if var.name else self.to(collector).map_all(bind_v) 
-        else:
-            ret = self.mark(var.name).map_all(bind_v) if var.name else self.map_all(bind_v)
-        return ret.describe(name=f'bind({var.name})', fixity='postfix', parameter=(self,))
+            if name:
+                return v, s.bind(name, v) 
+            elif isinstance(v, Marked):
+                return v.value, s.bind(v.name, v.value)
+            else:
+                return v, s
+        return self.map_all(bind_v).describe(name=f'bind({name})', fixity='postfix', parameter=(self,))
 
     def to(self, f: Collector[E])-> Syntax[Collect[A, E], S]:
         def to_f(v: A) -> Collect[A, E]:
@@ -283,15 +279,16 @@ class Syntax(Generic[A, S]):
 
 
     def mark(self, name: str) -> Syntax[Marked[A], S]:
-        def bind_s(value: A) -> Marked[A]:
+        assert valid_name(name), f"Invalid mark name: {name}"
+        def mark_s(value: A) -> Marked[A]:
             if isinstance(value, Marked):
                 return replace(value, name=name)    
             else:
                 return Marked(name=name, value=value)
-        def ibind_s(m : Marked[A]) -> A:
+        def imark_s(m : Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m
             
-        return self.bimap(bind_s, ibind_s).describe(name=f'bind("{name}")', fixity='postfix', parameter=(self,))
+        return self.bimap(mark_s, imark_s).describe(name=f'mark("{name}")', fixity='postfix', parameter=(self,))
 
 
 
@@ -332,15 +329,14 @@ def first(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
 def last(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     return reduce(lambda a, b: a >> b, parsers) if len(parsers) > 0 else success(Nothing())
 
-def bound(* parsers: Syntax[Any, S] | Tuple[str|Variable, Syntax[Any, S]]) -> Syntax[Any, S]:
+def bind(* parsers: Syntax[Any, S] | Tuple[str, Syntax[Any, S]]) -> Syntax[Any, S]:
     def is_named_parser(x: Any) -> bool:
-        return isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], (str, Variable)) and isinstance(x[1], Syntax)
+        return isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax)
     
-    def to_parser(x: Syntax[Any, S] | Tuple[str|Variable, Syntax[Any, S]])->Syntax[Any, S]:
-        if isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], (str, Variable)) and isinstance(x[1], Syntax):
+    def to_parser(x: Syntax[Any, S] | Tuple[str, Syntax[Any, S]])->Syntax[Any, S]:
+        if isinstance(x, tuple) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], Syntax):
             if isinstance(x[0], str):
-                return x[1].mark(x[0])
-            elif isinstance(x[0], Variable):
+
                 return x[1].bind(x[0])
             else:
                 raise ValueError(f"Invalid variable type(must be str | Variable): {x[0]}", x)
