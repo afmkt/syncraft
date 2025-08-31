@@ -1,0 +1,27 @@
+site_name: Syncraft
+site_description: Parser/generator combinators with round-trip support
+repo_url: https://github.com/afmkt/syncraft
+site_url: https://afmkt.github.io/syncraft/
+theme:
+  name: material
+plugins:
+  - search
+  - macros
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            inherited_members: false
+            filters: []
+nav:
+  - Overview: index.md
+  - Concepts: overview.md
+  - Tutorials:
+      - Quickstart: tutorials/quickstart.md
+  - How-to:
+      - SQLite parsing: how-to/sqlite.md
+      - Debugging & errors: how-to/debugging.md
+  - Reference: reference.md
