@@ -4,7 +4,6 @@ from syncraft.algebra import Either, Left, Right, Error
 from syncraft.ast import Marked, Then, ThenKind, Many, Nothing
 from syncraft.parser import literal, variable, parse, Parser, Token
 from syncraft.generator import TokenGen
-from syncraft.constraint import forall, exists
 from rich import print
 import syncraft.generator as gen
 from dataclasses import dataclass
@@ -33,24 +32,18 @@ def test_to() -> None:
     D = literal('d')
     M = literal(',')
     var = A | B | C | D
-    condition = var.sep_by(M).mark('condition').bind() 
+    condition = var.sep_by(M).mark('condition') 
     ifthenelse = (IF >> condition
               // THEN 
-              + var.sep_by(M).mark('then').bind() 
+              + var.sep_by(M).mark('then') 
               // ELSE 
-              + var.sep_by(M).mark('otherwise').bind() 
+              + var.sep_by(M).mark('otherwise') 
               // END).to(IfThenElse).many()
     syntax = (WHILE >> condition
-            + ifthenelse.mark('body').bind()
+            + ifthenelse.mark('body')
             // ~END).to(While)
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
     ast, bound = parse(syntax, sql, dialect='sqlite')
-    def p(condition, then, otherwise)->bool:
-        print({'condition':condition, 'then':then, 'otherwise':otherwise})
-        return True
-    if bound is not None:
-        forall(p)(bound)
-    # g, bound = gen.generate(syntax, ast, restore_pruned=True)
-
-if __name__ == "__main__":
-    test_to()
+    print(ast)
+    print(bound)
+    g, bound = gen.generate(syntax, ast, restore_pruned=True)

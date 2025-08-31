@@ -188,7 +188,7 @@ def sqlglot(parser: Syntax[Any, Any],
     return parser.map(lambda tokens: [e for e in gp.parse(raw_tokens=tokens) if e is not None])
 
 
-def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[AST, FrozenDict[str, AST]] | Tuple[Any, None]:
+def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
     from syncraft.syntax import run
     return run(syntax, Parser, True, sql=sql, dialect=dialect)
 

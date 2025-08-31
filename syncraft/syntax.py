@@ -319,7 +319,7 @@ def success(value: Any) -> Syntax[Any, Any]:
 def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(Nothing())
 
-def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: Any, **kwargs: Any) -> Tuple[Any, FrozenDict[str, Any]] | Tuple[Any, None]:
+def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: Any, **kwargs: Any) -> Tuple[Any, FrozenDict[str, Tuple[Any, ...]]] | Tuple[Any, None]:
     parser = syntax(alg)
     input: Optional[S] = alg.state(*args, **kwargs)
     if input:

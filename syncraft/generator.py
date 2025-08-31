@@ -297,7 +297,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 def generate(syntax: Syntax[Any, Any], 
             data: Optional[ParseResult[Any]] = None, 
             seed: int = 0, 
-            restore_pruned: bool = False) -> Tuple[AST, FrozenDict[str, AST]] | Tuple[Any, None]:
+            restore_pruned: bool = False) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
     from syncraft.syntax import run
     return run(syntax, Generator, False, ast=data, seed=seed, restore_pruned=restore_pruned)
 

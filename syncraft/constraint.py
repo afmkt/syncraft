@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 import collections.abc
 from collections import defaultdict
 from itertools import product
+from inspect import Signature
 import inspect
 
 K = TypeVar('K')
@@ -122,9 +123,9 @@ class Constraint:
     def predicate(cls, 
                   f: Callable[..., bool],
                   *, 
-                  name: Optional[str] = None, 
-                  quant: Quantifier = Quantifier.FORALL)->Constraint:
-        sig = inspect.signature(f)
+                  sig: Signature,
+                  name: str, 
+                  quant: Quantifier)->Constraint:
         pos_params = []
         kw_params = []
         for pname, param in sig.parameters.items():
@@ -160,12 +161,31 @@ class Constraint:
             else:
                 return ConstraintResult(result = all(eval_combo(c) for c in all_combos), unbound=frozenset())
 
-        return cls(run_f=run_f, name=name or f.__name__)
+        return cls(run_f=run_f, name=name)
 
-def forall(f: Callable[..., bool], name: Optional[str] = None) -> Constraint:
-    return Constraint.predicate(f, name=name, quant=Quantifier.FORALL)
+
+def predicate(f: Callable[..., bool], 
+              *, 
+              name: Optional[str] = None, 
+              quant: Quantifier = Quantifier.FORALL, 
+              bimap: bool = True) -> Constraint:
+    name = name or f.__name__
+    sig = inspect.signature(f)
+    if bimap:
+        def wrapper(*args: Any, **kwargs:Any) -> bool:
+            mapped_args = [a.bimap()[0] if hasattr(a, "bimap") else a for a in args]
+            mapped_kwargs = {k: (v.bimap()[0] if hasattr(v, "bimap") else v) for k,v in kwargs.items()}
+            return f(*mapped_args, **mapped_kwargs)
+        
+        return Constraint.predicate(wrapper, sig=sig, name=name, quant=quant)
+    else:
+        return Constraint.predicate(f, sig=sig, name=name, quant=quant)
+
+def forall(f: Callable[..., bool], name: Optional[str] = None, bimap: bool=True) -> Constraint:
+    return predicate(f, name=name, quant=Quantifier.FORALL, bimap=bimap)
     
-def exists(f: Callable[..., bool], name: Optional[str] = None) -> Constraint:
-    return Constraint.predicate(f, name=name, quant=Quantifier.EXISTS)
+def exists(f: Callable[..., bool], name: Optional[str] = None, bimap:bool = True) -> Constraint:
+    return predicate(f, name=name, quant=Quantifier.EXISTS, bimap=bimap)
+
 
 
