@@ -43,5 +43,5 @@ def test_find()->None:
             + ifthenelse.mark('body')
             // ~END).to(While)
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
-    ast = parse(syntax, sql, dialect='sqlite')
+    ast, bound = parse(syntax, sql, dialect='sqlite')
     print(ast)

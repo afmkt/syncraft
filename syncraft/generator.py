@@ -16,14 +16,14 @@ from syncraft.ast import (
     Choice, Many, ChoiceKind,
     Then, ThenKind, Marked
 )
-
+from syncraft.constraint import FrozenDict
 from syncraft.syntax import Syntax
 from sqlglot import TokenType
 import re
 import rstr
 from functools import lru_cache
 import random
-from rich import print
+
 from syncraft.constraint import Bindable
 
 T = TypeVar('T', bound=TokenProtocol)  
@@ -293,14 +293,14 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 def generate(syntax: Syntax[Any, Any], 
             data: Optional[ParseResult[Any]] = None, 
             seed: int = 0, 
-            restore_pruned: bool = False) -> AST | Any:
+            restore_pruned: bool = False) -> Tuple[AST, FrozenDict[str, AST]] | Tuple[Any, None]:
     gen = syntax(Generator)
     state = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
     result = gen.run(state, use_cache=False)
     if isinstance(result, Right):
-        return result.value[0]
+        return result.value[0], result.value[1].binding.bound()
     assert isinstance(result, Left), "Generator must return Either[Any, Tuple[Any, Any]]"
-    return result.value
+    return result.value, None
 
 
     

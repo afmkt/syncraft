@@ -5,6 +5,7 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,
     Generic
 )
+from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
     Either, Left, Right, Error, Algebra
 )
@@ -182,16 +183,14 @@ def sqlglot(parser: Syntax[Any, Any],
     return parser.map(lambda tokens: [e for e in gp.parse(raw_tokens=tokens) if e is not None])
 
 
-def parse(syntax: Syntax[Any, Any], 
-          sql: str, 
-          dialect: str) -> AST | Any:
+def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[AST, FrozenDict[str, AST]] | Tuple[Any, None]:
     parser = syntax(Parser)
     input: ParserState[Token] = token_state(sql, dialect=dialect)
     result = parser.run(input, True)
     if isinstance(result, Right):
-        return result.value[0]
+        return result.value[0], result.value[1].binding.bound()
     assert isinstance(result, Left), "Parser must return Either[E, Tuple[A, S]]"
-    return result.value
+    return result.value, None
 
 
 def token_state(sql: str, dialect: str) -> ParserState[Token]:

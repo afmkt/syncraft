@@ -7,7 +7,7 @@ from typing import (
 import traceback
 from dataclasses import dataclass, replace
 from weakref import WeakKeyDictionary
-from abc import ABC
+
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict
 from syncraft.constraint import Bindable
 
@@ -75,7 +75,7 @@ class Error:
 
 
 @dataclass(frozen=True)        
-class Algebra(ABC, Generic[A, S]):
+class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, bool], Either[Any, Tuple[A, S]]] 
     name: Hashable
