@@ -69,9 +69,9 @@ class ParserState(Bindable, Generic[T]):
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
     @classmethod
-    def state(cls, sql: str, dialect: str) -> ParserState[Token]:
+    def state(cls, sql: str, dialect: str) -> ParserState[T]:
         tokens = tuple([Token(token_type=token.token_type, text=token.text) for token in tokenize(sql, dialect=dialect)])
-        return ParserState.from_tokens(tokens) 
+        return ParserState.from_tokens(tokens)  # type: ignore
 
     @classmethod
     def token(cls, 
