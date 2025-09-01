@@ -6,7 +6,9 @@ theme:
   name: material
 plugins:
   - search
-  - macros
+  - macros:
+      module_name: docs/main
+      include_dir: docs
   - mkdocstrings:
       handlers:
         python:

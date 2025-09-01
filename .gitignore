@@ -11,3 +11,4 @@ wheels/
 .mypy_cache/
 # Virtual environments
 .venv
+site/

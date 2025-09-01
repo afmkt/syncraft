@@ -81,9 +81,16 @@ ast, _ = parse(select_stmt, "select a from t where a > 1", dialect="sqlite")
 
 ## Documentation
 
-- Tutorials and API reference are in the docs site (MkDocs). To build locally:
+- Tutorials and API reference are built with MkDocs. Local preview:
 	1) install dev deps (see `pyproject.toml` dev group)
-	2) run `mkdocs serve`
+	2) activate your venv and run `mkdocs serve`
+
+- Version injection: pages can use `{{ version }}`. It is provided by mkdocs-macros via `docs/main.py`, which resolves the version in this order:
+	- `[project].version` from `pyproject.toml`
+	- installed package metadata (`importlib.metadata.version('syncraft')`)
+	- fallback `"0.0.0"`
+
+  The macros plugin is configured in `mkdocs.yml` with `module_name: docs/main`.
 
 ## Contributing / Roadmap
 

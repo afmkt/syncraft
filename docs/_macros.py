@@ -1,5 +1,7 @@
-# mkdocs-macros-plugin macros
-# Expose the installed package version as {{ version }}
+"""MkDocs macros for the documentation site.
+
+Exposes the installed package version as {{ version }}.
+"""
 
 def define_env(env):
     try:
