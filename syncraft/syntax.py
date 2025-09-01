@@ -444,7 +444,8 @@ class Syntax(Generic[A, S]):
     def bind(self, name: Optional[str] = None) -> Syntax[A, S]:
         """Bind the produced value to the name.
 
-        If name is None and the value is Marked, its name is used.
+        If name is None and the value is Marked, the name of Marked is used.
+        If name is None and the value if Collect, the name of the collector is used.
 
         Args:
             name: Optional binding name; must be a valid identifier if provided.
@@ -460,6 +461,8 @@ class Syntax(Generic[A, S]):
                 return v, s.bind(name, v)
             elif isinstance(v, Marked):
                 return v.value, s.bind(v.name, v.value)
+            elif isinstance(v, Collect) and isinstance(v.collector, type):
+                return v.value, s.bind(v.collector.__name__, v.value)
             else:
                 return v, s
 

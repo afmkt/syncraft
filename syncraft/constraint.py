@@ -11,6 +11,12 @@ import inspect
 K = TypeVar('K')
 V = TypeVar('V')
 class FrozenDict(collections.abc.Mapping, Generic[K, V]):
+    """An immutable, hashable mapping.
+
+    Behaves like a read-only dict and caches its hash, making it suitable as a
+    key in other dictionaries or for set membership. Equality compares the
+    underlying mapping to any other Mapping.
+    """
     def __init__(self, *args, **kwargs):
         self._data = dict(*args, **kwargs)
         self._hash = None
@@ -54,12 +60,19 @@ class Binding:
 
 @dataclass(frozen=True)
 class Bindable:
+    """Mixin that carries named bindings produced during evaluation.
+
+    Instances accumulate bindings of name->node pairs. Subclasses should return
+    a new instance from ``bind`` to preserve immutability.
+    """
     binding: Binding = field(default_factory=Binding)
 
     def map(self, f: Callable[[Any], Any])->Self: 
+        """Optionally transform the underlying value (no-op by default)."""
         return self
     
     def bind(self, name: str, node:Any)->Self:
+        """Return a copy with ``node`` recorded under ``name`` in bindings."""
         return replace(self, binding=self.binding.bind(name, node))
 
 
@@ -73,11 +86,19 @@ class ConstraintResult:
     unbound: frozenset[str] = frozenset()
 @dataclass(frozen=True)
 class Constraint:
+    """A composable boolean check over a set of bound values.
+
+    The check is a function from a mapping of names to tuples of values to a
+    ``ConstraintResult`` with a boolean outcome and any unbound requirements.
+    Constraints compose with logical operators (``&``, ``|``, ``^``, ``~``).
+    """
     run_f: Callable[[FrozenDict[str, Tuple[Any, ...]]], ConstraintResult]
     name: str = ""
     def __call__(self, bound: FrozenDict[str, Tuple[Any, ...]])->ConstraintResult:
+        """Evaluate this constraint against the provided bindings."""
         return self.run_f(bound)
     def __and__(self, other: Constraint) -> Constraint:
+        """Logical AND composition of two constraints."""
         def and_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
             res1 = self(bound)
             res2 = other(bound)
@@ -89,6 +110,7 @@ class Constraint:
             name=f"({self.name} && {other.name})"
         )
     def __or__(self, other: Constraint) -> Constraint:
+        """Logical OR composition of two constraints."""
         def or_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
             res1 = self(bound)
             res2 = other(bound)
@@ -100,6 +122,7 @@ class Constraint:
             name=f"({self.name} || {other.name})"
         )
     def __xor__(self, other: Constraint) -> Constraint:
+        """Logical XOR composition of two constraints."""
         def xor_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
             res1 = self(bound)
             res2 = other(bound) 
@@ -111,6 +134,7 @@ class Constraint:
             name=f"({self.name} ^ {other.name})"
         )
     def __invert__(self) -> Constraint:
+        """Logical NOT of this constraint."""
         def invert_run(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
             res = self(bound)
             return ConstraintResult(result=not res.result, unbound=res.unbound)
@@ -169,6 +193,21 @@ def predicate(f: Callable[..., bool],
               name: Optional[str] = None, 
               quant: Quantifier = Quantifier.FORALL, 
               bimap: bool = True) -> Constraint:
+    """Create a constraint from a Python predicate function.
+
+    The predicate's parameters define the required bindings. When ``bimap`` is
+    true, arguments with a ``bimap()`` method are mapped to their forward value
+    before evaluation, making it convenient to write predicates over AST values.
+
+    Args:
+        f: The boolean function to wrap as a constraint.
+        name: Optional human-friendly name; defaults to ``f.__name__``.
+        quant: Quantification over bound values (forall or exists).
+        bimap: Whether to call ``bimap()`` on arguments before evaluation.
+
+    Returns:
+        Constraint: A composable constraint.
+    """
     name = name or f.__name__
     sig = inspect.signature(f)
     if bimap:
@@ -182,9 +221,11 @@ def predicate(f: Callable[..., bool],
         return Constraint.predicate(f, sig=sig, name=name, quant=quant)
 
 def forall(f: Callable[..., bool], name: Optional[str] = None, bimap: bool=True) -> Constraint:
+    """``forall`` wrapper around ``predicate`` (all combinations must satisfy)."""
     return predicate(f, name=name, quant=Quantifier.FORALL, bimap=bimap)
     
 def exists(f: Callable[..., bool], name: Optional[str] = None, bimap:bool = True) -> Constraint:
+    """``exists`` wrapper around ``predicate`` (at least one combination)."""
     return predicate(f, name=name, quant=Quantifier.EXISTS, bimap=bimap)
 
 

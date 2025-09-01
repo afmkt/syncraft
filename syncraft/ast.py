@@ -90,10 +90,28 @@ class Lens(Generic[C, A]):
 
 @dataclass(frozen=True)
 class Bimap(Generic[A, B]):
+    """A reversible mapping that returns both a forward value and an inverse function.
+
+    ``Bimap`` is like a function ``A -> B`` paired with a way to map a value
+    of type ``B`` back into an ``A``. It composes with other ``Bimap``s or a
+    ``Biarrow`` using ``>>`` and ``<<``-style operations, preserving an
+    automatically derived inverse.
+    """
     run_f: Callable[[A], Tuple[B, Callable[[B], A]]]
     def __call__(self, a: A) -> Tuple[B, Callable[[B], A]]:
+        """Apply the mapping to ``a``.
+
+        Returns:
+            tuple: ``(forward_value, inverse)`` where ``inverse`` maps
+            a compatible ``B`` back into an ``A``.
+        """
         return self.run_f(a)    
     def __rshift__(self, other: Bimap[B, C] | Biarrow[B, C]) -> Bimap[A, C]:
+        """Compose this mapping with another mapping/arrow.
+
+        ``self >> other`` first applies ``self``, then ``other``. The produced
+        inverse runs ``other``'s inverse followed by ``self``'s inverse.
+        """
         if isinstance(other, Biarrow):
             def biarrow_then_run(a: A) -> Tuple[C, Callable[[C], A]]:
                 b, inv1 = self(a)
@@ -114,6 +132,7 @@ class Bimap(Generic[A, B]):
         else:
             raise TypeError(f"Unsupported type for Bimap >>: {type(other)}")
     def __rrshift__(self, other: Bimap[C, A] | Biarrow[C, A]) -> Bimap[C, B]:
+        """Right-composition so arrows or bimaps can be on the left of ``>>``."""
         if isinstance(other, Biarrow):
             def biarrow_then_run(c: C) -> Tuple[B, Callable[[B], C]]:
                 a = other.forward(c)
@@ -137,18 +156,28 @@ class Bimap(Generic[A, B]):
 
 
     @staticmethod
-    def const(a: B)->Bimap[B, B]:
+    def const(a: B) -> Bimap[B, B]:
+        """Return a bimap that ignores input and always yields ``a``.
+
+        The inverse is identity for the output type.
+        """
         return Bimap(lambda _: (a, lambda b: b))
 
     @staticmethod
-    def identity()->Bimap[A, A]:
+    def identity() -> Bimap[A, A]:
+        """The identity bimap where forward and inverse are no-ops."""
         return Bimap(lambda a: (a, lambda b: b))
 
     @staticmethod
     def when(cond: Callable[[A], bool],
              then: Bimap[A, B],
              otherwise: Optional[Bimap[A, C]] = None) -> Bimap[A, A | B | C]:
-        def when_run(a:A) -> Tuple[A | B | C, Callable[[A | B | C], A]]:
+        """Choose a mapping depending on the input value.
+
+        Applies ``then`` when ``cond(a)`` is true; otherwise applies
+        ``otherwise`` if provided, or ``identity``.
+        """
+        def when_run(a: A) -> Tuple[A | B | C, Callable[[A | B | C], A]]:
             bimap = then if cond(a) else (otherwise if otherwise is not None else Bimap.identity())
             abc, inv = bimap(a)
             def inv_f(b: Any) -> A:
@@ -184,11 +213,22 @@ class Reducer(Generic[A, S]):
 
 @dataclass(frozen=True)    
 class AST:
+    """Base class for all Syncraft AST nodes.
+
+    Nodes implement ``bimap`` to transform contained values while providing an
+    inverse that can reconstruct the original node from transformed output.
+    """
     def bimap(self, r: Bimap[Any, Any]=Bimap.identity()) -> Tuple[Any, Callable[[Any], Any]]:
+        """Apply a bimap to this node, returning a value and an inverse.
+
+        The default behavior defers to the provided mapping ``r`` with the
+        node itself as input. The ``r`` only applies to the leaf node of AST tree.
+        """
         return r(self)
 
 @dataclass(frozen=True)
 class Nothing(AST):
+    """Singleton sentinel representing the absence of a value in the AST."""
     _instance = None
     def __new__(cls):
         if cls._instance is None:
@@ -202,9 +242,19 @@ class Nothing(AST):
 
 @dataclass(frozen=True)
 class Marked(Generic[A], AST):
+    """Annotate a AST node with a name.
+
+    Used to tag subtrees so they can be collected by name later (e.g., in
+    collectors) without altering the structural shape.
+    """
     name: str
     value: A
     def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[Marked[B], Callable[[Marked[B]], Marked[A]]]:
+        """Transform the inner value while preserving the mark name.
+
+        Returns a new ``Marked`` with transformed value and an inverse that
+        expects a ``Marked`` to recover the original.
+        """
         v, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
         return Marked(name=self.name, value=v), lambda b: Marked(name = b.name, value=inner_f(b.value))
     
@@ -214,9 +264,19 @@ class ChoiceKind(Enum):
 
 @dataclass(frozen=True)
 class Choice(Generic[A, B], AST):
+    """Represent a binary alternative between left and right values.
+
+    ``kind`` indicates which branch was taken, or ``None`` when unknown.
+    """
     kind: Optional[ChoiceKind]
     value: Optional[A | B] = None
     def bimap(self, r: Bimap[A | B, C]=Bimap.identity()) -> Tuple[Optional[C], Callable[[Optional[C]], Choice[A, B]]]:
+        """Map over the held value if present; propagate ``None`` otherwise.
+
+        The inverse resets ``kind`` to ``None`` to avoid biasing the result.
+        When user edit the data we cannot assume which branch the data should go
+        back to. Set ``kind`` to ``None`` to indicate this situation.
+        """
         if self.value is None:
             return None, lambda c: replace(self, value=None, kind=None)
         else:
@@ -225,8 +285,15 @@ class Choice(Generic[A, B], AST):
 
 @dataclass(frozen=True)
 class Many(Generic[A], AST):
+    """A finite sequence of values within the AST."""
     value: Tuple[A, ...]
     def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[List[B], Callable[[List[B]], Many[A]]]:
+        """Map each element to a list and provide an inverse.
+
+        The inverse accepts a list of transformed elements. If the provided
+        list is shorter than the original, only the prefix is used. If longer,
+        the extra values are inverted using the last element's inverse.
+        """
         ret = [v.bimap(r) if isinstance(v, AST) else r(v) for v in self.value]
         def inv(bs: List[B]) -> Many[A]:
             if len(bs) <= len(ret):
@@ -244,6 +311,12 @@ class ThenKind(Enum):
     
 @dataclass(eq=True, frozen=True)
 class Then(Generic[A, B], AST):
+    """Pair two values with a composition kind (both, left, or right).
+
+    The ``kind`` determines how values are combined.
+    ``LEFT``/``RIGHT`` indicate single-sided results; ``BOTH`` flattens both
+    sides.
+    """
     kind: ThenKind
     left: A
     right: B
@@ -259,7 +332,15 @@ class Then(Generic[A, B], AST):
         else:
             return 1
 
-    def bimap(self, r: Bimap[A|B, Any]=Bimap.identity()) -> Tuple[Any | Tuple[Any, ...], Callable[[Any | Tuple[Any, ...]], Then[A, B]]]:
+    def bimap(self, r: Bimap[A | B, Any] = Bimap.identity()) -> Tuple[Any | Tuple[Any, ...], Callable[[Any | Tuple[Any, ...]], Then[A, B]]]:
+        """Transform the left/right values according to ``kind``.
+
+        - ``LEFT``: map and return the left value; inverse sets only ``left``.
+        - ``RIGHT``: map and return the right value; inverse sets only ``right``.
+        - ``BOTH``: return a flattened tuple of mapped left values followed by
+          mapped right values. The inverse expects a tuple whose length equals
+          ``left.arity() + right.arity()`` and reconstructs the structure.
+        """
         def need_wrap(x: Any) -> bool:
             return not (isinstance(x, Then) and x.kind == ThenKind.BOTH)
         match self.kind:
@@ -296,9 +377,23 @@ E = TypeVar("E", bound=DataclassInstance)
 Collector = Type[E] | Callable[..., E]
 @dataclass(frozen=True)
 class Collect(Generic[A, E], AST): 
+    """Apply a collector to a value to build a dataclass-like instance.
+
+    When the inner value is a ``Then`` and the forward result is a tuple, any
+    ``Marked`` elements become named arguments to the collector; the remainder
+    are passed positionally. The inverse breaks the produced instance back into
+    a structure compatible with the original ``Then``.
+    """
     collector: Collector
     value: A
     def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[B | E, Callable[[B | E], Collect[A, E]]]:
+        """Map the inner value, collect it, and supply a matching inverse.
+
+        For multi-field tuples derived from ``Then``, the inverse rebuilds the
+        appropriate mix of ``Marked`` and positional elements using the
+        collector's dataclass fields. For single-argument collectors, the first
+        field of the dataclass is used.
+        """
 
         def inv_one_positional(e: E) -> B:
             if not is_dataclass(e):
@@ -341,6 +436,7 @@ class Collect(Generic[A, E], AST):
 #########################################################################################################################
 @dataclass(frozen=True)
 class Token(AST):
+    """Leaf node representing a single token with type and text."""
     token_type: Enum
     text: str
     def __str__(self) -> str:
@@ -374,6 +470,7 @@ class TokenSpec:
         return type_match and value_match
 
 
+#: Union-like type describing the shape of AST parse results across nodes.
 ParseResult = Union[
     Then['ParseResult[T]', 'ParseResult[T]'], 
     Marked['ParseResult[T]'],

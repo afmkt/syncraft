@@ -37,28 +37,90 @@ B = TypeVar('B')
 
 @dataclass(frozen=True)
 class GenState(Bindable, Generic[T]):
+    """Lightweight state passed between generator combinators.
+
+    Holds the current AST focus (or ``None`` when pruned), a flag controlling
+    whether traversals are allowed to access pruned branches, and a deterministic
+    seed for randomized generation paths.
+
+    Attributes:
+        ast: The current AST node or ``None`` if the branch is pruned.
+        restore_pruned: When true, allows navigation into branches that would
+            normally be considered pruned by the AST structure.
+        seed: Integer seed used to derive reproducible random choices.
+    """
     ast: Optional[ParseResult[T]] = None
     restore_pruned: bool = False
     seed: int = 0
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
+        """Return a copy with ``ast`` replaced by ``f(ast)``.
+
+        Args:
+            f: Mapping function applied to the current ``ast``.
+
+        Returns:
+            GenState[T]: A new state with the mapped ``ast``.
+        """
         return replace(self, ast=f(self.ast))
     
     def inject(self, a: Any) -> GenState[T]:
+        """Return a copy with ``ast`` set to ``a``.
+
+        Shorthand for ``map(lambda _: a)``.
+
+        Args:
+            a: The value to place into ``ast``.
+
+        Returns:
+            GenState[T]: A new state with ``ast`` equal to ``a``.
+        """
         return self.map(lambda _: a)
     
     def fork(self, tag: Any) -> GenState[T]:
+        """Create a deterministic fork of the state using ``tag``.
+
+        The new ``seed`` is derived from the current ``seed`` and ``tag`` so
+        that repeated forks with the same inputs are reproducible.
+
+        Args:
+            tag: Any value used to derive the child seed.
+
+        Returns:
+            GenState[T]: A new state with a forked ``seed``.
+        """
         return replace(self, seed=hash((self.seed, tag)))
 
     def rng(self, tag: Any = None) -> random.Random:
+        """Get a deterministic RNG for this state.
+
+        If ``tag`` is provided, the RNG seed is derived from ``(seed, tag)``;
+        otherwise the state's ``seed`` is used.
+
+        Args:
+            tag: Optional label to derive a sub-seed.
+
+        Returns:
+            random.Random: A RNG instance seeded deterministically.
+        """
         return random.Random(self.seed if tag is None else hash((self.seed, tag)))
 
 
 
     @cached_property
     def pruned(self)->bool:
+        """Whether the current branch is pruned (``ast`` is ``None``)."""
         return self.ast is None
     
     def left(self)-> GenState[T]:
+        """Focus on the left side of a ``Then`` node or prune.
+
+        When ``restore_pruned`` is true, traversal is allowed even if the
+        ``Then`` is marked as coming from the right branch.
+
+        Returns:
+            GenState[T]: State focused on the left child or pruned when not
+            applicable.
+        """
         if self.ast is None:
             return self
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.RIGHT or self.restore_pruned):
@@ -66,6 +128,15 @@ class GenState(Bindable, Generic[T]):
         return replace(self, ast=None) 
 
     def right(self) -> GenState[T]:
+        """Focus on the right side of a ``Then`` node or prune.
+
+        When ``restore_pruned`` is true, traversal is allowed even if the
+        ``Then`` is marked as coming from the left branch.
+
+        Returns:
+            GenState[T]: State focused on the right child or pruned when not
+            applicable.
+        """
         if self.ast is None:
             return self
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.LEFT or self.restore_pruned):
@@ -73,6 +144,18 @@ class GenState(Bindable, Generic[T]):
         return replace(self, ast=None)
 
     def down(self, index: int) -> GenState[T]:
+        """Descend through wrapper nodes to reach the contained value.
+
+        Currently unwraps ``Marked`` nodes. Raises ``TypeError`` for other
+        node types.
+
+        Args:
+            index: Placeholder for a future multi-child descent API.
+
+        Returns:
+            GenState[T]: State focused on the unwrapped child or unchanged when
+            pruned.
+        """
         if self.ast is None:
             return self        
         match self.ast:
@@ -121,13 +204,22 @@ class TokenGen(TokenSpec):
         return self.__str__()
 
     def gen(self) -> Token:
+        """Generate a token consistent with this specification.
+
+        Resolution order is: exact text, regex pattern, token type value, and
+        finally a generic placeholder literal.
+
+        Returns:
+            Token: A token whose ``token_type`` is derived from the generated
+            text when necessary.
+        """
         text: str
         if self.text is not None:
             text = self.text
         elif self.regex is not None:
             try:
                 text = rstr.xeger(self.regex)
-            except Exception as e:
+            except Exception:
                 # If the regex is invalid or generation fails
                 text = self.regex.pattern  # fallback to pattern string
         elif self.token_type is not None:
@@ -146,9 +238,31 @@ class TokenGen(TokenSpec):
 class Generator(Algebra[ParseResult[T], GenState[T]]):  
     @classmethod
     def state(cls, ast: Optional[ParseResult[T]] = None, seed: int = 0, restore_pruned: bool = False)->GenState[T]:
+        """Create an initial ``GenState`` for generation or checking.
+
+        Args:
+            ast: Optional root AST to validate/generate against.
+            seed: Seed for deterministic random generation.
+            restore_pruned: Allow traversing pruned branches.
+
+        Returns:
+            GenState[T]: The constructed initial state.
+        """
         return GenState.from_ast(ast=ast, seed=seed, restore_pruned=restore_pruned)
 
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
+        """Sequence a dependent generator using the left child value.
+
+        Expects the input AST to be a ``Then`` node; applies ``self`` to the
+        left side, then passes the produced value to ``f`` and applies the
+        resulting algebra to the right side.
+
+        Args:
+            f: Function mapping the left value to the next algebra.
+
+        Returns:
+            Algebra[B, GenState[T]]: An algebra yielding the final result.
+        """
         def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
             try:
                 if not isinstance(input.ast, Then) or isinstance(input.ast, Nothing):
@@ -178,6 +292,24 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
+        """Apply ``self`` repeatedly with cardinality constraints.
+
+        In pruned mode, generates a random number of items in the inclusive
+        range ``[at_least, at_most or at_least+2]`` and attempts each
+        independently. Otherwise, validates an existing ``Many`` node and
+        applies ``self`` to each element.
+
+        Args:
+            at_least: Minimum number of successful applications required.
+            at_most: Optional maximum number allowed.
+
+        Returns:
+            Algebra[Many[ParseResult[T]], GenState[T]]: An algebra that yields a
+            ``Many`` of results.
+
+        Raises:
+            ValueError: If bounds are invalid.
+        """
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise ValueError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}")
         def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]:
@@ -188,7 +320,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 for i in range(count):
                     forked_input = input.fork(tag=len(ret))
                     match self.run(forked_input, use_cache):
-                        case Right((value, next_input)):
+                        case Right((value, _)):
                             ret.append(value)
                         case Left(_):
                             pass
@@ -201,7 +333,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 ret = []
                 for x in input.ast.value: 
                     match self.run(input.inject(x), use_cache):
-                        case Right((value, next_input)):
+                        case Right((value, _)):
                             ret.append(value)
                             if at_most is not None and len(ret) > at_most:
                                 return Left(Error(
@@ -209,7 +341,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                         this=self,
                                         state=input.inject(x)
                                     ))                             
-                        case Left(e):
+                        case Left(_):
                             pass
                 if len(ret) < at_least:
                     return Left(Error(
@@ -224,6 +356,18 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
                 ) -> Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: 
+        """Try ``self``; if it fails without commitment, try ``other``.
+
+        In pruned mode, deterministically chooses a branch using a forked RNG.
+        With an existing ``Choice`` AST, it executes the indicated branch.
+
+        Args:
+            other: Fallback algebra to try when ``self`` is not committed.
+
+        Returns:
+            Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: An
+            algebra yielding which branch succeeded and its value.
+        """
         def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]:
             def exec(kind: ChoiceKind | None, 
                      left: GenState[T], 
@@ -277,6 +421,22 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
               case_sensitive: bool = False,
               regex: Optional[re.Pattern[str]] = None
               )-> Algebra[ParseResult[T], GenState[T]]:      
+        """Match or synthesize a single token.
+
+        When validating, succeeds if the current AST node is a ``Token`` that
+        satisfies this spec. When generating (pruned), produces a token based on
+        ``text``, ``regex``, or ``token_type``.
+
+        Args:
+            token_type: Expected token type.
+            text: Exact text to match or produce.
+            case_sensitive: Whether text matching respects case.
+            regex: Regular expression to synthesize text from when generating.
+
+        Returns:
+            Algebra[ParseResult[T], GenState[T]]: An algebra producing a Token
+            node or validating the current one.
+        """
         gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
         lazy_self: Algebra[ParseResult[T], GenState[T]]
         def token_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ParseResult[Token], GenState[T]]]:
@@ -298,6 +458,23 @@ def generate(syntax: Syntax[Any, Any],
             data: Optional[ParseResult[Any]] = None, 
             seed: int = 0, 
             restore_pruned: bool = False) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+    """Run a ``Syntax`` with the ``Generator`` backend.
+
+    In validation mode (``data`` provided), walks the structure and returns the
+    original AST and collected marks. In generation mode (``data`` is ``None``),
+    synthesizes an AST from the syntax using the given seed.
+
+    Args:
+        syntax: The syntax to execute.
+        data: Optional root AST to validate against.
+        seed: Seed for deterministic random generation.
+        restore_pruned: Allow traversing pruned branches when validating.
+
+    Returns:
+        Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]: The
+        resulting AST with marks when validating, or a synthesized AST when
+        generating.
+    """
     from syncraft.syntax import run
     return run(syntax, Generator, False, ast=data, seed=seed, restore_pruned=restore_pruned)
 
