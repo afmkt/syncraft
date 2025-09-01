@@ -19,11 +19,6 @@ plugins:
             inherited_members: false
             filters: []
 nav:
-  - Overview: index.md
-  - Concepts: overview.md
-  - Tutorials:
-      - Quickstart: tutorials/quickstart.md
-  - How-to:
-      - SQLite parsing: how-to/sqlite.md
-      - Debugging & errors: how-to/debugging.md
+  - Quickstart: quickstart.md
+  - Concepts: concept.md
   - Reference: reference.md

@@ -11,18 +11,22 @@ from dataclasses import dataclass
 
 
 if __name__ == "__main__":
-    from dataclasses import dataclass
-    from syncraft import literal
+        from dataclasses import dataclass
+        from syncraft import literal, parse, generate
+        @dataclass
+        class Pair:
+                first:Any
+                second:Any
 
-    @dataclass
-    class Pair:
-            first: Any
-            second: Any
-
-    A = literal("a").mark("first")
-    B = literal("b").mark("second")
-    syntax = (A + B).to(Pair)
-
-    ast, _ = parse(syntax, "a b", dialect="sqlite")
-    value, invert = ast.bimap()
-    print(value)
+        A = literal("a").mark('first')
+        B = literal("b").mark('second')
+        C = literal(",")
+        syntax = (A + B).to(Pair).sep_by(C)
+        ast, _ = parse(syntax, "a b, a b, a b", dialect="sqlite")
+        value, inverse = ast.bimap()
+        print(value)
+        value.append(Pair('x', 'y'))
+        print(value)
+        ast3 = inverse(value)
+        rt, _ = generate(syntax, ast3)
+        print(rt)

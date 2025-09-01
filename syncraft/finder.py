@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Tuple, Generator as YieldGen, TypeVar
+    Any, Tuple, Generator as YieldGen, TypeVar, Generic
 )
 from dataclasses import dataclass
 from syncraft.algebra import (
@@ -16,16 +16,12 @@ from syncraft.syntax import Syntax
 
 T=TypeVar('T', bound=TokenProtocol)
 @dataclass(frozen=True)
-class Finder(Generator[T]):
+class Finder(Generator[T], Generic[T]):
     """Generator backend used to search/inspect parse trees.
 
     This class is passed to a ``Syntax`` to obtain an ``Algebra`` that can be
     run against a ``GenState``. In this module it's used to implement tree-wide search utilities
     such as ``matches`` and ``find``.
-
-    Type parameters:
-        T: Token type bound to ``TokenProtocol`` handled by the underlying
-            ``GenState``.
     """
     @classmethod
     def anything(cls)->Algebra[Any, GenState[T]]:
