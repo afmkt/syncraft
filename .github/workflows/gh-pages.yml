@@ -1,6 +1,9 @@
 name: docs
 
 on:
+  push:
+    tags:
+      - 'v*.*.*'   # Deploy docs on version tag push
   release:
     types: [published]
   workflow_dispatch:
