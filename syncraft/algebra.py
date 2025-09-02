@@ -356,25 +356,6 @@ class Algebra(Generic[A, S]):
         return self.__class__(map_state_run, name=self.name) 
 
 
-    def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
-        """Map both the produced value and the resulting state on success.
-
-        Args:
-            f: Function mapping ``(value, state)`` to ``(new_value, new_state)``.
-
-        Returns:
-            An algebra producing the transformed value and state.
-        """
-        def map_all_run(input: S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
-            match self.run(input, use_cache):
-                case Right((value, state)):
-                    new_value, new_state = f(value, state)
-                    return Right((new_value, new_state))
-                case Left(err):
-                    return Left(err)
-                case x:
-                    raise SyncraftError(f"Unexpected result from self.run {x}", offending=x)
-        return self.__class__(map_all_run, name=self.name) # type: ignore
 ######################################################## fundamental combinators ############################################    
     def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
         """Transform the success value, leaving the state unchanged.
@@ -450,6 +431,22 @@ class Algebra(Generic[A, S]):
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
         return self.__class__(flat_map_run, name=self.name)  # type: ignore
+
+    def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
+        """Map both the produced value and the resulting state on success.
+
+        Args:
+            f: Function mapping ``(value, state)`` to ``(new_value, new_state)``.
+
+        Returns:
+            An algebra producing the transformed value and state.
+        """
+        def map_all_f(a : A) -> Algebra[B, S]:
+            def run_f(input:S, use_cache:bool) -> Either[Any, Tuple[B, S]]:
+                return Right(f(a, input))
+            return self.__class__(run_f, name=self.name) # type: ignore
+        return self.flat_map(map_all_f)
+
 
     
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
