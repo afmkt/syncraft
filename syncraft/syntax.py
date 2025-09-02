@@ -520,15 +520,58 @@ class Syntax(Generic[A, S]):
         return self.__class__(lambda cls: self.alg(cls).debug(label, formatter), meta=self.meta)
 
 
-    
+
 def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+    """
+    Lazily constructs a syntax node using a thunk, enabling recursive or deferred syntax definitions.
+
+    Args:
+        thunk: A callable that returns a Syntax object when invoked.
+
+    Returns:
+        A lazily evaluated Syntax object.
+    """
     return Syntax(lambda cls: cls.lazy(lambda: thunk()(cls))).describe(name='lazy(?)', fixity='postfix') 
 
+def when(f: Callable[[], bool], then: Syntax[A, S], otherwise: Syntax[B, S]) -> Syntax[A | B, S]:
+    """
+    Conditionally selects between two syntax branches based on a predicate function.
+
+    Args:
+        f: A callable returning a boolean to choose the branch.
+        then: Syntax to use if f() is True.
+        otherwise: Syntax to use if f() is False.
+
+    Returns:
+        A Syntax object representing the chosen branch.
+    """
+    return lazy(lambda: then if f() else otherwise).describe(name='when(?)', fixity='postfix', parameter=(then, otherwise)) # type: ignore
+
 def fail(error: Any) -> Syntax[Any, Any]:
+    """
+    Creates a syntax node that always fails with the given error.
+
+    Args:
+        error: The error to raise or propagate.
+
+    Returns:
+        A Syntax object that always fails.
+    """
     return Syntax(lambda alg: alg.fail(error)).describe(name=f'fail({error})', fixity='prefix')
 
 def success(value: Any) -> Syntax[Any, Any]:
+    """
+    Creates a syntax node that always succeeds with the given value.
+
+    Args:
+        value: The value to return on success.
+
+    Returns:
+        A Syntax object that always succeeds.
+    """
     return Syntax(lambda alg: alg.success(value)).describe(name=f'success({value})', fixity='prefix')
+
+
 
 def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     """
