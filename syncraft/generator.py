@@ -454,29 +454,57 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
 
-def generate(syntax: Syntax[Any, Any], 
-            data: Optional[ParseResult[Any]] = None, 
-            seed: int = 0, 
-            restore_pruned: bool = False) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
-    """Run a ``Syntax`` with the ``Generator`` backend.
-
-    In validation mode (``data`` provided), walks the structure and returns the
-    original AST and collected marks. In generation mode (``data`` is ``None``),
-    synthesizes an AST from the syntax using the given seed.
+def constrained_gen(
+    syntax: Syntax[Any, Any], 
+    data: Optional[ParseResult[Any]] = None, 
+    seed: int = 0, 
+    restore_pruned: bool = False
+) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+    """
+    Generate an AST from the given syntax, optionally constrained by a partial parse result.
 
     Args:
-        syntax: The syntax to execute.
-        data: Optional root AST to validate against.
-        seed: Seed for deterministic random generation.
-        restore_pruned: Allow traversing pruned branches when validating.
+        syntax: The syntax specification to generate from.
+        data: An optional partial parse result (AST) to constrain generation.
+        seed: Random seed for reproducibility.
+        restore_pruned: Whether to restore pruned branches in the AST.
 
     Returns:
-        Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]: The
-        resulting AST with marks when validating, or a synthesized AST when
-        generating.
+        A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
     return run(syntax, Generator, False, ast=data, seed=seed, restore_pruned=restore_pruned)
 
 
-    
+def validate(
+    syntax: Syntax[Any, Any], 
+    data: ParseResult[Any]
+) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+    """
+    Validate a parse result (AST) against the given syntax.
+
+    Args:
+        syntax: The syntax specification to validate against.
+        data: The parse result (AST) to validate.
+
+    Returns:
+        A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
+    """
+    from syncraft.syntax import run
+    return run(syntax, Generator, True, ast=data, seed=0, restore_pruned=True)
+
+
+def generate(
+    syntax
+) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+    """
+    Generate a random AST that conforms to the given syntax.
+
+    Args:
+        syntax: The syntax specification to generate from.
+
+    Returns:
+        A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
+    """
+    from syncraft.syntax import run
+    return run(syntax, Generator, True, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
