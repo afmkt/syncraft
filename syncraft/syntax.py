@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Right, Left
 from syncraft.constraint import Bindable, FrozenDict
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from types import MethodType, FunctionType
 import keyword
 
@@ -271,13 +271,11 @@ class Syntax(Generic[A, S]):
                 ):
                     return Many(value=(left,) + tuple([b.right for b in bs]))
                 case _:
-                    raise ValueError(f"Bad data shape {a}")
+                    raise SyncraftError(f"Bad data shape {a}", offending=a, expect="Then(BOTH) with Choice on the right")
 
         def i(a: Many[A]) -> Then[A, Choice[Many[Then[B | None, A]], Optional[Nothing]]]:
             if not isinstance(a, Many) or len(a.value) < 1:
-                raise ValueError(
-                    f"sep_by inverse expect Many with at least one element, got {a}"
-                )
+                raise SyncraftError(f"sep_by inverse expect Many with at least one element, got {a}", offending=a, expect="Many with at least one element")
             if len(a.value) == 1:
                 return Then(
                     kind=ThenKind.BOTH,

@@ -7,7 +7,7 @@ from typing import (
 import traceback
 from dataclasses import dataclass, replace
 from weakref import WeakKeyDictionary
-from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict
+from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError
 from syncraft.constraint import Bindable
 
 
@@ -232,7 +232,7 @@ class Algebra(Generic[A, S]):
         """
         method = getattr(cls, name, None)
         if method is None or not callable(method):
-            raise ValueError(f"Method {name} is not defined in {cls.__name__}")
+            raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offending=method, expect='callable')
         return cast(Algebra[A, S], method(*args, **kwargs))
 
 
@@ -373,7 +373,7 @@ class Algebra(Generic[A, S]):
                 case Left(err):
                     return Left(err)
                 case x:
-                    raise ValueError(f"Unexpected result from self.run {x}")
+                    raise SyncraftError(f"Unexpected result from self.run {x}", offending=x)
         return self.__class__(map_all_run, name=self.name) # type: ignore
 ######################################################## fundamental combinators ############################################    
     def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
@@ -466,19 +466,21 @@ class Algebra(Generic[A, S]):
             ``Choice.RIGHT`` for the other's success.
         """
         def or_else_run(input: S, use_cache:bool) -> Either[Any, Tuple[Choice[A, B], S]]:
-            match self.run(input, use_cache):
+            self_result = self.run(input, use_cache)
+            match self_result:
                 case Right((value, state)):
                     return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
                         return Left(replace(err, committed=False))
-                    match other.run(input, use_cache):
+                    other_result = other.run(input, use_cache)
+                    match other_result:
                         case Right((other_value, other_state)):
                             return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
                         case Left(other_err):
                             return Left(other_err)
-                    raise TypeError(f"Unexpected result type from {other}")
-            raise TypeError(f"Unexpected result type from {self}")
+                    raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
+            raise SyncraftError(f"Unexpected result type from {self}", offending=self_result, expect=(Left, Right))
         return self.__class__(or_else_run, name=f'{self.name} | {other.name}')  # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
@@ -552,7 +554,7 @@ class Algebra(Generic[A, S]):
             ``at_most<at_least``).
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise ValueError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}")
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: S, use_cache:bool) -> Either[Any, Tuple[Many[A], S]]:
             ret: List[A] = []
             current_input = input

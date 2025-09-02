@@ -13,9 +13,15 @@ from dataclasses import dataclass, replace, is_dataclass, fields
 from enum import Enum
 
 
+class SyncraftError(Exception):
+    def __init__(self, message: str, offending: Any, expect: Any = None):
+        super().__init__(message)
+        self.offending = offending
+        self.expect = expect
+
 def shallow_dict(a: Any)->Dict[str, Any]:
     if not is_dataclass(a):
-        raise ValueError(f"Expected dataclass instance for collector inverse, got {type(a)}")
+        raise SyncraftError("Expected dataclass instance for collector inverse", offending=a, expect="dataclass")
     return {f.name: getattr(a, f.name) for f in fields(a)}
 
 
@@ -130,7 +136,7 @@ class Bimap(Generic[A, B]):
                 return c, inv
             return Bimap(bimap_then_run)
         else:
-            raise TypeError(f"Unsupported type for Bimap >>: {type(other)}")
+            raise SyncraftError("Unsupported type for Bimap >>", offending=other, expect=(Bimap , Biarrow))
     def __rrshift__(self, other: Bimap[C, A] | Biarrow[C, A]) -> Bimap[C, B]:
         """Right-composition so arrows or bimaps can be on the left of ``>>``."""
         if isinstance(other, Biarrow):
@@ -152,7 +158,7 @@ class Bimap(Generic[A, B]):
                 return b2, inv
             return Bimap(bimap_then_run)
         else:
-            raise TypeError(f"Unsupported type for Bimap <<: {type(other)}")
+            raise SyncraftError("Unsupported type for Bimap <<", offending=other, expect=(Bimap , Biarrow))
 
 
     @staticmethod
@@ -397,7 +403,7 @@ class Collect(Generic[A, E], AST):
 
         def inv_one_positional(e: E) -> B:
             if not is_dataclass(e):
-                raise ValueError(f"Expected dataclass instance for collector inverse, got {type(e)}")
+                raise SyncraftError("Expected dataclass instance for collector inverse", offending=e, expect="dataclass")
             named_dict = shallow_dict(e)
             return named_dict[fields(e)[0].name]
 
@@ -417,7 +423,7 @@ class Collect(Generic[A, E], AST):
                 ret: E = self.collector(*unnamed, **named)
                 def invf(e: E) -> Tuple[Any, ...]:
                     if not is_dataclass(e):
-                        raise ValueError(f"Expected dataclass instance for collector inverse, got {type(e)}")
+                        raise SyncraftError("Expected dataclass instance for collector inverse", offending=e, expect="dataclass")
                     named_dict = shallow_dict(e)     
                     unnamed = []           
                     for f in fields(e):

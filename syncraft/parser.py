@@ -14,7 +14,7 @@ from enum import Enum
 from functools import reduce
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, TokenProtocol
+from syncraft.ast import Token, TokenSpec, AST, TokenProtocol, SyncraftError
 from syncraft.constraint import Bindable
 
 
@@ -74,7 +74,7 @@ class ParserState(Bindable, Generic[T]):
             IndexError: If attempting to read past the end of the stream.
         """
         if self.ended():
-            raise IndexError("Attempted to access token beyond end of stream")
+            raise SyncraftError("Attempted to access token beyond end of stream", offending=self, expect="index < len(input)")
         return self.input[self.index]
     
     def ended(self) -> bool:

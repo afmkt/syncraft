@@ -14,7 +14,7 @@ from syncraft.ast import (
     ParseResult, AST, Token, TokenSpec, 
     Nothing, TokenProtocol,
     Choice, Many, ChoiceKind,
-    Then, ThenKind, Marked
+    Then, ThenKind, Marked, SyncraftError
 )
 from syncraft.constraint import FrozenDict
 from syncraft.syntax import Syntax
@@ -142,27 +142,6 @@ class GenState(Bindable, Generic[T]):
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.LEFT or self.restore_pruned):
             return replace(self, ast=self.ast.right)
         return replace(self, ast=None)
-
-    def down(self, index: int) -> GenState[T]:
-        """Descend through wrapper nodes to reach the contained value.
-
-        Currently unwraps ``Marked`` nodes. Raises ``TypeError`` for other
-        node types.
-
-        Args:
-            index: Placeholder for a future multi-child descent API.
-
-        Returns:
-            GenState[T]: State focused on the unwrapped child or unchanged when
-            pruned.
-        """
-        if self.ast is None:
-            return self        
-        match self.ast:
-            case Marked(value=value):
-                return replace(self, ast=value)
-            case _:
-                raise TypeError(f"Invalid AST type({self.ast}) for down traversal")
     
     @classmethod
     def from_ast(cls, 
@@ -270,7 +249,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                       message=f"Expect Then got {input.ast}",
                                       state=input))
                 lft = input.left() 
-                match self.run(lft, use_cache=use_cache):
+                self_result = self.run(lft, use_cache=use_cache)
+                match self_result:
                     case Left(error):
                         return Left(error)
                     case Right((value, next_input)):
@@ -280,7 +260,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 return Left(e)
                             case Right((result, next_input)):
                                 return Right((result, next_input))
-                raise ValueError("flat_map should always return a value or an error.")
+                raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
             except Exception as e:
                 return Left(Error(
                     message=str(e),
@@ -311,7 +291,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             ValueError: If bounds are invalid.
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise ValueError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}")
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]:
             if input.pruned:
                 upper = at_most if at_most is not None else at_least + 2
@@ -397,7 +377,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                         return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
                                     case Left(error):
                                         return Left(error)
-                raise ValueError(f"Invalid ChoiceKind: {kind}")
+                raise SyncraftError(f"Invalid ChoiceKind: {kind}", offending=kind, expect=(ChoiceKind.LEFT, ChoiceKind.RIGHT, None))
 
             if input.pruned:
                 forked_input = input.fork(tag="or_else")

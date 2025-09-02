@@ -50,4 +50,4 @@ def test_to() -> None:
         return True
     if bound is not None:
         forall(p)(bound)
-    g, bound = gen.generate(syntax, ast, restore_pruned=True)
+    g, bound = gen.generate_with(syntax, ast, restore_pruned=True)

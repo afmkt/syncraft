@@ -7,7 +7,7 @@ from collections import defaultdict
 from itertools import product
 from inspect import Signature
 import inspect
-
+from syncraft.ast import SyncraftError
 K = TypeVar('K')
 V = TypeVar('V')
 class FrozenDict(collections.abc.Mapping, Generic[K, V]):
@@ -171,7 +171,9 @@ class Constraint:
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
                 kw_params.append(pname)
             else:
-                raise TypeError(f"Unsupported parameter kind: {param.kind}")
+                raise SyncraftError(f"Unsupported parameter kind: {param.kind}", 
+                                    offending=param.kind, 
+                                    expect=(inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY))
         def run_f(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
             # positional argument values
             pos_values = [bound.get(pname, ()) for pname in pos_params]
@@ -321,7 +323,9 @@ class Relation:
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
                 kw_params.append(pname)
             else:
-                raise TypeError(f"Unsupported parameter kind: {param.kind}")
+                raise SyncraftError(f"Unsupported parameter kind: {param.kind}", 
+                                    offending=param.kind, 
+                                    expect=(inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY))
         def run_f(bound: FrozenDict[str, Tuple[Any, ...]]) -> Generator[FrozenDict[str, Any], None, None]:
             # positional argument values
             pos_values = [bound.get(pname, ()) for pname in pos_params]
