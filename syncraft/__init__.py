@@ -5,6 +5,7 @@ from .syntax import (
 	lazy,
 	success,
 	fail,
+    when,
     run,
 )
 from .algebra import (
@@ -64,7 +65,7 @@ __all__ = [
     # algebra
     "Algebra", "Error", "Left", "Right", "Either",
 	# syntax & core
-	"Syntax", "choice", "lazy", "success", "fail", "run", "Description",
+	"Syntax", "choice", "lazy", "success", "fail", "run", "Description", "when",
 	# parsing/generation helpers
 	"parse", "sqlglot", "token", "identifier", "variable", "literal", "number", "string", "regex", "until",
 	"generate", "generate_with", "validate", "Parser", "Generator",
