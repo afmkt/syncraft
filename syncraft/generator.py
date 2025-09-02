@@ -454,7 +454,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
 
-def constrained_gen(
+def generate_with(
     syntax: Syntax[Any, Any], 
     data: Optional[ParseResult[Any]] = None, 
     seed: int = 0, 
@@ -473,7 +473,7 @@ def constrained_gen(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    return run(syntax, Generator, False, ast=data, seed=seed, restore_pruned=restore_pruned)
+    return run(syntax, Generator, not restore_pruned, ast=data, seed=seed, restore_pruned=restore_pruned)
 
 
 def validate(
@@ -507,4 +507,4 @@ def generate(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    return run(syntax, Generator, True, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    return run(syntax, Generator, False, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
