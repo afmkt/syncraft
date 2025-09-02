@@ -1,4 +1,5 @@
 from .syntax import (
+    Description,
 	Syntax,
 	choice,
 	lazy,
@@ -6,7 +7,15 @@ from .syntax import (
 	fail,
     run,
 )
+from .algebra import (
+    Algebra,
+    Error,
+    Left,
+    Right,
+    Either,
+)
 from .parser import (
+    Parser,
 	parse,
 	sqlglot,
 	token,
@@ -19,14 +28,19 @@ from .parser import (
 	until,
 )
 from .generator import (
+    Generator,
 	generate,
+    generate_with,
+    validate,
 )
 from .finder import (
+    Finder,
 	find,
 	matches,
 	anything,
 )
 from .constraint import (
+    FrozenDict,
 	Constraint,
 	Quantifier,
 	forall,
@@ -34,6 +48,8 @@ from .constraint import (
 )
 from .ast import (
 	AST,
+    Bimap,
+    Biarrow,
 	Token,
 	Then,
 	ThenKind,
@@ -45,15 +61,17 @@ from .ast import (
 )
 
 __all__ = [
+    # algebra
+    "Algebra", "Error", "Left", "Right", "Either",
 	# syntax & core
-	"Syntax", "choice", "lazy", "success", "fail", "run",
+	"Syntax", "choice", "lazy", "success", "fail", "run", "Description",
 	# parsing/generation helpers
 	"parse", "sqlglot", "token", "identifier", "variable", "literal", "number", "string", "regex", "until",
-	"generate",
+	"generate", "generate_with", "validate", "Parser", "Generator",
 	# finder
-	"find", "matches", "anything",
+	"find", "matches", "anything", "Finder",
 	# constraints
-	"Constraint", "Quantifier", "forall", "exists",
+	"Constraint", "Quantifier", "forall", "exists", "FrozenDict",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "Choice", "ChoiceKind", "Many", "Marked", "Collect",
+	"AST", "Token", "Then", "ThenKind", "Choice", "ChoiceKind", "Many", "Marked", "Collect", "Bimap", "Biarrow"
 ]

@@ -32,42 +32,36 @@ S = TypeVar('S', bound=Bindable)  # State type
 @dataclass(frozen=True)
 class Description:
     name: Optional[str] = None
-    newline: Optional[str] = None
     fixity: Literal['infix', 'prefix', 'postfix'] = 'infix'
     parameter: Tuple[Any, ...] = field(default_factory=tuple)
 
     def update(self, 
                *,
-               newline: Optional[str] = None,
                name: Optional[str] = None,
                fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
                parameter: Optional[Tuple[Any, ...]] = None) -> 'Description':
         return Description(
             name=name if name is not None else self.name,
-            newline= newline if newline is not None else self.newline,
             fixity=fixity if fixity is not None else self.fixity,
             parameter=parameter if parameter is not None else self.parameter
         )
         
-    def to_string(self, interested: Callable[[Any], bool]) -> Optional[str]:
+    def to_string(self, interested: Callable[[Any], bool]=lambda _: True) -> Optional[str]:
         if self.name is not None:
             if self.fixity == 'infix':
                 assert len(self.parameter) == 2, "Expected exactly two parameters for infix operator"
-                left  = self.parameter[0].to_string(interested) if interested(self.parameter[0]) else '...'
-                right = self.parameter[1].to_string(interested) if interested(self.parameter[1]) else '...'
-                if self.parameter[1].meta.newline is not None:
-                    new = '\u2570' # '\u2936'
-                    return f"{left}\n{new} \"{self.parameter[1].meta.newline}\" {self.name} {right}"
+                left  = self.parameter[0].meta.to_string(interested) if interested(self.parameter[0]) else '...'
+                right = self.parameter[1].meta.to_string(interested) if interested(self.parameter[1]) else '...'
                 return f"{left} {self.name} {right}"
             elif self.fixity == 'prefix':
                 if len(self.parameter) == 0:
                     return self.name
-                tmp = [x.to_string(interested) if interested(x) else '...' for x in self.parameter]
+                tmp = [x.meta.to_string(interested) if interested(x) else '...' for x in self.parameter]
                 return f"{self.name}({','.join(str(x) for x in tmp)})" 
             elif self.fixity == 'postfix':
                 if len(self.parameter) == 0:
                     return self.name
-                tmp = [x.to_string(interested) if interested(x) else '...' for x in self.parameter]
+                tmp = [x.meta.to_string(interested) if interested(x) else '...' for x in self.parameter]
                 return f"({','.join(str(x) for x in tmp)}).{self.name}" 
             else:
                 return f"Invalid fixity: {self.fixity}"
@@ -127,13 +121,9 @@ class Syntax(Generic[A, S]):
     def __call__(self, alg: Type[Algebra[Any, Any]]) -> Algebra[A, S]:
         return self.alg(alg)
 
-    def to_string(self, interested: Callable[[Any], bool]) -> Optional[str]:
-        return self.meta.to_string(interested)
-
     def describe(
         self,
         *,
-        newline: Optional[str] = None,
         name: Optional[str] = None,
         fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
         parameter: Optional[Tuple[Syntax[Any, S], ...]] = None,
@@ -141,12 +131,10 @@ class Syntax(Generic[A, S]):
         return self.__class__(
             alg=self.alg,
             meta=self.meta.update(
-                name=name, newline=newline, fixity=fixity, parameter=parameter
+                name=name, fixity=fixity, parameter=parameter
             ),
         )
 
-    def newline(self, info: str = '') -> Syntax[A, S]:
-        return self.describe(newline=info)
 
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:

@@ -28,7 +28,7 @@ def rich_error(err: Error)->None:
 
 def rich_parser(p: Syntax)-> None:
     print("Parser Debug Information:")
-    print(p.meta.to_string(lambda _ : True) or repr(p))
+    print(p.meta.to_string() or repr(p))
 
 def rich_debug(this: Algebra[Any, ParserState[Any]], 
                state: ParserState[Any], 
@@ -45,7 +45,7 @@ def rich_debug(this: Algebra[Any, ParserState[Any]],
             elif isinstance(value, Token):
                 return prefix + f"{value.token_type.name}({value.text})"
             elif isinstance(value, Syntax):
-                return prefix + (value.meta.to_string(lambda _ : True) or 'N/A')
+                return prefix + (value.meta.to_string() or 'N/A')
             else:
                 return prefix + str(value)
 

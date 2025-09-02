@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 if __name__ == "__main__":
         from dataclasses import dataclass
-        from syncraft import literal, parse, generate
+        from syncraft import literal, parse, generate, generate_with
         @dataclass
         class Pair:
                 first:Any
@@ -28,5 +28,6 @@ if __name__ == "__main__":
         value.append(Pair('x', 'y'))
         print(value)
         ast3 = inverse(value)
-        rt, _ = generate(syntax, ast3)
+        rt, _ = generate_with(syntax, ast3)
         print(rt)
+        print(syntax.meta.to_string())
