@@ -582,6 +582,9 @@ def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
 def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: Any, **kwargs: Any) -> Tuple[Any, FrozenDict[str, Tuple[Any, ...]]] | Tuple[Any, None]:
     """
     Run the syntax over the given algebra, and return the result and bind.
+
+    Args:
+        *args, **kwargs: the arguments passed to alg.state to construct the state object of the algebra.
     """
     parser = syntax(alg)
     input: Optional[S] = alg.state(*args, **kwargs)
