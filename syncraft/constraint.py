@@ -1,7 +1,10 @@
 from __future__ import annotations
-from typing import Callable, Generic, Tuple, TypeVar, Optional, Any, Self, Generator
+from typing import (
+    Callable, Generic, Tuple, TypeVar, Optional, Any, Self, 
+    Generator, List, Set, Union, Dict, Iterable,
+)
 from enum import Enum
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, is_dataclass, fields
 import collections.abc
 from collections import defaultdict
 from itertools import product
@@ -256,6 +259,141 @@ def all_binding(a: FrozenDict[str, Tuple[Any, ...]], *names: str) -> Generator[F
 
     
 
+####################################################################################################################################
+@dataclass(frozen=True)
+class Var:
+    name: str
+
+Fact = Tuple[str, Tuple[Any, ...]]
+
+
+@dataclass
+class Rule:
+    head: Fact                # e.g. ("ancestor", (Var("X"), Var("Y")))
+    body: List[Fact]          # e.g. [("parent", (Var("X"), Var("Z"))), ("ancestor", (Var("Z"), Var("Y")))]
+
+
+
+class Datalog:
+    def __init__(self) -> None:
+        self.facts: Set[Fact] = set()
+        self.rules: List[Rule] = []
+
+    def add_fact(self, pred: str, *args: Any):
+        self.facts.add((pred, args))
+
+    def add_rule(self, head: Fact, body: List[Fact]):
+        self.rules.append(Rule(head, body))
+
+
+
+def unify(pattern: Tuple[Any, ...], fact: Tuple[Any, ...], env: Dict[str, Any]) -> Union[Dict[str, Any], None]:
+    """
+    Try to unify a pattern with a fact under an environment.
+    Returns a new environment if successful, else None.
+    """
+    if len(pattern) != len(fact):
+        return None
+
+    new_env = dict(env)
+    for p, f in zip(pattern, fact):
+        if isinstance(p, Var):
+            if p.name in new_env:
+                if new_env[p.name] != f:
+                    return None
+            else:
+                new_env[p.name] = f
+        else:
+            if p != f:
+                return None
+    return new_env
+
+def match_body(body: List[Fact], facts: Set[Fact], env: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
+    """
+    Try to satisfy the body of a rule against facts, producing environments.
+    """
+    if not body:
+        yield env
+        return
+
+    pred, args = body[0]
+    for f_pred, f_args in facts:
+        if f_pred == pred:
+            new_env = unify(args, f_args, env)
+            if new_env is not None:
+                yield from match_body(body[1:], facts, new_env)
+
+
+def infer(self):
+    changed = True
+    while changed:
+        changed = False
+        new_facts = set()
+
+        for rule in self.rules:
+            for env in match_body(rule.body, self.facts, {}):
+                # substitute variables in head
+                head_pred, head_args = rule.head
+                inst_args = tuple(env.get(arg.name, arg) if isinstance(arg, Var) else arg
+                                  for arg in head_args)
+                new_fact = (head_pred, inst_args)
+                if new_fact not in self.facts:
+                    new_facts.add(new_fact)
+
+        if new_facts:
+            self.facts |= new_facts
+            changed = True
+
+
+
+def dataclass_to_facts(obj: Any, *, extended: bool = False, parent: Any = None) -> List[Fact]:
+    """
+    Convert a dataclass instance (possibly nested) into facts.
+    
+    Args:
+        obj: A dataclass instance to convert.
+        extended: If True, emit parent/child and field-level facts.
+        parent: Internal use for recursion, tracks parent dataclass.
+    
+    Returns:
+        A list of facts as (predicate, args).
+    """
+    facts: List[Fact] = []
+
+    if not is_dataclass(obj):
+        raise TypeError(f"Expected dataclass instance, got {type(obj)}")
+
+    cls = type(obj)
+    pred = cls.__name__  # use class name as predicate
+    args = tuple(getattr(obj, f.name) for f in fields(obj))
+    facts.append((pred, args))
+
+    for f in fields(obj):
+        val = getattr(obj, f.name)
+
+        if is_dataclass(val):
+            # recurse into child dataclass
+            facts.extend(dataclass_to_facts(val, extended=extended, parent=obj))
+
+            if extended:
+                facts.append(("Contains", (obj, val)))
+                facts.append(("Field", (obj, f.name, val)))
+
+        elif isinstance(val, list):
+            for item in val:
+                if is_dataclass(item):
+                    facts.extend(dataclass_to_facts(item, extended=extended, parent=obj))
+                    if extended:
+                        facts.append(("Contains", (obj, item)))
+                        facts.append(("Field", (obj, f.name, item)))
+                else:
+                    if extended:
+                        facts.append(("Field", (obj, f.name, item)))
+        else:
+            if extended:
+                facts.append(("Field", (obj, f.name, val)))
+
+    return facts
 
 
 
