@@ -286,12 +286,28 @@ class Datalog:
         self.rules.append(Rule(head, body))
 
 
+    def infer(self):
+        changed = True
+        while changed:
+            changed = False
+            new_facts = set()
+
+            for rule in self.rules:
+                for env in match_body(rule.body, self.facts, {}):
+                    # substitute variables in head
+                    head_pred, head_args = rule.head
+                    inst_args = tuple(env.get(arg.name, arg) if isinstance(arg, Var) else arg
+                                    for arg in head_args)
+                    new_fact = (head_pred, inst_args)
+                    if new_fact not in self.facts:
+                        new_facts.add(new_fact)
+
+            if new_facts:
+                self.facts |= new_facts
+                changed = True
+
 
 def unify(pattern: Tuple[Any, ...], fact: Tuple[Any, ...], env: Dict[str, Any]) -> Union[Dict[str, Any], None]:
-    """
-    Try to unify a pattern with a fact under an environment.
-    Returns a new environment if successful, else None.
-    """
     if len(pattern) != len(fact):
         return None
 
@@ -309,9 +325,6 @@ def unify(pattern: Tuple[Any, ...], fact: Tuple[Any, ...], env: Dict[str, Any]) 
     return new_env
 
 def match_body(body: List[Fact], facts: Set[Fact], env: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
-    """
-    Try to satisfy the body of a rule against facts, producing environments.
-    """
     if not body:
         yield env
         return
@@ -324,40 +337,10 @@ def match_body(body: List[Fact], facts: Set[Fact], env: Dict[str, Any]) -> Itera
                 yield from match_body(body[1:], facts, new_env)
 
 
-def infer(self):
-    changed = True
-    while changed:
-        changed = False
-        new_facts = set()
-
-        for rule in self.rules:
-            for env in match_body(rule.body, self.facts, {}):
-                # substitute variables in head
-                head_pred, head_args = rule.head
-                inst_args = tuple(env.get(arg.name, arg) if isinstance(arg, Var) else arg
-                                  for arg in head_args)
-                new_fact = (head_pred, inst_args)
-                if new_fact not in self.facts:
-                    new_facts.add(new_fact)
-
-        if new_facts:
-            self.facts |= new_facts
-            changed = True
 
 
 
 def dataclass_to_facts(obj: Any, *, extended: bool = False, parent: Any = None) -> List[Fact]:
-    """
-    Convert a dataclass instance (possibly nested) into facts.
-    
-    Args:
-        obj: A dataclass instance to convert.
-        extended: If True, emit parent/child and field-level facts.
-        parent: Internal use for recursion, tracks parent dataclass.
-    
-    Returns:
-        A list of facts as (predicate, args).
-    """
     facts: List[Fact] = []
 
     if not is_dataclass(obj):
@@ -397,133 +380,12 @@ def dataclass_to_facts(obj: Any, *, extended: bool = False, parent: Any = None) 
 
 
 
-
-@dataclass(frozen=True)
-class Relation:
-    run_f: Callable[[FrozenDict[str, Tuple[Any, ...]]], Generator[FrozenDict[str, Any], None, None]]
-    name: str = ""
-    args: frozenset[str]=field(default_factory=frozenset)
-
-    def __call__(self, bound: FrozenDict[str, Tuple[Any, ...]])->Generator[FrozenDict[str, Any], None, None]:
-        yield from self.run_f(bound)
-
-    def __and__(self, other: Relation) -> Relation:
-        def and_run(bound: FrozenDict[str, tuple]) -> Generator[FrozenDict[str, Any], None, None]:
-            for res1 in self(bound):
-                for res2 in other(bound):
-                    merged = res1 | res2
-                    if len(merged) == len(res1) + len(res2):
-                        yield FrozenDict(merged)
-        return Relation(
-            run_f=and_run,
-            args = self.args.union(other.args),
-            name=f"({self.name} && {other.name})"
-        )
-    
-    def __or__(self, other: Relation) -> Relation:
-        def or_run(bound: FrozenDict[str, tuple]) -> Generator[FrozenDict[str, Any], None, None]:
-            yield from self(bound)
-            yield from other(bound)
-        return Relation(
-            run_f=or_run,
-            name=f"({self.name} || {other.name})"
-        )
-    
-    def __xor__(self, other: "Relation") -> "Relation":
-        def xor_run(bound: FrozenDict[str, tuple]) -> Generator[FrozenDict[str, Any], None, None]:
-            self_results = list(self(bound))
-            other_results = list(other(bound))
-            # yield from self only if not in other
-            for res1 in self_results:
-                if res1 not in other_results:
-                    yield res1
-            # yield from other only if not in self
-            for res2 in other_results:
-                if res2 not in self_results:
-                    yield res2
-
-        return Relation(
-            run_f=xor_run,
-            name=f"({self.name} ^ {other.name})"
-        )    
-
-    @classmethod
-    def predicate(cls, 
-                  f: Callable[..., bool],
-                  *, 
-                  sig: Signature,
-                  name: str)->Relation:
-        pos_params = []
-        kw_params = []
-        for pname, param in sig.parameters.items():
-            if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
-                pos_params.append(pname)
-            elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-                kw_params.append(pname)
-            else:
-                raise SyncraftError(f"Unsupported parameter kind: {param.kind}", 
-                                    offending=param.kind, 
-                                    expect=(inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY))
-        def run_f(bound: FrozenDict[str, Tuple[Any, ...]]) -> Generator[FrozenDict[str, Any], None, None]:
-            # positional argument values
-            pos_values = [bound.get(pname, ()) for pname in pos_params]
-            # keyword argument values
-            kw_values = [bound.get(pname, ()) for pname in kw_params]
-            # If any param is unbound, fail
-            all_params = pos_params + kw_params
-            all_values = pos_values + kw_values
-            unbound_args = [p for p, vs in zip(all_params, all_values) if not vs]
-            if not unbound_args:
-                # Cartesian product
-                for combo in product(*pos_values, *kw_values):
-                    pos_args = combo[: len(pos_values)]
-                    kw_args = dict(zip(kw_params, combo[len(pos_values) :]))
-                    if f(*pos_args, **kw_args):
-                        binding_dict = {name: arg for name, arg in zip(all_params, combo)}
-                        yield FrozenDict(binding_dict)
-
-        return cls(run_f=run_f, name=name)
-
-
-def relation(f: Callable[..., bool], 
-              *, 
-              name: Optional[str] = None, 
-              bimap: bool = True) -> Relation:
-    name = name or f.__name__
-    sig = inspect.signature(f)
-    if bimap:
-        def wrapper(*args: Any, **kwargs:Any) -> bool:
-            mapped_args = [a.bimap()[0] if hasattr(a, "bimap") else a for a in args]
-            mapped_kwargs = {k: (v.bimap()[0] if hasattr(v, "bimap") else v) for k,v in kwargs.items()}
-            return f(*mapped_args, **mapped_kwargs)
-        return Relation.predicate(wrapper, sig=sig, name=name)
-    else:
-        return Relation.predicate(f, sig=sig, name=name)
-
-
-def xforall(f: Callable[..., bool], *, name: str) -> Relation:
-    base_constraint = relation(f, name=name)
-
-    def run_f(bound: FrozenDict[str, Tuple[Any, ...]]) -> Generator[FrozenDict[str, Any], None, None]:
-        # Collect all satisfying bindings
-        all_bindings = list(base_constraint(bound))
-
-        # For FORALL, yield only if all combinations succeed
-        if all_bindings:
-            for b in all_bindings:
-                yield b
-        # If no bindings satisfy, nothing is yielded (FORALL fails)
-
-    return Relation(run_f=run_f, name=name)
-
-
-def xexists(f: Callable[..., bool], *, name: str) -> Relation:
-    def run_f(bound: FrozenDict[str, Tuple[Any, ...]]) -> Generator[FrozenDict[str, Any], None, None]:
-        # For EXISTS, yield only the first satisfying binding
-        for b in relation(f, name=name)(bound):
-            yield b
-            return  # stop at first satisfying tuple
-    return Relation(run_f=run_f, name=name)
-
-
-
+def test()->None:
+    db = Datalog()
+    db.add_fact("parent", "alice", "bob")
+    db.add_fact("parent", "bob", "carol")
+    X, Y, Z = Var("X"), Var("Y"), Var("Z")
+    db.add_rule(("ancestor", (X, Y)), [("parent", (X, Y))])
+    db.add_rule(("ancestor", (X, Y)), [("parent", (X, Z)), ("ancestor", (Z, Y))])
+    db.infer()
+    print(db.facts)
