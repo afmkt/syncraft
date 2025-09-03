@@ -20,5 +20,7 @@ plugins:
             filters: []
 nav:
   - Quickstart: quickstart.md
+  - Tutorials:
+      - SQLite CREATE TRIGGER Parser Tutorial: tutorials/trigger.ipynb
   - Concepts: concept.md
   - Reference: reference.md

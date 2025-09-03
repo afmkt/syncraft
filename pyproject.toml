@@ -25,6 +25,11 @@ dev = [
     "graphviz>=0.21",
     "railroad-diagrams>=3.0.1",
     "rich>=14.1.0",
+    "ipython>=8.0.0",
+    "jupyter>=1.0.0",
+    "mkdocs-jupyter>=0.24.6",
 ]
 
 
+[tool.setuptools]
+packages = ["syncraft"]
