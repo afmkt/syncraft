@@ -28,6 +28,7 @@ dev = [
     "ipython>=8.0.0",
     "jupyter>=1.0.0",
     "mkdocs-jupyter>=0.24.6",
+    "nbval>=0.10.0",
 ]
 
 
