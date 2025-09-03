@@ -438,6 +438,21 @@ class Collect(Generic[A, E], AST):
                     return tuple(tmp)
                 return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore                
         return self.collector(b), lambda e: replace(self, value=inner_f(inv_one_positional(e))) # type: ignore
+    
+
+
+@dataclass(frozen=True)
+class Custom(Generic[A, B], AST):
+    """A custom AST node wrapping an arbitrary value.
+
+    Used when the parse result does not fit into other AST node types.
+    """
+    meta: B
+    value: A
+    def bimap(self, r: Bimap[A, C]=Bimap.identity()) -> Tuple[C, Callable[[C], Custom[A, B]]]:
+        """Defer to the provided mapping ``r``."""
+        v, inv = r(self.value)
+        return v, lambda c: replace(self, value=inv(c))
 
 #########################################################################################################################
 @dataclass(frozen=True)

@@ -444,128 +444,65 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         Args and semantics match Parser.until.
         """
         def until_run(input: GenState[T], use_cache: bool) -> Either[Any, Tuple[Any, GenState[T]]]:
+            from syncraft.ast import Custom
             tokens: List[Any] = []
             if not terminator and len(open_close) == 0:
                 return Left(Error(this=until_run, message="No terminator and no open/close generators, nothing to generate", state=input))
             opens, closes = zip(*open_close) if len(open_close) > 0 else ((), ())
             tmp_input: GenState[T] = input
-            stack: List[int] = []
             # Freeform generation mode
             if tmp_input.pruned:
-                if strict and len(opens) > 0:
-                    matched = False
-                    for i, op in enumerate(opens):
-                        res = op.run(tmp_input, use_cache)
-                        if isinstance(res, Right):
-                            val, next_input = res.value
-                            stack.append(i)
-                            if inclusive:
-                                tokens.append(val)
-                            tmp_input = next_input
-                            matched = True
-                            break
-                    if not matched:
-                        return Left(Error(this=until_run, message="No opening generator matched (pruned)", state=tmp_input))
-                while True:
-                    o_matched = False
-                    for i, op in enumerate(opens):
-                        res = op.run(tmp_input, use_cache)
-                        if isinstance(res, Right):
-                            val, next_input = res.value
-                            stack.append(i)
-                            if inclusive:
-                                tokens.append(val)
-                            tmp_input = next_input
-                            o_matched = True
-                            break
-                    if o_matched:
-                        continue
-                    c_matched = False
-                    for i, cl in enumerate(closes):
-                        res = cl.run(tmp_input, use_cache)
-                        if isinstance(res, Right):
-                            val, next_input = res.value
-                            if not stack or stack[-1] != i:
-                                return Left(Error(this=until_run, message="Mismatched closing generator (pruned)", state=tmp_input))
-                            stack.pop()
-                            if inclusive:
-                                tokens.append(val)
-                            tmp_input = next_input
-                            c_matched = True
-                            if len(stack) == 0:
-                                if terminator:
-                                    term = terminator.run(tmp_input, use_cache)
-                                    if isinstance(term, Right):
-                                        if inclusive:
-                                            tokens.append(term.value[0])
-                                        return Right((tuple(tokens), term.value[1]))
-                                else:
-                                    return Right((tuple(tokens), tmp_input))
-                            break
-                    if c_matched:
-                        continue
-                    if len(stack) == 0:
-                        if terminator:
-                            term2 = terminator.run(tmp_input, use_cache)
-                            if isinstance(term2, Right):
-                                if inclusive:
-                                    tokens.append(term2.value[0])
-                                return Right((tuple(tokens), term2.value[1]))
-                        else:
-                            return Right((tuple(tokens), tmp_input))
-                    # For freeform, break to avoid infinite loop
-                    break
-                if len(stack) != 0:
-                    return Left(Error(this=until_run, message="Unterminated group (pruned)", state=tmp_input))
-                return Right((tuple(tokens), tmp_input))
+                rng = tmp_input.rng("until")
+                indices = list(range(len(opens)))
+                rng.shuffle(indices)
+                for i in indices:
+                    res = opens[i].run(tmp_input, use_cache)
+                    if isinstance(res, Right):
+                        val, next_input = res.value
+                        if inclusive:
+                            tokens.append(val)
+                        tmp_input = next_input
+                for i in indices[::-1]:
+                    res = closes[i].run(tmp_input, use_cache)
+                    if isinstance(res, Right):
+                        val, next_input = res.value
+                        if inclusive:
+                            tokens.append(val)
+                        tmp_input = next_input
+                if terminator:
+                    term = terminator.run(tmp_input, use_cache)
+                    if isinstance(term, Right):
+                        if inclusive:
+                            tokens.append(term.value[0])
+                        tmp_input = term.value[1]
+                # meta can be extended to include bookmarks if needed
+                return Right((Custom(value=tuple(tokens), meta={}), tmp_input))
             # Validation mode
             else:
                 current = tmp_input.ast
                 if current is None:
                     return Left(Error(this=until_run, message="No AST node to validate", state=tmp_input))
-                # If current is Many, validate each child
-                from syncraft.ast import Many as AstMany
-                if isinstance(current, AstMany):
-                    for child in current.value:
-                        opened = False
-                        for i, op in enumerate(opens):
-                            res = op.run(tmp_input.inject(child), use_cache)
-                            if isinstance(res, Right):
-                                val, _ = res.value
-                                stack.append(i)
-                                if inclusive:
-                                    tokens.append(val)
-                                opened = True
-                                break
-                        if opened:
-                            continue
-                        closed = False
-                        for i, cl in enumerate(closes):
-                            res = cl.run(tmp_input.inject(child), use_cache)
-                            if isinstance(res, Right):
-                                val, _ = res.value
-                                if not stack or stack[-1] != i:
-                                    return Left(Error(this=until_run, message="Mismatched closing generator", state=tmp_input))
-                                stack.pop()
-                                if inclusive:
-                                    tokens.append(val)
-                                closed = True
-                                break
-                        if closed:
-                            continue
-                        if terminator:
-                            term = terminator.run(tmp_input.inject(child), use_cache)
-                            if isinstance(term, Right):
-                                if inclusive:
-                                    tokens.append(term.value[0])
-                                return Right((tuple(tokens), term.value[1]))
-                        tokens.append(child)
-                    if len(stack) != 0:
-                        return Left(Error(this=until_run, message="Unterminated group", state=tmp_input))
-                    return Right((tuple(tokens), tmp_input))
-                else:
-                    tokens.append(current)
-                    return Right((tuple(tokens), tmp_input))
+                # Expect a Custom node as produced by Parser.until
+                if not (hasattr(current, "value") and hasattr(current, "meta")):
+                    return Left(Error(this=until_run, message="Expected Custom node for until", state=tmp_input))
+                value = getattr(current, "value")
+                meta = getattr(current, "meta")
+                if not isinstance(value, tuple):
+                    return Left(Error(this=until_run, message="Custom.value should be tuple of tokens for until", state=tmp_input))
+                if strict and inclusive and len(opens) > 0:
+                    first_token = value[0] if len(value) > 0 else None
+                    matched = False
+                    for op in opens:
+                        res = op.run(tmp_input.inject(first_token), use_cache)
+                        if isinstance(res, Right):
+                            matched = True
+                            break
+                    if not matched:
+                        return Left(Error(this=until_run, message="First token does not match any opener (strict/inclusive)", state=tmp_input))
+                for tok in value:
+                    tokens.append(tok)
+                # propagate meta
+                return Right((Custom(value=tuple(tokens), meta=meta), tmp_input))
         return cls(until_run, name=f"until({cls.__name__})")
 
 

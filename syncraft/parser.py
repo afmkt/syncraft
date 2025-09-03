@@ -14,7 +14,7 @@ from enum import Enum
 from functools import reduce
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, TokenProtocol, SyncraftError
+from syncraft.ast import Token, TokenSpec, AST, TokenProtocol, SyncraftError, Custom
 from syncraft.constraint import Bindable
 
 
@@ -166,7 +166,7 @@ class Parser(Algebra[T, ParserState[T]]):
               *open_close: Tuple[Algebra[Any, ParserState[T]], Algebra[Any, ParserState[T]]],
               terminator: Optional[Algebra[Any, ParserState[T]]] = None,
               inclusive: bool = True, 
-              strict: bool = True) -> Algebra[Any, ParserState[T]]:
+              strict: bool = True) -> Algebra[Custom[Tuple[T, ...], Any], ParserState[T]]:
         """Consume tokens until a terminator while respecting nested pairs.
 
         Tracks nesting of one or more opener/closer parser pairs. When not
@@ -186,7 +186,7 @@ class Parser(Algebra[T, ParserState[T]]):
             Algebra[Any, ParserState[T]]: An algebra yielding a tuple of
             collected tokens upon success.
         """
-        def until_run(state: ParserState[T], use_cache:bool) -> Either[Any, Tuple[Any, ParserState[T]]]:
+        def until_run(state: ParserState[T], use_cache:bool) -> Either[Any, Tuple[Custom[Tuple[T, ...], Any], ParserState[T]]]:
             # Use a stack to enforce proper nesting across multiple open/close pairs.
             tokens: List[Any] = []
             if not terminator and len(open_close) == 0:
@@ -237,9 +237,9 @@ class Parser(Algebra[T, ParserState[T]]):
                             if isinstance(term, Right):
                                 if inclusive:
                                     tokens.append(term.value[0])
-                                return Right((tuple(tokens), term.value[1]))
+                                return Right((Custom(value=tuple(tokens), meta={}), term.value[1]))
                         else:
-                            return Right((tuple(tokens), tmp_state))
+                            return Right((Custom(value=tuple(tokens), meta={}), tmp_state))
                     continue
 
                 # If nothing structural matched, check termination when not nested
@@ -249,9 +249,9 @@ class Parser(Algebra[T, ParserState[T]]):
                         if isinstance(term2, Right):
                             if inclusive:
                                 tokens.append(term2.value[0])
-                            return Right((tuple(tokens), term2.value[1]))
+                            return Right((Custom(value=tuple(tokens), meta={}), term2.value[1]))
                     else:
-                        return Right((tuple(tokens), tmp_state))
+                        return Right((Custom(value=tuple(tokens), meta={}), tmp_state))
 
                 # Otherwise, consume one token as payload and continue
                 tokens.append(tmp_state.current())
@@ -260,8 +260,8 @@ class Parser(Algebra[T, ParserState[T]]):
             # Reached end of input
             if len(stack) != 0:
                 return Left(Error(this=until_run, message="Unterminated group", state=tmp_state))
-            return Right((tuple(tokens), tmp_state))
-        return cls(until_run, name=cls.__name__ + '.until')
+            return Right((Custom(value=tuple(tokens), meta={}), tmp_state))
+        return cls(until_run, name=cls.__name__ + '.until') # type: ignore
 
 def sqlglot(parser: Syntax[Any, Any], 
             dialect: str) -> Syntax[List[exp.Expression], ParserState[Any]]:

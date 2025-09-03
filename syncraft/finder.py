@@ -43,7 +43,7 @@ class Finder(Generator[T], Generic[T]):
 
 #: A ``Syntax`` that matches any node and returns it as the result without
 #: consuming or modifying state.
-anything = Syntax(lambda cls: cls.factory('anything')).describe(name="Anything", fixity='infix') 
+anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
 
 def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any])-> bool:
     state = GenState[Any].from_ast(ast = data, restore_pruned=True)

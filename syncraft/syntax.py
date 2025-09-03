@@ -46,26 +46,26 @@ class Description:
             parameter=parameter if parameter is not None else self.parameter
         )
         
-    def to_string(self, interested: Callable[[Any], bool]=lambda _: True) -> Optional[str]:
-        if self.name is not None:
-            if self.fixity == 'infix':
-                assert len(self.parameter) == 2, "Expected exactly two parameters for infix operator"
-                left  = self.parameter[0].meta.to_string(interested) if interested(self.parameter[0]) else '...'
-                right = self.parameter[1].meta.to_string(interested) if interested(self.parameter[1]) else '...'
-                return f"{left} {self.name} {right}"
-            elif self.fixity == 'prefix':
-                if len(self.parameter) == 0:
-                    return self.name
-                tmp = [x.meta.to_string(interested) if interested(x) else '...' for x in self.parameter]
-                return f"{self.name}({','.join(str(x) for x in tmp)})" 
-            elif self.fixity == 'postfix':
-                if len(self.parameter) == 0:
-                    return self.name
-                tmp = [x.meta.to_string(interested) if interested(x) else '...' for x in self.parameter]
-                return f"({','.join(str(x) for x in tmp)}).{self.name}" 
-            else:
-                return f"Invalid fixity: {self.fixity}"
-        return None
+    # def to_string(self, interested: Callable[[Any], bool]=lambda _: True) -> Optional[str]:
+    #     if self.name is not None:
+    #         if self.fixity == 'infix':
+    #             assert len(self.parameter) == 2, "Expected exactly two parameters for infix operator"
+    #             left  = self.parameter[0].meta.to_string(interested) if interested(self.parameter[0]) else '...'
+    #             right = self.parameter[1].meta.to_string(interested) if interested(self.parameter[1]) else '...'
+    #             return f"{left} {self.name} {right}"
+    #         elif self.fixity == 'prefix':
+    #             if len(self.parameter) == 0:
+    #                 return self.name
+    #             tmp = [x.meta.to_string(interested) if interested(x) else '...' for x in self.parameter]
+    #             return f"{self.name}({','.join(str(x) for x in tmp)})" 
+    #         elif self.fixity == 'postfix':
+    #             if len(self.parameter) == 0:
+    #                 return self.name
+    #             tmp = [x.meta.to_string(interested) if interested(x) else '...' for x in self.parameter]
+    #             return f"({','.join(str(x) for x in tmp)}).{self.name}" 
+    #         else:
+    #             return f"Invalid fixity: {self.fixity}"
+    #     return None
 
 
 

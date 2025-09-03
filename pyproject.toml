@@ -9,7 +9,6 @@ authors = [{name = "Michael Afmokt", email = "michael@esacca.com"}]
 keywords = ["parser", "combinator", "sql", "sqlite", "generator", 'printer']
 requires-python = ">=3.10"
 dependencies = [
-    "rich>=14.1.0",
     "rstr>=3.2.2",
     "sqlglot>=27.7.0",
 ]
@@ -23,6 +22,9 @@ dev = [
     "mkdocstrings>=0.25.0",
     "mkdocstrings-python>=1.10.0",
     "mkdocs-macros-plugin>=1.0.5",
+    "graphviz>=0.21",
+    "railroad-diagrams>=3.0.1",
+    "rich>=14.1.0",
 ]
 
 

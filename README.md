@@ -92,7 +92,38 @@ ast, _ = parse(select_stmt, "select a from t where a > 1", dialect="sqlite")
 
   The macros plugin is configured in `mkdocs.yml` with `module_name: docs/main`.
 
+## Development & Jupyter Notebook Environment
+
+To use advanced grammar visualization, debugging, and notebook features, install the dev dependencies:
+
+### With pip
+```bash
+pip install syncraft[dev]
+```
+
+### With uv
+```bash
+uv add --group dev syncraft
+```
+
+This will install:
+- `graphviz` (for AST visualization)
+- `railroad-diagrams` (for grammar diagrams)
+- `rich` (for pretty-printing/debugging)
+- All documentation and testing tools
+
+The core library remains lightweight and free of these dependencies unless you opt into dev mode.
+
 ## Contributing / Roadmap
 
 - Improve performance and add benchmarks
 - Expand tutorials and SQLite coverage examples
+
+
+TODO
+- [ ] debug constraint.datalog
+- [ ] debug generator.until
+- [ ] debug sqlite3
+- [ ] debug utils.py
+- [ ] support parsing from large file
+- [ ] support non-sqlglot tokenizer

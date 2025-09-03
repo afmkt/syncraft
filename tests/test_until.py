@@ -1,6 +1,7 @@
 from typing import Any
 from syncraft.parser import parse, until, literal, Parser
-from syncraft.ast import AST
+from syncraft.ast import AST, Custom
+from syncraft.generator import Generator
 
 # Define common pair DSLs
 LP, RP = literal("("), literal(")")
@@ -11,7 +12,7 @@ def test_until_accepts_proper_nesting() -> None:
     sql = "([])"
     syntax = until((LP, RP), (LB, RB))
     ast, bound = parse(syntax, sql, dialect="sqlite")
-    assert isinstance(ast, tuple), f"Expected AST for proper nesting, got {ast}"
+    assert isinstance(ast, Custom), f"Expected AST for proper nesting, got {ast}"
 
 
 def test_until_rejects_mismatched_pairs() -> None:
@@ -38,3 +39,4 @@ def test_until_rejects_crossing_pairs() -> None:
     res, bound = parse(syntax, sql, dialect="postgres")
     from syncraft.algebra import Error
     assert isinstance(res, Error), "Crossing pairs should be rejected with an Error"
+
