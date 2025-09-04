@@ -264,82 +264,117 @@ def all_binding(a: FrozenDict[str, Tuple[Any, ...]], *names: str) -> Generator[F
 class Var:
     name: str
 
+
+Subst = Dict[str, Any]
 Fact = Tuple[str, Tuple[Any, ...]]
+Rule = Tuple[str, Tuple[Any, ...], List[Fact]]
 
+def is_var(x): return isinstance(x, Var)
 
-@dataclass
-class Rule:
-    head: Fact                # e.g. ("ancestor", (Var("X"), Var("Y")))
-    body: List[Fact]          # e.g. [("parent", (Var("X"), Var("Z"))), ("ancestor", (Var("Z"), Var("Y")))]
+# ---------- Unification ----------
+def unify(x, y, subst: Subst) -> Subst | None:
+    if x == y:
+        return subst
+    if is_var(x):
+        return unify_var(x, y, subst)
+    if is_var(y):
+        return unify_var(y, x, subst)
+    if isinstance(x, tuple) and isinstance(y, tuple) and len(x) == len(y):
+        for a, b in zip(x, y):
+            tmp = unify(a, b, subst)
+            if tmp is None:
+                return None
+            else: 
+                subst = tmp
+        return subst
+    return None
 
+def unify_var(var: Var, val: Any, subst: Subst) -> Subst | None:
+    if var.name in subst:
+        return unify(subst[var.name], val, subst)
+    if occurs_check(var, val, subst):
+        return None
+    subst = subst.copy()
+    subst[var.name] = val
+    return subst
 
+def occurs_check(var: Var, val: Any, subst: Subst) -> bool:
+    if var == val: 
+        return True
+    if is_var(val) and val.name in subst:
+        return occurs_check(var, subst[val.name], subst)
+    if isinstance(val, tuple):
+        return any(occurs_check(var, v, subst) for v in val)
+    return False
 
-class Datalog:
-    def __init__(self) -> None:
-        self.facts: Set[Fact] = set()
+# ---------- Substitution ----------
+def apply_subst_fact(fact: Fact, subst: Subst) -> Fact:
+    pred, args = fact
+    return (pred, tuple(apply_subst_term(a, subst) for a in args))
+
+def apply_subst_term(term, subst: Subst):
+    if is_var(term) and term.name in subst:
+        return apply_subst_term(subst[term.name], subst)
+    return term
+
+# ---------- Engine ----------
+class DatalogEngine:
+    def __init__(self):
+        self.facts: List[Fact] = []
         self.rules: List[Rule] = []
 
-    def add_fact(self, pred: str, *args: Any):
-        self.facts.add((pred, args))
+    def add_fact(self, fact: Fact):
+        self.facts.append(fact)
 
     def add_rule(self, head: Fact, body: List[Fact]):
-        self.rules.append(Rule(head, body))
+        self.rules.append((head[0], head[1], body))
 
-
-    def infer(self):
+    # ----- Forward chaining -----
+    def infer(self) -> List[Fact]:
         changed = True
+        inferred = set(self.facts)
         while changed:
             changed = False
-            new_facts = set()
+            for (hpred, hargs, body) in self.rules:
+                for subst in self._prove_body(body, {}):
+                    head = apply_subst_fact((hpred, hargs), subst)
+                    if head not in inferred:
+                        inferred.add(head)
+                        changed = True
+        return list(inferred)
 
-            for rule in self.rules:
-                for env in match_body(rule.body, self.facts, {}):
-                    # substitute variables in head
-                    head_pred, head_args = rule.head
-                    inst_args = tuple(env.get(arg.name, arg) if isinstance(arg, Var) else arg
-                                    for arg in head_args)
-                    new_fact = (head_pred, inst_args)
-                    if new_fact not in self.facts:
-                        new_facts.add(new_fact)
+    # ----- Backward chaining -----
+    def query(self, goal: Fact, subst: Subst | None = None) -> Generator[Subst, None, None]:
+        if subst is None:
+            subst = {}
+        pred, args = goal
 
-            if new_facts:
-                self.facts |= new_facts
-                changed = True
+        # Match against facts
+        for (fpred, fargs) in self.facts:
+            if fpred != pred: 
+                continue
+            s = unify(args, fargs, subst)
+            if s is not None:
+                yield s
 
+        # Match against rules
+        for (hpred, hargs, body) in self.rules:
+            if hpred != pred: 
+                continue
+            s = unify(args, hargs, subst)
+            if s is None: 
+                continue
+            yield from self._prove_body(body, s)
 
-def unify(pattern: Tuple[Any, ...], fact: Tuple[Any, ...], env: Dict[str, Any]) -> Union[Dict[str, Any], None]:
-    if len(pattern) != len(fact):
-        return None
+    def _prove_body(self, goals: List[Fact], subst: Subst) -> Generator[Subst, None, None]:
+        if not goals:
+            yield subst
+            return
+        first, *rest = goals
+        for s in self.query(apply_subst_fact(first, subst), subst):
+            yield from self._prove_body(rest, s)
 
-    new_env = dict(env)
-    for p, f in zip(pattern, fact):
-        if isinstance(p, Var):
-            if p.name in new_env:
-                if new_env[p.name] != f:
-                    return None
-            else:
-                new_env[p.name] = f
-        else:
-            if p != f:
-                return None
-    return new_env
-
-def match_body(body: List[Fact], facts: Set[Fact], env: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
-    if not body:
-        yield env
-        return
-
-    pred, args = body[0]
-    for f_pred, f_args in facts:
-        if f_pred == pred:
-            new_env = unify(args, f_args, env)
-            if new_env is not None:
-                yield from match_body(body[1:], facts, new_env)
-
-
-
-
-
+#####################################################################################################################################
 def dataclass_to_facts(obj: Any, *, extended: bool = False, parent: Any = None) -> List[Fact]:
     facts: List[Fact] = []
 
@@ -381,11 +416,22 @@ def dataclass_to_facts(obj: Any, *, extended: bool = False, parent: Any = None) 
 
 
 def test()->None:
-    db = Datalog()
-    db.add_fact("parent", "alice", "bob")
-    db.add_fact("parent", "bob", "carol")
     X, Y, Z = Var("X"), Var("Y"), Var("Z")
+
+    db = DatalogEngine()
+    db.add_fact(("parent", ("alice", "bob")))
+    db.add_fact(("parent", ("bob", "carol")))
+
+    # Rules
     db.add_rule(("ancestor", (X, Y)), [("parent", (X, Y))])
     db.add_rule(("ancestor", (X, Y)), [("parent", (X, Z)), ("ancestor", (Z, Y))])
-    db.infer()
-    print(db.facts)
+
+    print("Forward infer:")
+    print(db.infer())
+    # [('parent', ('alice', 'bob')), ('parent', ('bob', 'carol')), 
+    #  ('ancestor', ('alice', 'bob')), ('ancestor', ('bob', 'carol')), 
+    #  ('ancestor', ('alice', 'carol'))]
+
+    print("Backward query:")
+    print(list(db.query(("ancestor", (X, "carol")))))
+    # [{'X': 'bob'}, {'X': 'alice'}]

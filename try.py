@@ -8,7 +8,7 @@ from syncraft.constraint import forall, exists, test
 from rich import print
 import syncraft.generator as gen
 from dataclasses import dataclass
-
+from syncraft.lexer import test as tt
 
 if __name__ == "__main__":
-    test()
+    tt()
