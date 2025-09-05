@@ -1,14 +1,17 @@
 from __future__ import annotations
-from typing import Any, List, Tuple
-from syncraft.algebra import Either, Left, Right, Error
-from syncraft.ast import Marked, Then, ThenKind, Many, Nothing
-from syncraft.parser import literal, variable, parse, Parser, Token
-from syncraft.generator import TokenGen
-from syncraft.constraint import forall, exists, test
+from syncraft.parser import literal, token
+from syncraft.walker import walk
+from syncraft.ast import TokenSpec
 from rich import print
-import syncraft.generator as gen
-from dataclasses import dataclass
-from syncraft.lexer import test as tt
+
+def test_walk_case_insensitive() -> None:
+    T = token()
+    A = literal('a').many()
+    B = literal('b').many()
+    syntax = literal("if") >> (A | B) // literal('then')
+    result = walk(syntax, lambda a, s: s + (a,) if isinstance(a, TokenSpec) else s, ())  
+    print(result)
+    assert result == (TokenSpec.create(text='Test', case_sensitive=False),)
 
 if __name__ == "__main__":
-    tt()
+    test_walk_case_insensitive()

@@ -482,7 +482,16 @@ class TokenSpec:
     text: Optional[str] = None
     case_sensitive: bool = False
     regex: Optional[re.Pattern[str]] = None
-        
+
+    @classmethod
+    def create(cls, 
+               *, 
+               token_type: Optional[Enum] = None, 
+               text: Optional[str] = None, 
+               case_sensitive: bool = False, 
+               regex: Optional[re.Pattern[str]] = None) -> TokenSpec:
+        return cls(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
+
     def is_valid(self, token: TokenProtocol) -> bool:
         type_match = self.token_type is None or token.token_type == self.token_type
         value_match = self.text is None or (token.text.strip() == self.text.strip() if self.case_sensitive else 
