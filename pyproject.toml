@@ -29,6 +29,8 @@ dev = [
     "jupyter>=1.0.0",
     "mkdocs-jupyter>=0.24.6",
     "nbval>=0.10.0",
+    "pytest-profiling>=1.8.1",
+    "snakeviz>=2.2.2",
 ]
 
 

@@ -72,8 +72,7 @@ def rich_debug(this: Algebra[Any, ParserState[Any]],
             tbl.add_row(value_to_str(this), 
                         value_to_str(state),
                         value_to_str(value), 
-                        value_to_str(new_state), 
-                        value_to_str(state.delta(new_state)))
+                        value_to_str(new_state))
 
         print(tbl)
     except ImportError:

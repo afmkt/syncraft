@@ -10,5 +10,6 @@ wheels/
 .pytest_cache/
 .mypy_cache/
 # Virtual environments
+prof/
 .venv
 site/

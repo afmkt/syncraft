@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Tuple, Generator as YieldGen, TypeVar, Generic
+    Any, Tuple, Generator as PyGenerator, TypeVar, Generic
 )
 from dataclasses import dataclass
 from syncraft.algebra import (
-    Algebra, Either, Right, 
+    Algebra, Either, Right, Incomplete
 )
 from syncraft.ast import TokenProtocol, ParseResult, Choice, Many, Then, Marked, Collect
 
@@ -35,7 +35,8 @@ class Finder(Generator[T], Generic[T]):
             Algebra[Any, GenState[T]]: An algebra that always succeeds with the
             tuple ``(input.ast, input)``.
         """
-        def anything_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Any, GenState[T]]]:
+        def anything_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]] ,GenState[T],Either[Any, Tuple[Any, GenState[T]]]]:
+            yield from ()
             return Right((input.ast, input))
         return cls(anything_run, name=cls.__name__ + '.anything')
 
@@ -51,7 +52,7 @@ def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any])-> bool:
     return isinstance(result, Right)
 
 
-def _find(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any]) -> YieldGen[ParseResult[Any], None, None]:
+def _find(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
     if not isinstance(data, (Marked, Collect)):
         if _matches(alg, data):
             yield data
@@ -95,7 +96,7 @@ def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
         return _matches(gen, data)
 
 
-def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> YieldGen[ParseResult[Any], None, None]:
+def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
     """Yield all subtrees that match a syntax.
 
     Performs a depth‑first traversal of ``data`` and yields each node where the

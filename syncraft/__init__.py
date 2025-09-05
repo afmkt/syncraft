@@ -26,7 +26,6 @@ from .parser import (
 	number,
 	string,
 	regex,
-	until,
 )
 from .generator import (
     Generator,
@@ -67,7 +66,7 @@ __all__ = [
 	# syntax & core
 	"Syntax", "choice", "lazy", "success", "fail", "run", "Description", "when",
 	# parsing/generation helpers
-	"parse", "sqlglot", "token", "identifier", "variable", "literal", "number", "string", "regex", "until",
+	"parse", "sqlglot", "token", "identifier", "variable", "literal", "number", "string", "regex",
 	"generate", "generate_with", "validate", "Parser", "Generator",
 	# finder
 	"find", "matches", "anything", "Finder",

@@ -123,11 +123,7 @@ The core library remains lightweight and free of these dependencies unless you o
 TODO
 - [ ] debug constraint.datalog
 
-- [ ] debug generator.until
-
 - [ ] debug sqlite3
-
-- [ ] debug utils.py
 
 - [ ] support parsing from large file
 - [ ] support non-sqlglot tokenizer

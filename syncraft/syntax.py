@@ -6,7 +6,7 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, Right, Left
+from syncraft.algebra import Algebra, Error, Right, Left, Incomplete
 from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from types import MethodType, FunctionType
@@ -510,14 +510,8 @@ class Syntax(Generic[A, S]):
 
         return self.__class__(lambda cls: self.alg(cls).map_error(dump_error_run))
 
-    def debug(
-        self,
-        label: str,
-        formatter: Optional[
-            Callable[[Algebra[Any, S], S, Either[Any, Tuple[Any, S]]], None]
-        ] = None,
-    ) -> Syntax[A, S]:
-        return self.__class__(lambda cls: self.alg(cls).debug(label, formatter), meta=self.meta)
+
+
 
 
 
@@ -579,7 +573,7 @@ def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     """
     return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(Nothing())
 
-def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: Any, **kwargs: Any) -> Tuple[Any, FrozenDict[str, Tuple[Any, ...]]] | Tuple[Any, None]:
+def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: Any, **kwargs: Any) -> Tuple[ Any, None | FrozenDict[str, Tuple[Any, ...]]]:
     """
     Run the syntax over the given algebra, and return the result and bind.
 
@@ -589,11 +583,20 @@ def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: A
     parser = syntax(alg)
     input: Optional[S] = alg.state(*args, **kwargs)
     if input:
-        result = parser.run(input, use_cache=use_cache)
-        if isinstance(result, Right):
-            return result.value[0], result.value[1].binding.bound()
-        assert isinstance(result, Left), "Algebra must return Either[E, Tuple[A, S]]"
-        return result.value, None
-    else:
-        return Error(this=None, message="Algebra failed to create initial state"), None
+        gen = parser.run(input, use_cache=use_cache)
+        try:
+            result = next(gen)
+            while isinstance(result, Incomplete):
+                old_input = result.state
+                result = gen.send(old_input)
+            return Error(this=result, message="Algebra yield data that is not Incomplete"), None 
+        except StopIteration as e:
+            result = e.value                
+            if isinstance(result, Right):
+                return result.value[0], result.value[1].binding.bound()
+            elif isinstance(result, Left):
+                return result.value, None
+            else:
+                return Error(this=result, message="Algebra returned data that is not Left or Right"), None
+    return Error(this=None, message="Algebra failed to create initial state"), None
 

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Optional,  Callable, Generic, 
-    List, 
+    List, Generator as PyGenerator
 )
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
-    Algebra, Either, Left, Right, Error
+    Algebra, Either, Left, Right, Error, Incomplete
 )
 
 from syncraft.ast import (
@@ -243,20 +243,21 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         Returns:
             Algebra[B, GenState[T]]: An algebra yielding the final result.
         """
-        def flat_map_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[B, GenState[T]]]:
+        def flat_map_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[B, GenState[T]]]]:
             try:
                 if not isinstance(input.ast, Then) or isinstance(input.ast, Nothing):
                     return Left(Error(this=self, 
                                       message=f"Expect Then got {input.ast}",
                                       state=input))
                 lft = input.left() 
-                self_result = self.run(lft, use_cache=use_cache)
+                self_result = yield from self.run(lft, use_cache=use_cache)
                 match self_result:
                     case Left(error):
                         return Left(error)
                     case Right((value, next_input)):
                         r = input.right() 
-                        match f(value).run(r, use_cache):
+                        other_result = yield from f(value).run(r, use_cache)
+                        match other_result:
                             case Left(e):
                                 return Left(e)
                             case Right((result, next_input)):
@@ -293,14 +294,15 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
-        def many_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]:
+        def many_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
             if input.pruned:
                 upper = at_most if at_most is not None else at_least + 2
                 count = input.rng("many").randint(at_least, upper)
                 ret: List[Any] = []
                 for i in range(count):
                     forked_input = input.fork(tag=len(ret))
-                    match self.run(forked_input, use_cache):
+                    self_result = yield from self.run(forked_input, use_cache)
+                    match self_result:
                         case Right((value, _)):
                             ret.append(value)
                         case Left(_):
@@ -312,8 +314,9 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                       message=f"Expect Many got {input.ast}",
                                       state=input))
                 ret = []
-                for x in input.ast.value: 
-                    match self.run(input.inject(x), use_cache):
+                for x in input.ast.value:
+                    self_result = yield from self.run(input.inject(x), use_cache) 
+                    match self_result:
                         case Right((value, _)):
                             ret.append(value)
                             if at_most is not None and len(ret) > at_most:
@@ -349,31 +352,38 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: An
             algebra yielding which branch succeeded and its value.
         """
-        def or_else_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]:
+        def or_else_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
             def exec(kind: ChoiceKind | None, 
                      left: GenState[T], 
-                     right: GenState[T])->Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]:
+                     right: GenState[T]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
                 match kind:
                     case ChoiceKind.LEFT:
-                        match self.run(left, use_cache):
+                        self_result = yield from self.run(left, use_cache)
+                        match self_result:
                             case Right((value, next_input)):
                                 return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
                             case Left(error):
                                 return Left(error)
                     case ChoiceKind.RIGHT:
-                        match other.run(right, use_cache):
+                        other_result = yield from other.run(right, use_cache)
+                        match other_result:
                             case Right((value, next_input)):
                                 return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
                             case Left(error):
                                 return Left(error)
                     case None:
-                        match self.run(left, use_cache):
+                        self_result = yield from self.run(left, use_cache)
+                        match self_result:
                             case Right((value, next_input)):
                                 return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
                             case Left(error):
-                                if isinstance(error, Error) and error.committed:
-                                    return Left(replace(error, committed=False))
-                                match other.run(left, use_cache):
+                                if isinstance(error, Error):
+                                    if error.fatal:
+                                        return Left(error)
+                                    elif error.committed:
+                                        return Left(replace(error, committed=False))
+                                other_result = yield from other.run(right, use_cache)
+                                match other_result:
                                     case Right((value, next_input)):
                                         return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
                                     case Left(error):
@@ -383,16 +393,19 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             if input.pruned:
                 forked_input = input.fork(tag="or_else")
                 which = forked_input.rng("or_else").choice((ChoiceKind.LEFT, ChoiceKind.RIGHT))
-                return exec(which, forked_input, forked_input)
+                result = yield from exec(which, forked_input, forked_input)
+                return result
             else:
                 if not isinstance(input.ast, Choice) or isinstance(input.ast, Nothing):
                     return Left(Error(this=self, 
                                       message=f"Expect Choice got {input.ast}",
                                       state=input))
                 else:
-                    return exec(input.ast.kind, 
+                    result = yield from exec(input.ast.kind, 
                                 input.inject(input.ast.value), 
                                 input.inject(input.ast.value))
+                    return result
+                    
         return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})") # type: ignore
 
     @classmethod
@@ -420,7 +433,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         """
         gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
         lazy_self: Algebra[ParseResult[T], GenState[T]]
-        def token_run(input: GenState[T], use_cache:bool) -> Either[Any, Tuple[ParseResult[Token], GenState[T]]]:
+        def token_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[ParseResult[Token], GenState[T]]]]:
+            yield from ()
             if input.pruned:
                 return Right((gen.gen(), input))
             else:
@@ -433,77 +447,6 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
 
-    @classmethod
-    def until(cls,
-              *open_close: Tuple[Algebra[Any, GenState[T]], Algebra[Any, GenState[T]]],
-              terminator: Optional[Algebra[Any, GenState[T]]] = None,
-              inclusive: bool = True,
-              strict: bool = True) -> 'Generator':
-        """
-        Generate tokens until a terminator while respecting nested pairs.
-        Args and semantics match Parser.until.
-        """
-        def until_run(input: GenState[T], use_cache: bool) -> Either[Any, Tuple[Any, GenState[T]]]:
-            from syncraft.ast import Custom
-            tokens: List[Any] = []
-            if not terminator and len(open_close) == 0:
-                return Left(Error(this=until_run, message="No terminator and no open/close generators, nothing to generate", state=input))
-            opens, closes = zip(*open_close) if len(open_close) > 0 else ((), ())
-            tmp_input: GenState[T] = input
-            # Freeform generation mode
-            if tmp_input.pruned:
-                rng = tmp_input.rng("until")
-                indices = list(range(len(opens)))
-                rng.shuffle(indices)
-                for i in indices:
-                    res = opens[i].run(tmp_input, use_cache)
-                    if isinstance(res, Right):
-                        val, next_input = res.value
-                        if inclusive:
-                            tokens.append(val)
-                        tmp_input = next_input
-                for i in indices[::-1]:
-                    res = closes[i].run(tmp_input, use_cache)
-                    if isinstance(res, Right):
-                        val, next_input = res.value
-                        if inclusive:
-                            tokens.append(val)
-                        tmp_input = next_input
-                if terminator:
-                    term = terminator.run(tmp_input, use_cache)
-                    if isinstance(term, Right):
-                        if inclusive:
-                            tokens.append(term.value[0])
-                        tmp_input = term.value[1]
-                # meta can be extended to include bookmarks if needed
-                return Right((Custom(value=tuple(tokens), meta={}), tmp_input))
-            # Validation mode
-            else:
-                current = tmp_input.ast
-                if current is None:
-                    return Left(Error(this=until_run, message="No AST node to validate", state=tmp_input))
-                # Expect a Custom node as produced by Parser.until
-                if not (hasattr(current, "value") and hasattr(current, "meta")):
-                    return Left(Error(this=until_run, message="Expected Custom node for until", state=tmp_input))
-                value = getattr(current, "value")
-                meta = getattr(current, "meta")
-                if not isinstance(value, tuple):
-                    return Left(Error(this=until_run, message="Custom.value should be tuple of tokens for until", state=tmp_input))
-                if strict and inclusive and len(opens) > 0:
-                    first_token = value[0] if len(value) > 0 else None
-                    matched = False
-                    for op in opens:
-                        res = op.run(tmp_input.inject(first_token), use_cache)
-                        if isinstance(res, Right):
-                            matched = True
-                            break
-                    if not matched:
-                        return Left(Error(this=until_run, message="First token does not match any opener (strict/inclusive)", state=tmp_input))
-                for tok in value:
-                    tokens.append(tok)
-                # propagate meta
-                return Right((Custom(value=tuple(tokens), meta=meta), tmp_input))
-        return cls(until_run, name=f"until({cls.__name__})")
 
 
 def generate_with(
