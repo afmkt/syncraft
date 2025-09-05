@@ -11,18 +11,14 @@ def rich_error(err: Error)->None:
         from rich import print
         from rich.table import Table as RichTable
         lst = err.to_list()
-        root, leaf = lst[0], lst[-1]
+        leaf = lst[0]
         tbl = RichTable(title="Parser Error", show_lines=True)
-        tbl.add_column("Root Parser Field", style="blue")
-        tbl.add_column("Root Parser Value", style="green")
-        tbl.add_column("...")
         tbl.add_column("Leaf Parser Field", style="blue")
         tbl.add_column("Leaf Parser Value", style="yellow")
-        flds: Set[str] = set(root.keys()) | set(leaf.keys())
+        flds: Set[str] = set(leaf.keys())
         for fld in sorted(flds):
-            root_value = root.get(fld, "N/A")
             leaf_value = leaf.get(fld, "N/A")
-            tbl.add_row(f"{fld}", f"{root_value}", "...", f"{fld}", f"{leaf_value}")
+            tbl.add_row(f"{fld}", f"{leaf_value}")
         print(tbl)
     except ImportError:
         print(err)

@@ -192,25 +192,8 @@ def sqlglot(parser: Syntax[Any, Any],
     return parser.map(lambda tokens: [e for e in gp.parse(raw_tokens=tokens) if e is not None])
 
 
-def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, None | FrozenDict[str, Tuple[Any, ...]]]:
-    """Parse SQL text with a ``Syntax`` using the ``Parser`` backend.
 
-    Tokenizes the SQL with the specified dialect and executes ``syntax``.
 
-    Args:
-        syntax: The high-level syntax to run.
-        sql: SQL text to tokenize and parse.
-        dialect: sqlglot dialect name used for tokenization.
-
-    Returns:
-        Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
-        The produced AST and collected marks, or a tuple signaling failure.
-    """
-    from syncraft.syntax import run
-    return run(syntax=syntax, alg=Parser, use_cache=True, sql=sql, dialect=dialect)
-
-tuple[Any, FrozenDict[str, tuple[Any, ...]] | None]
-tuple[Any, FrozenDict[str, tuple[Any, ...] | None]]
 
 
 def token(token_type: Optional[Enum] = None, 
@@ -307,3 +290,23 @@ def string() -> Syntax[Any, Any]:
 
 
 
+def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+    """Parse SQL text with a ``Syntax`` using the ``Parser`` backend.
+
+    Tokenizes the SQL with the specified dialect and executes ``syntax``.
+
+    Args:
+        syntax: The high-level syntax to run.
+        sql: SQL text to tokenize and parse.
+        dialect: sqlglot dialect name used for tokenization.
+
+    Returns:
+        Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+        The produced AST and collected marks, or a tuple signaling failure.
+    """
+    from syncraft.syntax import run
+    v, s = run(syntax=syntax, alg=Parser, use_cache=True, sql=sql, dialect=dialect)
+    if s is not None:
+        return v, s.binding.bound()
+    else:
+        return v, None

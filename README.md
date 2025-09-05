@@ -24,78 +24,6 @@ uv add syncraft
 
 Python 3.10+ is required.
 
-## Quickstart
-
-!. Define grammar 
-
-```python
-from dataclasses import dataclass
-from syncraft import literal, parse, generate
-
-A = literal("a")
-B = literal("b")
-syntax = A + B  # sequence
-
-ast, _ = parse(syntax, "a b", dialect="sqlite")
-gen, _ = generate(syntax, ast)
-assert ast == gen
-```
-
-Collect parsed pieces into dataclasses using marks and `.to()`:
-
-```python
-from dataclasses import dataclass
-from syncraft import literal
-
-@dataclass
-class Pair:
-		first: any
-		second: any
-
-A = literal("a").mark("first")
-B = literal("b").mark("second")
-syntax = (A + B).to(Pair)
-
-ast, _ = parse(syntax, "a b", dialect="sqlite")
-value, invert = ast.bimap()
-# value is Pair(first=VAR(a), second=VAR(b))
-round_tripped, _ = generate(syntax, invert(value))
-assert round_tripped == ast
-```
-
-Use the built‑in SQLite grammar snippets to parse statements:
-
-```python
-from syncraft import parse
-from syncraft.sqlite3 import select_stmt
-
-ast, _ = parse(select_stmt, "select a from t where a > 1", dialect="sqlite")
-```
-
-## Core ideas
-
-- Syntax describes structure and transforms values; Algebra executes it.
-- AST types: Then, Choice, Many, Marked, Collect, Nothing, Token.
-- Operators: `+` (both), `>>` (keep right), `//` (keep left), `|` (choice), `~` (optional), `many()`, `sep_by()`, `between()`.
-- Error model supports backtracking and commit (`cut()`).
-
-## Documentation
-
-- Tutorials and API reference are built with MkDocs. Local preview:
-	1) install dev deps (see `pyproject.toml` dev group)
-	2) activate your venv and run `mkdocs serve`
-
-- Version injection: pages can use `{{ version }}`. It is provided by mkdocs-macros via `docs/main.py`, which resolves the version in this order:
-	- `[project].version` from `pyproject.toml`
-	- installed package metadata (`importlib.metadata.version('syncraft')`)
-	- fallback `"0.0.0"`
-
-  The macros plugin is configured in `mkdocs.yml` with `module_name: docs/main`.
-
-## Development & Jupyter Notebook Environment
-
-To use advanced grammar visualization, debugging, and notebook features, install the dev dependencies:
-
 ### With pip
 ```bash
 pip install syncraft[dev]
@@ -103,27 +31,12 @@ pip install syncraft[dev]
 
 ### With uv
 ```bash
-uv add --group dev syncraft
+uv sync --group dev 
 ```
-
-This will install:
-- `graphviz` (for AST visualization)
-- `railroad-diagrams` (for grammar diagrams)
-- `rich` (for pretty-printing/debugging)
-- All documentation and testing tools
-
-The core library remains lightweight and free of these dependencies unless you opt into dev mode.
-
-## Contributing / Roadmap
-
-- Improve performance and add benchmarks
-- Expand tutorials and SQLite coverage examples
-
 
 TODO
 - [ ] debug constraint.datalog
-
 - [ ] debug sqlite3
-
-- [ ] support parsing from large file
-- [ ] support non-sqlglot tokenizer
+- [ ] collect terminal from syntax and build PLY lexer
+- [ ] chunker
+- [ ] unify in find

@@ -6,9 +6,9 @@ from enum import Enum, auto
 
 
 import re
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, field
 from enum import Enum
-from typing import Optional, Callable, Dict, List, Tuple, Any
+from typing import Optional, Callable, Dict, List, Tuple, Any, Pattern
 
 
 # -----------------------
@@ -22,12 +22,10 @@ def rule(state: str = "DEFAULT", next_state: Optional[str] = None):
     return wrapper
 
 
-# -----------------------
-# Lexer base class
-# -----------------------
+@dataclass
 class Lexer:
     TokenType: Enum  # will be generated automatically
-
+    _states: Dict[str, re.Scanner] = field(default_factory=dict, init=False)
     @classmethod
     def build(cls) -> "Lexer":
         # 1. generate TokenType enum from dataclass fields

@@ -501,19 +501,7 @@ class Syntax(Generic[A, S]):
             return m.value if isinstance(m, Marked) else m
 
         return self.bimap(mark_s, imark_s).describe(name=f'mark("{name}")', fixity='postfix', parameter=(self,))
-
-    def dump_error(self, formatter: Optional[Callable[[Error], None]] = None) -> Syntax[A, S]:
-        def dump_error_run(err: Any) -> Any:
-            if isinstance(err, Error) and formatter is not None:
-                formatter(err)
-            return err
-
-        return self.__class__(lambda cls: self.alg(cls).map_error(dump_error_run))
-
-
-
-
-
+    
 
 def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
     """
@@ -577,7 +565,7 @@ def run(*,
         syntax: Syntax[A, S], 
         alg: Type[Algebra[A, S]], 
         use_cache:bool,         
-        **kwargs: Any) -> Tuple[Any, None | FrozenDict[str, Tuple[Any, ...]]]:
+        **kwargs: Any) -> Tuple[Any, None | S]:
     """
     Run the syntax over the given algebra, and return the result and bind.
 
@@ -597,7 +585,7 @@ def run(*,
         except StopIteration as e:
             result = e.value                
             if isinstance(result, Right):
-                return result.value[0], result.value[1].binding.bound()
+                return result.value[0], result.value[1]
             elif isinstance(result, Left):
                 return result.value, None
             else:

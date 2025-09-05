@@ -244,32 +244,24 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             Algebra[B, GenState[T]]: An algebra yielding the final result.
         """
         def flat_map_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[B, GenState[T]]]]:
-            try:
-                if not isinstance(input.ast, Then) or isinstance(input.ast, Nothing):
-                    return Left(Error(this=self, 
-                                      message=f"Expect Then got {input.ast}",
-                                      state=input))
-                lft = input.left() 
-                self_result = yield from self.run(lft, use_cache=use_cache)
-                match self_result:
-                    case Left(error):
-                        return Left(error)
-                    case Right((value, next_input)):
-                        r = input.right() 
-                        other_result = yield from f(value).run(r, use_cache)
-                        match other_result:
-                            case Left(e):
-                                return Left(e)
-                            case Right((result, next_input)):
-                                return Right((result, next_input))
-                raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-            except Exception as e:
-                return Left(Error(
-                    message=str(e),
-                    this=self,
-                    state=input,
-                    error=e
-                ))
+            if not isinstance(input.ast, Then) or isinstance(input.ast, Nothing):
+                return Left(Error(this=self, 
+                                    message=f"Expect Then got {input.ast}",
+                                    state=input))
+            lft = input.left() 
+            self_result = yield from self.run(lft, use_cache=use_cache)
+            match self_result:
+                case Left(error):
+                    return Left(error)
+                case Right((value, next_input)):
+                    r = input.right() 
+                    other_result = yield from f(value).run(r, use_cache)
+                    match other_result:
+                        case Left(e):
+                            return Left(e)
+                        case Right((result, next_input)):
+                            return Right((result, next_input))
+            raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
         return self.__class__(run_f = flat_map_run, name=self.name) # type: ignore
 
 
@@ -468,7 +460,11 @@ def generate_with(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    return run(syntax=syntax, alg=Generator, use_cache=not restore_pruned, ast=data, seed=seed, restore_pruned=restore_pruned)
+    v, s = run(syntax=syntax, alg=Generator, use_cache=not restore_pruned, ast=data, seed=seed, restore_pruned=restore_pruned)
+    if s is not None:
+        return v, s.binding.bound()
+    else:
+        return v, None    
 
 
 def validate(
@@ -486,7 +482,11 @@ def validate(
         A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
     """
     from syncraft.syntax import run
-    return run(syntax=syntax, alg=Generator, use_cache=True, ast=data, seed=0, restore_pruned=True)
+    v, s = run(syntax=syntax, alg=Generator, use_cache=True, ast=data, seed=0, restore_pruned=True)
+    if s is not None:
+        return v, s.binding.bound()
+    else:
+        return v, None    
 
 
 def generate(
@@ -502,4 +502,8 @@ def generate(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    return run(syntax=syntax, alg=Generator, use_cache=False, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    v, s = run(syntax=syntax, alg=Generator, use_cache=False, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    if s is not None:
+        return v, s.binding.bound()
+    else:
+        return v, None
