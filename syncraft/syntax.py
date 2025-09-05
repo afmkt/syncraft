@@ -573,7 +573,11 @@ def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
     """
     return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(Nothing())
 
-def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: Any, **kwargs: Any) -> Tuple[ Any, None | FrozenDict[str, Tuple[Any, ...]]]:
+def run(*,
+        syntax: Syntax[A, S], 
+        alg: Type[Algebra[A, S]], 
+        use_cache:bool,         
+        **kwargs: Any) -> Tuple[Any, None | FrozenDict[str, Tuple[Any, ...]]]:
     """
     Run the syntax over the given algebra, and return the result and bind.
 
@@ -581,7 +585,7 @@ def run(syntax: Syntax[A, S], alg: Type[Algebra[A, S]], use_cache:bool, *args: A
         *args, **kwargs: the arguments passed to alg.state to construct the state object of the algebra.
     """
     parser = syntax(alg)
-    input: Optional[S] = alg.state(*args, **kwargs)
+    input: Optional[S] = alg.state(**kwargs)
     if input:
         gen = parser.run(input, use_cache=use_cache)
         try:

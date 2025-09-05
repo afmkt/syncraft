@@ -35,6 +35,13 @@ class ParserState(Bindable, Generic[T]):
     final: bool = False  # Whether this is a final state (for error reporting)
 
     
+    def __add__(self, other: 'ParserState[T]') -> 'ParserState[T]':
+        if not isinstance(other, ParserState):
+            raise SyncraftError("Can only concatenate ParserState with another ParserState", offending=self, expect="ParserState")
+        if self.final:
+            raise SyncraftError("Cannot concatenate to a final ParserState", offending=self, expect="not final")
+        return replace(self, input=self.input + other.input, final=other.final)
+
     def token_sample_string(self)-> str:
         def encode_tokens(*tokens:T) -> str:
             return ",".join(f"{token.token_type.name}({token.text})" for token in tokens)
@@ -102,7 +109,7 @@ class ParserState(Bindable, Generic[T]):
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
     @classmethod
-    def state(cls, sql: str, dialect: str) -> ParserState[T]:
+    def state(cls, sql: str, dialect: str) -> ParserState[T]: # type: ignore
         """Tokenize SQL text into an initial ``ParserState``.
 
         Uses ``sqlglot.tokenize`` for the given dialect and wraps tokens into
@@ -185,7 +192,7 @@ def sqlglot(parser: Syntax[Any, Any],
     return parser.map(lambda tokens: [e for e in gp.parse(raw_tokens=tokens) if e is not None])
 
 
-def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, FrozenDict[str, None | Tuple[Any, ...]]]:
+def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, None | FrozenDict[str, Tuple[Any, ...]]]:
     """Parse SQL text with a ``Syntax`` using the ``Parser`` backend.
 
     Tokenizes the SQL with the specified dialect and executes ``syntax``.
@@ -200,9 +207,10 @@ def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, Frozen
         The produced AST and collected marks, or a tuple signaling failure.
     """
     from syncraft.syntax import run
-    return run(syntax, Parser, True, sql=sql, dialect=dialect)
+    return run(syntax=syntax, alg=Parser, use_cache=True, sql=sql, dialect=dialect)
 
-
+tuple[Any, FrozenDict[str, tuple[Any, ...]] | None]
+tuple[Any, FrozenDict[str, tuple[Any, ...] | None]]
 
 
 def token(token_type: Optional[Enum] = None, 

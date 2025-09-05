@@ -217,7 +217,7 @@ class TokenGen(TokenSpec):
 class Generator(Algebra[ParseResult[T], GenState[T]]):  
     
     @classmethod
-    def state(cls, ast: Optional[ParseResult[T]] = None, seed: int = 0, restore_pruned: bool = False)->GenState[T]:
+    def state(cls, ast: Optional[ParseResult[T]] = None, seed: int = 0, restore_pruned: bool = False)->GenState[T]: # type: ignore
         """Create an initial ``GenState`` for generation or checking.
 
         Args:
@@ -454,7 +454,7 @@ def generate_with(
     data: Optional[ParseResult[Any]] = None, 
     seed: int = 0, 
     restore_pruned: bool = False
-) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     """
     Generate an AST from the given syntax, optionally constrained by a partial parse result.
 
@@ -468,13 +468,13 @@ def generate_with(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    return run(syntax, Generator, not restore_pruned, ast=data, seed=seed, restore_pruned=restore_pruned)
+    return run(syntax=syntax, alg=Generator, use_cache=not restore_pruned, ast=data, seed=seed, restore_pruned=restore_pruned)
 
 
 def validate(
     syntax: Syntax[Any, Any], 
     data: ParseResult[Any]
-) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     """
     Validate a parse result (AST) against the given syntax.
 
@@ -486,12 +486,12 @@ def validate(
         A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
     """
     from syncraft.syntax import run
-    return run(syntax, Generator, True, ast=data, seed=0, restore_pruned=True)
+    return run(syntax=syntax, alg=Generator, use_cache=True, ast=data, seed=0, restore_pruned=True)
 
 
 def generate(
     syntax
-) -> Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
+) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     """
     Generate a random AST that conforms to the given syntax.
 
@@ -502,4 +502,4 @@ def generate(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    return run(syntax, Generator, False, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    return run(syntax=syntax, alg=Generator, use_cache=False, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)

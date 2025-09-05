@@ -83,7 +83,7 @@ class Algebra(Generic[A, S]):
     _cache: ClassVar[WeakKeyDictionary[Any, Dict[Any, object | Either[Any, Tuple[Any, Any]]]]] = WeakKeyDictionary()
 
     @classmethod
-    def state(cls, *args:Any, **kwargs:Any)->Optional[S]: 
+    def state(cls, **kwargs:Any)->Optional[S]: 
         return None
         
     def named(self, name: Hashable) -> 'Algebra[A, S]':
