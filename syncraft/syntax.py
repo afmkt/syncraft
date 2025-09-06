@@ -513,7 +513,9 @@ def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
     Returns:
         A lazily evaluated Syntax object.
     """
-    return Syntax(lambda cls: cls.lazy(lambda: thunk()(cls))).describe(name='lazy(?)', fixity='postfix') 
+    def lazy_run(cls: Type[Algebra[Any, S]]) -> Algebra[A, S]:
+        return cls.lazy(lambda: thunk()(cls))
+    return Syntax(lazy_run).describe(name='lazy(?)', fixity='postfix') 
 
 def when(f: Callable[[], bool], then: Syntax[A, S], otherwise: Syntax[B, S]) -> Syntax[A | B, S]:
     """

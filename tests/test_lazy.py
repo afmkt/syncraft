@@ -21,11 +21,3 @@ def test() -> None:
     v, s = parse(LL, p_code, dialect='sqlite')
     print(v.bimap(), s)
 
-
-    
-    # result = walk(LL, lambda a, s: s + (a,) if isinstance(a, TokenSpec) else s, ())  
-    # print(result)
-    # assert result == (TokenSpec.create(text='Test', case_sensitive=False),)
-
-if __name__ == "__main__":
-    test()

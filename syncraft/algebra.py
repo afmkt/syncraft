@@ -505,9 +505,10 @@ class Algebra(Generic[A, S]):
                     case Left(_):
                         break
                     case Right((value, next_input)):
-                        ret.append(value)
                         if next_input == current_input:
                             break  # No progress, stop to avoid infinite loop
+                        else:
+                            ret.append(value)
                         current_input = next_input
                         if at_most is not None and len(ret) > at_most:
                             return Left(Error(

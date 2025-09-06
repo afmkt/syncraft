@@ -476,8 +476,32 @@ class TokenProtocol(Protocol):
 T = TypeVar('T', bound=TokenProtocol)  
 
 
+
 @dataclass(frozen=True)
-class TokenSpec:
+class SyntaxSpec:
+    pass
+@dataclass(frozen=True)
+class ChoiceSpec(SyntaxSpec, Generic[A, B]):
+    left: A
+    right: B
+
+@dataclass(frozen=True)
+class LazySpec(SyntaxSpec, Generic[A]):
+    value: A
+@dataclass(frozen=True)
+class ThenSpec(SyntaxSpec, Generic[A, B]):
+    left: A
+    right: B
+
+@dataclass(frozen=True)
+class ManySpec(SyntaxSpec, Generic[A]):
+    value: A
+    at_least: int
+    at_most: Optional[int]
+
+
+@dataclass(frozen=True)
+class TokenSpec(SyntaxSpec):
     token_type: Optional[Enum] = None
     text: Optional[str] = None
     case_sensitive: bool = False

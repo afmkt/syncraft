@@ -276,5 +276,11 @@ def test_optional():
 
 
 
-
+def test_many_optional():
+    A = literal("a")
+    syntax = A.optional().many()
+    ast1, _ = parse(syntax, "a a b", dialect="sqlite")
+    print(ast1)
+    ast2, inv = ast1.bimap()
+    assert Many(value=(Choice(kind=None, value=TokenGen.from_string('a')), Choice(kind=None, value=TokenGen.from_string('a')))) == inv(ast2)
 
