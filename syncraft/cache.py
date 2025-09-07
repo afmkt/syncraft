@@ -41,6 +41,7 @@ class Cache(Generic[Args, Ret]):
 
 
     def __or__(self, other: Cache[Args, Any]) -> Cache[Args, Any]:
+        assert self.cache is other.cache, "There should be only one global cache"
         if self.cache is other.cache:
             return self
         elif len(self.cache) == 0:

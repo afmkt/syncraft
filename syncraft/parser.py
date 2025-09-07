@@ -20,6 +20,8 @@ from syncraft.constraint import Bindable
 
 
 T = TypeVar('T', bound=TokenProtocol)
+
+
 @dataclass(frozen=True)
 class ParserState(Bindable, Generic[T]):
     """Immutable state for the SQL token stream during parsing.
@@ -35,6 +37,15 @@ class ParserState(Bindable, Generic[T]):
     index: int = 0
     final: bool = False  # Whether this is a final state (for error reporting)
 
+    def __repr__(self) -> str:
+        return (f"ParserState("
+                f"input=[{self.before() + (' ' if len(self.before())>0 else '')}\u25cf{' ' if len(self.after()) > 0 else '' + self.after()}], "
+                f"ended={self.ended()}, "
+                f"pending={self.pending()})")
+                # f"binding={self.binding} )")
+
+    def __str__(self) -> str:
+        return self.__repr__()
     
     def __add__(self, other: 'ParserState[T]') -> 'ParserState[T]':
         if not isinstance(other, ParserState):

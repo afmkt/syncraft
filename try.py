@@ -2,9 +2,17 @@ from __future__ import annotations
 from syncraft.walker import walk
 from syncraft.ast import TokenSpec, Nothing
 from syncraft.generator import TokenGen, generate_with
-from syncraft.syntax import lazy, literal, token
+from syncraft.syntax import lazy, literal, token, regex
 from syncraft.parser import parse
 from rich import print
+
+
+def test_recursion()->None:
+    Expr1 = lazy(lambda: literal('a') + Expr1)
+    v, s = parse(Expr1, 'a a a', dialect='sqlite')
+    print(v)
+
+
 
 def test_left_recursion()->None:
     Term = literal('n')
@@ -15,28 +23,14 @@ def test_left_recursion()->None:
 
 
 
+def test_indirect_left_recursion()->None:
+    NUMBER = regex(r'\d+').map(int)
+    PLUS = token(text='+')
+    STAR = token(text='*')
+    A = lazy(lambda: (B >> PLUS >> A) | B)
+    B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
+    v, s = parse(A, '1 + 2 * 3', dialect='sqlite')
 
-
-def test() -> None:
-    A = literal('a')
-    B = literal('b')
-    L = lazy(lambda: literal("if") >> (A | B) // literal('then'))
-    l_code = 'if a then'
-
-    def parens():
-        return A + ~lazy(parens) + B
-    LL = parens() | L
-
-
-    # p_code = 'a a b b'
-    # v, s = parse(LL, p_code, dialect='sqlite')
-    # print(v.bimap(), s)
-
-
-    
-    # result = walk(LL, lambda a, s: s + (a,) if isinstance(a, TokenSpec) else s, ())  
-    # print(result)
-    # assert result == (TokenSpec.create(text='Test', case_sensitive=False),)
 
 if __name__ == "__main__":
-    test_left_recursion()
+    test_recursion()
