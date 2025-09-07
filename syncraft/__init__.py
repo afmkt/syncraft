@@ -1,6 +1,8 @@
 from .syntax import (
     Description,
 	Syntax,
+    regex,
+    literal,
 	choice,
 	lazy,
 	success,
@@ -25,10 +27,8 @@ from .parser import (
 	token,
 	identifier,
 	variable,
-	literal,
 	number,
 	string,
-	regex,
 )
 from .generator import (
     Generator,

@@ -14,10 +14,11 @@ from enum import Enum
 
 
 class SyncraftError(Exception):
-    def __init__(self, message: str, offending: Any, expect: Any = None):
+    def __init__(self, message: str, offending: Any, expect: Any = None, **kwargs: Any) -> None:
         super().__init__(message)
         self.offending = offending
         self.expect = expect
+        self.data = kwargs
 
 def shallow_dict(a: Any)->Dict[str, Any]:
     if not is_dataclass(a):

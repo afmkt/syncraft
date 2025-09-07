@@ -9,12 +9,13 @@ from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Either, Left, Right, Error, Incomplete
 )
+from syncraft.cache import Cache
 
 from syncraft.ast import (
     ParseResult, AST, Token, TokenSpec, 
     Nothing, TokenProtocol,
     Choice, Many, ChoiceKind,
-    Then, ThenKind, Marked, SyncraftError
+    Then, ThenKind, SyncraftError
 )
 from syncraft.constraint import FrozenDict
 from syncraft.syntax import Syntax
@@ -262,7 +263,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Right((result, next_input)):
                             return Right((result, next_input))
             raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        return self.__class__(run_f = flat_map_run, name=self.name) # type: ignore
+        return self.__class__(run_f = flat_map_run, name=self.name, cache=self.cache) # type: ignore
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
@@ -326,7 +327,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         state=input.inject(x)
                     )) 
                 return Right((Many(value=tuple(ret)), input))
-        return self.__class__(many_run, name=f"many({self.name})")  # type: ignore
+        return self.__class__(many_run, name=f"many({self.name})", cache=self.cache)  # type: ignore
     
  
     def or_else(self, # type: ignore
@@ -398,14 +399,16 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 input.inject(input.ast.value))
                     return result
                     
-        return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})") # type: ignore
+        return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})", cache=self.cache | other.cache) # type: ignore
 
     @classmethod
     def token(cls, 
+              *,
+              cache: Cache,
               token_type: Optional[TokenType] = None, 
               text: Optional[str] = None, 
               case_sensitive: bool = False,
-              regex: Optional[re.Pattern[str]] = None
+              regex: Optional[re.Pattern[str]] = None,
               )-> Algebra[ParseResult[T], GenState[T]]:      
         """Match or synthesize a single token.
 
@@ -436,7 +439,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                       message=f"Expected a Token({gen.text}), but got {current}.", 
                                       state=input))
                 return Right((current, input))
-        lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
+        lazy_self = cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})', cache=cache)  # type: ignore
         return lazy_self
 
 

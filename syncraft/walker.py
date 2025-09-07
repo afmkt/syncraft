@@ -13,6 +13,7 @@ from syncraft.constraint import Bindable, FrozenDict
 
 import re
 from syncraft.syntax import Syntax
+from syncraft.cache import Cache
 
 
 S = TypeVar('S', bound=Bindable)
@@ -55,7 +56,7 @@ class Walker(Algebra[SS, WalkerState[SS]]):
 
 
     @classmethod
-    def lazy(cls, thunk: Callable[[], Algebra[Any, WalkerState[SS]]]) -> Algebra[Any, WalkerState[SS]]:
+    def lazy(cls, thunk: Callable[[], Algebra[Any, WalkerState[SS]]], cache: Cache) -> Algebra[Any, WalkerState[SS]]:
         def alazy_run(input: WalkerState[SS], use_cache:bool) -> PyGenerator[Incomplete[WalkerState[SS]], WalkerState[SS], Either[Any, Tuple[Any, WalkerState[SS]]]]:
             result = yield from thunk().run(input, use_cache)
             return result
@@ -71,7 +72,7 @@ class Walker(Algebra[SS, WalkerState[SS]]):
                         data = LazySpec(value=value)
                         return Right((data, from_thunk.visit(thunk).reduce(data)))
             raise SyncraftError("flat_map should always return a value or an error.", offending=thunk_result, expect=(Left, Right))
-        return cls(lazy_run, name=cls.__name__ + '.lazy')
+        return cls(lazy_run, name=cls.__name__ + '.lazy', cache=cache)
 
 
     def then_both(self, other: Algebra[Any, WalkerState[SS]]) -> Algebra[Any, WalkerState[SS]]:
@@ -85,7 +86,7 @@ class Walker(Algebra[SS, WalkerState[SS]]):
                             data = ThenSpec(left=value, right=result)
                             return Right((data, from_right.reduce(data)))
             raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        return self.__class__(run_f = then_run, name=self.name) 
+        return self.__class__(run_f = then_run, name=self.name, cache=self.cache | other.cache) 
 
     def then_left(self, other: Algebra[Any, WalkerState[SS]]) -> Algebra[Any, WalkerState[SS]]:
         return self.then_both(other)  # For simplicity, treat as both
@@ -104,7 +105,7 @@ class Walker(Algebra[SS, WalkerState[SS]]):
                     data = ManySpec(value=value, at_least=at_least, at_most=at_most)
                     return Right((data, from_self.reduce(data)))
             raise SyncraftError("many should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        return self.__class__(many_run, name=f"many({self.name})")  
+        return self.__class__(many_run, name=f"many({self.name})", cache=self.cache)  
     
  
     def or_else(self, other: Algebra[Any, WalkerState[SS]]) -> Algebra[Any, WalkerState[SS]]: 
@@ -118,10 +119,12 @@ class Walker(Algebra[SS, WalkerState[SS]]):
                             data = ChoiceSpec(left=value, right=result)
                             return Right((data, from_right.reduce(data)))
             raise SyncraftError("", offending=self)
-        return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})") 
+        return self.__class__(or_else_run, name=f"or_else({self.name} | {other.name})", cache=self.cache | other.cache) 
 
     @classmethod
     def token(cls, 
+              *,
+              cache: Cache,
               token_type: Optional[TokenType] = None, 
               text: Optional[str] = None, 
               case_sensitive: bool = False,
@@ -131,14 +134,13 @@ class Walker(Algebra[SS, WalkerState[SS]]):
             yield from ()
             data = TokenSpec(token_type=token_type, text=text, regex=regex, case_sensitive=case_sensitive)
             return Right((data, input.reduce(data)))
-        return cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})')  
+        return cls(token_run, name=cls.__name__ + f'.token({token_type or text or regex})', cache=cache)  
 
 
 def walk(syntax: Syntax[Any, Any], reducer: Callable[[Any, Any], SS], init: SS)-> Optional[SS]:
     from syncraft.syntax import run
     from rich import print
     v, s = run(syntax=syntax, alg=Walker, use_cache=False, reducer=reducer, init=init)
-    print(v)
     if s is not None:
         return s.acc
     else:

@@ -1,14 +1,13 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, 
-    Dict, Type, ClassVar, Hashable, Generator
+    Dict, Type, Hashable, Generator
 )
-from enum import Enum, auto
-from dataclasses import dataclass, replace
-from weakref import WeakKeyDictionary
-from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError
-from syncraft.constraint import Bindable
 
+from dataclasses import dataclass, replace
+from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError
+from syncraft.cache import Cache
+from syncraft.constraint import Bindable
 
 
 
@@ -18,7 +17,6 @@ A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Mapped result type
 
 
-InProgress = object()  # Marker for in-progress state, used to prevent re-entrance in recursive calls
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
 
@@ -74,13 +72,12 @@ class Error:
         return lst
 
 
-RunResult = Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]
 @dataclass(frozen=True)        
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, bool], Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]] 
     name: Hashable
-    _cache: ClassVar[WeakKeyDictionary[Any, Dict[Any, object | Either[Any, Tuple[Any, Any]]]]] = WeakKeyDictionary()
+    cache: Cache[ S, Either[Any, Tuple[A, S]] ]
 
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
@@ -88,51 +85,32 @@ class Algebra(Generic[A, S]):
         
     def named(self, name: Hashable) -> 'Algebra[A, S]':
         return replace(self, name=name)
-
-    def __post_init__(self)-> None:
-        self._cache.setdefault(self.run_f, dict())
         
     def __call__(self, input: S, use_cache: bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
         return self.run(input, use_cache=use_cache)
 
     def run(self, input: S, use_cache: bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-        cache = self._cache[self.run_f]
-        assert cache is not None, "Cache should be initialized in __post_init__"
-        if input in cache:
-            v = cache.get(input, None)
-            if v is InProgress:
-                return Left(
-                    Error(
-                        message="Left-recursion detected in parser",
-                        this=self,
-                        state=input
-                    ))
-            else:
-                return cast(Either[Error, Tuple[A, S]], v)
-        cache[input] = InProgress    
-        try:
-            result = yield from self.run_f(input, use_cache)
-            cache[input] = result
-            if not use_cache:
-                cache.pop(input, None)
-            return result
-        except Exception as e:
-            cache.pop(input, None)  # Clear the cache entry on exception
-            raise e
+        return (yield from self.cache.gen(self.run_f, input, use_cache))
         
 
     def as_(self, typ: Type[B])->B:
         return cast(typ, self) # type: ignore
         
     @classmethod
-    def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
+    def lazy(cls, 
+             thunk: Callable[[], Algebra[A, S]], 
+             *, 
+             cache: Cache) -> Algebra[A, S]:
         def lazy_run(input: S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
             result = yield from thunk().run(input, use_cache)
             return result
-        return cls(lazy_run, name=cls.__name__ + '.lazy')
+        return cls(lazy_run, name=cls.__name__ + '.lazy', cache=cache)
     
     @classmethod
-    def fail(cls, error: Any) -> Algebra[Any, S]:
+    def fail(cls, 
+             error: Any,
+             *,
+             cache: Cache) -> Algebra[Any, S]:
         def fail_run(input: S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
             yield from ()
             return Left(Error(
@@ -140,27 +118,23 @@ class Algebra(Generic[A, S]):
                 this=cls,
                 state=input
             ))
-        return cls(fail_run, name=cls.__name__ + '.fail')
+        return cls(fail_run, name=cls.__name__ + '.fail', cache=cache)
     
     @classmethod
-    def success(cls, value: Any) -> Algebra[Any, S]:
-        """Return an algebra that always succeeds with ``value``.
-
-        The input state is passed through unchanged.
-
-        Args:
-            value: The constant value to return.
-
-        Returns:
-            ``Right((value, input))`` for any input state.
-        """
+    def success(cls, 
+                value: Any, 
+                *, 
+                cache: Cache) -> Algebra[Any, S]:
         def success_run(input: S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
             yield from ()
             return Right((value, input))
-        return cls(success_run, name=cls.__name__ + '.success')
+        return cls(success_run, name=cls.__name__ + '.success', cache=cache)
     
     @classmethod
-    def factory(cls, name: str, *args: Any, **kwargs: Any) -> Algebra[A, S]:
+    def factory(cls,
+                name: str, 
+                *args: Any, 
+                **kwargs: Any) -> Algebra[A, S]:
         """Call a named class method to construct an algebra.
 
         Args:
@@ -229,8 +203,9 @@ class Algebra(Generic[A, S]):
                         Left[Any, Tuple[A, S]], 
                         Any
                     ], 
-                    Either[Any, Tuple[B, S]]], 
-                    ctx: Optional[Any] = None) -> Algebra[A | B, S]:
+                        Either[Any, Tuple[B, S]]
+                    ], 
+                ctx: Optional[Any] = None) -> Algebra[A | B, S]:
         """Run a handler only when this algebra fails.
 
         Args:
@@ -247,7 +222,7 @@ class Algebra(Generic[A, S]):
                 return cast(Either[Any, Tuple[A | B, S]], func(self, input, result, ctx))
             else:
                 return cast(Either[Any, Tuple[A | B, S]], result)
-        return self.__class__(fail_run, name=self.name) # type: ignore
+        return self.__class__(fail_run, name=self.name, cache=self.cache) # type: ignore
 
     def on_success(self, 
                     func: Callable[
@@ -257,8 +232,9 @@ class Algebra(Generic[A, S]):
                             Right[Any, Tuple[A, S]], 
                             Any
                         ], 
-                        Either[Any, Tuple[B, S]]], 
-                        ctx: Optional[Any] = None) -> Algebra[A | B, S]:
+                            Either[Any, Tuple[B, S]]
+                        ], 
+                    ctx: Optional[Any] = None) -> Algebra[A | B, S]:
         """Run a handler only when this algebra succeeds.
 
         Args:
@@ -275,7 +251,7 @@ class Algebra(Generic[A, S]):
                 return cast(Either[Any, Tuple[A | B, S]], func(self, input, result, ctx))
             else:
                 return cast(Either[Any, Tuple[A | B, S]], result)
-        return self.__class__(success_run, name=self.name) # type: ignore
+        return self.__class__(success_run, name=self.name, cache=self.cache) # type: ignore
 
 
 ######################################################## map on state ###########################################
@@ -291,7 +267,7 @@ class Algebra(Generic[A, S]):
         def map_state_run(state: S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
             result = yield from self.run(f(state), use_cache)
             return result
-        return self.__class__(map_state_run, name=self.name) 
+        return self.__class__(map_state_run, name=self.name, cache=self.cache) 
 
 
 ######################################################## fundamental combinators ############################################    
@@ -310,7 +286,7 @@ class Algebra(Generic[A, S]):
                 return Right((f(parsed.value[0]), parsed.value[1]))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        return self.__class__(map_run, name=self.name)  # type: ignore
+        return self.__class__(map_run, name=self.name, cache=self.cache)  # type: ignore
 
         
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
@@ -349,7 +325,7 @@ class Algebra(Generic[A, S]):
                 return Left(f(parsed.value))
             else:
                 return parsed
-        return self.__class__(map_error_run, name=self.name)  
+        return self.__class__(map_error_run, name=self.name, cache=self.cache)  
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Algebra[B, S]:
         """Chain computations where the next algebra depends on the value.
@@ -370,7 +346,7 @@ class Algebra(Generic[A, S]):
                 return result
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        return self.__class__(flat_map_run, name=self.name)  # type: ignore
+        return self.__class__(flat_map_run, name=self.name, cache=self.cache)  # type: ignore
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
         """Map both the produced value and the resulting state on success.
@@ -385,7 +361,7 @@ class Algebra(Generic[A, S]):
             def run_f(input:S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right(f(a, input))
-            return self.__class__(run_f, name=self.name) # type: ignore
+            return self.__class__(run_f, name=self.name, cache=self.cache) # type: ignore
         return self.flat_map(map_all_f)
 
 
@@ -422,7 +398,7 @@ class Algebra(Generic[A, S]):
                             return Left(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offending=self_result, expect=(Left, Right))
-        return self.__class__(or_else_run, name=f'{self.name} | {other.name}')  # type: ignore
+        return self.__class__(or_else_run, name=f'{self.name} | {other.name}', cache=self.cache | other.cache)  # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         """Sequence two algebras and keep both values.
@@ -439,7 +415,8 @@ class Algebra(Generic[A, S]):
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
             return other.map(combine)
-        return self.flat_map(then_both_f).named(f'{self.name} + {other.name}')
+        ret = self.flat_map(then_both_f).named(f'{self.name} + {other.name}')
+        return replace(ret, cache=self.cache | other.cache)  
 
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         """Sequence two algebras, keep the left value in the result.
@@ -456,7 +433,8 @@ class Algebra(Generic[A, S]):
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
             return other.map(combine)
-        return self.flat_map(then_left_f).named(f'{self.name} // {other.name}')
+        ret = self.flat_map(then_left_f).named(f'{self.name} // {other.name}')
+        return replace(ret, cache=self.cache | other.cache)  
 
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         """Sequence two algebras, keep the right value in the result.
@@ -473,7 +451,8 @@ class Algebra(Generic[A, S]):
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
             return other.map(combine)
-        return self.flat_map(then_right_f).named(f'{self.name} >> {other.name}')
+        ret = self.flat_map(then_right_f).named(f'{self.name} >> {other.name}')
+        return replace(ret, cache=self.cache | other.cache)  
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
         """Repeat this algebra and collect results into ``Many``.
@@ -523,7 +502,7 @@ class Algebra(Generic[A, S]):
                         state=current_input
                     )) 
             return Right((Many(value=tuple(ret)), current_input))
-        return self.__class__(many_run, name=f'*({self.name})') # type: ignore
+        return self.__class__(many_run, name=f'*({self.name})', cache=self.cache) # type: ignore
 
     
 

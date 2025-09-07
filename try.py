@@ -1,10 +1,24 @@
 from __future__ import annotations
-from syncraft.parser import literal, token
 from syncraft.walker import walk
-from syncraft.ast import TokenSpec
-from syncraft.syntax import lazy
+from syncraft.ast import TokenSpec, Nothing
+from syncraft.generator import TokenGen, generate_with
+from syncraft.syntax import lazy, literal, token
 from syncraft.parser import parse
 from rich import print
+
+def test_left_recursion()->None:
+    Term = literal('n')
+    Expr1 = lazy(lambda: literal('a') + Expr1 + Term | Term)
+    # Expr = lazy(lambda: Expr + Term | lazy(lambda: Term))
+    v, s = parse(Expr1, 'a n n n', dialect='sqlite')
+
+
+
+def test1_simple_then() -> None:
+    syntax = literal("test")
+    result = walk(syntax, lambda a, s: s + (a,), ())  
+    assert result == (TokenSpec.create(text='test', case_sensitive=True),)
+
 
 
 def test() -> None:
@@ -15,11 +29,12 @@ def test() -> None:
 
     def parens():
         return A + ~lazy(parens) + B
-    p_code = 'a a b b'
     LL = parens() | L
 
-    v, s = parse(LL, p_code, dialect='sqlite')
-    print(v.bimap(), s)
+
+    # p_code = 'a a b b'
+    # v, s = parse(LL, p_code, dialect='sqlite')
+    # print(v.bimap(), s)
 
 
     
@@ -28,4 +43,4 @@ def test() -> None:
     # assert result == (TokenSpec.create(text='Test', case_sensitive=False),)
 
 if __name__ == "__main__":
-    test()
+    test1_simple_then()

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from syncraft.parser import literal
+from syncraft.syntax import literal
 from syncraft.walker import walk
 from syncraft.ast import TokenSpec
 

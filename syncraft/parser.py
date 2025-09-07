@@ -5,6 +5,7 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,
     Generic, Generator
 )
+from syncraft.cache import Cache
 from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
     Either, Left, Right, Error, Algebra, Incomplete
@@ -12,7 +13,7 @@ from syncraft.algebra import (
 from dataclasses import dataclass, field, replace
 from enum import Enum
 
-from syncraft.syntax import Syntax
+from syncraft.syntax import Syntax, token
 
 from syncraft.ast import Token, TokenSpec, AST, TokenProtocol, SyncraftError
 from syncraft.constraint import Bindable
@@ -127,6 +128,8 @@ class Parser(Algebra[T, ParserState[T]]):
 
     @classmethod
     def token(cls, 
+              *,
+              cache: Cache,
               token_type: Optional[Enum] = None, 
               text: Optional[str] = None, 
               case_sensitive: bool = False,
@@ -160,7 +163,7 @@ class Parser(Algebra[T, ParserState[T]]):
                         return Left(state)
                     else:
                         return Right((Token(token_type = token.token_type, text=token.text), state.advance()))  # type: ignore
-        captured: Algebra[T, ParserState[T]] = cls(token_run, name=cls.__name__ + f'.token({token_type}, {text})')
+        captured: Algebra[T, ParserState[T]] = cls(token_run, name=cls.__name__ + f'.token({token_type}, {text})', cache=cache)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
                 return Error(message=f"Cannot match token at {err}", this=captured, state=err)            
@@ -192,36 +195,6 @@ def sqlglot(parser: Syntax[Any, Any],
     return parser.map(lambda tokens: [e for e in gp.parse(raw_tokens=tokens) if e is not None])
 
 
-
-
-
-
-def token(token_type: Optional[Enum] = None, 
-          text: Optional[str] = None, 
-          case_sensitive: bool = False,
-          regex: Optional[re.Pattern[str]] = None
-          ) -> Syntax[Any, Any]:
-    """Build a ``Syntax`` that matches a single token.
-
-    Convenience wrapper around ``Parser.token``. You can match by
-    type, exact text, or regex.
-
-    Args:
-        token_type: Expected token enum type.
-        text: Exact token text to match.
-        case_sensitive: Whether text matching respects case.
-        regex: Pattern to match token text.
-
-    Returns:
-        Syntax[Any, Any]: A syntax that matches one token.
-    """
-    token_type_txt = token_type.name if token_type is not None else None
-    token_value_txt = text if text is not None else None
-    msg = 'token(' + ','.join([x for x in [token_type_txt, token_value_txt, str(regex)] if x is not None]) + ')'
-    return Syntax(
-        lambda cls: cls.factory('token', token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
-        ).describe(name=msg, fixity='prefix') 
-
     
 def identifier(value: str | None = None) -> Syntax[Any, Any]:
     """Match an identifier token, optionally with exact text.
@@ -251,30 +224,6 @@ def variable(value: str | None = None) -> Syntax[Any, Any]:
     else:
         return token(TokenType.VAR, text=value)
 
-def literal(lit: str) -> Syntax[Any, Any]:
-    """Match an exact literal string (case-sensitive)."""
-    return token(token_type=None, text=lit, case_sensitive=True)
-
-def regex(regex: re.Pattern[str]) -> Syntax[Any, Any]:
-    """Match a token whose text satisfies the given regular expression."""
-    return token(token_type=None, regex=regex, case_sensitive=True)
-
-def lift(value: Any)-> Syntax[Any, Any]:
-    """Lift a Python value into the nearest matching token syntax.
-
-    - ``str`` -> ``literal``
-    - ``re.Pattern`` -> ``token`` with regex
-    - ``Enum`` -> ``token`` with type
-    - otherwise -> succeed with the value
-    """
-    if isinstance(value, str):
-        return literal(value)
-    elif isinstance(value, re.Pattern):
-        return token(regex=value)
-    elif isinstance(value, Enum):
-        return token(value)
-    else:
-        return Syntax(lambda cls: cls.success(value))
 
 def number() -> Syntax[Any, Any]:
     """Match a number token."""
