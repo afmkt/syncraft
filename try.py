@@ -8,7 +8,7 @@ from rich import print
 
 
 def test_recursion()->None:
-    Expr1 = lazy(lambda: literal('a') + Expr1)
+    Expr1 = lazy(lambda: literal('a') + ~Expr1)
     v, s = parse(Expr1, 'a a a', dialect='sqlite')
     print(v)
 
@@ -16,7 +16,6 @@ def test_recursion()->None:
 
 def test_left_recursion()->None:
     Term = literal('n')
-    Expr1 = lazy(lambda: literal('a') + Expr1)
     Expr = lazy(lambda: Expr + Term)
     v, s = parse(Expr, 'a n', dialect='sqlite')
 
@@ -33,4 +32,6 @@ def test_indirect_left_recursion()->None:
 
 
 if __name__ == "__main__":
-    test_recursion()
+    # test_recursion()
+    # test_left_recursion()
+    test_indirect_left_recursion()

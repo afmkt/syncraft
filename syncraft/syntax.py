@@ -14,7 +14,7 @@ from types import MethodType, FunctionType
 import keyword
 import re
 from enum import Enum
-
+from rich import print
 
 def valid_name(name: str) -> bool:
     return (name.isidentifier() 
@@ -563,15 +563,22 @@ def run(*,
 
 def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
     syntax: Optional[Syntax[A, S]] = None
+    algebra: Optional[Algebra[A, S]] = None
     def syntax_lazy_run(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
-        nonlocal syntax
+        nonlocal syntax, algebra
+        print('==' * 20, 'Syntax.lazy.syntax_lazy_run', '==' * 20)
+        print('thunk', thunk, id(thunk))
+        print('syntax', syntax, id(syntax))
+        print('algebra', algebra, id(algebra))
         if syntax is None:
             syntax = thunk()
         def algebra_lazy_f():
             if syntax is None:
                 raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
             return syntax(cls, cache)
-        return cls.lazy(algebra_lazy_f, cache=cache)  
+        if algebra is None:
+            algebra = cls.lazy(algebra_lazy_f, cache=cache)  
+        return algebra
     return Syntax(syntax_lazy_run).describe(name='lazy(?)', fixity='postfix') 
 
 

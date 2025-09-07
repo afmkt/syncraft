@@ -39,10 +39,9 @@ class ParserState(Bindable, Generic[T]):
 
     def __repr__(self) -> str:
         return (f"ParserState("
-                f"input=[{self.before() + (' ' if len(self.before())>0 else '')}\u25cf{' ' if len(self.after()) > 0 else '' + self.after()}], "
+                f"input=[{self.before() + (' ' if len(self.before())>0 else '')}\u25cf{(' ' if len(self.after()) > 0 else '') + self.after()}], "
                 f"ended={self.ended()}, "
                 f"pending={self.pending()})")
-                # f"binding={self.binding} )")
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -71,7 +70,7 @@ class ParserState(Bindable, Generic[T]):
         length = min(self.index, length) if length is not None else self.index
         return " ".join(token.text for token in self.input[self.index - length:self.index])
     
-    def after(self, length: Optional[int] = 5)->str:
+    def after(self, length: Optional[int] = 3)->str:
         """Return a string with up to ``length`` tokens from the cursor on.
 
         Args:
@@ -81,7 +80,8 @@ class ParserState(Bindable, Generic[T]):
             str: Space-separated token texts starting at the current index.
         """
         length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
-        return " ".join(token.text for token in self.input[self.index:self.index + length])
+        ret = " ".join(token.text for token in self.input[self.index:self.index + length])
+        return ret
 
 
     def current(self)->T:
