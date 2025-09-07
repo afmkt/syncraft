@@ -103,10 +103,10 @@ class Algebra(Generic[A, S]):
              cache: Cache) -> Algebra[A, S]:
         def algebra_lazy_run(input: S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
             alg = thunk()
-            print('--' * 20, "Algebra.lazy.algebra_lazy_run", '--' * 20)
-            print('thunk', thunk, id(thunk))
-            print('input', input, id(input))
-            print('alg', alg, id(alg))
+            # print('--' * 20, "Algebra.lazy.algebra_lazy_run", '--' * 20)
+            # print('thunk', thunk, id(thunk))
+            # print('input', input, id(input))
+            # print('alg', alg, id(alg))
             result = yield from alg.run(input, use_cache)
             return result
         return cls(algebra_lazy_run, name=cls.__name__ + '.lazy', cache=cache)

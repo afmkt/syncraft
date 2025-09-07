@@ -566,10 +566,10 @@ def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
     algebra: Optional[Algebra[A, S]] = None
     def syntax_lazy_run(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
         nonlocal syntax, algebra
-        print('==' * 20, 'Syntax.lazy.syntax_lazy_run', '==' * 20)
-        print('thunk', thunk, id(thunk))
-        print('syntax', syntax, id(syntax))
-        print('algebra', algebra, id(algebra))
+        # print('==' * 20, 'Syntax.lazy.syntax_lazy_run', '==' * 20)
+        # print('thunk', thunk, id(thunk))
+        # print('syntax', syntax, id(syntax))
+        # print('algebra', algebra, id(algebra))
         if syntax is None:
             syntax = thunk()
         def algebra_lazy_f():
