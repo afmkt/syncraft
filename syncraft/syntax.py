@@ -562,35 +562,17 @@ def run(*,
 
 
 def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
-    syntax: Optional[Syntax[A, S]] = None
     algebra: Optional[Algebra[A, S]] = None
     def syntax_lazy_run(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
-        nonlocal syntax, algebra
+        nonlocal algebra
         # print('==' * 20, 'Syntax.lazy.syntax_lazy_run', '==' * 20)
         # print('thunk', thunk, id(thunk))
         # print('syntax', syntax, id(syntax))
         # print('algebra', algebra, id(algebra))
-        if syntax is None:
-            syntax = thunk()
-        def algebra_lazy_f():
-            if syntax is None:
-                raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
-            return syntax(cls, cache)
         if algebra is None:
-            algebra = cls.lazy(algebra_lazy_f, cache=cache)  
+            algebra = cls.lazy(lambda: thunk()(cls, cache), cache=cache)
         return algebra
     return Syntax(syntax_lazy_run).describe(name='lazy(?)', fixity='postfix') 
-
-
-# def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
-#     resolved: Optional[Syntax[A, S]] = None
-    
-#     def run_lazy(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
-#         nonlocal resolved
-#         if resolved is None:
-#             resolved = thunk()
-#         return resolved(cls, cache)  # reuse the same Algebra instance
-#     return Syntax(run_lazy)
 
 
 
