@@ -396,7 +396,7 @@ class Syntax(Generic[A, S]):
         other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
         ret: Syntax[Choice[A, B], S] = self.__class__(
             lambda cls, cache: self(cls, cache).or_else(other(cls, cache))  # type: ignore
-        )  # type: ignore
+        )  
         return ret.describe(name='|', fixity='infix', parameter=(self, other))
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
@@ -561,21 +561,29 @@ def run(*,
     return Error(this=None, message="Algebra failed to create initial state"), None
 
 
-# def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
-#     def lazy_run(cls: Type[Algebra[Any, S]]) -> Algebra[A, S]:
-#         return cls.lazy(lambda: thunk()(cls))
-#     return Syntax(lazy_run).describe(name='lazy(?)', fixity='postfix') 
-
-
 def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
-    resolved: Optional[Syntax[A, S]] = None
+    syntax: Optional[Syntax[A, S]] = None
+    def syntax_lazy_run(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
+        nonlocal syntax
+        if syntax is None:
+            syntax = thunk()
+        def algebra_lazy_f():
+            if syntax is None:
+                raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
+            return syntax(cls, cache)
+        return cls.lazy(algebra_lazy_f, cache=cache)  
+    return Syntax(syntax_lazy_run).describe(name='lazy(?)', fixity='postfix') 
+
+
+# def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+#     resolved: Optional[Syntax[A, S]] = None
     
-    def run_lazy(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
-        nonlocal resolved
-        if resolved is None:
-            resolved = thunk()
-        return resolved(cls, cache)  # reuse the same Algebra instance
-    return Syntax(run_lazy)
+#     def run_lazy(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
+#         nonlocal resolved
+#         if resolved is None:
+#             resolved = thunk()
+#         return resolved(cls, cache)  # reuse the same Algebra instance
+#     return Syntax(run_lazy)
 
 
 

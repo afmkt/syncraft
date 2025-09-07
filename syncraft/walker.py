@@ -86,7 +86,7 @@ class Walker(Algebra[SS, WalkerState[SS]]):
                             data = ThenSpec(left=value, right=result)
                             return Right((data, from_right.reduce(data)))
             raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        return self.__class__(run_f = then_run, name=self.name, cache=self.cache | other.cache) 
+        return self.__class__(then_run, name=self.name, cache=self.cache | other.cache) 
 
     def then_left(self, other: Algebra[Any, WalkerState[SS]]) -> Algebra[Any, WalkerState[SS]]:
         return self.then_both(other)  # For simplicity, treat as both

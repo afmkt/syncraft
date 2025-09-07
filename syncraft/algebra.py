@@ -101,10 +101,10 @@ class Algebra(Generic[A, S]):
              thunk: Callable[[], Algebra[A, S]], 
              *, 
              cache: Cache) -> Algebra[A, S]:
-        def lazy_run(input: S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+        def algebra_lazy_run(input: S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
             result = yield from thunk().run(input, use_cache)
             return result
-        return cls(lazy_run, name=cls.__name__ + '.lazy', cache=cache)
+        return cls(algebra_lazy_run, name=cls.__name__ + '.lazy', cache=cache)
     
     @classmethod
     def fail(cls, 
@@ -358,10 +358,10 @@ class Algebra(Generic[A, S]):
             An algebra producing the transformed value and state.
         """
         def map_all_f(a : A) -> Algebra[B, S]:
-            def run_f(input:S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
+            def map_all_run_f(input:S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right(f(a, input))
-            return self.__class__(run_f, name=self.name, cache=self.cache) # type: ignore
+            return self.__class__(map_all_run_f, name=self.name, cache=self.cache) # type: ignore
         return self.flat_map(map_all_f)
 
 

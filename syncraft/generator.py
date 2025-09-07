@@ -263,7 +263,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Right((result, next_input)):
                             return Right((result, next_input))
             raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        return self.__class__(run_f = flat_map_run, name=self.name, cache=self.cache) # type: ignore
+        return self.__class__(flat_map_run, name=self.name, cache=self.cache) # type: ignore
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:

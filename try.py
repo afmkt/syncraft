@@ -8,9 +8,9 @@ from rich import print
 
 def test_left_recursion()->None:
     Term = literal('n')
-    Expr1 = lazy(lambda: literal('a') + Expr1 + Term | Term)
-    # Expr = lazy(lambda: Expr + Term | lazy(lambda: Term))
-    v, s = parse(Expr1, 'a n n n', dialect='sqlite')
+    Expr1 = lazy(lambda: literal('a') + Expr1)
+    Expr = lazy(lambda: Expr + Term)
+    v, s = parse(Expr, 'a n', dialect='sqlite')
 
 
 
