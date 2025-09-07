@@ -580,8 +580,9 @@ def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
 
 
 
-def token(token_type: Optional[Enum] = None, 
+def token(*,
           text: Optional[str] = None, 
+          token_type: Optional[Enum] = None,           
           case_sensitive: bool = False,
           regex: Optional[re.Pattern[str]] = None
           ) -> Syntax[Any, Any]:
@@ -612,8 +613,10 @@ def literal(lit: str) -> Syntax[Any, Any]:
     """Match an exact literal string (case-sensitive)."""
     return token(token_type=None, text=lit, case_sensitive=True)
 
-def regex(regex: re.Pattern[str]) -> Syntax[Any, Any]:
+def regex(regex: re.Pattern[str] | str) -> Syntax[Any, Any]:
     """Match a token whose text satisfies the given regular expression."""
+    if isinstance(regex, str):
+        regex = re.compile(regex)
     return token(token_type=None, regex=regex, case_sensitive=True)
 
 def lift(value: Any)-> Syntax[Any, Any]:
@@ -629,7 +632,7 @@ def lift(value: Any)-> Syntax[Any, Any]:
     elif isinstance(value, re.Pattern):
         return token(regex=value)
     elif isinstance(value, Enum):
-        return token(value)
+        return token(token_type=value)
     else:
         return Syntax(lambda cls, cache: cls.success(value, cache=cache))
 

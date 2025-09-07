@@ -14,10 +14,6 @@ def test_left_recursion()->None:
 
 
 
-def test1_simple_then() -> None:
-    syntax = literal("test")
-    result = walk(syntax, lambda a, s: s + (a,), ())  
-    assert result == (TokenSpec.create(text='test', case_sensitive=True),)
 
 
 
@@ -43,4 +39,4 @@ def test() -> None:
     # assert result == (TokenSpec.create(text='Test', case_sensitive=False),)
 
 if __name__ == "__main__":
-    test1_simple_then()
+    test_left_recursion()

@@ -3,14 +3,14 @@ from syncraft.parser import token
 
 from syncraft.walker import walk
 from syncraft.ast import Nothing
-from syncraft.syntax import lazy, literal
+from syncraft.syntax import lazy, literal, regex
 from syncraft.parser import parse
 from syncraft.generator import TokenGen
 
 from rich import print
 
 
-def test1() -> None:
+def test_recursion() -> None:
     A = literal('a')
     B = literal('b')
     L = lazy(lambda: literal("if") >> (A | B) // literal('then'))
@@ -34,10 +34,17 @@ def test1() -> None:
             TokenGen.from_string('b')
         )
 
-# def test_left_recursion()->None:
-#     Term = literal('n')
-#     Expr = lazy(lambda: Expr + literal('+') + Term | Term)
-#     v, s = parse(Expr, 'n+n+n', dialect='sqlite')
+def test_direct_left_recursion()->None:
+    Term = literal('n')
+    Expr = lazy(lambda: Expr + literal('+') + Term | Term)
+    v, s = parse(Expr, 'n+n+n', dialect='sqlite')
 
 
 
+def test_indirect_left_recursion()->None:
+    NUMBER = regex(r'\d+').map(int)
+    PLUS = token(text='+')
+    STAR = token(text='*')
+    A = lazy(lambda: (B >> PLUS >> A) | B)
+    B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
+    v, s = parse(A, '1 + 2 * 3', dialect='sqlite')

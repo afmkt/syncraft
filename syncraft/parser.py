@@ -206,9 +206,9 @@ def identifier(value: str | None = None) -> Syntax[Any, Any]:
         Syntax[Any, Any]: A syntax matching one identifier token.
     """
     if value is None:
-        return token(TokenType.IDENTIFIER)
+        return token(token_type=TokenType.IDENTIFIER)
     else:
-        return token(TokenType.IDENTIFIER, text=value)
+        return token(token_type=TokenType.IDENTIFIER, text=value)
 
 def variable(value: str | None = None) -> Syntax[Any, Any]:
     """Match a variable token, optionally with exact text.
@@ -220,19 +220,19 @@ def variable(value: str | None = None) -> Syntax[Any, Any]:
         Syntax[Any, Any]: A syntax matching one variable token.
     """
     if value is None:
-        return token(TokenType.VAR)
+        return token(token_type=TokenType.VAR)
     else:
-        return token(TokenType.VAR, text=value)
+        return token(token_type=TokenType.VAR, text=value)
 
 
 def number() -> Syntax[Any, Any]:
     """Match a number token."""
-    return token(TokenType.NUMBER)
+    return token(token_type=TokenType.NUMBER)
 
 
 def string() -> Syntax[Any, Any]:
     """Match a string literal token."""
-    return token(TokenType.STRING)
+    return token(token_type=TokenType.STRING)
 
 
 
