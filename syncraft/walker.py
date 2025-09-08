@@ -13,7 +13,7 @@ from syncraft.constraint import Bindable, FrozenDict
 
 import re
 from syncraft.syntax import Syntax
-from syncraft.cache import Cache
+from syncraft.cache import Cache, RecursionError
 from rich import print
 
 
@@ -23,16 +23,10 @@ B = TypeVar('B')
 SS = TypeVar('SS', bound=Hashable)
 
 
-
-
-
-
-
 @dataclass(frozen=True)
 class WalkerState(Bindable, Generic[SS]):
     reducer: Optional[Callable[[Any, SS], SS]] = None
     acc: Optional[SS] = None
-
 
     def reduce(self, value: Any) -> WalkerState[SS]:
         if self.reducer:
@@ -41,9 +35,6 @@ class WalkerState(Bindable, Generic[SS]):
         else:
             return replace(self, acc=value)
         
-
-
-
 
 @dataclass(frozen=True)
 class Walker(Algebra[SS, WalkerState[SS]]):
@@ -75,16 +66,19 @@ class Walker(Algebra[SS, WalkerState[SS]]):
              cache: Cache) -> Algebra[Any, WalkerState[SS]]:
         def algebra_lazy_run(input: WalkerState[SS], use_cache:bool) -> PyGenerator[Incomplete[WalkerState[SS]], WalkerState[SS], Either[Any, Tuple[Any, WalkerState[SS]]]]:
             alg = thunk()
-            print('--' * 20, "Walker.lazy.algebra_lazy_run", '--' * 20)
-            print('thunk', thunk, id(thunk))
-            print('input', input, id(input))
-            print('alg', alg, id(alg))
-            thunk_result = yield from alg.run(input, use_cache)
-            match thunk_result:
-                case Right((value, from_thunk)):
-                    data = LazySpec(value=value)
-                    return Right((data, from_thunk.reduce(data)))
-            raise SyncraftError("flat_map should always return a value or an error.", offending=thunk_result, expect=(Left, Right))
+            # print('--' * 20, "Walker.lazy.algebra_lazy_run", '--' * 20)
+            # print('thunk', thunk, id(thunk))
+            # print('input', input, id(input))
+            # print('alg', alg, id(alg))
+            try:
+                thunk_result = yield from alg.run(input, use_cache)
+                match thunk_result:
+                    case Right((value, from_thunk)):
+                        data: LazySpec[Any] = LazySpec(value=value)
+                        return Right((data, from_thunk.reduce(data)))
+                raise SyncraftError("flat_map should always return a value or an error.", offending=thunk_result, expect=(Left, Right))
+            except RecursionError as e:
+                return Right((LazySpec(value=None), input))
         return cls(algebra_lazy_run, name=cls.__name__ + '.lazy', cache=cache)
 
 
@@ -137,7 +131,17 @@ class Walker(Algebra[SS, WalkerState[SS]]):
 
 
 
-def walk(syntax: Syntax[Any, Any], reducer: Callable[[Any, Any], SS], init: SS)-> Tuple[Any, None | SS]:
+def walk(syntax: Syntax[Any, Any], reducer: Optional[Callable[[Any, Any], SS]] = None, init: Optional[SS] = None) -> Any:
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Walker, use_cache=False, reducer=reducer, init=init)
-    return v, s
+    v, s = run(syntax=syntax, 
+               alg=Walker, 
+               use_cache=True, 
+               reducer=reducer or (lambda a, s: s), 
+               init=init)
+    if reducer is None:
+        return v
+    else:
+        if s is not None:
+            return s.acc
+        else:
+            return None

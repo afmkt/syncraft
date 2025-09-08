@@ -11,10 +11,9 @@ from rich import print
 def test_mutual_recursion()->None:
     A = lazy(lambda: literal('a') + B)
     B = lazy(lambda: (literal('b') + A) | literal('c'))
-    print(parse(A, 'a b a b a c', dialect='sqlite'))
-    print(generate(A))
-
-    print(walk(A, lambda a, s: s, ()))
+    # print(parse(A, 'a b a b a c', dialect='sqlite'))
+    # print(generate(A))
+    print(walk(A))
 
 
 if __name__ == "__main__":

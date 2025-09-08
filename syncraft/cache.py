@@ -70,7 +70,7 @@ class Cache(Generic[Ret]):
         if key in c:
             v = c[key]
             if isinstance(v, InProgress):
-                raise RecursionError("Left-recursion detected in parser", offending=f, state=args)
+                raise RecursionError(f"Left-recursion detected in Algebra {f}", offending=f, state=args)
             else:
                 return v        
         try:
@@ -98,7 +98,7 @@ class Cache(Generic[Ret]):
         if key in c:
             v = c[key]
             if isinstance(v, InProgress):
-                raise RecursionError("Left-recursion detected in parser", offending=f, state=args)
+                raise RecursionError(f"Left-recursion detected in Algebra {f}", offending=f, state=args)
             else:
                 return v        
         try:

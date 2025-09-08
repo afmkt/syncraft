@@ -488,7 +488,7 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
 
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec, Generic[A]):
-    value: A
+    value: None | A
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
