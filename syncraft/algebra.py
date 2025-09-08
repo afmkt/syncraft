@@ -6,9 +6,10 @@ from typing import (
 
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError
-from syncraft.cache import Cache
+from syncraft.cache import Cache, LeftRecursionError
 from syncraft.constraint import Bindable
 from functools import cached_property
+import re
 from rich import print
 
 
@@ -104,7 +105,10 @@ class Algebra(Generic[A, S]):
         return self.run(input, use_cache=use_cache)
 
     def run(self, input: S, use_cache: bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-        return (yield from self.cache.gen(self.run_f, input, use_cache))
+        try:
+            return (yield from self.cache.gen(self.run_f, input, use_cache))
+        except LeftRecursionError as e:
+            raise e.push(self.name) 
         
 
     def as_(self, typ: Type[B])->B:
@@ -421,7 +425,13 @@ class Algebra(Generic[A, S]):
                             return Left(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offending=self_result, expect=(Left, Right))
-        return self.__class__(or_else_run, _name=f'{self.name} | {other.name}', cache=self.cache | other.cache)  # type: ignore
+        pattern = re.compile(r'\s')
+        self_name = self.name.strip() 
+        self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
+        other_name = other.name.strip()
+        other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
+        name = f"{self_name} | {other_name}"
+        return self.__class__(or_else_run, _name=name, cache=self.cache | other.cache)  # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         """Sequence two algebras and keep both values.
@@ -438,7 +448,14 @@ class Algebra(Generic[A, S]):
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
             return other.map(combine)
-        ret = self.flat_map(then_both_f).named(f'{self.name} + {other.name}')
+        pattern = re.compile(r'\s')
+        self_name = self.name.strip() 
+        self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
+        other_name = other.name.strip()
+        other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
+        name = f"{self_name} + {other_name}"
+        
+        ret = self.flat_map(then_both_f).named(name)
         return replace(ret, cache=self.cache | other.cache)  
 
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
@@ -456,7 +473,14 @@ class Algebra(Generic[A, S]):
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
             return other.map(combine)
-        ret = self.flat_map(then_left_f).named(f'{self.name} // {other.name}')
+        pattern = re.compile(r'\s')
+        self_name = self.name.strip() 
+        self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
+        other_name = other.name.strip()
+        other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
+        name = f"{self_name} // {other_name}"
+        
+        ret = self.flat_map(then_left_f).named(name)
         return replace(ret, cache=self.cache | other.cache)  
 
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
@@ -474,7 +498,14 @@ class Algebra(Generic[A, S]):
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
             return other.map(combine)
-        ret = self.flat_map(then_right_f).named(f'{self.name} >> {other.name}')
+        pattern = re.compile(r'\s')
+        self_name = self.name.strip() 
+        self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
+        other_name = other.name.strip()
+        other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
+        name = f"{self_name} >> {other_name}"
+        
+        ret = self.flat_map(then_right_f).named(name)
         return replace(ret, cache=self.cache | other.cache)  
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:

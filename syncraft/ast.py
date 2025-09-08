@@ -534,6 +534,17 @@ class TokenSpec(SyntaxSpec):
     case_sensitive: bool = False
     regex: Optional[re.Pattern[str]] = None
 
+    def simple_str(self) -> str:
+        parts = []
+        if self.token_type is not None:
+            parts.append(f"type={self.token_type.name}")
+        if self.text is not None:
+            parts.append(f"text={'`'+self.text+'`' if self.case_sensitive else self.text}")
+        if self.regex is not None:
+            parts.append(f"regex=/{self.regex.pattern}/")
+        return ", ".join(parts)
+
+
     def __repr__(self) -> str:
         parts = []
         if self.token_type is not None:

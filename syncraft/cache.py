@@ -1,14 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, overload, Literal
+from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, overload, Literal, List
 from weakref import WeakKeyDictionary
 from syncraft.ast import SyncraftError
 
 
-class RecursionError(SyncraftError):
+class LeftRecursionError(SyncraftError):
     def __init__(self, message: str, offending: Any, expect: Any = None, **kwargs: Any) -> None:
         super().__init__(message, offending, expect, **kwargs)
+        self.stack: List[str] = []
+
+    def push(self, name: str) -> LeftRecursionError:
+        self.stack.append(name)
+        return self
+    
+    def __repr__(self) -> str:
+        stack = "\n-> ".join(reversed(self.stack))
+        return f"{self.__class__.__name__}(\n{stack})"
+    
+
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 
 @dataclass(frozen=True)
@@ -43,49 +57,7 @@ class Cache(Generic[Ret]):
     def __or__(self, other: Cache[Any]) -> Cache[Any]:
         assert self.cache is other.cache, "There should be only one global cache"
         return self
-
-    @overload
-    def _execute(self, 
-                 f: Callable[..., Ret], 
-                 *args:Any, 
-                 is_gen: Literal[False], 
-                 **kwargs:Any) -> Ret: ...
-    @overload
-    def _execute(self, 
-                 f: Callable[..., Generator[Any, Any, Ret]], 
-                 *args: Any, 
-                 is_gen: Literal[True], 
-                 **kwargs: Any) -> Generator[Any, Any, Ret]: ...
-
-
-    def _execute(self, 
-            f: Callable[..., Any], 
-            *args: Any,
-            is_gen: bool,
-            **kwargs: Any) -> Ret | Generator[Any, Any, Ret]:
-        if f not in self.cache:
-            self.cache.setdefault(f, dict())
-        c: Dict[Hashable, Ret | InProgress] = self.cache[f]
-        key = (args, tuple(sorted(kwargs.items())))
-        if key in c:
-            v = c[key]
-            if isinstance(v, InProgress):
-                raise RecursionError(f"Left-recursion detected in Algebra {f}", offending=f, state=args)
-            else:
-                return v        
-        try:
-            c[key] = InProgress()
-            if is_gen:
-                result = yield from f(*args, **kwargs)
-            else:
-                result = f(*args, **kwargs)
-            c[key] = result
-            if kwargs.get('use_cache', True) is False:
-                c.pop(key, None)
-            return result
-        except Exception as e:
-            c.pop(key, None)
-            raise e
+    
         
     def gen(self, 
             f: Callable[..., Generator[Any, Any, Ret]], 
@@ -98,7 +70,7 @@ class Cache(Generic[Ret]):
         if key in c:
             v = c[key]
             if isinstance(v, InProgress):
-                raise RecursionError(f"Left-recursion detected in Algebra {f}", offending=f, state=args)
+                raise LeftRecursionError(f"Left-recursion detected in Algebra {f}", offending=f, state=args)
             else:
                 return v        
         try:
@@ -113,30 +85,5 @@ class Cache(Generic[Ret]):
             raise e
         
 
-    def call(self, 
-             f: Callable[..., Ret], 
-             *args:Any, 
-             **kwargs:Any) -> Ret:
-        if f not in self.cache:
-            self.cache.setdefault(f, dict())
-        c: Dict[Hashable, Ret | InProgress] = self.cache[f]
-        key = (tuple(filter(lambda x: not isinstance(x, Cache), args)), tuple(sorted(filter(lambda item: not isinstance(item[1], Cache), kwargs.items()))))
-        if key in c:
-            v = c[key]
-            if isinstance(v, InProgress):
-                raise RecursionError("Left-recursion detected in parser", offending=f, state=args)
-            else:
-                return v        
-        try:
-            c[key] = InProgress()
-            result = f(*args, **kwargs)
-            c[key] = result
-            if kwargs.get('use_cache', True) is False:
-                c.pop(key, None)
-            return result
-        except Exception as e:
-            c.pop(key, None)
-            raise e
-        
 
 

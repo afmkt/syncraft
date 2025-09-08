@@ -147,7 +147,7 @@ class Parser(Algebra[T, ParserState[T]]):
                         return Left(state)
                     else:
                         return Right((Token(token_type = token.token_type, text=token.text), state.advance()))  # type: ignore
-        captured: Algebra[T, ParserState[T]] = cls(token_run, _name=cls.__name__ + f'.token({token_type}, {text})', cache=cache)
+        captured: Algebra[T, ParserState[T]] = cls(token_run, _name=cls.__name__ + f'.token({spec.simple_str()})', cache=cache)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
                 return Error(message=f"Cannot match token at {err}", this=captured, state=err)            

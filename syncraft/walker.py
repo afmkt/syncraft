@@ -13,7 +13,7 @@ from syncraft.constraint import Bindable, FrozenDict
 
 import re
 from syncraft.syntax import Syntax
-from syncraft.cache import Cache, RecursionError
+from syncraft.cache import Cache, LeftRecursionError
 from rich import print
 
 
@@ -61,7 +61,7 @@ class Walker(Algebra[Any, WalkerState]):
                 ref = input.visited[self.hashable]
                 return Right((RefSpec(ref=id(ref), referent= '' if not hasattr(ref, 'name') else ref.name), input))
             return (yield from self.cache.gen(self.run_f, input, use_cache))
-        except RecursionError as e:
+        except LeftRecursionError as e:
             if self.hashable in input.visited:
                 ref = input.visited[self.hashable]
                 return Right((RefSpec(ref=id(ref), referent= '' if not hasattr(ref, 'name') else ref.name), input))
