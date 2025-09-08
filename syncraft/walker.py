@@ -83,7 +83,7 @@ class Walker(Algebra[Any, WalkerState]):
             yield from ()
             data = TokenSpec(token_type=token_type, text=text, regex=regex, case_sensitive=case_sensitive)
             return Right((data, input.visit(this, data) if this is not None else input))
-        this = cls(token_run, name=name, cache=cache)  
+        this = cls(token_run, _name=name, cache=cache)  
         return this
 
     @classmethod
@@ -100,7 +100,7 @@ class Walker(Algebra[Any, WalkerState]):
                     from_thunk = from_thunk.visit(alg, value) 
                     return Right((data, from_thunk.visit(this, data) if this is not None else from_thunk))
             raise SyncraftError("flat_map should always return a value or an error.", offending=thunk_result, expect=(Left, Right))
-        this = cls(algebra_lazy_run, name='lazy(?)', cache=cache)
+        this = cls(algebra_lazy_run, _name=lambda: f'lazy({this.name})' if this is not None else "lazy(?)", cache=cache)
         return this
 
 
@@ -118,7 +118,7 @@ class Walker(Algebra[Any, WalkerState]):
                             from_right = from_right.visit(other, result) 
                             return Right((data, from_right.visit(this, data) if this is not None else from_right))
             raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        this = self.__class__(then_run, name=name, cache=self.cache | other.cache) 
+        this = self.__class__(then_run, _name=name, cache=self.cache | other.cache) 
         return this
 
 
@@ -145,7 +145,7 @@ class Walker(Algebra[Any, WalkerState]):
                     from_self = from_self.visit(self, value)
                     return Right((data, from_self.visit(this, data) if this is not None else from_self))
             raise SyncraftError("many should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        this = self.__class__(many_run, name=self.name, cache=self.cache)  
+        this = self.__class__(many_run, _name=self.name, cache=self.cache)  
         return this
     
  
@@ -168,22 +168,12 @@ class Walker(Algebra[Any, WalkerState]):
                             from_right = from_right.visit(other, result) 
                             return Right((data, from_right.visit(this, data) if this is not None else from_right))
             raise SyncraftError("", offending=self)
-        this = self.__class__(or_else_run, name=name, cache=self.cache | other.cache) 
+        this = self.__class__(or_else_run, _name=name, cache=self.cache | other.cache) 
         return this
 
 
 
-def walk(syntax: Syntax[Any, Any], reducer: Optional[Callable[[Any, Any], SS]] = None, init: Optional[SS] = None) -> Any:
+def walk(syntax: Syntax[Any, Any]) -> Any:
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, 
-               alg=Walker, 
-               use_cache=True, 
-               reducer=reducer or (lambda a, s: s), 
-               init=init)
-    if reducer is None:
-        return v
-    else:
-        if s is not None:
-            return s.acc
-        else:
-            return None
+    v, s = run(syntax=syntax, alg=Walker, use_cache=True)
+    return v

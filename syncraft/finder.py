@@ -38,7 +38,7 @@ class Finder(Generator[T], Generic[T]):
         def anything_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]] ,GenState[T],Either[Any, Tuple[Any, GenState[T]]]]:
             yield from ()
             return Right((input.ast, input))
-        return cls(anything_run, name=cls.__name__ + '.anything', cache=cache)
+        return cls(anything_run, _name=cls.__name__ + '.anything', cache=cache)
 
 
 

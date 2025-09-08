@@ -16,6 +16,11 @@ def test_mutual_recursion()->None:
     B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER).named('B')
     print(walk(A))
 
+def test_direct_left_recursion()->None:
+    Term = literal('n')
+    Expr = lazy(lambda: Expr + literal('+') + Term | Term)
+    v, s = parse(Expr, 'n+n+n', dialect='sqlite')
+
 
 if __name__ == "__main__":
-    test_mutual_recursion()
+    test_direct_left_recursion()
