@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError
 from syncraft.cache import Cache
 from syncraft.constraint import Bindable
+from functools import cached_property
 from rich import print
 
 
@@ -76,16 +77,22 @@ class Error:
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, bool], Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]] 
-    name: Hashable
+    name: str
     cache: Cache[Either[Any, Tuple[A, S]]]
+    
 
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
         return None
         
-    def named(self, name: Hashable) -> 'Algebra[A, S]':
+    def named(self, name: str) -> Algebra[A, S]:
         return replace(self, name=name)
-        
+
+    @cached_property
+    def hashable(self)->Hashable:
+        return frozenset({'name': self.name, 'run_f': self.run_f})
+
+
     def __call__(self, input: S, use_cache: bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
         return self.run(input, use_cache=use_cache)
 
@@ -366,7 +373,7 @@ class Algebra(Generic[A, S]):
             def map_all_run_f(input:S, use_cache:bool) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right(f(a, input))
-            return self.__class__(map_all_run_f, name=self.name, cache=self.cache) # type: ignore
+            return self.__class__(map_all_run_f, name=self.name, cache=self.cache)  # type: ignore
         return self.flat_map(map_all_f)
 
 

@@ -9,10 +9,11 @@ from rich import print
 
 
 def test_mutual_recursion()->None:
-    A = lazy(lambda: literal('a') + B)
-    B = lazy(lambda: (literal('b') + A) | literal('c'))
-    # print(parse(A, 'a b a b a c', dialect='sqlite'))
-    # print(generate(A))
+    NUMBER = regex(r'\d+').map(int).named('NUMBER')
+    PLUS = token(text='+').named('PLUS')
+    STAR = token(text='*').named('STAR')
+    A = lazy(lambda: (B >> PLUS >> A) | B).named('A')
+    B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER).named('B')
     print(walk(A))
 
 

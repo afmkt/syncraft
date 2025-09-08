@@ -5,11 +5,11 @@ import re
 from typing import (
     Optional, Any, TypeVar, Tuple, runtime_checkable, cast,
     Generic, Callable, Union, Protocol, Type, List, ClassVar,
-    Dict
+    Dict, Hashable
 )
 
 
-from dataclasses import dataclass, replace, is_dataclass, fields
+from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
 
 
@@ -480,26 +480,51 @@ T = TypeVar('T', bound=TokenProtocol)
 
 @dataclass(frozen=True)
 class SyntaxSpec:
-    pass
-@dataclass(frozen=True)
-class ChoiceSpec(SyntaxSpec, Generic[A, B]):
-    left: A
-    right: B
+    id: int = field(init=False)
+    def __post_init__(self) -> None:
+        object.__setattr__(self, 'id', id(self))
 
 @dataclass(frozen=True)
+class RefSpec(SyntaxSpec, Generic[A]):
+    ref: int | A 
+    referent: str
+@dataclass(frozen=True)
 class LazySpec(SyntaxSpec, Generic[A]):
+    name: str
     value: None | A
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
+    name: str
     kind: ThenKind
     left: A
     right: B
+    # def __repr__(self) -> str:
+    #     return f"ThenSpec(id={id(self)}, kind={self.kind}, left={self.left}, right={self.right})"
+    # def __str__(self) -> str:
+    #     return self.__repr__()
+
+@dataclass(frozen=True)
+class ChoiceSpec(SyntaxSpec, Generic[A, B]):
+    name: str
+    left: A
+    right: B
+
+    # def __repr__(self) -> str:
+    #     return f"ChoiceSpec(id={id(self)}, left={self.left}, right={self.right})"
+    # def __str__(self) -> str:
+    #     return self.__repr__()
 
 @dataclass(frozen=True)
 class ManySpec(SyntaxSpec, Generic[A]):
+    name: str
     value: A
     at_least: int
     at_most: Optional[int]
+    # def __repr__(self) -> str:
+    #     return f"ManySpec(id={id(self)}, value={self.value}, at_least={self.at_least}, at_most={self.at_most})"
+    # def __str__(self) -> str:
+    #     return self.__repr__()
+
 
 
 @dataclass(frozen=True)
@@ -509,6 +534,19 @@ class TokenSpec(SyntaxSpec):
     case_sensitive: bool = False
     regex: Optional[re.Pattern[str]] = None
 
+    def __repr__(self) -> str:
+        parts = []
+        if self.token_type is not None:
+            parts.append(f"type={self.token_type.name}")
+        if self.text is not None:
+            parts.append(f"text={'`'+self.text+'`' if self.case_sensitive else self.text}")
+        if self.regex is not None:
+            parts.append(f"regex=/{self.regex.pattern}/")
+        return f"TokenSpec(id={id(self)}, " + ", ".join(parts) + ")"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
+    
     @classmethod
     def create(cls, 
                *, 

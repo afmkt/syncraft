@@ -107,7 +107,7 @@ class Syntax(Generic[A, S]):
         *,
         name: Optional[str] = None,
         fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
-        parameter: Optional[Tuple[Syntax[Any, S], ...]] = None,
+        parameter: Optional[Tuple[Syntax[Any, S] | Any, ...]] = None,
     ) -> Syntax[A, S]:
         return self.__class__(
             alg=self.alg,
@@ -116,7 +116,16 @@ class Syntax(Generic[A, S]):
             ),
         )
 
+    def named(self, name: str) -> Syntax[A, S]:
+        """Assign a name to this syntax node for better debugging output.
 
+        Args:
+            name: Name to assign; must be a valid identifier.
+
+        Returns:
+            Syntax with the given name.
+        """
+        return self.__class__(lambda cls, cache: self(cls, cache).named(name), meta=self.meta)
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
@@ -219,7 +228,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing nested Then with all parts.
         """
-        return left >> self // right
+        return (left >> self // right).describe(name='between', fixity='postfix', parameter=(self, left, right)) 
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
         """Parse one or more items separated by sep.
@@ -316,7 +325,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that marks downstream failures as committed.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).cut())
+        return self.__class__(lambda cls, cache: self(cls, cache).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
 
     ###################################################### operator overloading #############################################
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -433,7 +442,7 @@ class Syntax(Generic[A, S]):
             else:
                 return v, s
 
-        return self.map_all(bind_v).describe(name=f'bind({name})', fixity='postfix', parameter=(self,))
+        return self.map_all(bind_v).describe(name='bind', fixity='infix', parameter=(self, name))
 
     def to(self, f: Collector[E]) -> Syntax[Collect[A, E], S]:
         """Attach a collector to the produced value.
@@ -457,7 +466,7 @@ class Syntax(Generic[A, S]):
         def ito_f(c: Collect[A, E]) -> A:
             return c.value if isinstance(c, Collect) else c
 
-        return self.bimap(to_f, ito_f).describe(name=f'to({f})', fixity='postfix', parameter=(self,))
+        return self.bimap(to_f, ito_f).describe(name='to', fixity='infix', parameter=(self, f))
 
     def mark(self, name: str) -> Syntax[Marked[A], S]:
         """Mark the produced value with a name.
@@ -481,7 +490,7 @@ class Syntax(Generic[A, S]):
         def imark_s(m: Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m
 
-        return self.bimap(mark_s, imark_s).describe(name=f'mark("{name}")', fixity='postfix', parameter=(self,))
+        return self.bimap(mark_s, imark_s).describe(name='mark', fixity='infix', parameter=(self, name))
     
 def when(f: Callable[[], bool], then: Syntax[A, S], otherwise: Syntax[B, S]) -> Syntax[A | B, S]:
     """
@@ -495,7 +504,7 @@ def when(f: Callable[[], bool], then: Syntax[A, S], otherwise: Syntax[B, S]) -> 
     Returns:
         A Syntax object representing the chosen branch.
     """
-    return lazy(lambda: then if f() else otherwise).describe(name='when(?)', fixity='postfix', parameter=(then, otherwise)) # type: ignore
+    return lazy(lambda: then if f() else otherwise).describe(name='when', fixity='postfix', parameter=(then, otherwise)) # type: ignore
 
 def fail(error: Any) -> Syntax[Any, Any]:
     """
@@ -507,7 +516,7 @@ def fail(error: Any) -> Syntax[Any, Any]:
     Returns:
         A Syntax object that always fails.
     """
-    return Syntax(lambda alg, cache: alg.fail(error, cache=cache)).describe(name=f'fail({error})', fixity='prefix')
+    return Syntax(lambda alg, cache: alg.fail(error, cache=cache)).describe(name='fail', fixity='prefix', parameter=(error,))
 
 def success(value: Any) -> Syntax[Any, Any]:
     """
@@ -519,7 +528,7 @@ def success(value: Any) -> Syntax[Any, Any]:
     Returns:
         A Syntax object that always succeeds.
     """
-    return Syntax(lambda alg, cache: alg.success(value, cache=cache)).describe(name=f'success({value})', fixity='prefix')
+    return Syntax(lambda alg, cache: alg.success(value, cache=cache)).describe(name='success', fixity='prefix', parameter=(value,))
 
 
 
@@ -581,7 +590,7 @@ def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
             algebra = cls.lazy(algebra_lazy_f, cache=cache)
             previous_cls = cls
         return algebra
-    return Syntax(syntax_lazy_run).describe(name='lazy(?)', fixity='postfix') 
+    return Syntax(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))  
 
 
 
