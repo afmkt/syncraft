@@ -245,7 +245,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             Algebra[B, GenState[T]]: An algebra yielding the final result.
         """
         def flat_map_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[B, GenState[T]]]]:
-            if not isinstance(input.ast, Then) or isinstance(input.ast, Nothing):
+            if not input.pruned and (not isinstance(input.ast, Then) or isinstance(input.ast, Nothing)):
                 return Left(Error(this=self, 
                                     message=f"Expect Then got {input.ast}",
                                     state=input))

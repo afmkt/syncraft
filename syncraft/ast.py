@@ -491,6 +491,7 @@ class LazySpec(SyntaxSpec, Generic[A]):
     value: A
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
+    kind: ThenKind
     left: A
     right: B
 

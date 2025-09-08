@@ -30,8 +30,8 @@ Args = TypeVar('Args', bound=Hashable)
 Ret = TypeVar('Ret')
 
 @dataclass
-class Cache(Generic[Args, Ret]):
-    cache: WeakKeyDictionary[Callable[..., Any], Dict[Args, Ret | InProgress]] = field(default_factory=WeakKeyDictionary)
+class Cache(Generic[Ret]):
+    cache: WeakKeyDictionary[Callable[..., Any], Dict[Hashable, Ret | InProgress]] = field(default_factory=WeakKeyDictionary)
 
     def __contains__(self, f: Callable[..., Any]) -> bool:
         return f in self.cache
@@ -40,74 +40,103 @@ class Cache(Generic[Args, Ret]):
         return f"Cache({({f.__name__: list(c.keys()) for f, c in self.cache.items()})})"
 
 
-    def __or__(self, other: Cache[Args, Any]) -> Cache[Args, Any]:
+    def __or__(self, other: Cache[Any]) -> Cache[Any]:
         assert self.cache is other.cache, "There should be only one global cache"
-        if self.cache is other.cache:
-            return self
-        elif len(self.cache) == 0:
-            return other
-        elif len(other.cache) == 0:
-            return self
-        merged = Cache[Args, Ret]()
-        for f, c in self.cache.items():
-            merged.cache[f] = c.copy()
-        for f, c in other.cache.items():
-            merged.cache.setdefault(f, {}).update(c)
-        return merged
+        return self
 
     @overload
     def _execute(self, 
-                 f: Callable[[Args, bool], Ret], 
-                 args: Args, 
-                 use_cache: bool, 
-                 is_gen: Literal[False]) -> Ret: ...
+                 f: Callable[..., Ret], 
+                 *args:Any, 
+                 is_gen: Literal[False], 
+                 **kwargs:Any) -> Ret: ...
     @overload
     def _execute(self, 
-                 f: Callable[[Args, bool], Generator[Any, Any, Ret]], 
-                 args: Args, 
-                 use_cache: bool, 
-                 is_gen: Literal[True]) -> Generator[Any, Any, Ret]: ...
+                 f: Callable[..., Generator[Any, Any, Ret]], 
+                 *args: Any, 
+                 is_gen: Literal[True], 
+                 **kwargs: Any) -> Generator[Any, Any, Ret]: ...
 
 
     def _execute(self, 
-            f: Callable[[Args, bool], Any], 
-            args: Args, 
-            use_cache:bool,
-            is_gen: bool
-            ) -> Ret | Generator[Any, Any, Ret]:
+            f: Callable[..., Any], 
+            *args: Any,
+            is_gen: bool,
+            **kwargs: Any) -> Ret | Generator[Any, Any, Ret]:
         if f not in self.cache:
             self.cache.setdefault(f, dict())
-        c: Dict[Args, Ret | InProgress] = self.cache[f]
-        if args in c:
-            v = c[args]
+        c: Dict[Hashable, Ret | InProgress] = self.cache[f]
+        key = (args, tuple(sorted(kwargs.items())))
+        if key in c:
+            v = c[key]
             if isinstance(v, InProgress):
                 raise RecursionError("Left-recursion detected in parser", offending=f, state=args)
             else:
                 return v        
         try:
-            c[args] = InProgress()
+            c[key] = InProgress()
             if is_gen:
-                result = yield from f(args, use_cache)
+                result = yield from f(*args, **kwargs)
             else:
-                result = f(args, use_cache)
-            c[args] = result
-            if not use_cache:
-                c.pop(args, None)
+                result = f(*args, **kwargs)
+            c[key] = result
+            if kwargs.get('use_cache', True) is False:
+                c.pop(key, None)
             return result
         except Exception as e:
-            c.pop(args, None)  
+            c.pop(key, None)
             raise e
         
     def gen(self, 
-            f: Callable[[Args, bool], Generator[Any, Any, Ret]], 
-            args: Args, 
-            use_cache:bool) -> Generator[Any, Any, Ret]:
-        return (yield from self._execute(f, args, use_cache, is_gen=True)) 
+            f: Callable[..., Generator[Any, Any, Ret]], 
+            *args: Any, 
+            **kwargs: Any) -> Generator[Any, Any, Ret]:
+        if f not in self.cache:
+            self.cache.setdefault(f, dict())
+        c: Dict[Hashable, Ret | InProgress] = self.cache[f]
+        key = (tuple(filter(lambda x: not isinstance(x, Cache), args)), tuple(sorted(filter(lambda item: not isinstance(item[1], Cache), kwargs.items()))))        
+        if key in c:
+            v = c[key]
+            if isinstance(v, InProgress):
+                raise RecursionError("Left-recursion detected in parser", offending=f, state=args)
+            else:
+                return v        
+        try:
+            c[key] = InProgress()
+            result = yield from f(*args, **kwargs)
+            c[key] = result
+            if kwargs.get('use_cache', True) is False:
+                c.pop(key, None)
+            return result
+        except Exception as e:
+            c.pop(key, None)
+            raise e
+        
 
     def call(self, 
-            f: Callable[[Args, bool], Ret], 
-            args: Args, 
-            use_cache:bool) -> Ret:
-        return self._execute(f, args, use_cache, is_gen=False) 
+             f: Callable[..., Ret], 
+             *args:Any, 
+             **kwargs:Any) -> Ret:
+        if f not in self.cache:
+            self.cache.setdefault(f, dict())
+        c: Dict[Hashable, Ret | InProgress] = self.cache[f]
+        key = (tuple(filter(lambda x: not isinstance(x, Cache), args)), tuple(sorted(filter(lambda item: not isinstance(item[1], Cache), kwargs.items()))))
+        if key in c:
+            v = c[key]
+            if isinstance(v, InProgress):
+                raise RecursionError("Left-recursion detected in parser", offending=f, state=args)
+            else:
+                return v        
+        try:
+            c[key] = InProgress()
+            result = f(*args, **kwargs)
+            c[key] = result
+            if kwargs.get('use_cache', True) is False:
+                c.pop(key, None)
+            return result
+        except Exception as e:
+            c.pop(key, None)
+            raise e
+        
 
 

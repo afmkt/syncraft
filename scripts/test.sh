@@ -1,2 +1,3 @@
 #!/bin/sh
-pytest --nbval tests/
+pytest --profile --nbval tests/
+snakeviz prof/combined.prof

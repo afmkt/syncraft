@@ -122,18 +122,6 @@ class ParserState(Bindable, Generic[T]):
 class Parser(Algebra[T, ParserState[T]]):
     @classmethod
     def state(cls, sql: str, dialect: str) -> ParserState[T]: # type: ignore
-        """Tokenize SQL text into an initial ``ParserState``.
-
-        Uses ``sqlglot.tokenize`` for the given dialect and wraps tokens into
-        the project's ``Token`` type.
-
-        Args:
-            sql: The SQL text to tokenize.
-            dialect: The sqlglot dialect name (e.g. "sqlite", "duckdb").
-
-        Returns:
-            ParserState[T]: Initial parser state at index 0.
-        """
         tokens = tuple([Token(token_type=token.token_type, text=token.text) for token in tokenize(sql, dialect=dialect)])
         return ParserState.from_tokens(tokens)  # type: ignore
 
@@ -146,21 +134,6 @@ class Parser(Algebra[T, ParserState[T]]):
               case_sensitive: bool = False,
               regex: Optional[re.Pattern[str]] = None
               )-> Algebra[T, ParserState[T]]:
-        """Match a single token according to a specification.
-
-        Succeeds when the current token satisfies the provided
-        ``TokenSpec`` (by type, exact text, or regex). On failure,
-        an informative ``Error`` is produced with location context.
-
-        Args:
-            token_type: Expected enum type of the token.
-            text: Exact token text to match.
-            case_sensitive: Whether text matching is case sensitive.
-            regex: Regular expression pattern to match token text.
-
-        Returns:
-            Algebra[T, ParserState[T]]: An algebra yielding the matched token.
-        """
         spec = TokenSpec(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
         def token_run(state: ParserState[T], use_cache:bool) -> Generator[Incomplete[ParserState[T]],ParserState[T], Either[Any, Tuple[T, ParserState[T]]]]:
             while True:

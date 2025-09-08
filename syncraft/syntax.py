@@ -54,7 +54,7 @@ class Syntax(Generic[A, S]):
     """
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
     """
-    alg: Callable[[Type[Algebra[Any, Any]], Cache[Any, Any]], Algebra[A, S]]
+    alg: Callable[[Type[Algebra[Any, Any]], Cache[Any]], Algebra[A, S]]
     meta: Description = field(default_factory=Description, repr=False)
 
     def algebra(self, name: str | MethodType | FunctionType, *args: Any, **kwargs: Any) -> Syntax[A, S]:
@@ -71,7 +71,7 @@ class Syntax(Generic[A, S]):
         Returns:
             A new Syntax reflecting the transformed algebra.
         """
-        def algebra_run(cls: Type[Algebra[Any, S]], cache: Cache[Any, Any]) -> Algebra[Any, S]:
+        def algebra_run(cls: Type[Algebra[Any, S]], cache: Cache[Any]) -> Algebra[Any, S]:
             a = self(cls, cache)
             if isinstance(name, str):
                 attr = getattr(a, name, None) or getattr(cls, name, None)
@@ -97,7 +97,7 @@ class Syntax(Generic[A, S]):
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
 
-    def __call__(self, alg: Type[Algebra[Any, Any]], cache: Cache[Any, Any]) -> Algebra[A, S]:
+    def __call__(self, alg: Type[Algebra[Any, Any]], cache: Cache[Any]) -> Algebra[A, S]:
         return self.alg(alg, cache)
 
 
@@ -563,14 +563,23 @@ def run(*,
 
 def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
     algebra: Optional[Algebra[A, S]] = None
+    syntax: Optional[Syntax[A, S]] = None
+    previous_cls: Optional[Type[Algebra[Any, S]]] = None
     def syntax_lazy_run(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
-        nonlocal algebra
+        nonlocal algebra, syntax, previous_cls
         # print('==' * 20, 'Syntax.lazy.syntax_lazy_run', '==' * 20)
         # print('thunk', thunk, id(thunk))
         # print('syntax', syntax, id(syntax))
         # print('algebra', algebra, id(algebra))
-        if algebra is None:
-            algebra = cls.lazy(lambda: thunk()(cls, cache), cache=cache)
+        if syntax is None:
+            syntax = thunk()
+        def algebra_lazy_f():
+            if syntax is None:
+                raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
+            return syntax(cls, cache)
+        if algebra is None or (previous_cls is not None and previous_cls is not cls):
+            algebra = cls.lazy(algebra_lazy_f, cache=cache)
+            previous_cls = cls
         return algebra
     return Syntax(syntax_lazy_run).describe(name='lazy(?)', fixity='postfix') 
 

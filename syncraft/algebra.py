@@ -77,7 +77,7 @@ class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, bool], Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]] 
     name: Hashable
-    cache: Cache[ S, Either[Any, Tuple[A, S]] ]
+    cache: Cache[Either[Any, Tuple[A, S]]]
 
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
