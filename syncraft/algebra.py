@@ -108,7 +108,10 @@ class Algebra(Generic[A, S]):
         try:
             return (yield from self.cache.gen(self.run_f, input, use_cache))
         except LeftRecursionError as e:
-            raise e.push(self.name) 
+            if e.offending is self.run_f or len(e.stack) == 0:
+                raise e.push(f"\u25cf {self.name}")
+            else:
+                raise e.push(self.name) 
         
 
     def as_(self, typ: Type[B])->B:
@@ -131,7 +134,7 @@ class Algebra(Generic[A, S]):
                 name = alg.name if isinstance(alg.name, str) else alg.name()
             result = yield from alg.run(input, use_cache)
             return result
-        return cls(algebra_lazy_run, _name=lambda: f"{cls.__name__}.lazy({name})", cache=cache)
+        return cls(algebra_lazy_run, _name=lambda: f"{cls.__name__}.lazy({name if name is not None else '...'})", cache=cache)
     
     @classmethod
     def fail(cls, 

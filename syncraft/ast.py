@@ -498,10 +498,6 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: A
     right: B
-    # def __repr__(self) -> str:
-    #     return f"ThenSpec(id={id(self)}, kind={self.kind}, left={self.left}, right={self.right})"
-    # def __str__(self) -> str:
-    #     return self.__repr__()
 
 @dataclass(frozen=True)
 class ChoiceSpec(SyntaxSpec, Generic[A, B]):
@@ -509,21 +505,12 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     left: A
     right: B
 
-    # def __repr__(self) -> str:
-    #     return f"ChoiceSpec(id={id(self)}, left={self.left}, right={self.right})"
-    # def __str__(self) -> str:
-    #     return self.__repr__()
-
 @dataclass(frozen=True)
 class ManySpec(SyntaxSpec, Generic[A]):
     name: str
     value: A
     at_least: int
     at_most: Optional[int]
-    # def __repr__(self) -> str:
-    #     return f"ManySpec(id={id(self)}, value={self.value}, at_least={self.at_least}, at_most={self.at_most})"
-    # def __str__(self) -> str:
-    #     return self.__repr__()
 
 
 
