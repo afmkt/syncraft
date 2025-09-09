@@ -35,8 +35,7 @@ uv sync --group dev
 ```
 
 TODO
-- [ ] debug constraint.datalog
-- [ ] debug sqlite3
-- [ ] collect terminal from syntax and build PLY lexer
-- [ ] chunker
-- [ ] unify in find
+- [ ]  Lexer + push parsing (core infra).
+- [ ]  Visualization (railroad diagrams + AST).
+- [ ]  Interactive dev (Jupyter).
+- [ ]  Semantic layer (datalog + unification).
