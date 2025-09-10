@@ -88,10 +88,8 @@ class Regular(Algebra[NFA[C], RegularState]):
         this: None | Algebra[NFA[C], RegularState] = None
         def token_run(input: RegularState, use_cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[NFA[C], RegularState]]]:
             yield from ()
-            start: NFAState[C] = NFAState()
-            accept: NFAState[C] = NFAState()
-            data = NFA(start=start, accept=frozenset({accept}))
-            return Right((data, input.visit(this, data) if this is not None else input))
+            data = NFA.from_char(text)
+            return Right((data, input))
         this = cls(token_run, _name=name, cache=cache)  
         return this
 

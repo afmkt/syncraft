@@ -24,6 +24,9 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
         self._data = dict(*args, **kwargs)
         self._hash = None
 
+    def __bool__(self)->bool:
+        return bool(self._data)
+
     def __or__(self, other: collections.abc.Mapping) -> "FrozenDict[K, V]":
         """Return a new FrozenDict with merged keys (other overrides self)."""
         merged = dict(self._data)
