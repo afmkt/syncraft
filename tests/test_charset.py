@@ -17,7 +17,7 @@ def test_charset_basic_matches() -> None:
     assert cc("c")
     assert not cc("d")
     # interval should have one entry per distinct char, sorted
-    assert cc.interval() == tuple((ord(c), ord(c)) for c in "abc")
+    assert cc.interval == tuple((ord(c), ord(c)) for c in "abc")
 
 
 def test_charset_union_and_interval_merge() -> None:
@@ -26,34 +26,34 @@ def test_charset_union_and_interval_merge() -> None:
     c: CharClass[str] = CharClass.charset("C", universe=CodeUniverse.ASCII)
     merged = a | b | c  # contiguous -> single merged interval
     assert merged("A") and merged("B") and merged("C")
-    assert merged.interval() == ((ord("A"), ord("C")),)
+    assert merged.interval == ((ord("A"), ord("C")),)
 
     d: CharClass[str] = CharClass.charset("D", universe=CodeUniverse.ASCII)
     # gap between C and D? they are contiguous (C=67, D=68) so still merge
     merged2 = merged | d
-    assert merged2.interval() == ((ord("A"), ord("D")),)
+    assert merged2.interval == ((ord("A"), ord("D")),)
 
     # Non-contiguous example to ensure separation: 'A' and 'F'
     f: CharClass[str] = CharClass.charset("F", universe=CodeUniverse.ASCII)
     separate = a | f
-    assert separate.interval() == ((ord("A"), ord("A")), (ord("F"), ord("F")))
+    assert separate.interval == ((ord("A"), ord("A")), (ord("F"), ord("F")))
 
 
 def test_charset_intersection_difference() -> None:
     letters: CharClass[str] = CharClass.charset("ABCD", universe=CodeUniverse.ASCII)
     mid: CharClass[str] = CharClass.charset("BC", universe=CodeUniverse.ASCII)
     left = letters - mid
-    assert left.interval() == (
+    assert left.interval == (
         (ord("A"), ord("A")),
         (ord("D"), ord("D")),
     )
     inter = letters & mid
-    assert inter.interval() == (
+    assert inter.interval == (
         (ord("B"), ord("B")),
         (ord("C"), ord("C")),
     )
     empty = mid & CharClass.charset("Z", universe=CodeUniverse.ASCII)
-    assert empty.interval() == tuple()
+    assert empty.interval == tuple()
     assert not empty("B")
 
 
@@ -63,7 +63,7 @@ def test_charset_complement() -> None:
     assert not comp("A")
     assert comp("B")
     # Expect two intervals excluding 'A'
-    assert comp.interval() == ((0, ord("A") - 1), (ord("A") + 1, 0x7F))
+    assert comp.interval == ((0, ord("A") - 1), (ord("A") + 1, 0x7F))
 
 
 def test_charset_universe_mismatch() -> None:
@@ -81,7 +81,7 @@ def test_charset_bytes_mode() -> None:
     b1: CharClass[bytes] = CharClass.charset(b"\x00\x10\x20", universe=CodeUniverse.BYTE)
     assert b1(b"\x00")
     assert not b1(b"\x01")
-    assert b1.interval() == ((0x00, 0x00), (0x10, 0x10), (0x20, 0x20))
+    assert b1.interval == ((0x00, 0x00), (0x10, 0x10), (0x20, 0x20))
     comp = ~b1
     assert comp(b"\x01")
     assert not comp(b"\x10")
@@ -101,4 +101,4 @@ def test_charset_any() -> None:
     # spot check a few codepoints
     assert any_uni("A")
     assert any_uni("\u2603")  # snowman
-    assert any_uni.interval() == CodeUniverse.UNICODE.interval
+    assert any_uni.interval == CodeUniverse.UNICODE.interval

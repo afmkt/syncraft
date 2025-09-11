@@ -32,9 +32,10 @@ class CodeUniverse(Enum):
 @dataclass(frozen=True)
 class CharClass(Generic[C]):
     predicate: Callable[[int], bool]       
-    interval: Callable[[], Tuple[Tuple[int, int], ...]] 
+    interval: Tuple[Tuple[int, int], ...] 
     universe: CodeUniverse
     name: str
+
     @staticmethod
     def difference_interval(a: List[Tuple[int, int]], b: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
         result = []
@@ -96,7 +97,7 @@ class CharClass(Generic[C]):
         intv = tuple((c, c) for c in sorted(cs))
         return cls(
             predicate=lambda c: c in cs, 
-            interval=lambda: intv,
+            interval=intv,
             universe=universe,
             name=f"'{cs}'")
     
@@ -104,10 +105,22 @@ class CharClass(Generic[C]):
     def any(cls, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharClass[C]:
         return cls(
             predicate=lambda c: True, 
-            interval=lambda: universe.interval,
+            interval=universe.interval,
             universe=universe,
             name=".")
     
+    def matches_interval(self, cc: C) -> bool:
+        if len(cc) != 1:
+            raise CodepointError(f"Expected single character, got {cc!r}", offending=cc, expect="single character")
+        if isinstance(cc, str):
+            c = ord(cc)
+            return any(start <= c <= end for start, end in self.interval)
+        elif isinstance(cc, (bytes, bytearray)):
+            c = cc[0]
+            return any(start <= c <= end for start, end in self.interval)
+        else:
+            raise CodepointError(f"Expected str, bytes, or bytearray, got {type(c)}", offending=c, expect="str, bytes, or bytearray")
+
     def matches(self, c: C) -> bool:
         if len(c) != 1:
             raise CodepointError(f"Expected single character, got {c!r}", offending=c, expect="single character")
@@ -119,15 +132,29 @@ class CharClass(Generic[C]):
             raise CodepointError(f"Expected str, bytes, or bytearray, got {type(c)}", offending=c, expect="str, bytes, or bytearray")
         
     def __call__(self, c: C) -> bool:
+        assert self.matches(c) == self.matches_interval(c)
         return self.matches(c)
     
+    def __contains__(self, c: C) -> bool:
+        assert self.matches(c) == self.matches_interval(c)
+        return self.matches_interval(c)
+        
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CharClass):
+            return NotImplemented
+        return self.interval == other.interval and self.universe == other.universe
+
+    def __hash__(self) -> int:
+        return hash((self.interval, self.universe))
+
+
     def union(self, other: CharClass[C]) -> CharClass[C]:
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
-        intv = tuple(self.merge_intervals(list(self.interval()) + list(other.interval())))
+        intv = tuple(self.merge_intervals(list(self.interval) + list(other.interval)))
         return CharClass(
             lambda c: self.predicate(c) or other.predicate(c), 
-            lambda: intv,
+            intv,
             universe=self.universe,
             name=f"({self.name} | {other.name})")
     def __or__(self, other: CharClass[C]) -> CharClass[C]:
@@ -136,11 +163,11 @@ class CharClass(Generic[C]):
     def intersect(self, other: CharClass[C]) -> CharClass[C]:
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
-        intv = tuple(self.intersect_interval(list(self.interval()), list(other.interval())))
+        intv = tuple(self.intersect_interval(list(self.interval), list(other.interval)))
         
         return CharClass(
             lambda c: self.predicate(c) and other.predicate(c), 
-            lambda: intv,
+            intv,
             universe=self.universe,
             name=f"({self.name} & {other.name})")
     def __and__(self, other: CharClass[C]) -> CharClass[C]:
@@ -149,20 +176,20 @@ class CharClass(Generic[C]):
     def difference(self, other: CharClass[C]) -> CharClass[C]:
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
-        intv = tuple(self.difference_interval(list(self.interval()), list(other.interval())))
+        intv = tuple(self.difference_interval(list(self.interval), list(other.interval)))
         return CharClass(
             lambda c: self.predicate(c) and not other.predicate(c), 
-            lambda: intv,
+            intv,
             universe=self.universe,
             name=f"({self.name} - {other.name})")
     def __sub__(self, other: CharClass[C]) -> CharClass[C]:
         return self.difference(other)
     
     def complement(self) -> CharClass[C]:
-        intv = tuple(self.difference_interval(list(self.universe.interval), list(self.interval())))
+        intv = tuple(self.difference_interval(list(self.universe.interval), list(self.interval)))
         return CharClass(
             lambda c: not self.predicate(c), 
-            lambda: intv,
+            intv,
             universe=self.universe,
             name=f"~{self.name}")
     def __invert__(self) -> CharClass[C]:
