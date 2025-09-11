@@ -8,15 +8,13 @@ from syncraft.algebra import (
     SyncraftError
 )
 from syncraft.constraint import  FrozenDict
+from syncraft.charset import CharClass
 
 from rich import print
 
 
+
 C = TypeVar('C', bound=Hashable)
-
-
-    
-
 
 @dataclass(frozen=True)
 class NFAState(Generic[C]):
