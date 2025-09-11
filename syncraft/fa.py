@@ -374,33 +374,4 @@ class DFARunner(Runner[C, DFA[C]]):
     def tags(self, dfa: DFA[C]) -> frozenset[str]:
         return dfa.accept.get(self.current, frozenset())
 
-
-
-S = TypeVar('S', bound=Hashable)
-@dataclass(frozen=True)
-class FuncRunner(Runner[C, Callable[[C, Optional[S]], S]]):
-    current: Optional[S] = None 
-    @classmethod
-    def create(cls, a: Callable[[C, Optional[S]], S]) -> Self:
-        return cls(current=None, accepted=tuple())
-    
-    def step(self, a: Callable[[C, Optional[S]], S], symbol: C, pos: int) -> Self: 
-        new_current = a(symbol, self.current)
-        if new_current is not None:
-            new_accepted = self.accepted + ((pos, new_current, new_current),) if new_current is not None else self.accepted
-        else:
-            new_accepted = self.accepted
-        return replace(self, current=new_current, accepted=new_accepted)
-        
-    def is_accepted(self, a: Callable[[C, Optional[S]], S]) -> bool:
-        return self.current is not None
-    def is_valid(self) -> bool:
-        return True
-    def resumable(self, a: Callable[[C, Optional[S]], S]) -> frozenset[C]: 
-        return frozenset()  # cannot determine possible next inputs
-    def tags(self, a: Callable[[C, Optional[S]], S]) -> frozenset[str]: 
-        if self.accepted and self.accepted[0][2] is not None:
-            return frozenset({str(self.accepted[0][2])})  
-        else:   
-            return frozenset()
         
