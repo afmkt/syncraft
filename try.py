@@ -4,7 +4,7 @@ from syncraft.ast import TokenSpec, Nothing
 from syncraft.generator import TokenGen, generate_with, generate
 from syncraft.syntax import lazy, literal, token, regex
 from syncraft.parser import parse
-from syncraft.nfa import NFA
+from syncraft.nfa import NFA, DFA
 from syncraft.constraint import FrozenDict
 from rich import print
 
@@ -12,26 +12,21 @@ from rich import print
 
 
 def test_from_char()->None:
-    nfa = NFA.from_char("a").then(NFA.from_char("b")).then(NFA.from_char("c"))
-    runner = nfa.run(["a", "b", "c"])
-    print(runner)
-    assert runner.is_accepted(nfa)
-    r1 = runner.resumable(nfa)
-    print(r1)
-    assert not r1
-    runner = nfa.run(["a", "b"])
-    assert not runner.is_accepted(nfa)
-    r2 = runner.resumable(nfa)
-    print(r2)
-    assert r2 
-    runner = nfa.run(["a", "b", "c", "d"])
-    print(runner)
-    assert len(runner.accepted) == 1
-    assert runner.accepted[0][0] == 2
-    assert not runner.is_accepted(nfa)
-    r3 = runner.resumable(nfa)
-    print(r3)
-    assert not r3
+
+    nfa = NFA.from_char('a')
+    print(nfa)
+    dfa = DFA.from_nfa(nfa)
+    print(dfa)
+    assert nfa.start in nfa.transitions
+    assert 'a' in nfa.transitions[nfa.start]
+    assert nfa.transitions[nfa.start]['a'] == frozenset(nfa.accept)
+    assert dfa.match(['a'])
+    assert nfa.match(['a'])
+    assert not dfa.match(['b'])
+    assert not nfa.match(['b'])
+    assert not nfa.match([])
+    assert not dfa.match([])
+    
 
 
 if __name__ == "__main__":

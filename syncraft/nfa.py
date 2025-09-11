@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Hashable, Generic, Tuple, ClassVar, List, Set, Dict
+    TypeVar, Optional, Hashable, Generic, Tuple, ClassVar, Set, Protocol, Any, Self
 )
-from collections import deque
 from dataclasses import dataclass, field, replace
 from syncraft.algebra import (
     SyncraftError
@@ -15,42 +14,10 @@ from rich import print
 
 C = TypeVar('C', bound=Hashable)
 
-@dataclass(frozen=True)
-class DFA(Generic[C]):
-    start: frozenset[NFAState[C]]
-    accept: FrozenDict[frozenset[NFAState[C]], frozenset[str]] = field(default_factory=FrozenDict)
-    transitions: FrozenDict[frozenset[NFAState[C]], FrozenDict[C, frozenset[NFAState[C]]]] = field(default_factory=FrozenDict)
 
-    @classmethod
-    def from_nfa(cls, nfa: NFA[C]) -> DFA[C]:
-        start:frozenset[NFAState[C]] = nfa.closure({nfa.start})
-        reachable:FrozenDict[frozenset[NFAState[C]], FrozenDict[C, frozenset[NFAState[C]]]] = nfa.reachable(start)
-        accept: FrozenDict[frozenset[NFAState[C]], frozenset[str]] = FrozenDict({
-            state_set: frozenset(
-                tag for s in state_set if s in nfa.accept and nfa.accept[s] is not None
-                for tag in [nfa.accept[s]]  # unwrap Optional[str]
-            )
-            for state_set in reachable
-        })
-        return cls(start=frozenset(start), accept=FrozenDict(accept), transitions=reachable)
     
 
-    def resumable(self, states: frozenset[frozenset[NFAState[C]]]) -> FrozenDict[frozenset[NFAState[C]], frozenset[C]]:
-        """
-        Compute resumable symbols for each DFA state in `states`.
-        Returns a mapping: DFA state -> set of possible next symbols.
-        """
-        result: dict[frozenset[NFAState[C]], frozenset[C]] = {}
-        for dfa_state in states:
-            # Skip already accepting DFA states
-            if self.accept.get(dfa_state):
-                continue
-            # Outgoing symbols
-            next_syms = frozenset(self.transitions.get(dfa_state, {}).keys())
-            if next_syms:
-                result[dfa_state] = next_syms
-        return FrozenDict(result)
-    
+
 @dataclass(frozen=True)
 class NFAState(Generic[C]):
     _counter: ClassVar[int] = 0  # shared across all states
@@ -70,6 +37,8 @@ class NFAState(Generic[C]):
         return f"s{self.id}"        
 
 
+
+
 @dataclass(frozen=True)
 class NFA(Generic[C]):
     name: str
@@ -78,36 +47,6 @@ class NFA(Generic[C]):
     transitions: FrozenDict[NFAState[C], FrozenDict[C, frozenset[NFAState[C]]]] = field(default_factory=FrozenDict)
     epsilon: FrozenDict[NFAState[C], frozenset[NFAState[C]]] = field(default_factory=FrozenDict)
 
-    def reachable(self, start_states: frozenset[NFAState[C]] | set[NFAState[C]]) -> FrozenDict[frozenset[NFAState[C]], FrozenDict[C, frozenset[NFAState[C]]]]:
-        """
-        BFS-like traversal from start_states over NFA.
-        Returns a mapping:
-        frozenset of NFA states -> dict of symbol -> frozenset of NFA states
-        This captures all reachable sets along each symbol (with epsilon closure).
-        """
-        result: dict[frozenset[NFAState[C]], FrozenDict[C, frozenset[NFAState[C]]]] = {}
-        worklist: list[frozenset[NFAState[C]]] = [frozenset(start_states)]
-
-        while worklist:
-            states = worklist.pop()
-            if states in result:
-                continue
-
-            trans_map: dict[C, frozenset[NFAState[C]]] = {}
-            symbols = set()
-            for s in states:
-                symbols.update(self.transitions.get(s, {}).keys())
-
-            for sym in symbols:
-                next_states = set()
-                for s in states:
-                    next_states.update(self.transitions.get(s, {}).get(sym, frozenset()))
-                next_states = set(self.closure(next_states))
-                trans_map[sym] = frozenset(next_states)
-                if next_states and frozenset(next_states) not in result:
-                    worklist.append(frozenset(next_states))
-            result[states] = FrozenDict(trans_map)
-        return FrozenDict(result)
 
 
 
@@ -258,8 +197,18 @@ class NFA(Generic[C]):
         return nfa
 
 
+Automata = TypeVar('Automata', bound=Any, contravariant=True)
+class Runner(Protocol[C, Automata]):
+    def step(self, a: Automata, symbol: C, pos: int) -> Self: ...
+    def steps(self, a: Automata, input: list[C]) -> Self: ...
+    def is_accepted(self, a: Automata) -> bool: ...
+    def is_valid(self) -> bool: ...
+    def resumable(self, a: Automata) -> frozenset[C]: ...
+    def tags(self, a: Automata) -> frozenset[str]: ...
+
+
 @dataclass(frozen=True)
-class NFARunner(Generic[C]):
+class NFARunner(Runner[C, NFA[C]]):
     current: frozenset[NFAState[C]] = field(default_factory=frozenset)
     accepted: Tuple[Tuple[int, NFAState[C], Optional[str]], ...] = field(default_factory=tuple)
     @classmethod
@@ -281,61 +230,129 @@ class NFARunner(Generic[C]):
         runner = self
         for i, symbol in enumerate(input):
             runner = runner.step(nfa, symbol, i)
+            if not runner.is_valid():
+                break  # no valid transitions, stop early
         return replace(runner, accepted=tuple(sorted(runner.accepted, key=lambda x: x[0], reverse=True)))
 
 
     def is_accepted(self, nfa: NFA[C]) -> bool:
         return any(st in nfa.accept for st in self.current)
     
+    def is_valid(self) -> bool:
+        return bool(self.current)
+
+    def resumable(self, nfa: NFA[C]) -> frozenset[C]:
+        result: Set[C] = set()
+        for s in self.current:
+            result.update(nfa.transitions.get(s, {}).keys())
+        return frozenset(result)
+
+    def tags(self, nfa: NFA[C]) -> frozenset[str]:
+        tags: Set[str] = set()
+        for s in self.current:
+            if s in nfa.accept and nfa.accept[s] is not None:
+                tags.add(nfa.accept[s])  # unwrap Optional[str]
+        return frozenset(tags)
+
+
+
+DFAState = frozenset[NFAState[C]]
+@dataclass(frozen=True)
+class DFA(Generic[C]):
+    current: DFAState
+    accept: FrozenDict[DFAState, frozenset[str]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[DFAState, FrozenDict[C, DFAState]] = field(default_factory=FrozenDict)
+
+    @staticmethod
+    def reachable(nfa: NFA[C], start_states: frozenset[NFAState[C]] | set[NFAState[C]]) -> FrozenDict[frozenset[NFAState[C]], FrozenDict[C, frozenset[NFAState[C]]]]:
+        result: dict[frozenset[NFAState[C]], FrozenDict[C, frozenset[NFAState[C]]]] = {}
+        worklist: list[frozenset[NFAState[C]]] = [frozenset(start_states)]
+
+        while worklist:
+            states = worklist.pop()
+            if states in result:
+                continue
+
+            trans_map: dict[C, frozenset[NFAState[C]]] = {}
+            symbols = set()
+            for s in states:
+                symbols.update(nfa.transitions.get(s, {}).keys())
+
+            for sym in symbols:
+                next_states = set()
+                for s in states:
+                    next_states.update(nfa.transitions.get(s, {}).get(sym, frozenset()))
+                next_states = set(nfa.closure(next_states))
+                trans_map[sym] = frozenset(next_states)
+                if next_states and frozenset(next_states) not in result:
+                    worklist.append(frozenset(next_states))
+            result[states] = FrozenDict(trans_map)
+        return FrozenDict(result)
+
+
+
+    @classmethod
+    def from_nfa(cls, nfa: NFA[C]) -> DFA[C]:
+        current:DFAState = nfa.closure({nfa.start})
+        reachable:FrozenDict[DFAState, FrozenDict[C, DFAState]] = DFA.reachable(nfa, current)
+        accept: FrozenDict[DFAState, frozenset[str]] = FrozenDict({
+            state_set: frozenset(
+                nfa.accept[s]
+                for s in state_set
+                if s in nfa.accept and nfa.accept[s] is not None
+            )
+            for state_set in reachable
+            if any(s in nfa.accept for s in state_set)  # <-- only keep real accept states
+        })        
+        return cls(current=frozenset(current), accept=FrozenDict(accept), transitions=reachable)
     
 
-    def resumable(self, nfa: NFA[C]) -> FrozenDict[NFAState[C], tuple[int, frozenset[C]]]:
-        """
-        Compute resumable info for the current NFA runner:
-        - minimal distance to acceptance
-        - set of first symbols along minimal paths
-        """
-        result: dict[NFAState[C], tuple[int, frozenset[C]]] = {}
+    def run(self, input_seq: list[C]) -> DFARunner[C]:
+        return DFARunner.from_dfa(self).steps(self, input_seq)
 
-        for start in self.current:
-            if start in nfa.accept:
-                continue  # already accepting
+    def match(self, input_seq: list[C]) -> bool:
+        return self.run(input_seq).is_accepted(self)
 
-            # reachable sets for single start state
-            reachable = nfa.reachable({start})
 
-            # BFS structures
-            distances: dict[frozenset[NFAState[C]], int] = {frozenset({start}): 0}
-            first_symbols: dict[frozenset[NFAState[C]], set[C]] = {frozenset({start}): set()}
-            queue = deque([frozenset({start})])
 
-            while queue:
-                sset = queue.popleft()
-                d = distances[sset]
-                fsyms = first_symbols[sset]
+@dataclass(frozen=True)
+class DFARunner(Runner[C, DFA[C]]):
+    current: DFAState
+    accepted: Tuple[Tuple[int, DFAState, frozenset[str]], ...] = field(default_factory=tuple)
 
-                for sym, nxt_set in reachable.get(sset, {}).items():
-                    nxt_frozen = frozenset(nxt_set)
-                    fs = fsyms or {sym}
-                    if nxt_frozen not in distances or d + 1 < distances[nxt_frozen]:
-                        distances[nxt_frozen] = d + 1
-                        first_symbols[nxt_frozen] = fs
-                        queue.append(nxt_frozen)
-                    elif d + 1 == distances[nxt_frozen]:
-                        first_symbols[nxt_frozen].update(fs)
+    @classmethod
+    def from_dfa(cls, dfa: DFA[C]) -> DFARunner[C]:
+        current = dfa.current
+        return cls(current=current, accepted=tuple())
+    
+    def step(self, dfa: DFA[C], symbol: C, pos: int) -> DFARunner[C]:
+        new_current = dfa.transitions.get(self.current, {}).get(symbol, frozenset())
+        if not new_current:
+            return replace(self, current=new_current)
+        tags = dfa.accept.get(new_current, frozenset())
+        new_accepted = self.accepted + ((pos, new_current, tags),)
+        return self.__class__(current=new_current, accepted=new_accepted)
 
-            # extract minimal distance + first symbols for accepting states
-            min_dist = None
-            symbols: set[C] = set()
-            for sset, d in distances.items():
-                if any(s in nfa.accept for s in sset):
-                    if min_dist is None or d < min_dist:
-                        min_dist = d
-                        symbols = set(first_symbols[sset])
-                    elif d == min_dist:
-                        symbols.update(first_symbols[sset])
 
-            if min_dist is not None:
-                result[start] = (min_dist, frozenset(symbols))
+    def steps(self, dfa: DFA[C], input: list[C]) -> DFARunner[C]:
+        runner = self
+        for i, symbol in enumerate(input):
+            runner = runner.step(dfa, symbol, i)
+            if not runner.is_valid():
+                break  # no valid transitions, stop early
+        a = tuple(sorted(runner.accepted, key=lambda x: x[0], reverse=True))
+        ret = replace(runner, accepted=a)
+        return ret
 
-        return FrozenDict(result)
+
+    def is_accepted(self, dfa: DFA[C]) -> bool:
+        return self.current in dfa.accept
+
+    def is_valid(self) -> bool:
+        return bool(self.current)
+    
+    def resumable(self, dfa: DFA[C]) -> frozenset[C]:
+        return frozenset(dfa.transitions.get(self.current, {}).keys())
+
+    def tags(self, dfa: DFA[C]) -> frozenset[str]:
+        return dfa.accept.get(self.current, frozenset())
