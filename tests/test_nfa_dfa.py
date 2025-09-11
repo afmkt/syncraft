@@ -181,3 +181,15 @@ def test_runner()->None:
     print(r3)
     assert not r3
     assert not dr3
+
+def test_gen()->None:
+    nfa = NFA.from_char("a").then(NFA.from_char("b")).then(NFA.from_char("c"))
+    dfa = DFA.from_nfa(nfa)
+    r = nfa.runner()
+    dr = dfa.runner()
+
+    from_r = r.gen(nfa, 2)
+    from_dr = dr.gen(dfa, 2)
+
+    assert all([nfa.match(x[0]) for x in from_r])
+    assert all([dfa.match(x[0]) for x in from_dr])

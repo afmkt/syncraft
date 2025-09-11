@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Hashable, Generic, Tuple, ClassVar, Set, Protocol, Any, Self
+    TypeVar, Optional, Hashable, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List
 )
 from dataclasses import dataclass, field, replace
 from syncraft.algebra import (
@@ -47,9 +47,6 @@ class NFA(Generic[C]):
     transitions: FrozenDict[NFAState[C], FrozenDict[C, frozenset[NFAState[C]]]] = field(default_factory=FrozenDict)
     epsilon: FrozenDict[NFAState[C], frozenset[NFAState[C]]] = field(default_factory=FrozenDict)
 
-
-
-
     def clone(self) -> NFA[C]:
         state_map: dict[NFAState[C], NFAState[C]] = {}
         def get_clone(s: NFAState[C]) -> NFAState[C]:
@@ -92,8 +89,11 @@ class NFA(Generic[C]):
                     stack.append(next_state)
         return frozenset(closure)
     
+    def runner(self) -> NFARunner[C]:
+        return NFARunner.from_nfa(self)
+
     def run(self, input_seq: list[C]) -> NFARunner[C]:
-        return NFARunner.from_nfa(self).steps(self, input_seq)
+        return self.runner().steps(self, input_seq)
 
     def match(self, input_seq: list[C]) -> bool:
         return self.run(input_seq).is_accepted(self)
@@ -205,6 +205,32 @@ class Runner(Protocol[C, Automata]):
     def is_valid(self) -> bool: ...
     def resumable(self, a: Automata) -> frozenset[C]: ...
     def tags(self, a: Automata) -> frozenset[str]: ...
+    def gen(self, a: Automata, times: int = 1) -> List[Tuple[List[C], frozenset[str]]]: 
+        def gen_one(r: Self, a: Automata) -> Optional[Tuple[C, Self]]:
+            possible_steps = r.resumable(a)
+            if possible_steps:
+                import random
+                c = random.choice(list(possible_steps))
+                return c, r.step(a, c, 0)
+            else:
+                return None
+        ret = []
+        runner = self
+        for _ in range(times):
+            txt: List[C] = []
+            while runner.resumable(a):
+                match gen_one(runner, a):
+                    case None:
+                        break
+                    case (c, r):
+                        txt.append(c)
+                        runner = r
+                if runner.is_accepted(a):
+                    ret.append((txt, runner.tags(a)))
+                    import random
+                    if random.random() < 0.5:
+                        break
+        return ret
 
 
 @dataclass(frozen=True)
@@ -306,9 +332,11 @@ class DFA(Generic[C]):
         })        
         return cls(current=frozenset(current), accept=FrozenDict(accept), transitions=reachable)
     
+    def runner(self) -> DFARunner[C]:
+        return DFARunner.from_dfa(self)
 
     def run(self, input_seq: list[C]) -> DFARunner[C]:
-        return DFARunner.from_dfa(self).steps(self, input_seq)
+        return self.runner().steps(self, input_seq)
 
     def match(self, input_seq: list[C]) -> bool:
         return self.run(input_seq).is_accepted(self)
@@ -356,3 +384,4 @@ class DFARunner(Runner[C, DFA[C]]):
 
     def tags(self, dfa: DFA[C]) -> frozenset[str]:
         return dfa.accept.get(self.current, frozenset())
+

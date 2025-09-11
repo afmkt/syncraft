@@ -13,20 +13,17 @@ from rich import print
 
 def test_from_char()->None:
 
-    nfa = NFA.from_char('a')
-    print(nfa)
+    nfa = NFA.from_char("a").then(NFA.from_char("b")).then(NFA.from_char("c")).union(NFA.from_char("d")).then(NFA.from_char("e")).star()
     dfa = DFA.from_nfa(nfa)
-    print(dfa)
-    assert nfa.start in nfa.transitions
-    assert 'a' in nfa.transitions[nfa.start]
-    assert nfa.transitions[nfa.start]['a'] == frozenset(nfa.accept)
-    assert dfa.match(['a'])
-    assert nfa.match(['a'])
-    assert not dfa.match(['b'])
-    assert not nfa.match(['b'])
-    assert not nfa.match([])
-    assert not dfa.match([])
-    
+    r = nfa.runner()
+    dr = dfa.runner()
+
+    from_r = r.gen(nfa, 12)
+    from_dr = dr.gen(dfa, 12)
+
+    print(from_r)
+    print('---' * 20)
+    print(from_dr)    
 
 
 if __name__ == "__main__":
