@@ -12,9 +12,9 @@ def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)-
 def test_from_char()->None:
     nfa = NFA.from_char('a')
     dfa = DFA.from_nfa(nfa)
-    assert nfa.start in nfa.transitions
-    assert 'a' in nfa.transitions[nfa.start]
-    assert nfa.transitions[nfa.start]['a'] == frozenset(nfa.accept)
+    assert nfa.current in nfa.transitions
+    assert 'a' in nfa.transitions[nfa.current]
+    assert nfa.transitions[nfa.current]['a'] == frozenset(nfa.accept)
     assert_both(nfa, dfa, ['a'], True)
     assert_both(nfa, dfa, ['b'], False)
     assert_both(nfa, dfa, [], False)

@@ -17,7 +17,7 @@ class MixedUniverseError(SyncraftError):
 class CodepointError(SyncraftError):
     pass
 
-C = TypeVar('C', bound=str | bytes | bytearray)
+C = TypeVar('C', bound=str | bytes)
 
 
 class CodeUniverse(Enum):
@@ -92,7 +92,7 @@ class CharClass(Generic[C]):
         return merged
 
     @classmethod
-    def charset(cls, char: str | bytes | bytearray, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharClass[C]:
+    def create(cls, char: str | bytes, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharClass[C]:
         cs: frozenset[int] = frozenset(ord(x) if isinstance(x, str) else x for x in char)
         intv = tuple((c, c) for c in sorted(cs))
         return cls(
@@ -115,21 +115,21 @@ class CharClass(Generic[C]):
         if isinstance(cc, str):
             c = ord(cc)
             return any(start <= c <= end for start, end in self.interval)
-        elif isinstance(cc, (bytes, bytearray)):
+        elif isinstance(cc, bytes):
             c = cc[0]
             return any(start <= c <= end for start, end in self.interval)
         else:
-            raise CodepointError(f"Expected str, bytes, or bytearray, got {type(c)}", offending=c, expect="str, bytes, or bytearray")
+            raise CodepointError(f"Expected str, bytes, got {type(c)}", offending=c, expect="str, bytes")
 
     def matches(self, c: C) -> bool:
         if len(c) != 1:
             raise CodepointError(f"Expected single character, got {c!r}", offending=c, expect="single character")
         if isinstance(c, str):
             return self.predicate(ord(c))
-        elif isinstance(c, (bytes, bytearray)):
+        elif isinstance(c, bytes):
             return self.predicate(c[0])
         else:
-            raise CodepointError(f"Expected str, bytes, or bytearray, got {type(c)}", offending=c, expect="str, bytes, or bytearray")
+            raise CodepointError(f"Expected str, bytes, got {type(c)}", offending=c, expect="str, bytes")
         
     def __call__(self, c: C) -> bool:
         assert self.matches(c) == self.matches_interval(c)
