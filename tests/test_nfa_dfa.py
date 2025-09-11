@@ -1,5 +1,5 @@
 from __future__ import annotations
-from syncraft.nfa import NFA, DFA
+from syncraft.fa import NFA, DFA
 from syncraft.constraint import FrozenDict
 
 

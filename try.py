@@ -4,7 +4,7 @@ from syncraft.ast import TokenSpec, Nothing
 from syncraft.generator import TokenGen, generate_with, generate
 from syncraft.syntax import lazy, literal, token, regex
 from syncraft.parser import parse
-from syncraft.nfa import NFA, DFA
+from syncraft.fa import NFA, DFA
 from syncraft.constraint import FrozenDict
 from rich import print
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, Either, Right, Incomplete, Left, SyncraftError
 )
-from syncraft.nfa import NFA, NFAState
+from syncraft.fa import NFA, NFAState
 from syncraft.ast import TokenSpec, ThenSpec, ManySpec, ChoiceSpec, ThenKind
 from syncraft.parser import TokenType
 from syncraft.constraint import Bindable, FrozenDict
