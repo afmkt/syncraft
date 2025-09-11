@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Hashable, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List
+    TypeVar, Optional, Hashable, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable
 )
 from dataclasses import dataclass, field, replace
 from syncraft.algebra import (
@@ -90,7 +90,7 @@ class NFA(Generic[C]):
         return frozenset(closure)
     
     def runner(self) -> NFARunner[C]:
-        return NFARunner.from_nfa(self)
+        return NFARunner.create(self)
 
     def run(self, input_seq: list[C]) -> NFARunner[C]:
         return self.runner().steps(self, input_seq)
@@ -197,89 +197,6 @@ class NFA(Generic[C]):
         return nfa
 
 
-Automata = TypeVar('Automata', bound=Any, contravariant=True)
-class Runner(Protocol[C, Automata]):
-    def step(self, a: Automata, symbol: C, pos: int) -> Self: ...
-    def steps(self, a: Automata, input: list[C]) -> Self: ...
-    def is_accepted(self, a: Automata) -> bool: ...
-    def is_valid(self) -> bool: ...
-    def resumable(self, a: Automata) -> frozenset[C]: ...
-    def tags(self, a: Automata) -> frozenset[str]: ...
-    def gen(self, a: Automata, times: int = 1) -> List[Tuple[List[C], frozenset[str]]]: 
-        def gen_one(r: Self, a: Automata) -> Optional[Tuple[C, Self]]:
-            possible_steps = r.resumable(a)
-            if possible_steps:
-                import random
-                c = random.choice(list(possible_steps))
-                return c, r.step(a, c, 0)
-            else:
-                return None
-        ret = []
-        runner = self
-        for _ in range(times):
-            txt: List[C] = []
-            while runner.resumable(a):
-                match gen_one(runner, a):
-                    case None:
-                        break
-                    case (c, r):
-                        txt.append(c)
-                        runner = r
-                if runner.is_accepted(a):
-                    ret.append((txt, runner.tags(a)))
-                    import random
-                    if random.random() < 0.5:
-                        break
-        return ret
-
-
-@dataclass(frozen=True)
-class NFARunner(Runner[C, NFA[C]]):
-    current: frozenset[NFAState[C]] = field(default_factory=frozenset)
-    accepted: Tuple[Tuple[int, NFAState[C], Optional[str]], ...] = field(default_factory=tuple)
-    @classmethod
-    def from_nfa(cls, nfa: NFA[C]) -> NFARunner[C]:
-        current = nfa.closure({nfa.start})
-        return cls(current=frozenset(current), accepted=tuple())
-    
-    def step(self, nfa: NFA[C], symbol: C, pos: int) -> NFARunner[C]:
-        next_states = set()
-        for s in self.current:
-            for tgt in nfa.transitions.get(s, {}).get(symbol, frozenset()):
-                next_states.add(tgt)
-        new_current = nfa.closure(next_states)
-        new_accepted = self.accepted + tuple(((pos, a, tag) for a, tag in nfa.accept.items() if a in new_current))
-        return NFARunner(current=frozenset(new_current), accepted=new_accepted)
-
-
-    def steps(self, nfa: NFA[C], input: list[C]) -> NFARunner[C]:
-        runner = self
-        for i, symbol in enumerate(input):
-            runner = runner.step(nfa, symbol, i)
-            if not runner.is_valid():
-                break  # no valid transitions, stop early
-        return replace(runner, accepted=tuple(sorted(runner.accepted, key=lambda x: x[0], reverse=True)))
-
-
-    def is_accepted(self, nfa: NFA[C]) -> bool:
-        return any(st in nfa.accept for st in self.current)
-    
-    def is_valid(self) -> bool:
-        return bool(self.current)
-
-    def resumable(self, nfa: NFA[C]) -> frozenset[C]:
-        result: Set[C] = set()
-        for s in self.current:
-            result.update(nfa.transitions.get(s, {}).keys())
-        return frozenset(result)
-
-    def tags(self, nfa: NFA[C]) -> frozenset[str]:
-        tags: Set[str] = set()
-        for s in self.current:
-            if s in nfa.accept and nfa.accept[s] is not None:
-                tags.add(nfa.accept[s])  # unwrap Optional[str]
-        return frozenset(tags)
-
 
 
 DFAState = frozenset[NFAState[C]]
@@ -333,7 +250,7 @@ class DFA(Generic[C]):
         return cls(current=frozenset(current), accept=FrozenDict(accept), transitions=reachable)
     
     def runner(self) -> DFARunner[C]:
-        return DFARunner.from_dfa(self)
+        return DFARunner.create(self)
 
     def run(self, input_seq: list[C]) -> DFARunner[C]:
         return self.runner().steps(self, input_seq)
@@ -343,13 +260,97 @@ class DFA(Generic[C]):
 
 
 
+
+Automata = TypeVar('Automata', bound=Any, contravariant=True)
+@dataclass(frozen=True)
+class Runner(Protocol[C, Automata]):
+    accepted: Tuple[Tuple[int, Any, Any], ...] = field(default_factory=tuple)
+    @classmethod
+    def create(cls, a: Automata) -> Self: ...
+    def step(self, a: Automata, symbol: C, pos: int) -> Self: ...
+    def steps(self, fa: Automata, input: list[C]) -> Self:
+        runner = self
+        for i, symbol in enumerate(input):
+            runner = runner.step(fa, symbol, i)
+            if not runner.is_valid():
+                break  # no valid transitions, stop early
+        return replace(runner, accepted=tuple(sorted(runner.accepted, key=lambda x: x[0], reverse=True)))
+
+    def is_accepted(self, a: Automata) -> bool: ...
+    def is_valid(self) -> bool: ...
+    def resumable(self, a: Automata) -> frozenset[C]: ...
+    def tags(self, a: Automata) -> frozenset[str]: ...
+    def gen(self, a: Automata, times: int = 1) -> List[Tuple[List[C], frozenset[str]]]: 
+        def gen_one(r: Self, a: Automata) -> Optional[Tuple[C, Self]]:
+            possible_steps = r.resumable(a)
+            if possible_steps:
+                import random
+                c = random.choice(list(possible_steps))
+                return c, r.step(a, c, 0)
+            else:
+                return None
+        ret = []
+        runner = self
+        for _ in range(times):
+            txt: List[C] = []
+            while runner.resumable(a):
+                match gen_one(runner, a):
+                    case None:
+                        break
+                    case (c, r):
+                        txt.append(c)
+                        runner = r
+                if runner.is_accepted(a):
+                    ret.append((txt, runner.tags(a)))
+                    import random
+                    if random.random() < 0.5:
+                        break
+        return ret
+
+
+@dataclass(frozen=True)
+class NFARunner(Runner[C, NFA[C]]):
+    current: frozenset[NFAState[C]] = field(default_factory=frozenset)
+    @classmethod
+    def create(cls, nfa: NFA[C]) -> NFARunner[C]:
+        current = nfa.closure({nfa.start})
+        return cls(current=frozenset(current), accepted=tuple())
+    
+    def step(self, nfa: NFA[C], symbol: C, pos: int) -> NFARunner[C]:
+        next_states = set()
+        for s in self.current:
+            for tgt in nfa.transitions.get(s, {}).get(symbol, frozenset()):
+                next_states.add(tgt)
+        new_current = nfa.closure(next_states)
+        new_accepted = self.accepted + tuple(((pos, a, tag) for a, tag in nfa.accept.items() if a in new_current))
+        return NFARunner(current=frozenset(new_current), accepted=new_accepted)
+    
+    def is_accepted(self, nfa: NFA[C]) -> bool:
+        return any(st in nfa.accept for st in self.current)
+    
+    def is_valid(self) -> bool:
+        return bool(self.current)
+
+    def resumable(self, nfa: NFA[C]) -> frozenset[C]:
+        result: Set[C] = set()
+        for s in self.current:
+            result.update(nfa.transitions.get(s, {}).keys())
+        return frozenset(result)
+
+    def tags(self, nfa: NFA[C]) -> frozenset[str]:
+        tags: Set[str] = set()
+        for s in self.current:
+            if s in nfa.accept and nfa.accept[s] is not None:
+                tags.add(nfa.accept[s])  # unwrap Optional[str]
+        return frozenset(tags)
+    
+
 @dataclass(frozen=True)
 class DFARunner(Runner[C, DFA[C]]):
-    current: DFAState
-    accepted: Tuple[Tuple[int, DFAState, frozenset[str]], ...] = field(default_factory=tuple)
+    current: DFAState = field(default_factory=frozenset)
 
     @classmethod
-    def from_dfa(cls, dfa: DFA[C]) -> DFARunner[C]:
+    def create(cls, dfa: DFA[C]) -> DFARunner[C]:
         current = dfa.current
         return cls(current=current, accepted=tuple())
     
@@ -360,18 +361,6 @@ class DFARunner(Runner[C, DFA[C]]):
         tags = dfa.accept.get(new_current, frozenset())
         new_accepted = self.accepted + ((pos, new_current, tags),)
         return self.__class__(current=new_current, accepted=new_accepted)
-
-
-    def steps(self, dfa: DFA[C], input: list[C]) -> DFARunner[C]:
-        runner = self
-        for i, symbol in enumerate(input):
-            runner = runner.step(dfa, symbol, i)
-            if not runner.is_valid():
-                break  # no valid transitions, stop early
-        a = tuple(sorted(runner.accepted, key=lambda x: x[0], reverse=True))
-        ret = replace(runner, accepted=a)
-        return ret
-
 
     def is_accepted(self, dfa: DFA[C]) -> bool:
         return self.current in dfa.accept
@@ -385,3 +374,33 @@ class DFARunner(Runner[C, DFA[C]]):
     def tags(self, dfa: DFA[C]) -> frozenset[str]:
         return dfa.accept.get(self.current, frozenset())
 
+
+
+S = TypeVar('S', bound=Hashable)
+@dataclass(frozen=True)
+class FuncRunner(Runner[C, Callable[[C, Optional[S]], S]]):
+    current: Optional[S] = None 
+    @classmethod
+    def create(cls, a: Callable[[C, Optional[S]], S]) -> Self:
+        return cls(current=None, accepted=tuple())
+    
+    def step(self, a: Callable[[C, Optional[S]], S], symbol: C, pos: int) -> Self: 
+        new_current = a(symbol, self.current)
+        if new_current is not None:
+            new_accepted = self.accepted + ((pos, new_current, new_current),) if new_current is not None else self.accepted
+        else:
+            new_accepted = self.accepted
+        return replace(self, current=new_current, accepted=new_accepted)
+        
+    def is_accepted(self, a: Callable[[C, Optional[S]], S]) -> bool:
+        return self.current is not None
+    def is_valid(self) -> bool:
+        return True
+    def resumable(self, a: Callable[[C, Optional[S]], S]) -> frozenset[C]: 
+        return frozenset()  # cannot determine possible next inputs
+    def tags(self, a: Callable[[C, Optional[S]], S]) -> frozenset[str]: 
+        if self.accepted and self.accepted[0][2] is not None:
+            return frozenset({str(self.accepted[0][2])})  
+        else:   
+            return frozenset()
+        

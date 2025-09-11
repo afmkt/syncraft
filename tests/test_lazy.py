@@ -12,9 +12,9 @@ from rich import print
 def test_simple_recursion()->None:
     A = lazy(lambda: literal('a') + ~A | literal('a'))
     v, s = parse(A, 'a a a', dialect='sqlite')
-    print(v)
+    # print(v)
     ast1, inv = v.bimap()
-    print(ast1)
+    # print(ast1)
     assert ast1 == (
         TokenGen.from_string('a'), 
         (
@@ -25,9 +25,9 @@ def test_simple_recursion()->None:
             )
         )
     )
-    print(v)
-    print(ast1)    
-    print(inv(ast1))
+    # print(v)
+    # print(ast1)    
+    # print(inv(ast1))
     x, y = inv(ast1).bimap()
     assert x == ast1
 
@@ -55,10 +55,10 @@ def test_mutual_recursion()->None:
     A = lazy(lambda: literal('a') + B)
     B = lazy(lambda: (literal('b') + A) | (literal('c')))
     v, s = parse(A, 'a b a b a c', dialect='sqlite')
-    print('--' * 20, "test_mutual_recursion", '--' * 20)
-    print(v)
+    # print('--' * 20, "test_mutual_recursion", '--' * 20)
+    # print(v)
     ast1, inv = v.bimap()
-    print(ast1)
+    # print(ast1)
     assert ast1 == (
         TokenGen.from_string('a'), 
         (
@@ -72,9 +72,9 @@ def test_mutual_recursion()->None:
         )
     )
 
-    print(v)
-    print(ast1)    
-    print(inv(ast1))
+    # print(v)
+    # print(ast1)    
+    # print(inv(ast1))
     x, y = inv(ast1).bimap()
     assert x == ast1
 
@@ -103,9 +103,9 @@ def test_recursion() -> None:
             ), 
             TokenGen.from_string('b')
         )
-    print(v)
-    print(ast1)    
-    print(inv(ast1))
+    # print(v)
+    # print(ast1)    
+    # print(inv(ast1))
     x, y = inv(ast1).bimap()
     assert x == ast1
 

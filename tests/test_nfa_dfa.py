@@ -152,12 +152,12 @@ def test_runner()->None:
     dfa = DFA.from_nfa(nfa)
     runner = nfa.run(["a", "b", "c"])
     drunner = dfa.run(["a", "b", "c"])
-    print(runner)
+    # print(runner)
     assert runner.is_accepted(nfa)
     assert drunner.is_accepted(dfa)
     r1 = runner.resumable(nfa)
     dr1 = drunner.resumable(dfa)
-    print(r1)
+    # print(r1)
     assert not r1
     assert not dr1
     runner = nfa.run(["a", "b"])
@@ -166,19 +166,19 @@ def test_runner()->None:
     assert not drunner.is_accepted(dfa)
     dr2 = drunner.resumable(dfa)
     r2 = runner.resumable(nfa)
-    print(r2)
+    # print(r2)
     assert r2 
     assert dr2
     runner = nfa.run(["a", "b", "c", "d"])
     drunner = dfa.run(["a", "b", "c", "d"])
-    print(runner)
+    # print(runner)
     assert len(runner.accepted) == 1
     assert runner.accepted[0][0] == 2
     assert not runner.is_accepted(nfa)
     assert not drunner.is_accepted(dfa)
     dr3 = drunner.resumable(dfa)
     r3 = runner.resumable(nfa)
-    print(r3)
+    # print(r3)
     assert not r3
     assert not dr3
 

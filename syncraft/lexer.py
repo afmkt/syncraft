@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Tuple, Generator as PyGenerator, TypeVar, Optional, Callable, Hashable, Dict, Set, Generic
+    Any, Tuple, Generator as PyGenerator, TypeVar, Optional, Callable, Hashable, Dict, Set, Generic, List
 )
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
@@ -13,11 +13,25 @@ from syncraft.parser import TokenType
 from syncraft.constraint import Bindable, FrozenDict
 from syncraft.cache import Cache
 import re
+import io
 from syncraft.syntax import Syntax
 
 from rich import print
 
 C = TypeVar('C', bound=Hashable)
+
+
+class BaseLexer:
+    def __init__(self,  stream: io.IOBase):
+        self.stream: io.IOBase = stream
+        self.buffer: List[Any] = []
+        self.position = 0
+
+
+
+
+
+
 class RecursionNotSupportedError(SyncraftError):
     pass
 

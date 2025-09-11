@@ -45,4 +45,4 @@ def test_find()->None:
             // ~END).to(While)
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
     ast, bound = parse(syntax, sql, dialect='sqlite')
-    print(ast)
+    # print(ast)
