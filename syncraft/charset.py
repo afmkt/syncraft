@@ -144,6 +144,14 @@ class CharSet(Generic[C]):
             universe=universe,
             name=".")
     
+    @classmethod
+    def none(cls, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
+        return cls(
+            predicate=lambda c: False, 
+            interval=tuple(),
+            universe=universe,
+            name="∅")
+
     def sample(self, rnd: random.Random) -> C:
         range = rnd.choice(self.interval)
         point = rnd.randint(range[0], range[1])
@@ -198,6 +206,12 @@ class CharSet(Generic[C]):
 
 
     def union(self, other: CharSet[C]) -> CharSet[C]:
+        if self is other:
+            return self
+        if self.interval == ():
+            return other
+        if other.interval == ():
+            return self
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
         intv = tuple(self.merge_intervals(list(self.interval) + list(other.interval)))
@@ -210,6 +224,12 @@ class CharSet(Generic[C]):
         return self.union(other)
     
     def intersect(self, other: CharSet[C]) -> CharSet[C]:
+        if self is other:
+            return self
+        if self.interval == ():
+            return self
+        if other.interval == ():
+            return other
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
         intv = tuple(self.intersect_interval(list(self.interval), list(other.interval)))
@@ -223,6 +243,12 @@ class CharSet(Generic[C]):
         return self.intersect(other)
 
     def difference(self, other: CharSet[C]) -> CharSet[C]:
+        if self is other:
+            return CharSet.none(universe=self.universe)
+        if self.interval == ():
+            return self
+        if other.interval == ():
+            return self
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
         intv = tuple(self.difference_interval(list(self.interval), list(other.interval)))
@@ -235,6 +261,8 @@ class CharSet(Generic[C]):
         return self.difference(other)
     
     def complement(self) -> CharSet[C]:
+        if self.interval == ():
+            return CharSet.any(universe=self.universe)
         intv = tuple(self.difference_interval(list(self.universe.interval), list(self.interval)))
         return CharSet(
             lambda c: not self.predicate(c), 
