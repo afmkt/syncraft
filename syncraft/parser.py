@@ -13,7 +13,7 @@ from syncraft.algebra import (
 from dataclasses import dataclass, field, replace
 from enum import Enum
 
-from syncraft.syntax import Syntax, token
+from syncraft.syntax import Syntax
 
 from syncraft.ast import Token, TokenSpec, AST, TokenProtocol, SyncraftError
 from syncraft.constraint import Bindable
@@ -134,18 +134,18 @@ class Parser(Algebra[T, ParserState[T]]):
               regex: Optional[re.Pattern[str]] = None
               )-> Algebra[T, ParserState[T]]:
         spec = TokenSpec(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
-        def token_run(state: ParserState[T], use_cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[Incomplete[ParserState[T]], ParserState[T], Either[Any, Tuple[T, ParserState[T]]]]:
+        def token_run(state: ParserState[T], cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[Incomplete[ParserState[T]], ParserState[T], Either[Any, Tuple[T, ParserState[T]]]]:
             while True:
                 if state.ended():
-                    return (yield from use_cache.return_value(Left(state)))
+                    return (yield from cache.return_value(Left(state)))
                 elif state.pending():
                     state = yield Incomplete(state)
                 else:
                     token = state.current()
                     if token is None or not spec.is_valid(token):
-                        return (yield from use_cache.return_value(Left(state)))
+                        return (yield from cache.return_value(Left(state)))
                     else:
-                        return (yield from use_cache.return_value(Right((Token(token_type = token.token_type, text=token.text), state.advance()))))
+                        return (yield from cache.return_value(Right((Token(token_type = token.token_type, text=token.text), state.advance()))))
         captured: Algebra[T, ParserState[T]] = cls(token_run, _name=cls.__name__ + f'.token({spec.simple_str()})')
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
@@ -216,6 +216,63 @@ def number() -> Syntax[Any, Any]:
 def string() -> Syntax[Any, Any]:
     """Match a string literal token."""
     return token(token_type=TokenType.STRING)
+
+
+def token(*,
+          text: Optional[str] = None, 
+          token_type: Optional[Enum] = None,           
+          case_sensitive: bool = False,
+          regex: Optional[re.Pattern[str]] = None
+          ) -> Syntax[Any, Any]:
+    """Build a ``Syntax`` that matches a single token.
+
+    Convenience wrapper around ``Parser.token``. You can match by
+    type, exact text, or regex.
+
+    Args:
+        token_type: Expected token enum type.
+        text: Exact token text to match.
+        case_sensitive: Whether text matching respects case.
+        regex: Pattern to match token text.
+
+    Returns:
+        Syntax[Any, Any]: A syntax that matches one token.
+    """
+    token_type_txt = token_type.name if token_type is not None else None
+    token_value_txt = text if text is not None else None
+    msg = 'token(' + ','.join([x for x in [token_type_txt, token_value_txt, str(regex)] if x is not None]) + ')'
+    return Syntax(
+        lambda cls: cls.factory('token', token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
+        ).describe(name=msg, fixity='prefix') 
+
+    
+
+def literal(lit: str) -> Syntax[Any, Any]:
+    """Match an exact literal string (case-sensitive)."""
+    return token(token_type=None, text=lit, case_sensitive=True)
+
+def regex(regex: re.Pattern[str] | str) -> Syntax[Any, Any]:
+    """Match a token whose text satisfies the given regular expression."""
+    if isinstance(regex, str):
+        regex = re.compile(regex)
+    return token(token_type=None, regex=regex, case_sensitive=True)
+
+def lift(value: Any)-> Syntax[Any, Any]:
+    """Lift a Python value into the nearest matching token syntax.
+
+    - ``str`` -> ``literal``
+    - ``re.Pattern`` -> ``token`` with regex
+    - ``Enum`` -> ``token`` with type
+    - otherwise -> succeed with the value
+    """
+    if isinstance(value, str):
+        return literal(value)
+    elif isinstance(value, re.Pattern):
+        return token(regex=value)
+    elif isinstance(value, Enum):
+        return token(token_type=value)
+    else:
+        return Syntax(lambda cls: cls.success(value))
 
 
 

@@ -35,8 +35,8 @@ class Finder(Generator[T], Generic[T]):
             Algebra[Any, GenState[T]]: An algebra that always succeeds with the
             tuple ``(input.ast, input)``.
         """
-        def anything_run(input: GenState[T], use_cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]] ,GenState[T],Either[Any, Tuple[Any, GenState[T]]]]:
-            return (yield from (use_cache.return_value(Right((input.ast, input)))))
+        def anything_run(input: GenState[T], cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]] ,GenState[T],Either[Any, Tuple[Any, GenState[T]]]]:
+            return (yield from (cache.return_value(Right((input.ast, input)))))
         return cls(anything_run, _name=cls.__name__ + '.anything')
 
 

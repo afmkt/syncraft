@@ -339,13 +339,13 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Then(left, right, kind=LEFT).
         """
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self(cls).then_left(other(cls))) # type: ignore
         
         return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         return other.__floordiv__(self)
 
     def __add__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -359,14 +359,14 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Then(left, right, kind=BOTH).
         """
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         ret: Syntax[Then[A, B], S] = self.__class__(
             lambda cls: self(cls).then_both(other(cls))  # type: ignore
         )  # type: ignore
         return ret.describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __radd__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         return other.__add__(self)
 
     def __rshift__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -380,14 +380,14 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Then(left, right, kind=RIGHT).
         """
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         ret: Syntax[Then[A, B], S] = self.__class__(
             lambda cls: self(cls).then_right(other(cls))  # type: ignore
         )  # type: ignore
         return ret.describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         return other.__rshift__(self)
 
     def __or__(self, other: Syntax[B, S]) -> Syntax[Choice[A, B], S]:
@@ -401,14 +401,14 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice.LEFT or Choice.RIGHT.
         """
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         ret: Syntax[Choice[A, B], S] = self.__class__(
             lambda cls: self(cls).or_else(other(cls))  # type: ignore
         )  
         return ret.describe(name='|', fixity='infix', parameter=(self, other))
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
-        other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
+
         return other.__or__(self)
 
     def __invert__(self) -> Syntax[Choice[A, Optional[Nothing]], S]:
@@ -550,7 +550,7 @@ def run(*,
     parser = syntax(alg)
     input: Optional[S] = alg.state(**kwargs)
     if input:
-        gen = parser.run(input, use_cache=Cache())
+        gen = parser.run(input, cache=Cache())
         try:
             result = next(gen)
             while isinstance(result, Incomplete):
@@ -593,60 +593,11 @@ def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
 
 
 
-def token(*,
-          text: Optional[str] = None, 
-          token_type: Optional[Enum] = None,           
-          case_sensitive: bool = False,
-          regex: Optional[re.Pattern[str]] = None
-          ) -> Syntax[Any, Any]:
-    """Build a ``Syntax`` that matches a single token.
 
-    Convenience wrapper around ``Parser.token``. You can match by
-    type, exact text, or regex.
 
-    Args:
-        token_type: Expected token enum type.
-        text: Exact token text to match.
-        case_sensitive: Whether text matching respects case.
-        regex: Pattern to match token text.
 
-    Returns:
-        Syntax[Any, Any]: A syntax that matches one token.
-    """
-    token_type_txt = token_type.name if token_type is not None else None
-    token_value_txt = text if text is not None else None
-    msg = 'token(' + ','.join([x for x in [token_type_txt, token_value_txt, str(regex)] if x is not None]) + ')'
-    return Syntax(
-        lambda cls: cls.factory('token', token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
-        ).describe(name=msg, fixity='prefix') 
 
-    
 
-def literal(lit: str) -> Syntax[Any, Any]:
-    """Match an exact literal string (case-sensitive)."""
-    return token(token_type=None, text=lit, case_sensitive=True)
 
-def regex(regex: re.Pattern[str] | str) -> Syntax[Any, Any]:
-    """Match a token whose text satisfies the given regular expression."""
-    if isinstance(regex, str):
-        regex = re.compile(regex)
-    return token(token_type=None, regex=regex, case_sensitive=True)
-
-def lift(value: Any)-> Syntax[Any, Any]:
-    """Lift a Python value into the nearest matching token syntax.
-
-    - ``str`` -> ``literal``
-    - ``re.Pattern`` -> ``token`` with regex
-    - ``Enum`` -> ``token`` with type
-    - otherwise -> succeed with the value
-    """
-    if isinstance(value, str):
-        return literal(value)
-    elif isinstance(value, re.Pattern):
-        return token(regex=value)
-    elif isinstance(value, Enum):
-        return token(token_type=value)
-    else:
-        return Syntax(lambda cls: cls.success(value))
 
 

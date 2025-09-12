@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, Either, Right, Incomplete, Left, SyncraftError
 )
-from syncraft.fa import NFA, NFAState
+from syncraft.fa import NFA, FAState
 from syncraft.ast import TokenSpec, ThenSpec, ManySpec, ChoiceSpec, ThenKind
 from syncraft.parser import TokenType
 from syncraft.constraint import Bindable, FrozenDict
@@ -88,7 +88,7 @@ class Regular(Algebra[NFA[C], RegularState]):
               )-> Algebra[NFA[C], RegularState]:      
         name = f'Token({text})'
         this: None | Algebra[NFA[C], RegularState] = None
-        def token_run(input: RegularState, use_cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[NFA[C], RegularState]]]:
+        def token_run(input: RegularState, cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[NFA[C], RegularState]]]:
             yield from ()
             data = NFA.from_char(text)
             return Right((data, input))
@@ -100,11 +100,11 @@ class Regular(Algebra[NFA[C], RegularState]):
     def then_all(self, other: Algebra[NFA[C], RegularState], kind: ThenKind) -> Algebra[NFA[C], RegularState]:
         name = f"{self.name} {kind.value} {other.name}"
         this: None | Algebra[Any, RegularState] = None
-        def then_run(input: RegularState, use_cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
-            self_result = yield from self.run(input, use_cache=use_cache)
+        def then_run(input: RegularState, cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
+            self_result = yield from self.run(input, cache=cache)
             match self_result:
                 case Right((value, from_left)):
-                    other_result = yield from other.run(from_left.visit(self, value), use_cache)
+                    other_result = yield from other.run(from_left.visit(self, value), cache)
                     match other_result:
                         case Right((result, from_right)):
                             data = ThenSpec(name=name, kind=kind, left=value, right=result)
@@ -130,8 +130,8 @@ class Regular(Algebra[NFA[C], RegularState]):
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         this: None | Algebra[Any, RegularState] = None
-        def many_run(input: RegularState, use_cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
-            self_result = yield from self.run(input, use_cache)
+        def many_run(input: RegularState, cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
+            self_result = yield from self.run(input, cache)
             match self_result:
                 case Right((value, from_self)):
                     data = ManySpec(name=f"*({self.name})", value=value, at_least=at_least, at_most=at_most)
@@ -150,11 +150,11 @@ class Regular(Algebra[NFA[C], RegularState]):
         other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
         name = f"{self_name} | {other_name}"
         this: None | Algebra[Any, RegularState] = None
-        def or_else_run(input: RegularState, use_cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
-            self_result = yield from self.run(input, use_cache=use_cache)
+        def or_else_run(input: RegularState, cache:bool) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
+            self_result = yield from self.run(input, cache=cache)
             match self_result:
                 case Right((value, from_left)):
-                    other_result = yield from other.run(from_left.visit(self, value), use_cache)
+                    other_result = yield from other.run(from_left.visit(self, value), cache)
                     match other_result:
                         case Right((result, from_right)):
                             data = ChoiceSpec(name=name, left=value, right=result)
@@ -168,5 +168,5 @@ class Regular(Algebra[NFA[C], RegularState]):
 
 def walk(syntax: Syntax[Any, Any]) -> Any:
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Regular, use_cache=True)
+    v, s = run(syntax=syntax, alg=Regular, cache=True)
     return v

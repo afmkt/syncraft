@@ -99,12 +99,12 @@ class Algebra(Generic[A, S]):
         return frozenset({'name': self.name, 'run_f': self.run_f})
 
 
-    def __call__(self, input: S, use_cache: Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-        return self.run(input, use_cache=use_cache)
+    def __call__(self, input: S, cache: Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+        return self.run(input, cache=cache)
 
-    def run(self, input: S, use_cache: Cache[Either[Any, Tuple[Any, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+    def run(self, input: S, cache: Cache[Either[Any, Tuple[Any, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
         try:
-            return (yield from use_cache.gen(self.run_f, input, use_cache))
+            return (yield from cache.gen(self.run_f, input, cache))
         except LeftRecursionError as e:
             if e.offending is self.run_f or len(e.stack) == 0:
                 raise e.push(f"\u25cf {self.name}")
@@ -118,7 +118,7 @@ class Algebra(Generic[A, S]):
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
         name: Optional[str] = None
-        def algebra_lazy_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+        def algebra_lazy_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
             nonlocal name
             alg = thunk()
             # print('--' * 20, "Algebra.lazy.algebra_lazy_run", '--' * 20)
@@ -127,14 +127,14 @@ class Algebra(Generic[A, S]):
             # print('alg', alg, id(alg))
             if name is None:
                 name = alg.name if isinstance(alg.name, str) else alg.name()
-            result = yield from alg.run(input, use_cache)
+            result = yield from alg.run(input, cache)
             return result
         return cls(algebra_lazy_run, _name=lambda: f"{cls.__name__}.lazy({name if name is not None else '...'})")
     
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:
-        def fail_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-            return (yield from use_cache.return_value(Left(Error(
+        def fail_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+            return (yield from cache.return_value(Left(Error(
                 error=error,
                 this=cls,
                 state=input
@@ -144,8 +144,8 @@ class Algebra(Generic[A, S]):
     
     @classmethod
     def success(cls, value: Any) -> Algebra[Any, S]:
-        def success_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-            return (yield from use_cache.return_value(Right((value, input))))
+        def success_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+            return (yield from cache.return_value(Right((value, input))))
         return cls(success_run, _name=cls.__name__ + '.success')
     
     @classmethod
@@ -234,8 +234,8 @@ class Algebra(Generic[A, S]):
             An algebra that intercepts failures and can recover or transform them.
         """
         assert callable(func), "func must be callable"
-        def fail_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A|B, S]]]:
-            result = yield from self.run(input, use_cache)
+        def fail_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A|B, S]]]:
+            result = yield from self.run(input, cache)
             if isinstance(result, Left):
                 return cast(Either[Any, Tuple[A | B, S]], func(self, input, result, ctx))
             else:
@@ -263,8 +263,8 @@ class Algebra(Generic[A, S]):
             An algebra that can transform or post-process successes.
         """
         assert callable(func), "func must be callable"
-        def success_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A|B, S]]]:
-            result = yield from self.run(input, use_cache)
+        def success_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A|B, S]]]:
+            result = yield from self.run(input, cache)
             if isinstance(result, Right):
                 return cast(Either[Any, Tuple[A | B, S]], func(self, input, result, ctx))
             else:
@@ -282,8 +282,8 @@ class Algebra(Generic[A, S]):
         Returns:
             An algebra that runs with ``f(state)``.
         """
-        def map_state_run(state: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-            result = yield from self.run(f(state), use_cache)
+        def map_state_run(state: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+            result = yield from self.run(f(state), cache)
             return result
         return self.__class__(map_state_run, _name=self.name) 
 
@@ -298,8 +298,8 @@ class Algebra(Generic[A, S]):
         Returns:
             An algebra that yields ``B`` with the same resulting state.
         """
-        def map_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
-            parsed = yield from self.run(input, use_cache)
+        def map_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
+            parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
                 return Right((f(parsed.value[0]), parsed.value[1]))            
             else:
@@ -337,8 +337,8 @@ class Algebra(Generic[A, S]):
         Returns:
             An algebra that preserves successes and maps failures.
         """
-        def map_error_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-            parsed = yield from self.run(input, use_cache)
+        def map_error_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
+            parsed = yield from self.run(input, cache)
             if isinstance(parsed, Left):
                 return Left(f(parsed.value))
             else:
@@ -357,10 +357,10 @@ class Algebra(Generic[A, S]):
         Returns:
             An algebra yielding the result of the chained computation.
         """
-        def flat_map_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
-            parsed = yield from self.run(input, use_cache)
+        def flat_map_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
+            parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
-                result = yield from f(parsed.value[0]).run(parsed.value[1], use_cache)  
+                result = yield from f(parsed.value[0]).run(parsed.value[1], cache)  
                 return result
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
@@ -376,7 +376,7 @@ class Algebra(Generic[A, S]):
             An algebra producing the transformed value and state.
         """
         def map_all_f(a : A) -> Algebra[B, S]:
-            def map_all_run_f(input:S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
+            def map_all_run_f(input:S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right(f(a, input))
             return self.__class__(map_all_run_f, _name=self.name)  # type: ignore
@@ -397,8 +397,8 @@ class Algebra(Generic[A, S]):
             An algebra producing ``Choice.LEFT`` for this success or
             ``Choice.RIGHT`` for the other's success.
         """
-        def or_else_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[Choice[A, B], S]]]:
-            self_result = yield from self.run(input, use_cache)
+        def or_else_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[Choice[A, B], S]]]:
+            self_result = yield from self.run(input, cache)
             match self_result:
                 case Right((value, state)):
                     return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))
@@ -408,7 +408,7 @@ class Algebra(Generic[A, S]):
                             return Left(err)
                         elif err.committed:
                             return Left(replace(err, committed=False))
-                    other_result = yield from other.run(input, use_cache)
+                    other_result = yield from other.run(input, cache)
                     match other_result:
                         case Right((other_value, other_state)):
                             return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
@@ -520,11 +520,11 @@ class Algebra(Generic[A, S]):
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
-        def many_run(input: S, use_cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[Many[A], S]]]:
+        def many_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[Many[A], S]]]:
             ret: List[A] = []
             current_input = input
             while True:
-                result = yield from self.run(current_input, use_cache)
+                result = yield from self.run(current_input, cache)
                 match result:
                     case Left(_):
                         break

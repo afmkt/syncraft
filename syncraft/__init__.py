@@ -1,8 +1,6 @@
 from .syntax import (
     Description,
 	Syntax,
-    regex,
-    literal,
 	choice,
 	lazy,
 	success,
@@ -19,6 +17,8 @@ from .algebra import (
 )
 from .parser import (
     Parser,
+    regex,
+    literal,    
 	parse,
 	sqlglot,
 	token,

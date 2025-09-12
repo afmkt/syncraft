@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from syncraft.parser import  parse
-from syncraft.syntax import literal
+from syncraft.parser import literal
 import syncraft.generator as gen
 from dataclasses import dataclass
 

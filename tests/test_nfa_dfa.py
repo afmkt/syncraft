@@ -1,5 +1,6 @@
 from __future__ import annotations
 from syncraft.fa import NFA, DFA
+from syncraft.charset import CodeUniverse
 from syncraft.constraint import FrozenDict
 
 
@@ -10,7 +11,7 @@ def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)-
     assert dfa_result == expected, f"DFA failed on input {input}: expected {expected}, got {dfa_result}"
 
 def test_from_char()->None:
-    nfa = NFA.from_char('a')
+    nfa = NFA.from_char('a', universe=CodeUniverse.ASCII)
     dfa = DFA.from_nfa(nfa)
     assert nfa.current in nfa.transitions
     assert_both(nfa, dfa, ['a'], True)
@@ -22,13 +23,13 @@ def test_from_char()->None:
 
 
 def test_then():
-    nfa = NFA.from_char("a").then(NFA.from_char("b"))
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).then(NFA.from_char("b", universe=CodeUniverse.ASCII))
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, ["a", "b"], True)
     assert_both(nfa, dfa, ["a"], False)
     assert_both(nfa, dfa, ["b"], False)
     assert_both(nfa, dfa, ["a", "c"], False)
-    nfa = NFA.from_char("a").then(NFA.from_char("a"))
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).then(NFA.from_char("a", universe=CodeUniverse.ASCII))
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, ["a", "a"], True)
     assert_both(nfa, dfa, ["a", "c"], False)
@@ -37,7 +38,7 @@ def test_then():
     assert_both(nfa, dfa, ["b"], False)
     assert_both(nfa, dfa, ["a", "b"], False)
     assert_both(nfa, dfa, ["a", "a", "a"], False)
-    nfa = NFA.from_char("a")
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII)
     nfa = nfa.then(nfa).then(nfa)  # aaa
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, ["a", "a", "a"], True)
@@ -51,7 +52,7 @@ def test_then():
 
 
 def test_or_else():
-    nfa = NFA.from_char("a").union(NFA.from_char("b"))
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).union(NFA.from_char("b", universe=CodeUniverse.ASCII))
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, ["a"], True)
     assert_both(nfa, dfa, ["b"], True)
@@ -60,7 +61,7 @@ def test_or_else():
 
 
 def test_optional():
-    nfa = NFA.from_char("a").optional()
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).optional()
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, [], True)          # epsilon path
     assert_both(nfa, dfa, ["a"], True)       # one "a"
@@ -69,7 +70,7 @@ def test_optional():
 
 
 def test_many():
-    nfa = NFA.from_char("a").many()
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).many()
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, [], False)          # epsilon path
     assert_both(nfa, dfa, ["a"], True)       # one "a"
@@ -79,7 +80,7 @@ def test_many():
     assert_both(nfa, dfa, ["a", "b"], False) # not "aa"
     assert_both(nfa, dfa, ["b", "a"], False) # not "aa"
     assert_both(nfa, dfa, ["a", "a", "b"], False)
-    nfa = NFA.from_char("a").many(2, 4)
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).many(2, 4)
     dfa = DFA.from_nfa(nfa)
 
     assert_both(nfa, dfa, [], False)         # requires at least two
@@ -96,7 +97,7 @@ def test_many():
     assert_both(nfa, dfa, ["a", "a", "a", "a", "a", "b"], False)
 
 def test_plus():
-    nfa = NFA.from_char("a").plus()
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).plus()
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, ["a"], True)
     assert_both(nfa, dfa, ["a", "a"], True)
@@ -104,7 +105,7 @@ def test_plus():
     assert_both(nfa, dfa, [], False)         # requires at least one
 
 def test_star():
-    nfa = NFA.from_char("a").star()
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).star()
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, [], True)          # epsilon path
     assert_both(nfa, dfa, ["a"], True)       # one "a"
@@ -122,9 +123,9 @@ def test_star():
 
 
 def test_complex()->None:
-    a = NFA.from_char('a')
-    b = NFA.from_char('b')
-    c = NFA.from_char('c')
+    a = NFA.from_char('a', universe=CodeUniverse.ASCII)
+    b = NFA.from_char('b', universe=CodeUniverse.ASCII)
+    c = NFA.from_char('c', universe=CodeUniverse.ASCII)
     a_or_b = a.union(b)
     a_or_b_then_c = a_or_b.then(c)
     nfa = a_or_b_then_c.many(2, 4)
@@ -146,7 +147,7 @@ def test_complex()->None:
 
 
 def test_runner()->None:
-    nfa = NFA.from_char("a").then(NFA.from_char("b")).then(NFA.from_char("c"))
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).then(NFA.from_char("b", universe=CodeUniverse.ASCII)).then(NFA.from_char("c", universe=CodeUniverse.ASCII))
     dfa = DFA.from_nfa(nfa)
     runner = nfa.run(["a", "b", "c"])
     drunner = dfa.run(["a", "b", "c"])
@@ -181,7 +182,7 @@ def test_runner()->None:
     assert not dr3, "dfa runner is resumable"
 
 def test_gen()->None:
-    nfa = NFA.from_char("a").then(NFA.from_char("b")).then(NFA.from_char("c"))
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).then(NFA.from_char("b", universe=CodeUniverse.ASCII)).then(NFA.from_char("c", universe=CodeUniverse.ASCII))
     dfa = DFA.from_nfa(nfa)
     r = nfa.runner()
     dr = dfa.runner()
@@ -195,7 +196,7 @@ def test_gen()->None:
 
 def test_dead_state():
     # NFA that can go to a dead state: "a" then optional "b"
-    nfa = NFA.from_char("a").then(NFA.from_char("b").optional())
+    nfa = NFA.from_char("a", universe=CodeUniverse.ASCII).then(NFA.from_char("b", universe=CodeUniverse.ASCII).optional())
     dfa = DFA.from_nfa(nfa)
     
     # Check all DFA closures
@@ -208,8 +209,8 @@ def test_dead_state():
 
 def test_dfa_transition_merge():
     # NFA with overlapping intervals that go to the same target
-    nfa_a = NFA.from_char("a")
-    nfa_b = NFA.from_char("b")
+    nfa_a = NFA.from_char("a", universe=CodeUniverse.ASCII)
+    nfa_b = NFA.from_char("b", universe=CodeUniverse.ASCII)
     nfa = nfa_a.union(nfa_b)
     dfa = DFA.from_nfa(nfa)
     
@@ -226,8 +227,8 @@ def test_dfa_transition_merge():
 
 def test_tag_propagation():
     # NFA with multiple accepting states with tags
-    nfa_a = NFA.from_char("a").tagged("tag1")
-    nfa_b = NFA.from_char("b").tagged("tag2")
+    nfa_a = NFA.from_char("a", universe=CodeUniverse.ASCII).tagged("tag1")
+    nfa_b = NFA.from_char("b", universe=CodeUniverse.ASCII).tagged("tag2")
     nfa = nfa_a.union(nfa_b)
     dfa = DFA.from_nfa(nfa)
     

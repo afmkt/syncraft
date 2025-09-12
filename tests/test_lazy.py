@@ -2,8 +2,8 @@ from __future__ import annotations
 from syncraft.parser import token
 import pytest
 from syncraft.ast import Nothing
-from syncraft.syntax import lazy, literal, regex
-from syncraft.parser import parse
+from syncraft.syntax import lazy
+from syncraft.parser import parse, literal, regex
 from syncraft.generator import TokenGen, generate_with
 from syncraft.cache import LeftRecursionError
 from rich import print

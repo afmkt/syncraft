@@ -9,7 +9,7 @@ from syncraft.algebra import (
 )
 from collections import deque
 from syncraft.constraint import  FrozenDict
-from syncraft.charset import CharSet
+from syncraft.charset import CharSet, CodeUniverse, MixedUniverseError, CodepointError
 
 from rich import print
 
@@ -38,12 +38,13 @@ class FAState:
 
 @dataclass(frozen=True)
 class DFA(Generic[C]):
+    universe: CodeUniverse
     current: FAState
     accept: FrozenDict[FAState, frozenset[str]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
     nfa2dfa: FrozenDict[frozenset[FAState], FAState]= field(default_factory=FrozenDict) 
     @staticmethod
-    def merge_adjacent_transitions(transitions: dict[CharSet[C], FAState]) -> dict[CharSet[C], FAState]:
+    def merge_adjacent_transitions(universe: CodeUniverse, transitions: dict[CharSet[C], FAState]) -> dict[CharSet[C], FAState]:
         """Merge consecutive CharSets with the same target into a single CharSet."""
         merged: List[Tuple[List[Tuple[int,int]], FAState]] = []
         sorted_trans = sorted(transitions.items(), key=lambda x: x[0].interval)
@@ -54,7 +55,7 @@ class DFA(Generic[C]):
             else:
                 merged.append((list(charset.interval), target))
         
-        return {CharSet.from_interval(intv): target for intv, target in merged}
+        return {CharSet.from_interval(intv, universe): target for intv, target in merged}
 
     @classmethod
     def from_nfa(cls, nfa: NFA[C]) -> DFA[C]:
@@ -81,10 +82,10 @@ class DFA(Generic[C]):
                 if closure not in dfa_states:
                     dfa_states[closure] = FAState()
                     work_list.append(closure)
-                trans.setdefault(current_dfa_state, {})[CharSet.from_interval([p])] = dfa_states[closure]
+                trans.setdefault(current_dfa_state, {})[CharSet.from_interval([p], nfa.universe)] = dfa_states[closure]
 
         for s, e in trans.items():
-            trans[s] = DFA.merge_adjacent_transitions(e)
+            trans[s] = DFA.merge_adjacent_transitions(nfa.universe, e)
         accept: dict[FAState, frozenset[str]] = {}
         for nfa_states, fa_state in dfa_states.items():
             tags: Set[str] = set()
@@ -100,6 +101,7 @@ class DFA(Generic[C]):
         assert len(dead_states) <= 1, f"DFA can have at most one dead state, found {len(dead_states)}: {dead_states}"
         
         return cls(
+                   universe=nfa.universe,
                    current=dfa_states[start],
                    accept=FrozenDict(accept),
                    transitions=transitions,
@@ -117,6 +119,7 @@ class DFA(Generic[C]):
 
 @dataclass(frozen=True)
 class NFA(Generic[C]):
+    universe: CodeUniverse
     current: FAState
     accept: FrozenDict[FAState, frozenset[str]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = field(default_factory=FrozenDict)
@@ -140,11 +143,11 @@ class NFA(Generic[C]):
             get_clone(k): frozenset(get_clone(s) for s in v)
             for k, v in self.epsilon.items()
         })
-        return self.__class__(
-                              current=new_start,
-                              accept=new_accept,
-                              transitions=FrozenDict(new_transitions),
-                              epsilon=new_epsilon)
+        return replace(self,
+                        current=new_start,
+                        accept=new_accept,
+                        transitions=FrozenDict(new_transitions),
+                        epsilon=new_epsilon)
     
     def tagged(self, tag: str, append:bool=False) -> NFA[C]:
         if append:
@@ -173,20 +176,28 @@ class NFA(Generic[C]):
         return self.run(input_seq).is_accepted(self)
 
     @classmethod
-    def from_char(cls, char: C, tag: Optional[str] = None) -> NFA[C]:
+    def from_char(cls, char: C, *, universe: CodeUniverse, negation:bool = False,  tag: Optional[str] = None) -> NFA[C]:
         assert len(char) >= 1, "char cannot be empty"
         current: FAState = FAState()
         accept: FAState = FAState()
+        charset: CharSet[C] = CharSet.create(char, universe=universe)
+        if negation:
+            charset = ~charset
+        if charset.interval == tuple():
+            raise CodepointError(f"Character {char!r} is not valid in the specified universe {universe}", offending=char, universe=universe)
         return cls(
+                   universe=universe,
                    current=current, 
                    accept=FrozenDict({accept: frozenset({tag or f'{char!r}'})}),
                    transitions=FrozenDict({
-                       current: FrozenDict({CharSet.create(char): frozenset({accept})})
+                       current: FrozenDict({charset: frozenset({accept})})
                    }),
                    epsilon=FrozenDict())
 
 
     def then(self, other: NFA[C]) -> NFA[C]:
+        if self.universe is not other.universe:
+            raise MixedUniverseError("Cannot combine NFAs with different universes", offending=(self.universe, other.universe))
         this = self.clone()
             
         eps = {**this.epsilon}
@@ -201,12 +212,15 @@ class NFA(Generic[C]):
             new_transitions[k] = new_transitions.get(k, FrozenDict()) | v
             
         return this.__class__(
+                              universe=this.universe,
                               current=this.current, 
                               accept=other.accept, 
                               transitions=FrozenDict(new_transitions), 
                               epsilon=FrozenDict(eps))
     
     def union(self, other: NFA[C]) -> NFA[C]:
+        if self.universe is not other.universe:
+            raise MixedUniverseError("Cannot combine NFAs with different universes", offending=(self.universe, other.universe))
         if self is other:
             return self
         new_current: FAState = FAState()
@@ -219,41 +233,42 @@ class NFA(Generic[C]):
         new_transitions = {**self.transitions}
         for k, v in other.transitions.items():
             new_transitions[k] = new_transitions.get(k, FrozenDict()) | v
-        return self.__class__(
-                              current=new_current, 
-                              accept=self.accept | other.accept, 
-                              transitions=FrozenDict(new_transitions), 
-                              epsilon=FrozenDict(eps))
+        return replace(self,
+                       universe=self.universe,
+                       current=new_current, 
+                       accept=self.accept | other.accept, 
+                       transitions=FrozenDict(new_transitions), 
+                       epsilon=FrozenDict(eps))
 
     def star(self) -> NFA[C]:
         new_current: FAState = FAState()
         eps = {**self.epsilon, new_current: frozenset({self.current})}
         for a in self.accept:
             eps[a] = eps.get(a, frozenset()) | frozenset({self.current})
-        return self.__class__(
-                              current=new_current, 
-                              accept=self.accept | FrozenDict({new_current: frozenset()}), 
-                              transitions=self.transitions, 
-                              epsilon=FrozenDict(eps))
+        return replace(self,
+                        current=new_current, 
+                        accept=self.accept | FrozenDict({new_current: frozenset()}), 
+                        transitions=self.transitions, 
+                        epsilon=FrozenDict(eps))
     
     def optional(self)->NFA[C]:
         new_current: FAState = FAState()
         eps = {**self.epsilon, new_current: frozenset({self.current})}
-        return self.__class__(
-                              current=new_current, 
-                              accept=self.accept | FrozenDict({new_current: frozenset()}), 
-                              transitions=self.transitions, 
-                              epsilon=FrozenDict(eps))
+        return replace(self,
+                        current=new_current, 
+                        accept=self.accept | FrozenDict({new_current: frozenset()}), 
+                        transitions=self.transitions, 
+                        epsilon=FrozenDict(eps))
     
     def plus(self) -> NFA[C]:
         eps = {**self.epsilon}
         for a in self.accept:
             eps[a] = eps.get(a, frozenset()) | frozenset({self.current})
-        return self.__class__(
-                              current=self.current, 
-                              accept=self.accept, 
-                              transitions=self.transitions, 
-                              epsilon=FrozenDict(eps))
+        return replace(self,
+                        current=self.current, 
+                        accept=self.accept, 
+                        transitions=self.transitions, 
+                        epsilon=FrozenDict(eps))
     
     def many(self, at_least: int = 1, at_most: Optional[int] = None) -> NFA[C]:
         if at_least <=0 or (at_most is not None and at_most < at_least):
@@ -332,7 +347,7 @@ class NFARunner(Runner[C, NFA[C]]):
         next_states = set()
         for s in self.current:
             entry: FrozenDict[CharSet[C], frozenset[FAState]] = nfa.transitions.get(s, {})
-            k: CharSet[C] = CharSet.create(symbol)
+            k: CharSet[C] = CharSet.create(symbol, universe=nfa.universe)
             if k in entry:
                 next_states.update(entry[k])
             else:
@@ -374,7 +389,7 @@ class DFARunner(Runner[C, DFA[C]]):
     def step(self, dfa: DFA[C], symbol: C, pos: int) -> DFARunner[C]:
         next_state: Optional[FAState] = None
         entry: FrozenDict[CharSet[C], FAState] = dfa.transitions.get(self.current, {})
-        k: CharSet[C] = CharSet.create(symbol)
+        k: CharSet[C] = CharSet.create(symbol, universe=dfa.universe)
         if k in entry:
             next_state = entry[k]
         else:

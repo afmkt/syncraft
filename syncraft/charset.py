@@ -118,7 +118,7 @@ class CharSet(Generic[C]):
         return merged
 
     @classmethod
-    def create(cls, char: str | bytes, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
+    def create(cls, char: str | bytes, universe: CodeUniverse) -> CharSet[C]:
         cs: frozenset[int] = frozenset(ord(x) if isinstance(x, str) else x for x in char)
         intv = tuple((c, c) for c in sorted(cs))
         return cls(
@@ -128,7 +128,7 @@ class CharSet(Generic[C]):
             name=f"'{cs}'")
     
     @classmethod
-    def from_interval(cls, intv: List[Tuple[int, int]], universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
+    def from_interval(cls, intv: List[Tuple[int, int]], universe: CodeUniverse) -> CharSet[C]:
         merged = tuple(cls.merge_intervals(intv))
         return cls(
             predicate=lambda c: any(start <= c <= end for start, end in merged), 
@@ -137,7 +137,7 @@ class CharSet(Generic[C]):
             name=f"{merged}")
 
     @classmethod
-    def any(cls, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
+    def any(cls, universe: CodeUniverse) -> CharSet[C]:
         return cls(
             predicate=lambda c: True, 
             interval=universe.interval,
@@ -145,7 +145,7 @@ class CharSet(Generic[C]):
             name=".")
     
     @classmethod
-    def none(cls, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
+    def none(cls, universe: CodeUniverse) -> CharSet[C]:
         return cls(
             predicate=lambda c: False, 
             interval=tuple(),
@@ -271,5 +271,4 @@ class CharSet(Generic[C]):
             name=f"~{self.name}")
     def __invert__(self) -> CharSet[C]:
         return self.complement()
-
 

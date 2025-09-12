@@ -4,7 +4,7 @@ from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked
 from syncraft.algebra import Error
 from syncraft.parser import  parse
 import syncraft.generator as gen
-from syncraft.syntax import literal
+from syncraft.parser import literal
 from syncraft.generator import TokenGen
 from rich import print
 

@@ -1,6 +1,6 @@
 from syncraft.ast import AST
 from syncraft.parser import variable, parse
-from syncraft.syntax import literal
+from syncraft.parser import literal
 import syncraft.generator as gen
 from typing import Any
 
