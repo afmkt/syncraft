@@ -125,6 +125,9 @@ class NFA(Generic[C]):
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = field(default_factory=FrozenDict)
     epsilon: FrozenDict[FAState, frozenset[FAState]] = field(default_factory=FrozenDict)
 
+    def dfa(self) -> DFA[C]:
+        return DFA.from_nfa(self)
+
     def clone(self) -> NFA[C]:
         state_map: dict[FAState, FAState] = {}
         def get_clone(s: FAState) -> FAState:
@@ -174,6 +177,20 @@ class NFA(Generic[C]):
 
     def match(self, input_seq: list[C]) -> bool:
         return self.run(input_seq).is_accepted(self)
+
+    @classmethod
+    def from_charset(cls, c: CharSet[C], *, tag: Optional[str] = None) -> NFA[C]:
+        assert c.interval != tuple(), "charset cannot be empty"
+        current: FAState = FAState()
+        accept: FAState = FAState()
+        return cls(
+                   universe=c.universe,
+                   current=current, 
+                   accept=FrozenDict({accept: frozenset({tag}) if tag else frozenset()}),
+                   transitions=FrozenDict({
+                       current: FrozenDict({c: frozenset({accept})})
+                   }),
+                   epsilon=FrozenDict())
 
     @classmethod
     def from_char(cls, char: C, *, universe: CodeUniverse, negation:bool = False,  tag: Optional[str] = None) -> NFA[C]:

@@ -57,7 +57,11 @@ class Syntax(Generic[A, S]):
     alg: Callable[[Type[Algebra[Any, Any]]], Algebra[A, S]]
     meta: Description = field(default_factory=Description, repr=False)
 
-    def algebra(self, name: str | MethodType | FunctionType, *args: Any, **kwargs: Any) -> Syntax[A, S]:
+    def algebra(self, 
+                name: str | MethodType | FunctionType, 
+                *args: Any, 
+                fallback: Optional[Syntax[A, S]] = None,
+                **kwargs: Any) -> Syntax[A, S]:
         """Calling method of underlying algebra.
 
         Allows calling Algebra instance methods (e.g., cut) by name, if the method 
@@ -76,13 +80,13 @@ class Syntax(Generic[A, S]):
             if isinstance(name, str):
                 attr = getattr(a, name, None) or getattr(cls, name, None)
                 if attr is None:
-                    return a
+                    return a if fallback is None else fallback(cls)
                 if isinstance(attr, (staticmethod, classmethod)):
                     attr = attr.__get__(None, cls)
                 elif isinstance(attr, FunctionType):
                     attr = MethodType(attr, a)
                 else:
-                    return a
+                    return a if fallback is None else fallback(cls)
                 return cast(Algebra[Any, S], attr(*args, **kwargs))
             elif isinstance(name, MethodType):
                 f = MethodType(name.__func__, a)
@@ -91,7 +95,7 @@ class Syntax(Generic[A, S]):
                 f = MethodType(name, a)
                 return cast(Algebra[Any, S], f(*args, **kwargs))
             else:
-                return a
+                return a if fallback is None else fallback(cls)
         return self.__class__(alg=algebra_run, meta=self.meta)
 
     def as_(self, typ: Type[B]) -> B:
@@ -99,9 +103,7 @@ class Syntax(Generic[A, S]):
 
     def __call__(self, alg: Type[Algebra[Any, Any]]) -> Algebra[A, S]:
         return self.alg(alg)
-
-
-
+    
     def describe(
         self,
         *,
@@ -313,9 +315,12 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice of value or Nothing.
         """
-        return (self | success(Nothing())).describe(
-            name='~', fixity='prefix', parameter=(self,)
-        )
+        fallback = (self | success(Nothing()))
+        ret = self.algebra('optional', fallback=fallback) # type: ignore
+        return ret.describe(name='~', fixity='prefix', parameter=(self,)) # type: ignore
+    
+
+        
 
     def cut(self) -> Syntax[A, S]:
         """Commit this branch: on failure, prevent trying alternatives.
