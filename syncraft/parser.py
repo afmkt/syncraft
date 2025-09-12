@@ -2,7 +2,7 @@ from __future__ import annotations
 import re
 from sqlglot import tokenize, TokenType, Parser as GlotParser, exp
 from typing import (
-    Optional, List, Any, Tuple, TypeVar,
+    Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable
 )
 from syncraft.cache import Cache
@@ -19,7 +19,7 @@ from syncraft.ast import Token, TokenSpec, AST, SyncraftError
 from syncraft.constraint import Bindable
 
 
-T = TypeVar('T', bound=Enum)
+T = TypeVar('T', bound=Hashable)  
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class ParserState(Bindable, Generic[T]):
         input: The full, immutable sequence of tokens.
         index: Current position within ``input``.
     """
-    input: Tuple[Token[T], ...] = field(default_factory=tuple)
+    input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
     final: bool = False  # Whether this is a final state (for error reporting)
 
@@ -53,10 +53,7 @@ class ParserState(Bindable, Generic[T]):
             raise SyncraftError("Cannot concatenate to a final ParserState", offending=self, expect="not final")
         return replace(self, input=self.input + other.input, final=other.final)
 
-    def token_sample_string(self)-> str:
-        def encode_tokens(*tokens:Token[T]) -> str:
-            return ",".join(f"{token.token_type.name}({token.text})" for token in tokens)
-        return encode_tokens(*self.input[self.index:self.index + 2])
+
 
     def before(self, length: Optional[int] = 3)->str:
         """Return a string with up to ``length`` tokens before the cursor.
@@ -68,7 +65,7 @@ class ParserState(Bindable, Generic[T]):
             str: Space-separated token texts before the current index.
         """
         length = min(self.index, length) if length is not None else self.index
-        return " ".join(token.text for token in self.input[self.index - length:self.index])
+        return " ".join(str(token) for token in self.input[self.index - length:self.index])
     
     def after(self, length: Optional[int] = 3)->str:
         """Return a string with up to ``length`` tokens from the cursor on.
@@ -80,11 +77,11 @@ class ParserState(Bindable, Generic[T]):
             str: Space-separated token texts starting at the current index.
         """
         length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
-        ret = " ".join(token.text for token in self.input[self.index:self.index + length])
+        ret = " ".join(str(token) for token in self.input[self.index:self.index + length])
         return ret
 
 
-    def current(self)->Token[T]:
+    def current(self)->T:
         """Get the current token at ``index``.
 
         Returns:
@@ -111,7 +108,7 @@ class ParserState(Bindable, Generic[T]):
             
     
     @classmethod
-    def from_tokens(cls, tokens: Tuple[Token[T], ...]) -> ParserState[T]:
+    def from_tokens(cls, tokens: Tuple[T, ...]) -> ParserState[T]:
         return cls(input=tokens, index=0, final=True)
 
 
@@ -127,8 +124,8 @@ class Parser(Algebra[T, ParserState[T]]):
     @classmethod
     def primitive(cls, 
                   *, 
-                  predicate: Optional[Callable[[Token[T]], bool]]=None,
-                  generator: Optional[Callable[..., Token[T]]] = None
+                  predicate: Optional[Callable[[T], bool]]=None,
+                  generator: Optional[Callable[..., T]] = None
                   )-> Algebra[T, ParserState[T]]:
         def primitive_run(state: ParserState[T], 
                           cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
@@ -146,7 +143,7 @@ class Parser(Algebra[T, ParserState[T]]):
                     if token is None or not predicate(token):
                         return (yield from cache.return_value(Left(state)))
                     else:
-                        return (yield from cache.return_value(Right((Token(token_type = token.token_type, text=token.text), state.advance()))))
+                        return (yield from cache.return_value(Right((token, state.advance()))))
         name = cls.__name__ + f'.primitive({predicate.__name__})' if predicate is not None else cls.__name__ + '.primitive(None)'
         captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
         def error_fn(err: Any) -> Error:

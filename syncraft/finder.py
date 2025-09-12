@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Tuple, Generator as PyGenerator, TypeVar, Generic
+    Any, Tuple, Generator as PyGenerator, TypeVar, Generic, Hashable
 )
 from dataclasses import dataclass
 from syncraft.algebra import (
@@ -12,9 +12,9 @@ from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect
 from syncraft.generator import GenState, Generator
 from syncraft.cache import Cache
 from syncraft.syntax import Syntax
-from enum import Enum
 
-T=TypeVar('T', bound=Enum)
+
+T=TypeVar('T', bound=Hashable)
 @dataclass(frozen=True)
 class Finder(Generator[T], Generic[T]):
     """Generator backend used to search/inspect parse trees.

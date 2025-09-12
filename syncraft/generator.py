@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, 
+    Any, TypeVar, Tuple, Optional,  Callable, Generic, Hashable,
     List, Generator as PyGenerator
 )
 from functools import cached_property
@@ -29,7 +29,7 @@ from syncraft.constraint import Bindable
 
 S = TypeVar('S', bound=Bindable)
 
-T = TypeVar('T', bound=Enum)
+T = TypeVar('T', bound=Hashable)
 
 B = TypeVar('B')
 
@@ -344,8 +344,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     @classmethod
     def primitive(cls, 
                   *, 
-                  predicate: Optional[Callable[[Token[T]], bool]]=None,
-                  generator: Optional[Callable[..., Token[T]]] = None
+                  predicate: Optional[Callable[[T], bool]]=None,
+                  generator: Optional[Callable[..., T]] = None
                   )-> Algebra[ParseResult[T], GenState[T]]:
         def primitive_run(input: GenState[T], 
                           cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[
@@ -385,7 +385,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         from typing import cast
         return cls.primitive(
             predicate=lambda t: gen.is_valid(cast(Token[TokenType], t)),
-            generator=lambda: cast(Token[T], gen.gen())
+            generator=lambda: cast(T, gen.gen())
         )
         
 

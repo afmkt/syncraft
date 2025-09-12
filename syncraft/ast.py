@@ -5,7 +5,7 @@ import re
 from typing import (
     Optional, Any, TypeVar, Tuple, cast,
     Generic, Callable, Union, Protocol, Type, List, ClassVar,
-    Dict
+    Dict, Hashable
 )
 
 
@@ -593,18 +593,17 @@ class TokenSpec(SyntaxSpec, Generic[TType]):
 
 
 
-
-
+T = TypeVar('T', bound=Hashable)
 
 #: Union-like type describing the shape of AST parse results across nodes.
 ParseResult = Union[
-    Then['ParseResult[TType]', 'ParseResult[TType]'], 
-    Marked['ParseResult[TType]'],
-    Choice['ParseResult[TType]', 'ParseResult[TType]'],
-    Many['ParseResult[TType]'],
-    Collect['ParseResult[TType]', Any],
+    Then['ParseResult[T]', 'ParseResult[T]'], 
+    Marked['ParseResult[T]'],
+    Choice['ParseResult[T]', 'ParseResult[T]'],
+    Many['ParseResult[T]'],
+    Collect['ParseResult[T]', Any],
     Nothing,
-    Token[TType],
+    T,
 ]
 
 
