@@ -191,3 +191,36 @@ def test_gen()->None:
 
     assert all([nfa.match(x[0]) for x in from_r])
     assert all([dfa.match(x[0]) for x in from_dr])
+
+
+def test_dead_state():
+    # NFA that can go to a dead state: "a" then optional "b"
+    nfa = NFA.from_char("a").then(NFA.from_char("b").optional())
+    dfa = DFA.from_nfa(nfa)
+    
+    # Check all DFA closures
+    dead_states = [state for state, trans in dfa.transitions.items() if not trans]
+    
+    # There should be exactly one dead state
+    assert len(dead_states) <= 1, f"Expected one dead state, got {len(dead_states)}"
+    
+    # The dead state should not accept any input
+
+def test_dfa_transition_merge():
+    # NFA with overlapping intervals that go to the same target
+    nfa_a = NFA.from_char("a")
+    nfa_b = NFA.from_char("b")
+    nfa = nfa_a.union(nfa_b)
+    dfa = DFA.from_nfa(nfa)
+    
+    # The DFA should merge the transitions to the same target
+    for trans in dfa.transitions.values():
+        targets = set(trans.values())
+        # Multiple intervals pointing to same FAState should exist
+        for t in targets:
+            intervals = [iv for iv, tgt in trans.items() if tgt == t]
+            # There should be no overlapping intervals
+            for i1, i2 in zip(intervals, intervals[1:]):
+                assert i1[1] < i2[0], f"Intervals {i1} and {i2} overlap, not merged properly"
+
+

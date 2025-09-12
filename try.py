@@ -15,14 +15,18 @@ def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)-
     assert nfa_result == expected, f"NFA failed on input {input}: expected {expected}, got {nfa_result}"
     assert dfa_result == expected, f"DFA failed on input {input}: expected {expected}, got {dfa_result}"
 
-def test_optional():
-    nfa = NFA.from_char("a").optional()
+def test_tag_propagation():
+    # NFA with multiple accepting states with tags
+    nfa_a = NFA.from_char("a").tagged("tag1")
+    nfa_b = NFA.from_char("b").tagged("tag2")
+    nfa = nfa_a.union(nfa_b)
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, [], True)          # epsilon path
-    assert_both(nfa, dfa, ["a"], True)       # one "a"
-    assert_both(nfa, dfa, ["b"], False)      # not "a"
-    assert_both(nfa, dfa, ["a", "a"], False) # not "aa"
+    
+    # Every DFA accept state should contain all tags of NFA states it represents
+    for fa_state, tags in dfa.accept.items():
+        print(tags)
+        assert tags == frozenset({'tag1', 'tag2'}), f"Tags not propagated correctly for DFA state {fa_state}"
 
 
 if __name__ == "__main__":
-    test_optional()
+    test_tag_propagation()

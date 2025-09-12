@@ -98,6 +98,7 @@ class DFA(Generic[C]):
         transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] =FrozenDict({k: FrozenDict(v) for k, v in trans.items()})
         dead_states = [s for s in transitions if not transitions[s]]
         assert len(dead_states) <= 1, f"DFA can have at most one dead state, found {len(dead_states)}: {dead_states}"
+        
         return cls(
                    current=dfa_states[start],
                    accept=FrozenDict(accept),
