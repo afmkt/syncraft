@@ -24,7 +24,7 @@ class Finder(Generator[T], Generic[T]):
     such as ``matches`` and ``find``.
     """
     @classmethod
-    def anything(cls, cache: Cache)->Algebra[Any, GenState[T]]:
+    def anything(cls)->Algebra[Any, GenState[T]]:
         """Match any node and return it unchanged.
 
         Succeeds on any input ``GenState`` and returns the current AST node as
@@ -35,43 +35,42 @@ class Finder(Generator[T], Generic[T]):
             Algebra[Any, GenState[T]]: An algebra that always succeeds with the
             tuple ``(input.ast, input)``.
         """
-        def anything_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]] ,GenState[T],Either[Any, Tuple[Any, GenState[T]]]]:
-            yield from ()
-            return Right((input.ast, input))
-        return cls(anything_run, _name=cls.__name__ + '.anything', cache=cache)
+        def anything_run(input: GenState[T], use_cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]] ,GenState[T],Either[Any, Tuple[Any, GenState[T]]]]:
+            return (yield from (use_cache.return_value(Right((input.ast, input)))))
+        return cls(anything_run, _name=cls.__name__ + '.anything')
 
 
 
 #: A ``Syntax`` that matches any node and returns it as the result without
 #: consuming or modifying state.
-anything = Syntax(lambda cls, cache: cls.factory('anything', cache=cache)).describe(name="anything", fixity='infix') 
+anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
 
-def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any])-> bool:
+def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[Any])-> bool:
     state = GenState[Any].from_ast(ast = data, restore_pruned=True)
-    result = alg.run(state, use_cache=True)
+    result = alg.run(state, cache)
     return isinstance(result, Right)
 
 
-def _find(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
+def _find(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[Any]) -> PyGenerator[ParseResult[Any], None, None]:
     if not isinstance(data, (Marked, Collect)):
-        if _matches(alg, data):
+        if _matches(alg, data, cache):
             yield data
     match data:
         case Then(left=left, right=right):
             if left is not None:
-                yield from _find(alg, left)
+                yield from _find(alg, left, cache)
             if right is not None:
-                yield from _find(alg, right)
+                yield from _find(alg, right, cache)
         case Many(value = value):
             for e in value:
-                yield from _find(alg, e)
+                yield from _find(alg, e, cache)
         case Marked(value=value):
-            yield from _find(alg, value)
+            yield from _find(alg, value, cache)
         case Choice(value=value):
             if value is not None:
-                yield from _find(alg, value)
+                yield from _find(alg, value, cache)
         case Collect(value=value):
-            yield from _find(alg, value)
+            yield from _find(alg, value, cache)
         case _:
             pass
 
@@ -89,11 +88,11 @@ def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
     Returns:
         bool: ``True`` if the syntax succeeds on ``data``, ``False`` otherwise.
     """
-    gen = syntax(Finder, Cache())
+    gen = syntax(Finder)
     if isinstance(data, (Marked, Collect)):
-        return _matches(gen, data.value)
+        return _matches(gen, data.value, Cache())
     else:
-        return _matches(gen, data)
+        return _matches(gen, data, Cache())
 
 
 def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
@@ -112,8 +111,8 @@ def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> PyGenerator[ParseR
         ParseResult[Any]: Each node that satisfies ``syntax`` (pre‑order: the
         current node is tested before visiting its children).
     """
-    gen = syntax(Finder, Cache())
-    yield from _find(gen, data)
+    gen = syntax(Finder)
+    yield from _find(gen, data, Cache())
 
 
 

@@ -95,7 +95,7 @@ class DFA(Generic[C]):
 class NFA(Generic[C]):
     current: NFAState[C]
     accept: FrozenDict[NFAState[C], frozenset[str]] = field(default_factory=FrozenDict)
-    transitions: FrozenDict[NFAState[C], FrozenDict[CharClass[C] | C, frozenset[NFAState[C]]]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[NFAState[C], FrozenDict[CharClass[C], frozenset[NFAState[C]]]] = field(default_factory=FrozenDict)
     epsilon: FrozenDict[NFAState[C], frozenset[NFAState[C]]] = field(default_factory=FrozenDict)
 
     def clone(self) -> NFA[C]:
@@ -106,7 +106,7 @@ class NFA(Generic[C]):
             return state_map[s]
         new_start = get_clone(self.current)
         new_accept: FrozenDict[NFAState[C], frozenset[str]] = FrozenDict({get_clone(a):b for a,b in self.accept.items()})
-        new_transitions: dict[NFAState[C], FrozenDict[CharClass[C] | C, frozenset[NFAState[C]]]] = {}
+        new_transitions: dict[NFAState[C], FrozenDict[CharClass[C], frozenset[NFAState[C]]]] = {}
         for k, v in self.transitions.items():
             new_transitions[get_clone(k)] = FrozenDict({
                 c: frozenset(get_clone(s) for s in targets)
@@ -157,7 +157,7 @@ class NFA(Generic[C]):
                    current=current, 
                    accept=FrozenDict({accept: frozenset({tag or f'{char!r}'})}),
                    transitions=FrozenDict({
-                       current: FrozenDict({(CharClass.create(char) if len(char) != 1 else char): frozenset({accept})})
+                       current: FrozenDict({CharClass.create(char): frozenset({accept})})
                    }),
                    epsilon=FrozenDict())
 
@@ -264,14 +264,16 @@ class Runner(Protocol[C, Automata]):
 
     def is_accepted(self, a: Automata) -> bool: ...
     def is_valid(self) -> bool: ...
-    def resumable(self, a: Automata) -> frozenset[C]: ...
+    def resumable(self, a: Automata) -> frozenset[CharClass[C]]: ...
     def tags(self, a: Automata) -> frozenset[str]: ...
     def gen(self, a: Automata, times: int = 1) -> List[Tuple[List[C], frozenset[str]]]: 
         def gen_one(r: Self, a: Automata) -> Optional[Tuple[C, Self]]:
             possible_steps = r.resumable(a)
             if possible_steps:
                 import random
-                c = random.choice(list(possible_steps))
+                rnd = random.Random()
+                ccls = rnd.choice(list(possible_steps))
+                c = ccls.sample(rnd)
                 return c, r.step(a, c, 0)
             else:
                 return None
@@ -305,9 +307,10 @@ class NFARunner(Runner[C, NFA[C]]):
     def step(self, nfa: NFA[C], symbol: C, pos: int) -> NFARunner[C]:
         next_states = set()
         for s in self.current:
-            entry: FrozenDict[CharClass[C] | C, frozenset[NFAState[C]]] = nfa.transitions.get(s, {})
-            if symbol in entry:
-                next_states.update(entry[symbol])
+            entry: FrozenDict[CharClass[C], frozenset[NFAState[C]]] = nfa.transitions.get(s, {})
+            k: CharClass[C] = CharClass.create(symbol)
+            if k in entry:
+                next_states.update(entry[k])
             else:
                 for char_class, targets in entry.items():
                     if isinstance(char_class, CharClass) and char_class(symbol):
@@ -322,8 +325,8 @@ class NFARunner(Runner[C, NFA[C]]):
     def is_valid(self) -> bool:
         return bool(self.current)
 
-    def resumable(self, nfa: NFA[C]) -> frozenset[C]:
-        result: Set[C] = set()
+    def resumable(self, nfa: NFA[C]) -> frozenset[CharClass[C]]:
+        result: Set[CharClass[C]] = set()
         for s in self.current:
             result.update(nfa.transitions.get(s, {}).keys())
         return frozenset(result)
@@ -358,7 +361,7 @@ class DFARunner(Runner[C, DFA[C]]):
     def is_valid(self) -> bool:
         return bool(self.current)
     
-    def resumable(self, dfa: DFA[C]) -> frozenset[C]:
+    def resumable(self, dfa: DFA[C]) -> frozenset[CharClass[C]]:
         return frozenset(dfa.transitions.get(self.current, {}).keys())
 
     def tags(self, dfa: DFA[C]) -> frozenset[str]:

@@ -54,7 +54,7 @@ class Syntax(Generic[A, S]):
     """
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
     """
-    alg: Callable[[Type[Algebra[Any, Any]], Cache[Any]], Algebra[A, S]]
+    alg: Callable[[Type[Algebra[Any, Any]]], Algebra[A, S]]
     meta: Description = field(default_factory=Description, repr=False)
 
     def algebra(self, name: str | MethodType | FunctionType, *args: Any, **kwargs: Any) -> Syntax[A, S]:
@@ -71,8 +71,8 @@ class Syntax(Generic[A, S]):
         Returns:
             A new Syntax reflecting the transformed algebra.
         """
-        def algebra_run(cls: Type[Algebra[Any, S]], cache: Cache[Any]) -> Algebra[Any, S]:
-            a = self(cls, cache)
+        def algebra_run(cls: Type[Algebra[Any, S]]) -> Algebra[Any, S]:
+            a = self(cls)
             if isinstance(name, str):
                 attr = getattr(a, name, None) or getattr(cls, name, None)
                 if attr is None:
@@ -97,8 +97,8 @@ class Syntax(Generic[A, S]):
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
 
-    def __call__(self, alg: Type[Algebra[Any, Any]], cache: Cache[Any]) -> Algebra[A, S]:
-        return self.alg(alg, cache)
+    def __call__(self, alg: Type[Algebra[Any, Any]]) -> Algebra[A, S]:
+        return self.alg(alg)
 
 
 
@@ -125,7 +125,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax with the given name.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).named(name), meta=self.meta)
+        return self.__class__(lambda cls: self(cls).named(name), meta=self.meta)
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
@@ -136,7 +136,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with the same resulting state.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).map(f), meta=self.meta)  # type: ignore
+        return self.__class__(lambda cls: self(cls).map(f), meta=self.meta)  # type: ignore
 
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
@@ -151,7 +151,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).bimap(f, i), meta=self.meta)  # type: ignore
+        return self.__class__(lambda cls: self(cls).bimap(f, i), meta=self.meta)  # type: ignore
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
         """Map both value and state on success.
@@ -162,7 +162,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding transformed value and state.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).map_all(f), meta=self.meta)  # type: ignore
+        return self.__class__(lambda cls: self(cls).map_all(f), meta=self.meta)  # type: ignore
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
         """Transform the error payload when this syntax fails.
@@ -173,7 +173,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that preserves successes and maps failures.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).map_error(f), meta=self.meta)
+        return self.__class__(lambda cls: self(cls).map_error(f), meta=self.meta)
 
     def map_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
         """Map the input state before running this syntax.
@@ -184,7 +184,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that runs with f(state).
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).map_state(f), meta=self.meta)
+        return self.__class__(lambda cls: self(cls).map_state(f), meta=self.meta)
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         """Chain computations where the next step depends on the value.
@@ -195,7 +195,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding the result of the chained computation.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).flat_map(f))  # type: ignore
+        return self.__class__(lambda cls: self(cls).flat_map(f))  # type: ignore
 
     def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Many[A], S]:
         """Repeat this syntax and collect results into Many.
@@ -210,7 +210,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Many of values.
         """
         return self.__class__(
-            lambda cls, cache: self(cls, cache).many(at_least=at_least, at_most=at_most)  # type: ignore
+            lambda cls: self(cls).many(at_least=at_least, at_most=at_most)  # type: ignore
         ).describe(
             name='*', fixity='prefix', parameter=(self,)
         )  # type: ignore
@@ -325,7 +325,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that marks downstream failures as committed.
         """
-        return self.__class__(lambda cls, cache: self(cls, cache).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
+        return self.__class__(lambda cls: self(cls).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
 
     ###################################################### operator overloading #############################################
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -340,9 +340,8 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=LEFT).
         """
         other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
-        ret: Syntax[Then[A, B], S] = self.__class__(
-            lambda cls, cache: self(cls, cache).then_left(other(cls, cache))  # type: ignore
-        )  # type: ignore
+        ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self(cls).then_left(other(cls))) # type: ignore
+        
         return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -362,7 +361,7 @@ class Syntax(Generic[A, S]):
         """
         other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
         ret: Syntax[Then[A, B], S] = self.__class__(
-            lambda cls, cache: self(cls, cache).then_both(other(cls, cache))  # type: ignore
+            lambda cls: self(cls).then_both(other(cls))  # type: ignore
         )  # type: ignore
         return ret.describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
@@ -383,7 +382,7 @@ class Syntax(Generic[A, S]):
         """
         other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
         ret: Syntax[Then[A, B], S] = self.__class__(
-            lambda cls, cache: self(cls, cache).then_right(other(cls, cache))  # type: ignore
+            lambda cls: self(cls).then_right(other(cls))  # type: ignore
         )  # type: ignore
         return ret.describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
@@ -404,7 +403,7 @@ class Syntax(Generic[A, S]):
         """
         other = other if isinstance(other, Syntax) else lift(other).as_(Syntax[B, S])
         ret: Syntax[Choice[A, B], S] = self.__class__(
-            lambda cls, cache: self(cls, cache).or_else(other(cls, cache))  # type: ignore
+            lambda cls: self(cls).or_else(other(cls))  # type: ignore
         )  
         return ret.describe(name='|', fixity='infix', parameter=(self, other))
 
@@ -516,7 +515,7 @@ def fail(error: Any) -> Syntax[Any, Any]:
     Returns:
         A Syntax object that always fails.
     """
-    return Syntax(lambda alg, cache: alg.fail(error, cache=cache)).describe(name='fail', fixity='prefix', parameter=(error,))
+    return Syntax(lambda alg: alg.fail(error)).describe(name='fail', fixity='prefix', parameter=(error,))
 
 def success(value: Any) -> Syntax[Any, Any]:
     """
@@ -528,7 +527,7 @@ def success(value: Any) -> Syntax[Any, Any]:
     Returns:
         A Syntax object that always succeeds.
     """
-    return Syntax(lambda alg, cache: alg.success(value, cache=cache)).describe(name='success', fixity='prefix', parameter=(value,))
+    return Syntax(lambda alg: alg.success(value)).describe(name='success', fixity='prefix', parameter=(value,))
 
 
 
@@ -541,7 +540,6 @@ def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
 def run(*,
         syntax: Syntax[A, S], 
         alg: Type[Algebra[A, S]], 
-        use_cache:bool,         
         **kwargs: Any) -> Tuple[Any, None | S]:
     """
     Run the syntax over the given algebra, and return the result and bind.
@@ -549,10 +547,10 @@ def run(*,
     Args:
         *args, **kwargs: the arguments passed to alg.state to construct the state object of the algebra.
     """
-    parser = syntax(alg, Cache())
+    parser = syntax(alg)
     input: Optional[S] = alg.state(**kwargs)
     if input:
-        gen = parser.run(input, use_cache=use_cache)
+        gen = parser.run(input, use_cache=Cache())
         try:
             result = next(gen)
             while isinstance(result, Incomplete):
@@ -574,7 +572,7 @@ def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
     algebra: Optional[Algebra[A, S]] = None
     syntax: Optional[Syntax[A, S]] = None
     previous_cls: Optional[Type[Algebra[Any, S]]] = None
-    def syntax_lazy_run(cls: Type[Algebra[Any, S]], cache: Cache) -> Algebra[A, S]:
+    def syntax_lazy_run(cls: Type[Algebra[Any, S]]) -> Algebra[A, S]:
         nonlocal algebra, syntax, previous_cls
         # print('==' * 20, 'Syntax.lazy.syntax_lazy_run', '==' * 20)
         # print('thunk', thunk, id(thunk))
@@ -585,9 +583,9 @@ def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
         def algebra_lazy_f():
             if syntax is None:
                 raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
-            return syntax(cls, cache)
+            return syntax(cls)
         if algebra is None or (previous_cls is not None and previous_cls is not cls):
-            algebra = cls.lazy(algebra_lazy_f, cache=cache)
+            algebra = cls.lazy(algebra_lazy_f)
             previous_cls = cls
         return algebra
     return Syntax(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))  
@@ -619,7 +617,7 @@ def token(*,
     token_value_txt = text if text is not None else None
     msg = 'token(' + ','.join([x for x in [token_type_txt, token_value_txt, str(regex)] if x is not None]) + ')'
     return Syntax(
-        lambda cls, cache: cls.factory('token', token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex, cache=cache)
+        lambda cls: cls.factory('token', token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
         ).describe(name=msg, fixity='prefix') 
 
     
@@ -649,6 +647,6 @@ def lift(value: Any)-> Syntax[Any, Any]:
     elif isinstance(value, Enum):
         return token(token_type=value)
     else:
-        return Syntax(lambda cls, cache: cls.success(value, cache=cache))
+        return Syntax(lambda cls: cls.success(value))
 
 

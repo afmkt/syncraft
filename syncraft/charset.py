@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from syncraft.algebra import (
     SyncraftError
 )
+import random
 from functools import cached_property
 from enum import Enum
 
@@ -109,6 +110,14 @@ class CharClass(Generic[C]):
             universe=universe,
             name=".")
     
+    def sample(self, rnd: random.Random) -> C:
+        range = rnd.choice(self.interval)
+        point = rnd.randint(range[0], range[1])
+        if self.universe == CodeUniverse.BYTE:
+            return bytes([point])  # type: ignore
+        else:
+            return chr(point)  # type: ignore
+
     def matches_interval(self, cc: C) -> bool:
         if len(cc) != 1:
             raise CodepointError(f"Expected single character, got {cc!r}", offending=cc, expect="single character")
@@ -119,7 +128,7 @@ class CharClass(Generic[C]):
             c = cc[0]
             return any(start <= c <= end for start, end in self.interval)
         else:
-            raise CodepointError(f"Expected str, bytes, got {type(c)}", offending=c, expect="str, bytes")
+            raise CodepointError(f"Expected str, bytes, got {type(cc)}", offending=cc, expect="str, bytes")
 
     def matches(self, c: C) -> bool:
         if len(c) != 1:

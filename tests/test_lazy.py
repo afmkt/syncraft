@@ -1,7 +1,6 @@
 from __future__ import annotations
 from syncraft.parser import token
 import pytest
-from syncraft.walker import walk
 from syncraft.ast import Nothing
 from syncraft.syntax import lazy, literal, regex
 from syncraft.parser import parse

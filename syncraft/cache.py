@@ -42,6 +42,7 @@ class InProgress:
 
 
 Args = TypeVar('Args', bound=Hashable)
+A = TypeVar('A')
 Ret = TypeVar('Ret')
 
 @dataclass
@@ -59,7 +60,12 @@ class Cache(Generic[Ret]):
         assert self.cache is other.cache, "There should be only one global cache"
         return self
     
-        
+    def return_value(self, v: Ret) -> Generator[Any, Any, Ret]:
+        def g()->Generator[Any, Any, Ret]:
+            yield from ()
+            return v
+        return (yield from self.gen(g))
+    
     def gen(self, 
             f: Callable[..., Generator[Any, Any, Ret]], 
             *args: Any, 
@@ -78,8 +84,6 @@ class Cache(Generic[Ret]):
             c[key] = InProgress()
             result = yield from f(*args, **kwargs)
             c[key] = result
-            if kwargs.get('use_cache', True) is False:
-                c.pop(key, None)
             return result
         except Exception as e:
             c.pop(key, None)

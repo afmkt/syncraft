@@ -5,8 +5,8 @@ https://www.sqlite.org/syntaxdiagrams.html
 from __future__ import annotations
 from typing import Any
 from syncraft.syntax import Syntax, lazy, choice
-import syncraft.parser as dsl
-from syncraft.diagnostic import rich_error, rich_debug, rich_parser
+import syncraft.syntax as dsl
+from syncraft.utils import rich_error, rich_debug, rich_parser
 from sqlglot import TokenType
 
 
@@ -474,9 +474,9 @@ BY = dsl.lift("BY")
 CAST = dsl.lift("CAST")
 REGEXP = dsl.lift("REGEXP")
 
-var = dsl.variable()
-string = dsl.string()
-number = dsl.number()
+var = dsl.token(token_type=TokenType.VAR)
+string = dsl.token(token_type=TokenType.STRING)
+number = dsl.token(token_type=TokenType.NUMBER)
 
 signed_number = ~(PLUS | DASH) + number
 literal_value = (number | string | BLOB | NULL | TRUE | FALSE | CURRENT_DATE | CURRENT_TIME | CURRENT_TIMESTAMP)

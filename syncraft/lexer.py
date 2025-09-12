@@ -59,20 +59,8 @@ class Regular(Algebra[NFA[C], RegularState]):
 
     # error on recursion
     @classmethod
-    def lazy(cls, 
-             thunk: Callable[[], Algebra[Any, RegularState]], 
-             cache: Cache) -> Algebra[Any, RegularState]:
+    def lazy(cls, thunk: Callable[[], Algebra[Any, RegularState]]) -> Algebra[Any, RegularState]:
         raise RecursionNotSupportedError("Regular language does not support recursion, so lazy is not supported.", offending=thunk)
-
-
-    def run(self, 
-            input: RegularState, 
-            use_cache: bool = True
-            ) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[NFA[C], RegularState]]]:
-        # we don't use cache for regular language.
-        # because regular language is not recursive.
-        # and NFA/DFA execution is no slower than memoized execution.
-        return (yield from self.run_f(input, use_cache))
     
     # disable data transformation methods
     def map(self, f: Callable[[NFA[C]], Any]) -> Algebra[Any, RegularState]:

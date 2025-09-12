@@ -10,9 +10,6 @@ from .syntax import (
     when,
     run,
 )
-from .walker import (
-    walk,
-)
 from .algebra import (
     Algebra,
     Error,
@@ -69,7 +66,7 @@ __all__ = [
 	# syntax & core
 	"Syntax", "choice", "lazy", "success", "fail", "run", "Description", "when",
 	# parsing/generation helpers
-	"parse", "sqlglot", "token", "identifier", "variable", "literal", "number", "string", "regex", "walk",
+	"parse", "sqlglot", "token", "identifier", "variable", "literal", "number", "string", "regex", 
 	"generate", "generate_with", "validate", "Parser", "Generator",
 	# finder
 	"find", "matches", "anything", "Finder",

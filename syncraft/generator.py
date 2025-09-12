@@ -244,7 +244,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         Returns:
             Algebra[B, GenState[T]]: An algebra yielding the final result.
         """
-        def flat_map_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[B, GenState[T]]]]:
+        def flat_map_run(input: GenState[T], use_cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[B, GenState[T]]]]:
             if not input.pruned and (not isinstance(input.ast, Then) or isinstance(input.ast, Nothing)):
                 return Left(Error(this=self, 
                                     message=f"Expect Then got {input.ast}",
@@ -263,7 +263,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Right((result, next_input)):
                             return Right((result, next_input))
             raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        return self.__class__(flat_map_run, _name=self.name, cache=self.cache) # type: ignore
+        return self.__class__(flat_map_run, _name=self.name) # type: ignore
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
@@ -287,7 +287,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
-        def many_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
+        def many_run(input: GenState[T], use_cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
             if input.pruned:
                 upper = at_most if at_most is not None else at_least + 2
                 count = input.rng("many").randint(at_least, upper)
@@ -327,7 +327,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         state=input.inject(x)
                     )) 
                 return Right((Many(value=tuple(ret)), input))
-        return self.__class__(many_run, _name=f"many({self.name})", cache=self.cache)  # type: ignore
+        return self.__class__(many_run, _name=f"many({self.name})")  # type: ignore
     
  
     def or_else(self, # type: ignore
@@ -345,7 +345,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: An
             algebra yielding which branch succeeded and its value.
         """
-        def or_else_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+        def or_else_run(input: GenState[T], use_cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
             def exec(kind: ChoiceKind | None, 
                      left: GenState[T], 
                      right: GenState[T]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
@@ -399,12 +399,11 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 input.inject(input.ast.value))
                     return result
                     
-        return self.__class__(or_else_run, _name=f"or_else({self.name} | {other.name})", cache=self.cache | other.cache) # type: ignore
+        return self.__class__(or_else_run, _name=f"or_else({self.name} | {other.name})") # type: ignore
 
     @classmethod
     def token(cls, 
               *,
-              cache: Cache,
               token_type: Optional[TokenType] = None, 
               text: Optional[str] = None, 
               case_sensitive: bool = False,
@@ -428,18 +427,18 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         """
         gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
         lazy_self: Algebra[ParseResult[T], GenState[T]]
-        def token_run(input: GenState[T], use_cache:bool) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[ParseResult[Token], GenState[T]]]]:
-            yield from ()
+        def token_run(input: GenState[T], use_cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[ParseResult[Token], GenState[T]]]]:
             if input.pruned:
-                return Right((gen.gen(), input))
+                return (yield from use_cache.return_value(Right((gen.gen(), input))))
             else:
                 current = input.ast
                 if not isinstance(current, Token) or not gen.is_valid(current):
-                    return Left(Error(None, 
+                    return (yield from use_cache.return_value( Left(Error(None, 
                                       message=f"Expected a Token({gen.text}), but got {current}.", 
-                                      state=input))
-                return Right((current, input))
-        lazy_self = cls(token_run, _name=cls.__name__ + f'.token({token_type or text or regex})', cache=cache)  # type: ignore
+                                      state=input))))
+                else:
+                    return (yield from use_cache.return_value(Right((current, input))))
+        lazy_self = cls(token_run, _name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
         return lazy_self
 
 
@@ -463,7 +462,7 @@ def generate_with(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Generator, use_cache=not restore_pruned, ast=data, seed=seed, restore_pruned=restore_pruned)
+    v, s = run(syntax=syntax, alg=Generator, ast=data, seed=seed, restore_pruned=restore_pruned)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -485,7 +484,7 @@ def validate(
         A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
     """
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Generator, use_cache=True, ast=data, seed=0, restore_pruned=True)
+    v, s = run(syntax=syntax, alg=Generator, ast=data, seed=0, restore_pruned=True)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -505,7 +504,7 @@ def generate(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Generator, use_cache=False, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    v, s = run(syntax=syntax, alg=Generator, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
     if s is not None:
         return v, s.binding.bound()
     else:
