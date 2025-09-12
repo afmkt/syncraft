@@ -224,3 +224,19 @@ def test_dfa_transition_merge():
                 assert i1[1] < i2[0], f"Intervals {i1} and {i2} overlap, not merged properly"
 
 
+def test_tag_propagation():
+    # NFA with multiple accepting states with tags
+    nfa_a = NFA.from_char("a").tagged("tag1")
+    nfa_b = NFA.from_char("b").tagged("tag2")
+    nfa = nfa_a.union(nfa_b)
+    dfa = DFA.from_nfa(nfa)
+    
+    # Every DFA accept state should contain all tags of NFA states it represents
+    for nfa_states, fa_state in dfa.nfa2dfa.items():
+        tags_from_nfa = set()
+        for ns in nfa_states:
+            tags_from_nfa.update(nfa.accept.get(ns, frozenset()))
+        if fa_state in dfa.accept:
+            assert dfa.accept[fa_state] == frozenset(tags_from_nfa), (
+                f"Tags not propagated correctly for DFA state {fa_state}"
+            )

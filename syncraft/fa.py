@@ -41,7 +41,7 @@ class DFA(Generic[C]):
     current: FAState
     accept: FrozenDict[FAState, frozenset[str]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
-    
+    nfa2dfa: FrozenDict[frozenset[FAState], FAState]= field(default_factory=FrozenDict) 
     @staticmethod
     def merge_adjacent_transitions(transitions: dict[CharSet[C], FAState]) -> dict[CharSet[C], FAState]:
         """Merge consecutive CharSets with the same target into a single CharSet."""
@@ -102,7 +102,8 @@ class DFA(Generic[C]):
         return cls(
                    current=dfa_states[start],
                    accept=FrozenDict(accept),
-                   transitions=transitions
+                   transitions=transitions,
+                   nfa2dfa=FrozenDict(dfa_states)
                )
 
     def runner(self) -> DFARunner[C]:
