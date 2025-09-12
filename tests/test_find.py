@@ -1,14 +1,8 @@
 from __future__ import annotations
-from typing import Any, List, Tuple
-from syncraft.algebra import Either, Left, Right, Error
-from syncraft.ast import Marked, Then, ThenKind, Many, Nothing
-from syncraft.parser import variable, parse, Parser, Token
+from typing import Any
+from syncraft.parser import  parse_sql
 from syncraft.parser import literal
-from syncraft.generator import TokenGen
-from rich import print
-import syncraft.generator as gen
 from dataclasses import dataclass
-from syncraft.finder import find, matches, anything
 
 def test_find()->None:
     @dataclass
@@ -44,5 +38,5 @@ def test_find()->None:
             + ifthenelse.mark('body')
             // ~END).to(While)
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
-    ast, bound = parse(syntax, sql, dialect='sqlite')
+    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
     # print(ast)

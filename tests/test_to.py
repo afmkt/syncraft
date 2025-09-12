@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-from syncraft.parser import  parse
+from syncraft.parser import parse_sql
 from syncraft.parser import literal
 import syncraft.generator as gen
 from dataclasses import dataclass
@@ -40,7 +40,7 @@ def test_to() -> None:
             + ifthenelse.mark('body')
             // ~END).to(While)
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
-    ast, bound = parse(syntax, sql, dialect='sqlite')
+    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
     # print(ast)
     g, bound = gen.generate_with(syntax, ast, restore_pruned=True)
     assert ast == g

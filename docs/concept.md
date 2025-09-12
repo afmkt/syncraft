@@ -77,7 +77,7 @@ A = literal("a").mark("decl").bind()
 B = literal("b").mark("ref").bind()
 syntax = (A + B).to(Pair)
 
-ast, bound = parse(syntax, "a b", dialect="sqlite")  # dialect is required by the tokenizer
+ast, bound = parse_sql(syntax, "a b", dialect="sqlite")  # dialect is required by the tokenizer
 
 # Write a value-level predicate using the parameter names of interest
 def distinct(decl, ref) -> bool:

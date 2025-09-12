@@ -121,9 +121,8 @@ class ParserState(Bindable, Generic[T]):
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
     @classmethod
-    def state(cls, sql: str, dialect: str) -> ParserState[T]: # type: ignore
-        tokens = tuple([Token(token_type=token.token_type, text=token.text) for token in tokenize(sql, dialect=dialect)])
-        return ParserState.from_tokens(tokens)  # type: ignore
+    def state(cls, tokens: List[Token]) -> ParserState[T]: # type: ignore
+        return ParserState.from_tokens(tuple(tokens))  # type: ignore
 
     @classmethod
     def token(cls, 
@@ -279,7 +278,7 @@ def lift(value: Any)-> Syntax[Any, Any]:
 
 
 
-def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+def parse_sql(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     """Parse SQL text with a ``Syntax`` using the ``Parser`` backend.
 
     Tokenizes the SQL with the specified dialect and executes ``syntax``.
@@ -293,8 +292,12 @@ def parse(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, None |
         Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
         The produced AST and collected marks, or a tuple signaling failure.
     """
+    tokens = [Token(token_type=token.token_type, text=token.text) for token in tokenize(sql, dialect=dialect)]
+    return parse(syntax, tokens)
+    
+def parse(syntax: Syntax[Any, Any], tokens: List[Token]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Parser, sql=sql, dialect=dialect)
+    v, s = run(syntax=syntax, alg=Parser, tokens=tokens)
     if s is not None:
         return v, s.binding.bound()
     else:

@@ -15,7 +15,7 @@ from syncraft.constraint import Bindable
 from syncraft.cache import Cache
 import re
 
-from syncraft.syntax import Syntax
+
 
 from rich import print
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 from syncraft.fa import NFA, DFA
 from syncraft.charset import CodeUniverse
-from syncraft.constraint import FrozenDict
 
 
 def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)->None:

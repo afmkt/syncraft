@@ -21,7 +21,7 @@ A = literal("a")
 B = literal("b")
 C = literal(",")
 syntax = (A + B).sep_by(C)
-ast, _ = parse(syntax, "a b, a b, a b", dialect="sqlite")
+ast, _ = parse_sql(syntax, "a b, a b, a b", dialect="sqlite")
 
 ```
 See also: `literal`, combinators like `+` and `.sep_by`, and `parse` in the [API reference](reference.md).
@@ -63,7 +63,7 @@ B = literal("b").mark("second")
 C = literal(",")
 syntax = (A + B).to(Pair).sep_by(C)
 
-ast, _ = parse(syntax, "a b, a b, a b", dialect="sqlite")
+ast, _ = parse_sql(syntax, "a b, a b, a b", dialect="sqlite")
 value, inverse = ast.bimap()
 print(value)
 ```

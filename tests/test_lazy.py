@@ -3,14 +3,14 @@ from syncraft.parser import token
 import pytest
 from syncraft.ast import Nothing
 from syncraft.syntax import lazy
-from syncraft.parser import parse, literal, regex
+from syncraft.parser import parse_sql, literal, regex
 from syncraft.generator import TokenGen, generate_with
 from syncraft.cache import LeftRecursionError
 from rich import print
 
 def test_simple_recursion()->None:
     A = lazy(lambda: literal('a') + ~A | literal('a'))
-    v, s = parse(A, 'a a a', dialect='sqlite')
+    v, s = parse_sql(A, 'a a a', dialect='sqlite')
     # print(v)
     ast1, inv = v.bimap()
     # print(ast1)
@@ -36,7 +36,7 @@ def test_simple_recursion()->None:
 
 def test_direct_recursion()->None:
     Expr1 = lazy(lambda: literal('a') + ~Expr1)
-    v, s = parse(Expr1, 'a a a', dialect='sqlite')
+    v, s = parse_sql(Expr1, 'a a a', dialect='sqlite')
     x, _ = v.bimap()
     assert x == (
         TokenGen.from_string('a'), 
@@ -53,7 +53,7 @@ def test_direct_recursion()->None:
 def test_mutual_recursion()->None:
     A = lazy(lambda: literal('a') + B)
     B = lazy(lambda: (literal('b') + A) | (literal('c')))
-    v, s = parse(A, 'a b a b a c', dialect='sqlite')
+    v, s = parse_sql(A, 'a b a b a c', dialect='sqlite')
     # print('--' * 20, "test_mutual_recursion", '--' * 20)
     # print(v)
     ast1, inv = v.bimap()
@@ -91,7 +91,7 @@ def test_recursion() -> None:
     p_code = 'a a b b'
     LL = parens() | L
     
-    v, s = parse(LL, p_code, dialect='sqlite')
+    v, s = parse_sql(LL, p_code, dialect='sqlite')
     ast1, inv = v.bimap()
     assert ast1 == (
             TokenGen.from_string('a'), 
@@ -118,7 +118,7 @@ def test_direct_left_recursion()->None:
     Term = literal('n')
     Expr = lazy(lambda: Expr + literal('+') + Term | Term)
     with pytest.raises(LeftRecursionError):
-        v, s = parse(Expr, 'n+n+n', dialect='sqlite')
+        v, s = parse_sql(Expr, 'n+n+n', dialect='sqlite')
 
 
 
@@ -129,4 +129,4 @@ def test_indirect_left_recursion()->None:
     A = lazy(lambda: (B >> PLUS >> A) | B)
     B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
     with pytest.raises(LeftRecursionError):
-        v, s = parse(A, '1 + 2 * 3', dialect='sqlite')
+        v, s = parse_sql(A, '1 + 2 * 3', dialect='sqlite')
