@@ -13,8 +13,6 @@ def test_from_char()->None:
     nfa = NFA.from_char('a')
     dfa = DFA.from_nfa(nfa)
     assert nfa.current in nfa.transitions
-    assert 'a' in nfa.transitions[nfa.current]
-    assert nfa.transitions[nfa.current]['a'] == frozenset(nfa.accept)
     assert_both(nfa, dfa, ['a'], True)
     assert_both(nfa, dfa, ['b'], False)
     assert_both(nfa, dfa, [], False)
@@ -153,34 +151,34 @@ def test_runner()->None:
     runner = nfa.run(["a", "b", "c"])
     drunner = dfa.run(["a", "b", "c"])
     # print(runner)
-    assert runner.is_accepted(nfa)
-    assert drunner.is_accepted(dfa)
+    assert runner.is_accepted(nfa), "nfa is not accepted"
+    assert drunner.is_accepted(dfa), "dfa is not accepted"
     r1 = runner.resumable(nfa)
     dr1 = drunner.resumable(dfa)
     # print(r1)
-    assert not r1
-    assert not dr1
+    assert not r1, "nfa runner is resumable"
+    assert not dr1, "dfa runner is resumable"
     runner = nfa.run(["a", "b"])
     drunner = dfa.run(["a", "b"])
-    assert not runner.is_accepted(nfa)
-    assert not drunner.is_accepted(dfa)
+    assert not runner.is_accepted(nfa), "nfa is accepted"
+    assert not drunner.is_accepted(dfa), "dfa is accepted"
     dr2 = drunner.resumable(dfa)
     r2 = runner.resumable(nfa)
     # print(r2)
-    assert r2 
-    assert dr2
+    assert r2 , "nfa runner is not resumable"
+    assert dr2, "dfa runner is not resumable"
     runner = nfa.run(["a", "b", "c", "d"])
     drunner = dfa.run(["a", "b", "c", "d"])
     # print(runner)
     assert len(runner.accepted) == 1
     assert runner.accepted[0][0] == 2
-    assert not runner.is_accepted(nfa)
-    assert not drunner.is_accepted(dfa)
+    assert not runner.is_accepted(nfa), "nfa is accepted"
+    assert not drunner.is_accepted(dfa), "dfa is accepted"
     dr3 = drunner.resumable(dfa)
     r3 = runner.resumable(nfa)
     # print(r3)
-    assert not r3
-    assert not dr3
+    assert not r3, "nfa runner is resumable"
+    assert not dr3, "dfa runner is resumable"
 
 def test_gen()->None:
     nfa = NFA.from_char("a").then(NFA.from_char("b")).then(NFA.from_char("c"))

@@ -31,11 +31,36 @@ class CodeUniverse(Enum):
         return (self.value,)
 
 @dataclass(frozen=True)
-class CharClass(Generic[C]):
+class CharSet(Generic[C]):
     predicate: Callable[[int], bool]       
     interval: Tuple[Tuple[int, int], ...] 
     universe: CodeUniverse
     name: str
+
+    @staticmethod
+    def partition_charsets(intervals: list[Tuple[int, int]]) -> list[Tuple[int, int]]:
+        """Given a list of intervals, return sorted list of disjoint intervals covering all points."""
+        events = []
+        for start, end in intervals:
+            events.append((start, 1))      # interval starts
+            events.append((end + 1, -1))   # interval ends (exclusive)
+        
+        events.sort()
+        pieces = []
+        active = 0
+        piece_start = None
+        
+        for point, delta in events:
+            prev_active = active
+            active += delta
+            if prev_active == 0 and active > 0:
+                piece_start = point
+            elif prev_active > 0 and active == 0:
+                assert piece_start is not None
+                pieces.append((piece_start, point - 1))
+                piece_start = None
+        return pieces    
+
 
     @staticmethod
     def difference_interval(a: List[Tuple[int, int]], b: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
@@ -93,7 +118,7 @@ class CharClass(Generic[C]):
         return merged
 
     @classmethod
-    def create(cls, char: str | bytes, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharClass[C]:
+    def create(cls, char: str | bytes, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
         cs: frozenset[int] = frozenset(ord(x) if isinstance(x, str) else x for x in char)
         intv = tuple((c, c) for c in sorted(cs))
         return cls(
@@ -103,7 +128,16 @@ class CharClass(Generic[C]):
             name=f"'{cs}'")
     
     @classmethod
-    def any(cls, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharClass[C]:
+    def from_interval(cls, intv: List[Tuple[int, int]], universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
+        merged = tuple(cls.merge_intervals(intv))
+        return cls(
+            predicate=lambda c: any(start <= c <= end for start, end in merged), 
+            interval=merged,
+            universe=universe,
+            name=f"{merged}")
+
+    @classmethod
+    def any(cls, universe: CodeUniverse = CodeUniverse.UNICODE) -> CharSet[C]:
         return cls(
             predicate=lambda c: True, 
             interval=universe.interval,
@@ -117,6 +151,12 @@ class CharClass(Generic[C]):
             return bytes([point])  # type: ignore
         else:
             return chr(point)  # type: ignore
+
+    def overlaps(self, intv: Tuple[int, int]) -> bool:
+        for start, end in self.interval:
+            if (end >= intv[0] and start <= intv[1]):
+                return True
+        return False
 
     def matches_interval(self, cc: C) -> bool:
         if len(cc) != 1:
@@ -143,13 +183,13 @@ class CharClass(Generic[C]):
     def __call__(self, c: C) -> bool:
         assert self.matches(c) == self.matches_interval(c)
         return self.matches(c)
-    
+
     def __contains__(self, c: C) -> bool:
         assert self.matches(c) == self.matches_interval(c)
         return self.matches_interval(c)
         
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, CharClass):
+        if not isinstance(other, CharSet):
             return NotImplemented
         return self.interval == other.interval and self.universe == other.universe
 
@@ -157,51 +197,51 @@ class CharClass(Generic[C]):
         return hash((self.interval, self.universe))
 
 
-    def union(self, other: CharClass[C]) -> CharClass[C]:
+    def union(self, other: CharSet[C]) -> CharSet[C]:
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
         intv = tuple(self.merge_intervals(list(self.interval) + list(other.interval)))
-        return CharClass(
+        return CharSet(
             lambda c: self.predicate(c) or other.predicate(c), 
             intv,
             universe=self.universe,
             name=f"({self.name} | {other.name})")
-    def __or__(self, other: CharClass[C]) -> CharClass[C]:
+    def __or__(self, other: CharSet[C]) -> CharSet[C]:
         return self.union(other)
     
-    def intersect(self, other: CharClass[C]) -> CharClass[C]:
+    def intersect(self, other: CharSet[C]) -> CharSet[C]:
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
         intv = tuple(self.intersect_interval(list(self.interval), list(other.interval)))
         
-        return CharClass(
+        return CharSet(
             lambda c: self.predicate(c) and other.predicate(c), 
             intv,
             universe=self.universe,
             name=f"({self.name} & {other.name})")
-    def __and__(self, other: CharClass[C]) -> CharClass[C]:
+    def __and__(self, other: CharSet[C]) -> CharSet[C]:
         return self.intersect(other)
 
-    def difference(self, other: CharClass[C]) -> CharClass[C]:
+    def difference(self, other: CharSet[C]) -> CharSet[C]:
         if self.universe != other.universe:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
         intv = tuple(self.difference_interval(list(self.interval), list(other.interval)))
-        return CharClass(
+        return CharSet(
             lambda c: self.predicate(c) and not other.predicate(c), 
             intv,
             universe=self.universe,
             name=f"({self.name} - {other.name})")
-    def __sub__(self, other: CharClass[C]) -> CharClass[C]:
+    def __sub__(self, other: CharSet[C]) -> CharSet[C]:
         return self.difference(other)
     
-    def complement(self) -> CharClass[C]:
+    def complement(self) -> CharSet[C]:
         intv = tuple(self.difference_interval(list(self.universe.interval), list(self.interval)))
-        return CharClass(
+        return CharSet(
             lambda c: not self.predicate(c), 
             intv,
             universe=self.universe,
             name=f"~{self.name}")
-    def __invert__(self) -> CharClass[C]:
+    def __invert__(self) -> CharSet[C]:
         return self.complement()
 
 

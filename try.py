@@ -9,21 +9,20 @@ from rich import print
 
 
 
+def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)->None:
+    nfa_result = nfa.match(input)
+    dfa_result = dfa.match(input)
+    assert nfa_result == expected, f"NFA failed on input {input}: expected {expected}, got {nfa_result}"
+    assert dfa_result == expected, f"DFA failed on input {input}: expected {expected}, got {dfa_result}"
 
-def test_from_char()->None:
-
-    nfa = NFA.from_char("a").then(NFA.from_char("b")).then(NFA.from_char("c")).union(NFA.from_char("d")).then(NFA.from_char("e")).star()
-    # dfa = DFA.from_nfa(nfa)
-    r = nfa.runner()
-    # dr = dfa.runner()
-
-    from_r = r.gen(nfa, 12)
-    # from_dr = dr.gen(dfa, 12)
-
-    print(from_r)
-    print('---' * 20)
-    # print(from_dr)    
+def test_optional():
+    nfa = NFA.from_char("a").optional()
+    dfa = DFA.from_nfa(nfa)
+    assert_both(nfa, dfa, [], True)          # epsilon path
+    assert_both(nfa, dfa, ["a"], True)       # one "a"
+    assert_both(nfa, dfa, ["b"], False)      # not "a"
+    assert_both(nfa, dfa, ["a", "a"], False) # not "aa"
 
 
 if __name__ == "__main__":
-    test_from_char()
+    test_optional()
