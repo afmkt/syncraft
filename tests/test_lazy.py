@@ -1,12 +1,27 @@
 from __future__ import annotations
+from typing import TypeVar, Generic, Tuple
 from syncraft.parser import token
 import pytest
-from syncraft.ast import Nothing
+from syncraft.ast import Nothing, TokenSpec, Token
 from syncraft.syntax import lazy
 from syncraft.parser import parse_sql, literal, regex
-from syncraft.generator import TokenGen, generate_with
+from syncraft.generator import generate_with
 from syncraft.cache import LeftRecursionError
+from enum import Enum
 from rich import print
+from sqlglot import TokenType
+
+
+
+def from_string(string: str) -> Token:
+    tt = TokenSpec.guess_type(string, 
+                                _type=TokenType, 
+                                escape_type=TokenType.VAR, 
+                                token_type=None, 
+                                case_sensitive=False)
+    return Token(token_type=tt, text=string)
+
+
 
 def test_simple_recursion()->None:
     A = lazy(lambda: literal('a') + ~A | literal('a'))
@@ -15,11 +30,11 @@ def test_simple_recursion()->None:
     ast1, inv = v.bimap()
     # print(ast1)
     assert ast1 == (
-        TokenGen.from_string('a'), 
+        from_string('a'), 
         (
-            TokenGen.from_string('a'), 
+            from_string('a'), 
             (
-                TokenGen.from_string('a'), 
+                from_string('a'), 
                 Nothing()
             )
         )
@@ -39,11 +54,11 @@ def test_direct_recursion()->None:
     v, s = parse_sql(Expr1, 'a a a', dialect='sqlite')
     x, _ = v.bimap()
     assert x == (
-        TokenGen.from_string('a'), 
+        from_string('a'), 
         (
-            TokenGen.from_string('a'), 
+            from_string('a'), 
             (
-                TokenGen.from_string('a'), 
+                from_string('a'), 
                 Nothing()
             )
         )
@@ -59,14 +74,14 @@ def test_mutual_recursion()->None:
     ast1, inv = v.bimap()
     # print(ast1)
     assert ast1 == (
-        TokenGen.from_string('a'), 
+        from_string('a'), 
         (
-            TokenGen.from_string('b'), 
-            TokenGen.from_string('a'), 
+            from_string('b'), 
+            from_string('a'), 
             (
-                TokenGen.from_string('b'), 
-                TokenGen.from_string('a'), 
-                TokenGen.from_string('c')
+                from_string('b'), 
+                from_string('a'), 
+                from_string('c')
             )
         )
     )
@@ -94,13 +109,13 @@ def test_recursion() -> None:
     v, s = parse_sql(LL, p_code, dialect='sqlite')
     ast1, inv = v.bimap()
     assert ast1 == (
-            TokenGen.from_string('a'), 
+            from_string('a'), 
             (
-                TokenGen.from_string('a'), 
+                from_string('a'), 
                 Nothing(), 
-                TokenGen.from_string('b')
+                from_string('b')
             ), 
-            TokenGen.from_string('b')
+            from_string('b')
         )
     # print(v)
     # print(ast1)    

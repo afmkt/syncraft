@@ -7,14 +7,14 @@ from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra, Either, Right, Incomplete
 )
-from syncraft.ast import TokenProtocol, ParseResult, Choice, Many, Then, Marked, Collect
+from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect
 
 from syncraft.generator import GenState, Generator
 from syncraft.cache import Cache
 from syncraft.syntax import Syntax
+from enum import Enum
 
-
-T=TypeVar('T', bound=TokenProtocol)
+T=TypeVar('T', bound=Enum)
 @dataclass(frozen=True)
 class Finder(Generator[T], Generic[T]):
     """Generator backend used to search/inspect parse trees.

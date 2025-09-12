@@ -3,12 +3,13 @@
 from __future__ import annotations
 import re
 from typing import (
-    Optional, Any, TypeVar, Tuple, runtime_checkable, cast,
+    Optional, Any, TypeVar, Tuple, cast,
     Generic, Callable, Union, Protocol, Type, List, ClassVar,
-    Dict, Hashable
+    Dict
 )
 
 
+import rstr
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
 
@@ -456,28 +457,7 @@ class Custom(Generic[A, B], AST):
         return v, lambda c: replace(self, value=inv(c))
 
 #########################################################################################################################
-@dataclass(frozen=True)
-class Token(AST):
-    """Leaf node representing a single token with type and text."""
-    token_type: Enum
-    text: str
-    def __str__(self) -> str:
-        return f"{self.token_type.name}({self.text})"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-            
-@runtime_checkable
-class TokenProtocol(Protocol):
-    @property
-    def token_type(self) -> Enum: ...
-    @property
-    def text(self) -> str: ...
-
-T = TypeVar('T', bound=TokenProtocol)  
-
-
-
+ 
 @dataclass(frozen=True)
 class SyntaxSpec:
     id: int = field(init=False)
@@ -513,24 +493,31 @@ class ManySpec(SyntaxSpec, Generic[A]):
     at_most: Optional[int]
 
 
+TType = TypeVar('TType', bound=Enum)
+
 
 @dataclass(frozen=True)
-class TokenSpec(SyntaxSpec):
-    token_type: Optional[Enum] = None
+class Token(AST, Generic[TType]):
+    """Leaf node representing a single token with type and text."""
+    token_type: TType
+    text: str
+    def __str__(self) -> str:
+        return f"{self.token_type.name}({self.text})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+    
+
+            
+
+@dataclass(frozen=True)
+class TokenSpec(SyntaxSpec, Generic[TType]):
+    token_type: Optional[TType] = None
     text: Optional[str] = None
     case_sensitive: bool = False
     regex: Optional[re.Pattern[str]] = None
-
-    def simple_str(self) -> str:
-        parts = []
-        if self.token_type is not None:
-            parts.append(f"type={self.token_type.name}")
-        if self.text is not None:
-            parts.append(f"text={'`'+self.text+'`' if self.case_sensitive else self.text}")
-        if self.regex is not None:
-            parts.append(f"regex=/{self.regex.pattern}/")
-        return ", ".join(parts)
-
+    escape_type: Optional[TType] = None  
+    _type: Optional[Type[TType]] = None
 
     def __repr__(self) -> str:
         parts = []
@@ -543,34 +530,81 @@ class TokenSpec(SyntaxSpec):
         return f"TokenSpec(id={id(self)}, " + ", ".join(parts) + ")"
         
     def __str__(self) -> str:
-        return self.__repr__()
-    
-    @classmethod
-    def create(cls, 
-               *, 
-               token_type: Optional[Enum] = None, 
-               text: Optional[str] = None, 
-               case_sensitive: bool = False, 
-               regex: Optional[re.Pattern[str]] = None) -> TokenSpec:
-        return cls(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
+        parts = []
+        if self.token_type is not None:
+            parts.append(f"type={self.token_type.name}")
+        if self.text is not None:
+            parts.append(f"text={'`'+self.text+'`' if self.case_sensitive else self.text}")
+        if self.regex is not None:
+            parts.append(f"regex=/{self.regex.pattern}/")
+        return ", ".join(parts)
+        
 
-    def is_valid(self, token: TokenProtocol) -> bool:
+    def is_valid(self, token: Token[TType]) -> bool:
         type_match = self.token_type is None or token.token_type == self.token_type
         value_match = self.text is None or (token.text.strip() == self.text.strip() if self.case_sensitive else 
                                                     token.text.strip().upper() == self.text.strip().upper())
         value_match = value_match or (self.regex is not None and self.regex.fullmatch(token.text) is not None)
         return type_match and value_match
+    
+
+    @staticmethod
+    def guess_type(text: str, 
+                   *,
+                   _type: Optional[Type[TType]], 
+                   escape_type: Optional[TType], 
+                   token_type: Optional[TType] = None, 
+                   case_sensitive: bool = False) -> TType:
+        assert _type is not None, "TokenSpec must have a _type to guess from"
+        if not isinstance(token_type, _type) or token_type == escape_type:
+            if case_sensitive:
+                for t in _type:
+                    if t.value == text:
+                        return t
+            else:
+                text = text.lower()
+                for t in _type:
+                    if t.value == text or str(t.value).lower() == text:
+                        return t
+            assert escape_type is not None, "TokenSpec must have an escape_type to fall back to"
+            return escape_type
+        return token_type
+    
+    def gen(self) -> Token[TType]:
+        text: str
+        if self.text is not None:
+            text = self.text
+        elif self.regex is not None:
+            try:
+                text = rstr.xeger(self.regex)
+            except Exception:
+                # If the regex is invalid or generation fails
+                text = self.regex.pattern  # fallback to pattern string
+        elif self.token_type is not None:
+            text = str(self.token_type.value)
+        else:
+            text = "VALUE"
+        tt = self.guess_type(text, 
+                             _type=self._type, 
+                             escape_type=self.escape_type, 
+                             token_type=self.token_type, 
+                             case_sensitive=False)
+        return Token(token_type=tt, text=text)        
+
+
+
+
 
 
 #: Union-like type describing the shape of AST parse results across nodes.
 ParseResult = Union[
-    Then['ParseResult[T]', 'ParseResult[T]'], 
-    Marked['ParseResult[T]'],
-    Choice['ParseResult[T]', 'ParseResult[T]'],
-    Many['ParseResult[T]'],
-    Collect['ParseResult[T]', Any],
+    Then['ParseResult[TType]', 'ParseResult[TType]'], 
+    Marked['ParseResult[TType]'],
+    Choice['ParseResult[TType]', 'ParseResult[TType]'],
+    Many['ParseResult[TType]'],
+    Collect['ParseResult[TType]', Any],
     Nothing,
-    T,
+    Token[TType],
 ]
 
 

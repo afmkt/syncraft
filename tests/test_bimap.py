@@ -5,9 +5,17 @@ from syncraft.algebra import Error
 from syncraft.parser import  parse_sql
 import syncraft.generator as gen
 from syncraft.parser import literal
-from syncraft.generator import TokenGen
+from syncraft.generator import TokenSpec
 from rich import print
+from sqlglot import TokenType
 
+def from_string(string: str) -> Token:
+    tt = TokenSpec.guess_type(string, 
+                                _type=TokenType, 
+                                escape_type=TokenType.VAR, 
+                                token_type=None, 
+                                case_sensitive=False)
+    return Token(token_type=tt, text=string)
 
 def test1_simple_then() -> None:
     A, B, C = literal("a"), literal("b"), literal("c")
@@ -236,9 +244,9 @@ def test_then_associativity() -> None:
     # Should be Then(Then(A,B),C)
     assert ast == Then(kind=ThenKind.BOTH, 
                                    left=Then(kind=ThenKind.BOTH, 
-                                                   left=TokenGen.from_string('a'), 
-                                                   right=TokenGen.from_string('b')), 
-                                    right=TokenGen.from_string('c'))
+                                                   left=from_string('a'), 
+                                                   right=from_string('b')), 
+                                    right=from_string('c'))
 
 
 def test_ambiguous() -> None:
@@ -248,7 +256,7 @@ def test_ambiguous() -> None:
     sql = "a"
     ast, bound = parse_sql(syntax, sql, dialect="sqlite")
     # Does it prefer A (shorter) or B (fails)? Depends on design.
-    assert ast == Choice[Token, Token](value=TokenGen.from_string("a"), kind=ChoiceKind.LEFT)
+    assert ast == Choice[Token, Token](value=from_string("a"), kind=ChoiceKind.LEFT)
 
 
 def test_combo() -> None:
@@ -273,7 +281,7 @@ def test_optional():
     assert isinstance(v1, Nothing)
     ast2, bound = parse_sql(syntax, "a", dialect="sqlite")
     v2, _ = ast2.bimap()
-    assert v2 == Marked(name='a', value=TokenGen.from_string('a'))
+    assert v2 == Marked(name='a', value=from_string('a'))
 
 
 
@@ -283,5 +291,5 @@ def test_many_optional():
     ast1, _ = parse_sql(syntax, "a a b", dialect="sqlite")
     # print(ast1)
     ast2, inv = ast1.bimap()
-    assert Many(value=(Choice(kind=None, value=TokenGen.from_string('a')), Choice(kind=None, value=TokenGen.from_string('a')))) == inv(ast2)
+    assert Many(value=(Choice(kind=None, value=from_string('a')), Choice(kind=None, value=from_string('a')))) == inv(ast2)
 

@@ -13,25 +13,23 @@ from syncraft.cache import Cache
 
 from syncraft.ast import (
     ParseResult, AST, Token, TokenSpec, 
-    Nothing, TokenProtocol,
+    Nothing, 
     Choice, Many, ChoiceKind,
     Then, ThenKind, SyncraftError
 )
 from syncraft.constraint import FrozenDict
 from syncraft.syntax import Syntax
 from sqlglot import TokenType
+from enum import Enum
 import re
-import rstr
-from functools import lru_cache
 import random
 
 from syncraft.constraint import Bindable
 
-T = TypeVar('T', bound=TokenProtocol)  
 
 S = TypeVar('S', bound=Bindable)
 
-
+T = TypeVar('T', bound=Enum)
 
 B = TypeVar('B')
 
@@ -152,66 +150,8 @@ class GenState(Bindable, Generic[T]):
                  restore_pruned:bool=False) -> GenState[T]:
         return cls(ast=ast, seed=seed, restore_pruned=restore_pruned)
     
-@lru_cache(maxsize=None)
-def token_type_from_string(token_type: Optional[TokenType], 
-                           text: str, 
-                           case_sensitive:bool = False)-> TokenType:
-    if not isinstance(token_type, TokenType) or token_type == TokenType.VAR:
-        if case_sensitive:
-            for t in TokenType:
-                if t.value == text:
-                    return t
-        else:
-            text = text.lower()
-            for t in TokenType:
-                if t.value == text or str(t.value).lower() == text:
-                    return t
-        return TokenType.VAR
-    return token_type
 
 
-@dataclass(frozen=True)
-class TokenGen(TokenSpec):
-
-    def __str__(self) -> str:
-        tt = self.token_type.name if self.token_type else ""
-        txt = self.text if self.text else ""
-        reg = self.regex.pattern if self.regex else ""
-        return f"TokenGen({tt}, {txt}, {self.case_sensitive}, {reg})"
-        
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def gen(self) -> Token:
-        """Generate a token consistent with this specification.
-
-        Resolution order is: exact text, regex pattern, token type value, and
-        finally a generic placeholder literal.
-
-        Returns:
-            Token: A token whose ``token_type`` is derived from the generated
-            text when necessary.
-        """
-        text: str
-        if self.text is not None:
-            text = self.text
-        elif self.regex is not None:
-            try:
-                text = rstr.xeger(self.regex)
-            except Exception:
-                # If the regex is invalid or generation fails
-                text = self.regex.pattern  # fallback to pattern string
-        elif self.token_type is not None:
-            text = str(self.token_type.value)
-        else:
-            text = "VALUE"
-
-        return Token(token_type=token_type_from_string(self.token_type, text, case_sensitive=False), text=text)        
-
-    @staticmethod
-    def from_string(string: str) -> Token:
-        return Token(token_type=token_type_from_string(None, string, case_sensitive=False), text=string)
 
 
 @dataclass(frozen=True)
@@ -402,6 +342,33 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         return self.__class__(or_else_run, _name=f"or_else({self.name} | {other.name})") # type: ignore
 
     @classmethod
+    def primitive(cls, 
+                  *, 
+                  predicate: Optional[Callable[[Token[T]], bool]]=None,
+                  generator: Optional[Callable[..., Token[T]]] = None
+                  )-> Algebra[ParseResult[T], GenState[T]]:
+        def primitive_run(input: GenState[T], 
+                          cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[
+                              Incomplete[GenState[T]], 
+                              GenState[T], 
+                              Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
+            if input.pruned:
+                assert callable(generator), "In pruned mode, a generator function must be provided."
+                return (yield from cache.return_value(Right((generator(), input))))
+            else:
+                current = input.ast
+                assert callable(predicate), "In non-pruned mode, a predicate function must be provided."
+                if not isinstance(current, Token) or not predicate(current): # type: ignore
+                    return (yield from cache.return_value( Left(Error(None, 
+                                      message=f"Expected a token, but got {current}.", 
+                                      state=input))))
+                else:
+                    return (yield from cache.return_value(Right((current, input))))
+        return cls(primitive_run, _name=cls.__name__ + '.primitive()')  # type: ignore
+        
+
+
+    @classmethod
     def token(cls, 
               *,
               token_type: Optional[TokenType] = None, 
@@ -409,37 +376,18 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
               case_sensitive: bool = False,
               regex: Optional[re.Pattern[str]] = None,
               )-> Algebra[ParseResult[T], GenState[T]]:      
-        """Match or synthesize a single token.
-
-        When validating, succeeds if the current AST node is a ``Token`` that
-        satisfies this spec. When generating (pruned), produces a token based on
-        ``text``, ``regex``, or ``token_type``.
-
-        Args:
-            token_type: Expected token type.
-            text: Exact text to match or produce.
-            case_sensitive: Whether text matching respects case.
-            regex: Regular expression to synthesize text from when generating.
-
-        Returns:
-            Algebra[ParseResult[T], GenState[T]]: An algebra producing a Token
-            node or validating the current one.
-        """
-        gen = TokenGen(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)  
-        lazy_self: Algebra[ParseResult[T], GenState[T]]
-        def token_run(input: GenState[T], cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[ParseResult[Token], GenState[T]]]]:
-            if input.pruned:
-                return (yield from cache.return_value(Right((gen.gen(), input))))
-            else:
-                current = input.ast
-                if not isinstance(current, Token) or not gen.is_valid(current):
-                    return (yield from cache.return_value( Left(Error(None, 
-                                      message=f"Expected a Token({gen.text}), but got {current}.", 
-                                      state=input))))
-                else:
-                    return (yield from cache.return_value(Right((current, input))))
-        lazy_self = cls(token_run, _name=cls.__name__ + f'.token({token_type or text or regex})')  # type: ignore
-        return lazy_self
+        gen = TokenSpec(token_type=token_type, 
+                        text=text, 
+                        case_sensitive=case_sensitive, 
+                        regex=regex,
+                        _type =TokenType, 
+                        escape_type=TokenType.VAR)  
+        from typing import cast
+        return cls.primitive(
+            predicate=lambda t: gen.is_valid(cast(Token[TokenType], t)),
+            generator=lambda: cast(Token[T], gen.gen())
+        )
+        
 
 
 

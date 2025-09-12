@@ -3,7 +3,7 @@ import re
 from sqlglot import tokenize, TokenType, Parser as GlotParser, exp
 from typing import (
     Optional, List, Any, Tuple, TypeVar,
-    Generic, Generator
+    Generic, Generator, Callable
 )
 from syncraft.cache import Cache
 from syncraft.constraint import FrozenDict
@@ -15,11 +15,11 @@ from enum import Enum
 
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, TokenProtocol, SyncraftError
+from syncraft.ast import Token, TokenSpec, AST, SyncraftError
 from syncraft.constraint import Bindable
 
 
-T = TypeVar('T', bound=TokenProtocol)
+T = TypeVar('T', bound=Enum)
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class ParserState(Bindable, Generic[T]):
         input: The full, immutable sequence of tokens.
         index: Current position within ``input``.
     """
-    input: Tuple[T, ...] = field(default_factory=tuple)
+    input: Tuple[Token[T], ...] = field(default_factory=tuple)
     index: int = 0
     final: bool = False  # Whether this is a final state (for error reporting)
 
@@ -54,7 +54,7 @@ class ParserState(Bindable, Generic[T]):
         return replace(self, input=self.input + other.input, final=other.final)
 
     def token_sample_string(self)-> str:
-        def encode_tokens(*tokens:T) -> str:
+        def encode_tokens(*tokens:Token[T]) -> str:
             return ",".join(f"{token.token_type.name}({token.text})" for token in tokens)
         return encode_tokens(*self.input[self.index:self.index + 2])
 
@@ -84,7 +84,7 @@ class ParserState(Bindable, Generic[T]):
         return ret
 
 
-    def current(self)->T:
+    def current(self)->Token[T]:
         """Get the current token at ``index``.
 
         Returns:
@@ -111,7 +111,7 @@ class ParserState(Bindable, Generic[T]):
             
     
     @classmethod
-    def from_tokens(cls, tokens: Tuple[T, ...]) -> ParserState[T]:
+    def from_tokens(cls, tokens: Tuple[Token[T], ...]) -> ParserState[T]:
         return cls(input=tokens, index=0, final=True)
 
 
@@ -121,19 +121,20 @@ class ParserState(Bindable, Generic[T]):
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
     @classmethod
-    def state(cls, tokens: List[Token]) -> ParserState[T]: # type: ignore
+    def state(cls, tokens: List[Token[T]]) -> ParserState[T]: # type: ignore
         return ParserState.from_tokens(tuple(tokens))  # type: ignore
 
     @classmethod
-    def token(cls, 
-              *,
-              token_type: Optional[Enum] = None, 
-              text: Optional[str] = None, 
-              case_sensitive: bool = False,
-              regex: Optional[re.Pattern[str]] = None
-              )-> Algebra[T, ParserState[T]]:
-        spec = TokenSpec(token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
-        def token_run(state: ParserState[T], cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[Incomplete[ParserState[T]], ParserState[T], Either[Any, Tuple[T, ParserState[T]]]]:
+    def primitive(cls, 
+                  *, 
+                  predicate: Optional[Callable[[Token[T]], bool]]=None,
+                  generator: Optional[Callable[..., Token[T]]] = None
+                  )-> Algebra[T, ParserState[T]]:
+        def primitive_run(state: ParserState[T], 
+                          cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
+                              Incomplete[ParserState[T]], 
+                              ParserState[T], 
+                              Either[Any, Tuple[T, ParserState[T]]]]:
             while True:
                 if state.ended():
                     return (yield from cache.return_value(Left(state)))
@@ -141,11 +142,13 @@ class Parser(Algebra[T, ParserState[T]]):
                     state = yield Incomplete(state)
                 else:
                     token = state.current()
-                    if token is None or not spec.is_valid(token):
+                    assert callable(predicate), "Predicate must be callable"
+                    if token is None or not predicate(token):
                         return (yield from cache.return_value(Left(state)))
                     else:
                         return (yield from cache.return_value(Right((Token(token_type = token.token_type, text=token.text), state.advance()))))
-        captured: Algebra[T, ParserState[T]] = cls(token_run, _name=cls.__name__ + f'.token({spec.simple_str()})')
+        name = cls.__name__ + f'.primitive({predicate.__name__})' if predicate is not None else cls.__name__ + '.primitive(None)'
+        captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
                 return Error(message=f"Cannot match token at {err}", this=captured, state=err)            
@@ -154,6 +157,22 @@ class Parser(Algebra[T, ParserState[T]]):
         # assign the updated parser(with description) to bound variable so the Error.this could be set correctly
         captured = captured.map_error(error_fn)
         return captured        
+
+    @classmethod
+    def token(cls, 
+              *,           
+              text: Optional[str] = None, 
+              token_type: Optional[Enum] = None,           
+              case_sensitive: bool = False,
+              regex: Optional[re.Pattern[str]] = None) -> Algebra[T, ParserState[T]]:
+        spec = TokenSpec(token_type=token_type, 
+                         text=text, 
+                         case_sensitive=case_sensitive, 
+                         regex=regex,
+                         _type =TokenType,
+                         escape_type=TokenType.VAR
+                         )
+        return cls.primitive(predicate=lambda t: spec.is_valid(t))  # type: ignore[arg-type]
 
 
 
