@@ -538,8 +538,8 @@ class TokenClass(Generic[T]):
 
     @classmethod
     def simple(cls)-> TokenClass[Token]:
-        return TokenClass(Token)
-
+        return TokenClass(Token)        
+    
     def describe(self, **kwargs: Any) -> str:
         """
         Generates a human-readable description of the token class based on provided field values.

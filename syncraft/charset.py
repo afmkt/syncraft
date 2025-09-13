@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Generic, Tuple, List, Callable
+    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar
 )
-from dataclasses import dataclass
+from syncraft.constraint import FrozenDict
+from dataclasses import dataclass, field, replace
 from syncraft.algebra import (
     SyncraftError
 )
@@ -18,17 +19,87 @@ class MixedUniverseError(SyncraftError):
 class CodepointError(SyncraftError):
     pass
 
-C = TypeVar('C', bound=str | bytes)
+C = TypeVar('C', bound=str | bytes | Enum)
 
 
-class CodeUniverse(Enum):
-    ASCII = (0, 0x7F)
-    UNICODE = (0, 0x10FFFF)
-    BYTE = (0, 0xFF)    
-
+@dataclass(frozen=True)
+class CodeUniverse(Generic[C]):
+    ASCII: ClassVar[Tuple[int, int]] = (0, 0x7F)
+    UNICODE: ClassVar[Tuple[int, int]] = (0, 0x10FFFF)
+    BYTE: ClassVar[Tuple[int, int]] = (0, 0xFF)
+    value: Tuple[int, int]
+    space: Type[C]
+    int2c: FrozenDict[int, C] = field(default_factory=FrozenDict, repr=False)
+    c2int: FrozenDict[C, int] = field(default_factory=FrozenDict, repr=False)
     @cached_property
     def interval(self) -> Tuple[Tuple[int, int],...]:
         return (self.value,)
+    
+    def __str__(self) -> str:
+        if self.value == self.ASCII:
+            return "ASCII"
+        elif self.value == self.UNICODE:
+            return "UNICODE"
+        elif self.value == self.BYTE:
+            return "BYTE"
+        else:
+            return f"{self.space.__name__}({self.value[0]}-{self.value[1]})"
+
+    def __repr__(self) -> str:
+        return f"CodeUniverse({str(self)}, {self.value})"
+    
+    def to_int(self, c: C) -> int:
+        if isinstance(c, str):
+            if len(c) != 1:
+                raise CodepointError(f"Expected single character, got {c!r}", offending=c, expect="single character")
+            cp = ord(c)
+        elif isinstance(c, bytes):
+            if len(c) != 1:
+                raise CodepointError(f"Expected single byte, got {c!r}", offending=c, expect="single byte")
+            cp = c[0]
+        elif self.space is bytes and isinstance(c, int):
+            cp = c
+        elif isinstance(c, Enum):
+            if c not in self.c2int:
+                raise CodepointError(f"Enum value {c!r} not in universe {self}", offending=c, expect=f"Enum in {list(self.c2int.keys())}")
+            cp = self.c2int[c]
+        else:
+            raise CodepointError(f"Expected str, bytes, or Enum, got {type(c)}", offending=c, expect="str, bytes, or Enum")
+        if not (self.value[0] <= cp <= self.value[1]):
+            raise CodepointError(f"Character {c!r} (codepoint {cp}) out of bounds for universe {self}", offending=c, expect=f"codepoint in range {self.value}")
+        return cp
+    def from_int(self, cp: int) -> C:
+        if not (self.value[0] <= cp <= self.value[1]):
+            raise CodepointError(f"Codepoint {cp} out of bounds for universe {self}", offending=cp, expect=f"codepoint in range {self.value}")
+        if cp in self.int2c:
+            return self.int2c[cp]
+        if self.space is str:
+            return chr(cp)  # type: ignore
+        elif self.space is bytes:
+            return bytes([cp])  # type: ignore
+        else:
+            raise CodepointError(f"Cannot convert codepoint {cp} to {self.space}", offending=cp, expect=self.space)
+
+    @classmethod
+    def ascii(cls) -> CodeUniverse[C]:
+        return cls(value=cls.ASCII, space=str) # type: ignore
+    
+    @classmethod
+    def unicode(cls) -> CodeUniverse[C]:
+        return cls(value=cls.UNICODE, space=str) # type: ignore
+    
+    @classmethod
+    def byte(cls) -> CodeUniverse[C]:
+        return cls(value=cls.BYTE, space=bytes) # type: ignore
+    
+    @classmethod
+    def enum(cls, enum_type: Type[Enum]) -> CodeUniverse[C]:
+        members = list(enum_type)
+        if not members:
+            raise SyncraftError(f"Cannot create CodeUniverse from empty Enum {enum_type}", offending=enum_type, expect="non-empty Enum")
+        int2c: FrozenDict[int, Enum] = FrozenDict({i: m for i, m in enumerate(members)})
+        c2int: FrozenDict[Enum, int] = FrozenDict({m: i for i, m in enumerate(members)})
+        return cls(value=(0, len(members)-1), space=enum_type, int2c=int2c, c2int=c2int) # type: ignore
 
 @dataclass(frozen=True)
 class CharSet(Generic[C]):
@@ -118,8 +189,8 @@ class CharSet(Generic[C]):
         return merged
 
     @classmethod
-    def create(cls, char: str | bytes, universe: CodeUniverse) -> CharSet[C]:
-        cs: frozenset[int] = frozenset(ord(x) if isinstance(x, str) else x for x in char)
+    def create(cls, char: str | bytes | List[Enum], universe: CodeUniverse) -> CharSet[C]:
+        cs: frozenset[int] = frozenset(universe.to_int(x) for x in char)
         intv = tuple((c, c) for c in sorted(cs))
         return cls(
             predicate=lambda c: c in cs, 
@@ -155,10 +226,7 @@ class CharSet(Generic[C]):
     def sample(self, rnd: random.Random) -> C:
         range = rnd.choice(self.interval)
         point = rnd.randint(range[0], range[1])
-        if self.universe == CodeUniverse.BYTE:
-            return bytes([point])  # type: ignore
-        else:
-            return chr(point)  # type: ignore
+        return self.universe.from_int(point)
 
     def overlaps(self, intv: Tuple[int, int]) -> bool:
         for start, end in self.interval:
@@ -167,26 +235,11 @@ class CharSet(Generic[C]):
         return False
 
     def matches_interval(self, cc: C) -> bool:
-        if len(cc) != 1:
-            raise CodepointError(f"Expected single character, got {cc!r}", offending=cc, expect="single character")
-        if isinstance(cc, str):
-            c = ord(cc)
-            return any(start <= c <= end for start, end in self.interval)
-        elif isinstance(cc, bytes):
-            c = cc[0]
-            return any(start <= c <= end for start, end in self.interval)
-        else:
-            raise CodepointError(f"Expected str, bytes, got {type(cc)}", offending=cc, expect="str, bytes")
+        c = self.universe.to_int(cc)
+        return any(start <= c <= end for start, end in self.interval)
 
     def matches(self, c: C) -> bool:
-        if len(c) != 1:
-            raise CodepointError(f"Expected single character, got {c!r}", offending=c, expect="single character")
-        if isinstance(c, str):
-            return self.predicate(ord(c))
-        elif isinstance(c, bytes):
-            return self.predicate(c[0])
-        else:
-            raise CodepointError(f"Expected str, bytes, got {type(c)}", offending=c, expect="str, bytes")
+        return self.predicate(self.universe.to_int(c))
         
     def __call__(self, c: C) -> bool:
         assert self.matches(c) == self.matches_interval(c)

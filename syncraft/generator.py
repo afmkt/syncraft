@@ -229,17 +229,18 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: GenState[T], cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
             if input.pruned:
-                upper = at_most if at_most is not None else at_least + 2
-                count = input.rng("many").randint(at_least, upper)
                 ret: List[Any] = []
-                for i in range(count):
+                while True:
                     forked_input = input.fork(tag=len(ret))
-                    self_result = yield from self.run(forked_input, cache)
-                    match self_result:
+                    match (yield from self.run(forked_input, cache)):
                         case Right((value, _)):
                             ret.append(value)
                         case Left(_):
                             pass
+                    if len(ret) >= at_least:
+                        if (at_most is None or len(ret) < at_most):
+                            if not forked_input.rng("many_continue").choice((True, False)):
+                                break
                 return Right((Many(value=tuple(ret)), input))
             else:
                 if not isinstance(input.ast, Many) or isinstance(input.ast, Nothing):
