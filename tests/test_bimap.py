@@ -6,8 +6,10 @@ from syncraft.parser import  parse_sql
 import syncraft.generator as gen
 from syncraft.parser import literal
 from syncraft.generator import TokenSpec
-from rich import print
-from sqlglot import TokenType
+from syncraft.sqlglot_adapter import SQLGLOT_TokenType as TokenType, SQLGLOT_AVAILABLE
+import pytest
+if not SQLGLOT_AVAILABLE:  # pragma: no cover
+    pytest.skip("sqlglot not installed; skipping sqlglot-dependent tests", allow_module_level=True)
 
 def from_string(string: str) -> Token:
     tt = TokenSpec.guess_type(string, 

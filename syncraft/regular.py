@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import (
     Any, Tuple, Generator as PyGenerator, TypeVar, Optional, Callable, Hashable
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Either, Right, Incomplete, SyncraftError
 )
@@ -86,7 +86,8 @@ class Regular(Algebra[NFA[C], RegularState]):
                             raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
                 case failed:
                     raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
-        return self.__class__(then_run, _name=name) 
+        return replace(self, run_f=then_run, _name=name)
+        
 
     def then_left(self, other: Algebra[Any, RegularState]) -> Algebra[Any, RegularState]:
         return self.then_both(other)
@@ -105,7 +106,8 @@ class Regular(Algebra[NFA[C], RegularState]):
                     return (yield from cache.return_value(Right((data, from_self))))
                 case failed:
                     raise SyncraftError("many should always return a value or an error.", offending=failed, expect=Right)
-        return self.__class__(many_run, _name=f"{self.name}{{{at_least},{at_most}}}")
+        return replace(self, run_f=many_run, _name=f"{self.name}{{{at_least},{at_most}}}")
+        
         
     def star(self) -> Algebra[Any, RegularState]:
         def star_run(input: RegularState, cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
@@ -115,7 +117,8 @@ class Regular(Algebra[NFA[C], RegularState]):
                     return (yield from cache.return_value(Right((data, from_self))))
                 case failed:
                     raise SyncraftError("star should always return a value or an error.", offending=failed, expect=Right)
-        return self.__class__(star_run, _name=f"{self.name}*")
+        return replace(self, run_f=star_run, _name=f"{self.name}*")
+        
     
     def plus(self) -> Algebra[Any, RegularState]:
         def plus_run(input: RegularState, cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
@@ -125,7 +128,8 @@ class Regular(Algebra[NFA[C], RegularState]):
                     return (yield from cache.return_value(Right((data, from_self))))
                 case failed:
                     raise SyncraftError("plus should always return a value or an error.", offending=failed, expect=Right)
-        return self.__class__(plus_run, _name=f"{self.name}+")
+        return replace(self, run_f=plus_run, _name=f"{self.name}+")
+        
 
     def optional(self) -> Algebra[Any, RegularState]:
         pattern = re.compile(r'\s')
@@ -139,7 +143,8 @@ class Regular(Algebra[NFA[C], RegularState]):
                     return (yield from cache.return_value(Right((data, from_self))))
                 case failed:
                     raise SyncraftError("optional should always return a value or an error.", offending=failed, expect=Right)
-        return self.__class__(optional_run, _name=name)
+        return replace(self, run_f=optional_run, _name=name)
+        
  
     def or_else(self, other: Algebra[Any, RegularState]) -> Algebra[Any, RegularState]: 
         pattern = re.compile(r'\s')
@@ -159,7 +164,8 @@ class Regular(Algebra[NFA[C], RegularState]):
                             raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
                 case failed:    
                     raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
-        return self.__class__(or_else_run, _name=name) 
+        return replace(self, run_f=or_else_run, _name=name)
+        
 
 
 def charset(text: str | bytes, *, negation:bool = False, universe:CodeUniverse = CodeUniverse.UNICODE) -> Syntax[Any, Any]:

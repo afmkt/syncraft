@@ -48,7 +48,7 @@ def rich_debug(this: Algebra[Any, ParserState[Any]],
                 if isinstance(value, Expression):
                     return prefix + value.sql()
                 elif isinstance(value, Token):
-                    return prefix + f"{value.token_type.name}({value.text})"
+                    return prefix + f"{str(value)}"
                 elif isinstance(value, Syntax):
                     return prefix + (value.meta.name or 'N/A')
                 else:
@@ -162,7 +162,7 @@ def ast2svg(ast: Any) -> Optional[str]:
         elif isinstance(node, Custom):
             return f"Custom(meta={node.meta})"
         elif isinstance(node, Token):
-            return f"Token({node.token_type.name}: {node.text})"
+            return f"Token({str(node)})"
         elif hasattr(node, '__class__'):
             return node.__class__.__name__
         else:

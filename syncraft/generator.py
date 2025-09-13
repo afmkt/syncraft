@@ -12,17 +12,16 @@ from syncraft.algebra import (
 from syncraft.cache import Cache
 
 from syncraft.ast import (
-    ParseResult, AST, Token, TokenSpec, 
+    ParseResult, AST, Token, TokenClass, 
     Nothing, 
     Choice, Many, ChoiceKind,
     Then, ThenKind, SyncraftError
 )
 from syncraft.constraint import FrozenDict
 from syncraft.syntax import Syntax
-from sqlglot import TokenType
 from enum import Enum
-import re
 import random
+import re
 
 from syncraft.constraint import Bindable
 
@@ -203,7 +202,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Right((result, next_input)):
                             return Right((result, next_input))
             raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
-        return self.__class__(flat_map_run, _name=self.name) # type: ignore
+        return replace(self, run_f=flat_map_run) # type: ignore
+        
 
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
@@ -267,7 +267,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         state=input.inject(x)
                     )) 
                 return Right((Many(value=tuple(ret)), input))
-        return self.__class__(many_run, _name=f"many({self.name})")  # type: ignore
+        return replace(self, run_f=many_run, _name=f"many({self.name})")  # type: ignore
     
  
     def or_else(self, # type: ignore
@@ -338,8 +338,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 input.inject(input.ast.value), 
                                 input.inject(input.ast.value))
                     return result
-                    
-        return self.__class__(or_else_run, _name=f"or_else({self.name} | {other.name})") # type: ignore
+        return replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
 
     @classmethod
     def primitive(cls, 
@@ -371,22 +370,21 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     @classmethod
     def token(cls, 
               *,
-              token_type: Optional[TokenType] = None, 
-              text: Optional[str] = None, 
-              case_sensitive: bool = False,
-              regex: Optional[re.Pattern[str]] = None,
-              )-> Algebra[ParseResult[T], GenState[T]]:      
-        gen = TokenSpec(token_type=token_type, 
+              text: Optional[str | re.Pattern[str]] = None, 
+              token_type: Optional[Enum] = None,           
+              case_sensitive: bool = False
+              )-> Algebra[ParseResult[T], GenState[T]]: 
+        token_class: TokenClass = cls.config(TokenClass, TokenClass.simple())         
+        gen = token_class.generator(token_type=token_type, 
                         text=text, 
-                        case_sensitive=case_sensitive, 
-                        regex=regex,
-                        _type =TokenType, 
-                        escape_type=TokenType.VAR)  
-        from typing import cast
+                        case_sensitive=case_sensitive)  
+        pred = token_class.predicate(token_type=token_type, 
+                        text=text, 
+                        case_sensitive=case_sensitive)
         return cls.primitive(
-            predicate=lambda t: gen.is_valid(cast(Token[TokenType], t)),
-            generator=lambda: cast(T, gen.gen())
-        )
+            predicate=pred,
+            generator=gen)
+        
         
 
 

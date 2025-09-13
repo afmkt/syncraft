@@ -1,15 +1,13 @@
 from __future__ import annotations
-from typing import TypeVar, Generic, Tuple
-from syncraft.parser import token
-import pytest
 from syncraft.ast import Nothing, TokenSpec, Token
 from syncraft.syntax import lazy
-from syncraft.parser import parse_sql, literal, regex
+from syncraft.parser import parse_sql, literal, regex, token
 from syncraft.generator import generate_with
+from syncraft.sqlglot_adapter import SQLGLOT_TokenType as TokenType, SQLGLOT_AVAILABLE
+import pytest
 from syncraft.cache import LeftRecursionError
-from enum import Enum
-from rich import print
-from sqlglot import TokenType
+if not SQLGLOT_AVAILABLE:  # pragma: no cover - conditional skip
+    pytest.skip("sqlglot not installed; skipping sqlglot-dependent tests", allow_module_level=True)
 
 
 

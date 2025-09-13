@@ -12,9 +12,8 @@ from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from types import MethodType, FunctionType
 import keyword
-import re
-from enum import Enum
-from rich import print
+import threading
+
 
 def valid_name(name: str) -> bool:
     return (name.isidentifier() 
@@ -54,7 +53,7 @@ class Syntax(Generic[A, S]):
     """
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
     """
-    alg: Callable[[Type[Algebra[Any, Any]]], Algebra[A, S]]
+    alg_f: Callable[[Type[Algebra[Any, Any]]], Algebra[A, S]]
     meta: Description = field(default_factory=Description, repr=False)
 
     def algebra(self, 
@@ -96,14 +95,32 @@ class Syntax(Generic[A, S]):
                 return cast(Algebra[Any, S], f(*args, **kwargs))
             else:
                 return a if fallback is None else fallback(cls)
-        return self.__class__(alg=algebra_run, meta=self.meta)
+        return replace(self, alg_f=algebra_run)
+        
 
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
 
+
+    @classmethod
+    def transform(cls, f: Callable[[Type[Any]], Type[Any]]) -> Type['Syntax[Any, Any]']:
+        old = getattr(cls, '__syncraft_transform__', lambda c: c)
+        return type(cls.__name__, (cls,), {'__syncraft_transform__': lambda c: f(old(c))})
+
+    @classmethod
+    def attach(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
+        return cls.transform(lambda a: type(a.__name__, (a,), attrs))
+
+    @classmethod
+    def config(cls, instance: Any) -> Type['Syntax[Any, Any]']:
+        return cls.attach(**{instance.__class__.__name__: instance})
+
     def __call__(self, alg: Type[Algebra[Any, Any]]) -> Algebra[A, S]:
-        return self.alg(alg)
+        trans: None | Callable[[Type[Any]], Type[Any]] = getattr(self.__class__, '__syncraft_transform__', None)
+        alg = alg if not callable(trans) else trans(alg)
+        return self.alg_f(alg)
     
+        
     def describe(
         self,
         *,
@@ -111,15 +128,10 @@ class Syntax(Generic[A, S]):
         fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
         parameter: Optional[Tuple[Syntax[Any, S] | Any, ...]] = None,
     ) -> Syntax[A, S]:
-        return self.__class__(
-            alg=self.alg,
-            meta=self.meta.update(
-                name=name, fixity=fixity, parameter=parameter
-            ),
-        )
+        return replace(self, meta=self.meta.update(name=name, fixity=fixity, parameter=parameter))
 
     def named(self, name: str) -> Syntax[A, S]:
-        """Assign a name to this syntax node for better debugging output.
+        """Assign a name to underlying algebra node for better debugging output.
 
         Args:
             name: Name to assign; must be a valid identifier.
@@ -127,7 +139,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax with the given name.
         """
-        return self.__class__(lambda cls: self(cls).named(name), meta=self.meta)
+        return replace(self, alg_f=lambda cls: self(cls).named(name))
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
@@ -138,7 +150,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with the same resulting state.
         """
-        return self.__class__(lambda cls: self(cls).map(f), meta=self.meta)  # type: ignore
+        return replace(self, alg_f=lambda cls: self(cls).map(f)) # type: ignore
 
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
@@ -153,7 +165,8 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return self.__class__(lambda cls: self(cls).bimap(f, i), meta=self.meta)  # type: ignore
+        return replace(self, alg_f=lambda cls: self(cls).bimap(f, i)) # type: ignore
+        
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
         """Map both value and state on success.
@@ -164,7 +177,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding transformed value and state.
         """
-        return self.__class__(lambda cls: self(cls).map_all(f), meta=self.meta)  # type: ignore
+        return replace(self, alg_f=lambda cls: self(cls).map_all(f)) # type: ignore
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
         """Transform the error payload when this syntax fails.
@@ -175,7 +188,8 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that preserves successes and maps failures.
         """
-        return self.__class__(lambda cls: self(cls).map_error(f), meta=self.meta)
+        return replace(self, alg_f=lambda cls: self(cls).map_error(f)) 
+        
 
     def map_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
         """Map the input state before running this syntax.
@@ -186,7 +200,8 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that runs with f(state).
         """
-        return self.__class__(lambda cls: self(cls).map_state(f), meta=self.meta)
+        return replace(self, alg_f=lambda cls: self(cls).map_state(f))
+        
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         """Chain computations where the next step depends on the value.
@@ -197,7 +212,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding the result of the chained computation.
         """
-        return self.__class__(lambda cls: self(cls).flat_map(f))  # type: ignore
+        return replace(self, alg_f=lambda cls: self(cls).flat_map(f)) # type: ignore
 
     def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Many[A], S]:
         """Repeat this syntax and collect results into Many.
@@ -211,11 +226,12 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Many of values.
         """
-        return self.__class__(
-            lambda cls: self(cls).many(at_least=at_least, at_most=at_most)  # type: ignore
-        ).describe(
-            name='*', fixity='prefix', parameter=(self,)
-        )  # type: ignore
+        return replace(self, 
+                       alg_f=lambda cls: self(cls).many(at_least=at_least, at_most=at_most) # type: ignore
+                       ).describe(
+                           name='*', 
+                           fixity='prefix', 
+                           parameter=(self,)) 
 
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Then[B, Then[A, C]], S]:
@@ -315,7 +331,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice of value or Nothing.
         """
-        fallback = (self | success(Nothing()))
+        fallback = (self | self.success(Nothing()))
         ret = self.algebra('optional', fallback=fallback) # type: ignore
         return ret.describe(name='~', fixity='prefix', parameter=(self,)) # type: ignore
     
@@ -330,7 +346,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that marks downstream failures as committed.
         """
-        return self.__class__(lambda cls: self(cls).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
+        return replace(self, alg_f=lambda cls: self(cls).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
 
     ###################################################### operator overloading #############################################
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -345,7 +361,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=LEFT).
         """
 
-        ret: Syntax[Then[A, B], S] = self.__class__(lambda cls: self(cls).then_left(other(cls))) # type: ignore
+        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls: self(cls).then_left(other(cls))) # type: ignore
         
         return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
@@ -365,9 +381,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=BOTH).
         """
 
-        ret: Syntax[Then[A, B], S] = self.__class__(
-            lambda cls: self(cls).then_both(other(cls))  # type: ignore
-        )  # type: ignore
+        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls: self(cls).then_both(other(cls)))  # type: ignore
         return ret.describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __radd__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -386,9 +400,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=RIGHT).
         """
 
-        ret: Syntax[Then[A, B], S] = self.__class__(
-            lambda cls: self(cls).then_right(other(cls))  # type: ignore
-        )  # type: ignore
+        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls: self(cls).then_right(other(cls)))  # type: ignore
         return ret.describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -407,9 +419,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Choice.LEFT or Choice.RIGHT.
         """
 
-        ret: Syntax[Choice[A, B], S] = self.__class__(
-            lambda cls: self(cls).or_else(other(cls))  # type: ignore
-        )  
+        ret: Syntax[Choice[A, B], S] = replace(self, alg_f=lambda cls: self(cls).or_else(other(cls))) # type: ignore  
         return ret.describe(name='|', fixity='infix', parameter=(self, other))
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
@@ -496,51 +506,65 @@ class Syntax(Generic[A, S]):
 
         return self.bimap(mark_s, imark_s).describe(name='mark', fixity='infix', parameter=(self, name))
     
-def when(f: Callable[[], bool], then: Syntax[A, S], otherwise: Syntax[B, S]) -> Syntax[A | B, S]:
-    """
-    Conditionally selects between two syntax branches based on a predicate function.
+    @classmethod
+    def fail(cls, error: Any) -> Syntax[Any, Any]:
+        """
+        Creates a syntax node that always fails with the given error.
 
-    Args:
-        f: A callable returning a boolean to choose the branch.
-        then: Syntax to use if f() is True.
-        otherwise: Syntax to use if f() is False.
+        Args:
+            error: The error to raise or propagate.
 
-    Returns:
-        A Syntax object representing the chosen branch.
-    """
-    return lazy(lambda: then if f() else otherwise).describe(name='when', fixity='postfix', parameter=(then, otherwise)) # type: ignore
+        Returns:
+            A Syntax object that always fails.
+        """
+        return cls(lambda alg: alg.fail(error)).describe(name='fail', fixity='prefix', parameter=(error,))
 
-def fail(error: Any) -> Syntax[Any, Any]:
-    """
-    Creates a syntax node that always fails with the given error.
+    @classmethod
+    def success(cls, value: Any) -> Syntax[Any, Any]:
+        """
+        Creates a syntax node that always succeeds with the given value.
 
-    Args:
-        error: The error to raise or propagate.
+        Args:
+            value: The value to return on success.
 
-    Returns:
-        A Syntax object that always fails.
-    """
-    return Syntax(lambda alg: alg.fail(error)).describe(name='fail', fixity='prefix', parameter=(error,))
-
-def success(value: Any) -> Syntax[Any, Any]:
-    """
-    Creates a syntax node that always succeeds with the given value.
-
-    Args:
-        value: The value to return on success.
-
-    Returns:
-        A Syntax object that always succeeds.
-    """
-    return Syntax(lambda alg: alg.success(value)).describe(name='success', fixity='prefix', parameter=(value,))
+        Returns:
+            A Syntax object that always succeeds.
+        """
+        return cls(lambda alg: alg.success(value)).describe(name='success', fixity='prefix', parameter=(value,))
 
 
+    @classmethod
+    def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
+        """
+        A shorthand for writing a chain of syntax combined with '|'.
+        """
+        return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else cls.success(Nothing())
 
-def choice(*parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-    """
-    A shorthand for writing a chain of syntax combined with '|'.
-    """
-    return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else success(Nothing())
+    @classmethod
+    def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+        algebra: Optional[Algebra[A, S]] = None
+        syntax: Optional[Syntax[A, S]] = None
+        previous_cls: Optional[Type[Algebra[Any, S]]] = None
+        lock = threading.RLock()
+        def syntax_lazy_run(cls: Type[Algebra[Any, S]]) -> Algebra[A, S]:
+            nonlocal algebra, syntax, previous_cls
+            with lock:                    
+                if syntax is None:
+                    syntax = thunk()
+                def algebra_lazy_f():
+                    if syntax is None:
+                        raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
+                    return syntax(cls)
+                if algebra is None or (previous_cls is not None and previous_cls is not cls):
+                    algebra = cls.lazy(algebra_lazy_f)
+                    previous_cls = cls
+                return algebra
+        return cls(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))
+
+
+
+
+
 
 def run(*,
         syntax: Syntax[A, S], 
@@ -573,27 +597,8 @@ def run(*,
     return Error(this=None, message="Algebra failed to create initial state"), None
 
 
-def lazy(thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
-    algebra: Optional[Algebra[A, S]] = None
-    syntax: Optional[Syntax[A, S]] = None
-    previous_cls: Optional[Type[Algebra[Any, S]]] = None
-    def syntax_lazy_run(cls: Type[Algebra[Any, S]]) -> Algebra[A, S]:
-        nonlocal algebra, syntax, previous_cls
-        # print('==' * 20, 'Syntax.lazy.syntax_lazy_run', '==' * 20)
-        # print('thunk', thunk, id(thunk))
-        # print('syntax', syntax, id(syntax))
-        # print('algebra', algebra, id(algebra))
-        if syntax is None:
-            syntax = thunk()
-        def algebra_lazy_f():
-            if syntax is None:
-                raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
-            return syntax(cls)
-        if algebra is None or (previous_cls is not None and previous_cls is not cls):
-            algebra = cls.lazy(algebra_lazy_f)
-            previous_cls = cls
-        return algebra
-    return Syntax(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))  
+
+
 
 
 

@@ -4,14 +4,14 @@ https://www.sqlite.org/syntaxdiagrams.html
 """
 from __future__ import annotations
 from typing import Any
-from syncraft.syntax import Syntax, lazy, choice
+from syncraft.syntax import Syntax
 import syncraft.parser as dsl
-from syncraft.utils import rich_error, rich_debug, rich_parser
 from sqlglot import TokenType
 
 
+lazy = Syntax.lazy
 
-
+choice = Syntax.choice
 
 L_PAREN = dsl.lift(TokenType.L_PAREN)
 R_PAREN = dsl.lift(TokenType.R_PAREN)

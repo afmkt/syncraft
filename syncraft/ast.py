@@ -493,107 +493,121 @@ class ManySpec(SyntaxSpec, Generic[A]):
     at_most: Optional[int]
 
 
-TType = TypeVar('TType', bound=Enum)
+
+
 
 
 @dataclass(frozen=True)
-class Token(AST, Generic[TType]):
-    """Leaf node representing a single token with type and text."""
-    token_type: TType
+class Token(AST):
     text: str
     def __str__(self) -> str:
-        return f"{self.token_type.name}({self.text})"
+        return f"{self.text.strip()}"
     
     def __repr__(self) -> str:
         return self.__str__()
     
+T = TypeVar('T', bound=Hashable)
 
-            
 
 @dataclass(frozen=True)
-class TokenSpec(SyntaxSpec, Generic[TType]):
-    token_type: Optional[TType] = None
-    text: Optional[str] = None
-    case_sensitive: bool = False
-    regex: Optional[re.Pattern[str]] = None
-    escape_type: Optional[TType] = None  
-    _type: Optional[Type[TType]] = None
+class TokenClass(Generic[T]):
+    """
+    A generic class for describing token types and matching/generating tokens.
 
-    def __repr__(self) -> str:
-        parts = []
-        if self.token_type is not None:
-            parts.append(f"type={self.token_type.name}")
-        if self.text is not None:
-            parts.append(f"text={'`'+self.text+'`' if self.case_sensitive else self.text}")
-        if self.regex is not None:
-            parts.append(f"regex=/{self.regex.pattern}/")
-        return f"TokenSpec(id={id(self)}, " + ", ".join(parts) + ")"
-        
-    def __str__(self) -> str:
-        parts = []
-        if self.token_type is not None:
-            parts.append(f"type={self.token_type.name}")
-        if self.text is not None:
-            parts.append(f"text={'`'+self.text+'`' if self.case_sensitive else self.text}")
-        if self.regex is not None:
-            parts.append(f"regex=/{self.regex.pattern}/")
-        return ", ".join(parts)
-        
+    TokenClass encapsulates a token constructor (such as a dataclass or callable) and configuration
+    for matching and generating tokens. It supports case sensitivity and strictness, and provides
+    methods for extracting configuration, building predicates for token matching, and generating tokens.
 
-    def is_valid(self, token: Token[TType]) -> bool:
-        type_match = self.token_type is None or token.token_type == self.token_type
-        value_match = self.text is None or (token.text.strip() == self.text.strip() if self.case_sensitive else 
-                                                    token.text.strip().upper() == self.text.strip().upper())
-        value_match = value_match or (self.regex is not None and self.regex.fullmatch(token.text) is not None)
-        return type_match and value_match
-    
+    Attributes:
+        TokenConstructor: Callable[..., T]
+            A callable (usually a dataclass) that constructs a token of type T from keyword arguments.
+        case_sensitive: bool
+            Whether string matching should be case sensitive (default: False).
+        strict: bool
+            Whether to require all specified fields to exist on the token (default: False).
+    """
+    TokenConstructor: Callable[..., T]
+    case_sensitive: bool = field(default=False, metadata={"is_config": True})
+    strict: bool = field(default=False, metadata={"is_config": True})
 
-    @staticmethod
-    def guess_type(text: str, 
-                   *,
-                   _type: Optional[Type[TType]], 
-                   escape_type: Optional[TType], 
-                   token_type: Optional[TType] = None, 
-                   case_sensitive: bool = False) -> TType:
-        assert _type is not None, "TokenSpec must have a _type to guess from"
-        if not isinstance(token_type, _type) or token_type == escape_type:
-            if case_sensitive:
-                for t in _type:
-                    if t.value == text:
-                        return t
-            else:
-                text = text.lower()
-                for t in _type:
-                    if t.value == text or str(t.value).lower() == text:
-                        return t
-            assert escape_type is not None, "TokenSpec must have an escape_type to fall back to"
-            return escape_type
-        return token_type
-    
-    def gen(self) -> Token[TType]:
-        text: str
-        if self.text is not None:
-            text = self.text
-        elif self.regex is not None:
-            try:
-                text = rstr.xeger(self.regex)
-            except Exception:
-                # If the regex is invalid or generation fails
-                text = self.regex.pattern  # fallback to pattern string
-        elif self.token_type is not None:
-            text = str(self.token_type.value)
-        else:
-            text = "VALUE"
-        tt = self.guess_type(text, 
-                             _type=self._type, 
-                             escape_type=self.escape_type, 
-                             token_type=self.token_type, 
-                             case_sensitive=False)
-        return Token(token_type=tt, text=text)        
+    @classmethod
+    def simple(cls)-> TokenClass[Token]:
+        return TokenClass(Token)
 
+    def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Separates configuration options from token field parameters.
 
+        Args:
+            kwargs: Dictionary of keyword arguments passed to predicate/generator.
 
-T = TypeVar('T', bound=Hashable)
+        Returns:
+            Tuple[config, params]:
+                config: Dict of config options (e.g., case_sensitive, strict),
+                params: Dict of token field values to match or generate.
+        """
+        config_dict = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
+        config = {k: v for k, v in kwargs.items() if k in config_dict}
+        params = {k: v for k, v in kwargs.items() if k not in config_dict}
+        return config_dict | config, params
+
+    def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
+        """
+        Returns a predicate function that matches tokens based on provided field values and config.
+
+        Keyword Args:
+            Any token field or config option (e.g., case_sensitive, strict).
+
+        Returns:
+            Callable[[T], bool]: Predicate that returns True if a token matches the criteria.
+        """
+        config, kwargs = self.extract_config(kwargs)
+        case_sensitive = config.get('case_sensitive', False)
+        strict = config.get('strict', False)
+        def pred(token: T) -> bool:
+            for key, pattern in kwargs.items():
+                if not hasattr(token, key):
+                    if strict:
+                        return False
+                else:
+                    data = getattr(token, key)
+                    if isinstance(pattern, re.Pattern) and pattern.fullmatch(str(data)) is None:
+                        return False
+                    elif isinstance(pattern, str):
+                        if case_sensitive:
+                            if str(data).strip() != pattern.strip():
+                                return False
+                        else:
+                            if str(data).strip().upper() != pattern.strip().upper():
+                                return False
+                    elif pattern != data:
+                        return False
+            return True
+        return pred
+
+    def generator(self, **kwargs: Any) -> Callable[[], T]:
+        """
+        Returns a generator function that produces tokens with specified field values.
+
+        Keyword Args:
+            Any token field or config option (config options are ignored for generation).
+
+        Returns:
+            Callable[[], T]: Generator that returns a new token instance.
+        """
+        config, kwargs = self.extract_config(kwargs)
+        def gen() -> T:
+            data = {}
+            for k, v in kwargs.items():
+                if isinstance(v, re.Pattern):
+                    try:
+                        data[k] = rstr.xeger(v)
+                    except Exception:
+                        data[k] = v.pattern
+                else:
+                    data[k] = v
+            return self.TokenConstructor(**data)  # type: ignore
+        return gen
 
 #: Union-like type describing the shape of AST parse results across nodes.
 ParseResult = Union[

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import re
-from sqlglot import tokenize, TokenType, Parser as GlotParser, exp
+
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable
@@ -15,7 +15,7 @@ from enum import Enum
 
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenSpec, AST, SyncraftError
+from syncraft.ast import Token, TokenClass, AST, SyncraftError
 from syncraft.constraint import Bindable
 
 
@@ -117,9 +117,10 @@ class ParserState(Bindable, Generic[T]):
     
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
+    
     @classmethod
-    def state(cls, tokens: List[Token[T]]) -> ParserState[T]: # type: ignore
-        return ParserState.from_tokens(tuple(tokens))  # type: ignore
+    def state(cls, tokens: List[T]) -> ParserState[T]: # type: ignore
+        return ParserState.from_tokens(tuple(tokens))  
 
     @classmethod
     def primitive(cls, 
@@ -157,88 +158,35 @@ class Parser(Algebra[T, ParserState[T]]):
 
     @classmethod
     def token(cls, 
-              *,           
-              text: Optional[str] = None, 
+              *,
+              text: Optional[str | re.Pattern[str]] = None, 
               token_type: Optional[Enum] = None,           
-              case_sensitive: bool = False,
-              regex: Optional[re.Pattern[str]] = None) -> Algebra[T, ParserState[T]]:
-        spec = TokenSpec(token_type=token_type, 
+              case_sensitive: bool = False
+              ) -> Algebra[T, ParserState[T]]:
+        token_class: TokenClass = cls.config(TokenClass, TokenClass.simple())
+        pred = token_class.predicate(token_type=token_type, 
                          text=text, 
-                         case_sensitive=case_sensitive, 
-                         regex=regex,
-                         _type =TokenType,
-                         escape_type=TokenType.VAR
-                         )
-        return cls.primitive(predicate=lambda t: spec.is_valid(t))  # type: ignore[arg-type]
+                         case_sensitive=case_sensitive)
+        return cls.primitive(predicate=pred)  
 
 
 
 
-def sqlglot(parser: Syntax[Any, Any], 
-            dialect: str) -> Syntax[List[exp.Expression], ParserState[Any]]:
-    """Map token tuples into sqlglot expressions for a given dialect.
+# def sqlglot(parser: Syntax[Any, Any], dialect: str) -> Syntax[List[Any], ParserState[Any]]:
+#     """Map token tuples into sqlglot expressions for a given dialect via adapter.
 
-    Wraps a ``Syntax`` so its result is parsed by ``sqlglot.Parser``
-    using ``raw_tokens`` and returns only non-``None`` expressions.
+#     If sqlglot isn't available, this fails early with a clear error.
+#     """
+#     if not SQLGLOT_AVAILABLE:
+#         raise RuntimeError("sqlglot() requested but sqlglot is not installed. Install with: pip install sqlglot")
+#     return parser.map(lambda tokens: sqlglot_parse_expressions(tokens, dialect))
 
-    Args:
-        parser: A syntax that produces a sequence of tokens.
-        dialect: sqlglot dialect name used to parse tokens.
-
-    Returns:
-        Syntax[List[exp.Expression], ParserState[Any]]: Syntax yielding a list
-        of parsed expressions.
-    """
-    gp = GlotParser(dialect=dialect)
-    return parser.map(lambda tokens: [e for e in gp.parse(raw_tokens=tokens) if e is not None])
-
-
-    
-def identifier(value: str | None = None) -> Syntax[Any, Any]:
-    """Match an identifier token, optionally with exact text.
-
-    Args:
-        value: Exact identifier text to match, or ``None`` for any identifier.
-
-    Returns:
-        Syntax[Any, Any]: A syntax matching one identifier token.
-    """
-    if value is None:
-        return token(token_type=TokenType.IDENTIFIER)
-    else:
-        return token(token_type=TokenType.IDENTIFIER, text=value)
-
-def variable(value: str | None = None) -> Syntax[Any, Any]:
-    """Match a variable token, optionally with exact text.
-
-    Args:
-        value: Exact variable text to match, or ``None`` for any variable.
-
-    Returns:
-        Syntax[Any, Any]: A syntax matching one variable token.
-    """
-    if value is None:
-        return token(token_type=TokenType.VAR)
-    else:
-        return token(token_type=TokenType.VAR, text=value)
-
-
-def number() -> Syntax[Any, Any]:
-    """Match a number token."""
-    return token(token_type=TokenType.NUMBER)
-
-
-def string() -> Syntax[Any, Any]:
-    """Match a string literal token."""
-    return token(token_type=TokenType.STRING)
 
 
 def token(*,
-          text: Optional[str] = None, 
+          text: Optional[str | re.Pattern[str]] = None, 
           token_type: Optional[Enum] = None,           
-          case_sensitive: bool = False,
-          regex: Optional[re.Pattern[str]] = None
-          ) -> Syntax[Any, Any]:
+          case_sensitive: bool = False) -> Syntax[Any, Any]:
     """Build a ``Syntax`` that matches a single token.
 
     Convenience wrapper around ``Parser.token``. You can match by
@@ -253,24 +201,21 @@ def token(*,
     Returns:
         Syntax[Any, Any]: A syntax that matches one token.
     """
-    token_type_txt = token_type.name if token_type is not None else None
-    token_value_txt = text if text is not None else None
-    msg = 'token(' + ','.join([x for x in [token_type_txt, token_value_txt, str(regex)] if x is not None]) + ')'
     return Syntax(
-        lambda cls: cls.factory('token', token_type=token_type, text=text, case_sensitive=case_sensitive, regex=regex)
-        ).describe(name=msg, fixity='prefix') 
+        lambda cls: cls.factory('token', 
+                                token_type=token_type, 
+                                text=text, 
+                                case_sensitive=case_sensitive)
+        ).describe(name=f'token({str(text)})', fixity='prefix')
 
     
 
-def literal(lit: str) -> Syntax[Any, Any]:
+def literal(lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
     """Match an exact literal string (case-sensitive)."""
-    return token(token_type=None, text=lit, case_sensitive=True)
+    return token(token_type=None, 
+                 text=lit, 
+                 case_sensitive=True)
 
-def regex(regex: re.Pattern[str] | str) -> Syntax[Any, Any]:
-    """Match a token whose text satisfies the given regular expression."""
-    if isinstance(regex, str):
-        regex = re.compile(regex)
-    return token(token_type=None, regex=regex, case_sensitive=True)
 
 def lift(value: Any)-> Syntax[Any, Any]:
     """Lift a Python value into the nearest matching token syntax.
@@ -280,36 +225,18 @@ def lift(value: Any)-> Syntax[Any, Any]:
     - ``Enum`` -> ``token`` with type
     - otherwise -> succeed with the value
     """
-    if isinstance(value, str):
+    if isinstance(value, (str, re.Pattern)):
         return literal(value)
-    elif isinstance(value, re.Pattern):
-        return token(regex=value)
     elif isinstance(value, Enum):
         return token(token_type=value)
     else:
         return Syntax(lambda cls: cls.success(value))
 
 
-
-
-
-
-def parse_sql(syntax: Syntax[Any, Any], sql: str, dialect: str) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    """Parse SQL text with a ``Syntax`` using the ``Parser`` backend.
-
-    Tokenizes the SQL with the specified dialect and executes ``syntax``.
-
-    Args:
-        syntax: The high-level syntax to run.
-        sql: SQL text to tokenize and parse.
-        dialect: sqlglot dialect name used for tokenization.
-
-    Returns:
-        Tuple[AST, FrozenDict[str, Tuple[AST, ...]]] | Tuple[Any, None]:
-        The produced AST and collected marks, or a tuple signaling failure.
-    """
-    tokens = [Token(token_type=token.token_type, text=token.text) for token in tokenize(sql, dialect=dialect)]
+def parse_sql(syntax: Syntax[Any, Any], sql: str, dialect: str, *, adapter_lex=sqlglot_lex) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+    tokens = adapter_lex(sql, dialect)
     return parse(syntax, tokens)
+
     
 def parse(syntax: Syntax[Any, Any], tokens: List[Token]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     from syncraft.syntax import run
