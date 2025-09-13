@@ -540,6 +540,24 @@ class TokenClass(Generic[T]):
     def simple(cls)-> TokenClass[Token]:
         return TokenClass(Token)
 
+    def describe(self, **kwargs: Any) -> str:
+        """
+        Generates a human-readable description of the token class based on provided field values.
+
+        Args:
+            kwargs: Dictionary of token field values to include in the description.
+
+        Returns:
+            str: A string representation of the token class and its specified fields.
+        """
+        parts = []
+        for k, v in kwargs.items():
+            if isinstance(v, re.Pattern):
+                parts.append(f"{k}=/{v.pattern}/")
+            else:
+                parts.append(f"{k}={v}")
+        return f"{self.TokenConstructor.__name__}(" + ", ".join(parts) + ")"
+
     def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Separates configuration options from token field parameters.
@@ -589,6 +607,7 @@ class TokenClass(Generic[T]):
                     elif pattern != data:
                         return False
             return True
+        pred.__name__ = f"P.{self.describe(**kwargs)})"
         return pred
 
     def generator(self, **kwargs: Any) -> Callable[[], T]:
@@ -613,6 +632,7 @@ class TokenClass(Generic[T]):
                 else:
                     data[k] = v
             return self.TokenConstructor(**data)  # type: ignore
+        gen.__name__ = f"G.{self.describe(**kwargs)})"
         return gen
 
 #: Union-like type describing the shape of AST parse results across nodes.

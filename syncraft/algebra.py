@@ -537,10 +537,12 @@ class Algebra(Generic[A, S]):
         def many_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[Many[A], S]]]:
             ret: List[A] = []
             current_input = input
+            inner_error = None
             while True:
                 result = yield from self.run(current_input, cache)
                 match result:
-                    case Left(_):
+                    case Left(E):
+                        inner_error = Left(E)
                         break
                     case Right((value, next_input)):
                         if next_input == current_input:
@@ -555,11 +557,14 @@ class Algebra(Generic[A, S]):
                                     state=current_input
                                 )) 
             if len(ret) < at_least:
-                return Left(Error(
-                        message=f"Expected at least {at_least} matches, got {len(ret)}",
-                        this=self,
-                        state=current_input
-                    )) 
+                if inner_error is not None:
+                    return inner_error
+                else:
+                    return Left(Error(
+                            message=f"Expected at least {at_least} matches, got {len(ret)}",
+                            this=self,
+                            state=current_input
+                        )) 
             return Right((Many(value=tuple(ret)), current_input))
         return replace(self, run_f=many_run, _name=f'*({self.name})') # type: ignore
 

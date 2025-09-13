@@ -346,6 +346,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                   predicate: Optional[Callable[[T], bool]]=None,
                   generator: Optional[Callable[..., T]] = None
                   )-> Algebra[ParseResult[T], GenState[T]]:
+        name = generator.__name__ if generator is not None else "." 
         def primitive_run(input: GenState[T], 
                           cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[
                               Incomplete[GenState[T]], 
@@ -363,7 +364,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                       state=input))))
                 else:
                     return (yield from cache.return_value(Right((current, input))))
-        return cls(primitive_run, _name=cls.__name__ + '.primitive()')  # type: ignore
+        return cls(primitive_run, _name=name)  # type: ignore
         
 
 

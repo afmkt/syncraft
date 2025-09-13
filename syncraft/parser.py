@@ -41,6 +41,7 @@ class ParserState(Bindable, Generic[T]):
 
     def __repr__(self) -> str:
         return (f"ParserState("
+                f"@({self.current() if not self.ended() else 'EOF'}), "
                 f"input=[{self.before() + (' ' if len(self.before())>0 else '')}\u25cf{(' ' if len(self.after()) > 0 else '') + self.after()}], "
                 f"ended={self.ended()}, "
                 f"pending={self.pending()})")
@@ -59,11 +60,16 @@ class ParserState(Bindable, Generic[T]):
 
     def before(self, length: Optional[int] = 3)->str:
         length = min(self.index, length) if length is not None else self.index
-        return " ".join(f"{underline(str(token))}" for token in self.input[self.index - length:self.index])
+        ret = " ".join(f"{underline(str(token))}" for token in self.input[self.index - length:self.index])
+        if self.index - length > 0:
+            ret = "... " + ret
+        return ret
     
     def after(self, length: Optional[int] = 3)->str:
         length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
         ret = " ".join(f"{underline(str(token))}" for token in self.input[self.index:self.index + length])
+        if self.index + length < len(self.input):
+            ret = ret + " ..."
         return ret
 
 
@@ -114,6 +120,7 @@ class Parser(Algebra[T, ParserState[T]]):
                   predicate: Optional[Callable[[T], bool]]=None,
                   generator: Optional[Callable[..., T]] = None
                   )-> Algebra[T, ParserState[T]]:
+        name = predicate.__name__ if predicate is not None else "." 
         def primitive_run(state: ParserState[T], 
                           cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               Incomplete[ParserState[T]], 
@@ -131,11 +138,10 @@ class Parser(Algebra[T, ParserState[T]]):
                         return (yield from cache.return_value(Left(state)))
                     else:
                         return (yield from cache.return_value(Right((token, state.advance()))))
-        name = '.' 
         captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
-                return Error(message="Cannot match token", this=captured, state=err)            
+                return Error(message=f"Cannot match token expect {name}, got '{err.current() if not err.ended() or err.pending() else 'EOF'}'", this=captured, state=err)            
             else:
                 return Error(message="Cannot match token at unknown state", this=captured)
         # assign the updated parser(with description) to bound variable so the Error.this could be set correctly
