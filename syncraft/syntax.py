@@ -12,7 +12,6 @@ from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from types import MethodType, FunctionType
 import keyword
-import threading
 
 
 def valid_name(name: str) -> bool:
@@ -542,23 +541,28 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+        """Create a lazy syntax that defers evaluation of the thunk until needed.
+        
+        Note: This method is not thread-safe due to internal caching. For concurrent
+        usage, each thread should use its own copy of the Syntax object or ensure
+        that lazy evaluation occurs before sharing across threads.
+        """
         algebra: Optional[Algebra[A, S]] = None
         syntax: Optional[Syntax[A, S]] = None
         previous_cls: Optional[Type[Algebra[Any, S]]] = None
-        lock = threading.RLock()
+        
         def syntax_lazy_run(cls: Type[Algebra[Any, S]]) -> Algebra[A, S]:
             nonlocal algebra, syntax, previous_cls
-            with lock:                    
+            if syntax is None:
+                syntax = thunk()
+            def algebra_lazy_f():
                 if syntax is None:
-                    syntax = thunk()
-                def algebra_lazy_f():
-                    if syntax is None:
-                        raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
-                    return syntax(cls)
-                if algebra is None or (previous_cls is not None and previous_cls is not cls):
-                    algebra = cls.lazy(algebra_lazy_f)
-                    previous_cls = cls
-                return algebra
+                    raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
+                return syntax(cls)
+            if algebra is None or (previous_cls is not None and previous_cls is not cls):
+                algebra = cls.lazy(algebra_lazy_f)
+                previous_cls = cls
+            return algebra
         return cls(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))
 
 
