@@ -506,6 +506,12 @@ class Token(AST):
     def __repr__(self) -> str:
         return self.__str__()
     
+
+def word_lexer(input: str) -> List[Token]:
+    return [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', input)]
+
+
+
 T = TypeVar('T', bound=Hashable)
 
 

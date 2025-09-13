@@ -1,8 +1,11 @@
 from __future__ import annotations
 from typing import Any
-from syncraft.parser import  parse_sql
-from syncraft.parser import literal
+from syncraft.parser import parse_word
+from syncraft.syntax import Syntax
 from dataclasses import dataclass
+
+from syncraft.ast import TokenClass
+literal = Syntax.config(TokenClass.simple()).literal
 
 def test_find()->None:
     @dataclass
@@ -38,5 +41,5 @@ def test_find()->None:
             + ifthenelse.mark('body')
             // ~END).to(While)
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    ast, bound = parse_word(syntax, sql)
     # print(ast)

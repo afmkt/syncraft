@@ -1,9 +1,12 @@
 from __future__ import annotations
 from typing import Any
-from syncraft.parser import parse_sql
-from syncraft.parser import literal
+from syncraft.parser import parse_word
+from syncraft.syntax import Syntax
 import syncraft.generator as gen
 from dataclasses import dataclass
+
+from syncraft.ast import TokenClass
+literal = Syntax.config(TokenClass.simple()).literal
 
 
 def test_to() -> None:
@@ -39,8 +42,8 @@ def test_to() -> None:
     syntax = (WHILE >> condition
             + ifthenelse.mark('body')
             // ~END).to(While)
-    sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
+    ast, bound = parse_word(syntax, sql)
     # print(ast)
     g, bound = gen.generate_with(syntax, ast, restore_pruned=True)
     assert ast == g

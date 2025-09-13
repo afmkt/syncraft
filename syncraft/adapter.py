@@ -1,15 +1,19 @@
 from __future__ import annotations
-from enum import Enum
-from dataclasses import dataclass
-from typing import List, Callable, Any, TypeVar, Generic, Hashable, Type, ClassVar
+
+from typing import List
+from syncraft.ast import TokenClass
 
 
-H = TypeVar('H', bound=Hashable)
-T = TypeVar('T', bound=Enum)
-@dataclass(frozen=True)
-class Adapter(Generic[T, H]):
-    TokenType: Type[T]  # The Enum type representing token types in the backend
-    default_token_type: T  # Default token type to use when none is specified
-    lex: Callable[[str, Any], List[H]]  # Function to lex text into tokens
-    parse_expr: Callable[[List[H], str], List[Any]]  # Function to parse tokens into expressions
 
+
+from sqlglot import tokenize
+from sqlglot import Token as SQLGlotToken
+
+
+
+def sqlglot_token_class()->TokenClass[SQLGlotToken]:
+    return TokenClass(TokenConstructor=SQLGlotToken)
+
+def sqlglot_lex(input: str, dialect: str) -> List[SQLGlotToken]:
+    tkns = tokenize(input, dialect=dialect)
+    return tkns

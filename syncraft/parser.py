@@ -15,13 +15,15 @@ from enum import Enum
 
 from syncraft.syntax import Syntax
 
-from syncraft.ast import Token, TokenClass, AST, SyncraftError
+from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
 from syncraft.constraint import Bindable
 
 
 T = TypeVar('T', bound=Hashable)  
 
 
+def underline(text: str) -> str:
+    return f"\033[4m{text}\033[0m"
 @dataclass(frozen=True)
 class ParserState(Bindable, Generic[T]):
     """Immutable state for the SQL token stream during parsing.
@@ -56,28 +58,12 @@ class ParserState(Bindable, Generic[T]):
 
 
     def before(self, length: Optional[int] = 3)->str:
-        """Return a string with up to ``length`` tokens before the cursor.
-
-        Args:
-            length: Maximum number of tokens to include.
-
-        Returns:
-            str: Space-separated token texts before the current index.
-        """
         length = min(self.index, length) if length is not None else self.index
-        return " ".join(str(token) for token in self.input[self.index - length:self.index])
+        return " ".join(f"{underline(str(token))}" for token in self.input[self.index - length:self.index])
     
     def after(self, length: Optional[int] = 3)->str:
-        """Return a string with up to ``length`` tokens from the cursor on.
-
-        Args:
-            length: Maximum number of tokens to include.
-
-        Returns:
-            str: Space-separated token texts starting at the current index.
-        """
         length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
-        ret = " ".join(str(token) for token in self.input[self.index:self.index + length])
+        ret = " ".join(f"{underline(str(token))}" for token in self.input[self.index:self.index + length])
         return ret
 
 
@@ -145,11 +131,11 @@ class Parser(Algebra[T, ParserState[T]]):
                         return (yield from cache.return_value(Left(state)))
                     else:
                         return (yield from cache.return_value(Right((token, state.advance()))))
-        name = cls.__name__ + f'.primitive({predicate.__name__})' if predicate is not None else cls.__name__ + '.primitive(None)'
+        name = '.' 
         captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
-                return Error(message=f"Cannot match token at {err}", this=captured, state=err)            
+                return Error(message="Cannot match token", this=captured, state=err)            
             else:
                 return Error(message="Cannot match token at unknown state", this=captured)
         # assign the updated parser(with description) to bound variable so the Error.this could be set correctly
@@ -157,84 +143,17 @@ class Parser(Algebra[T, ParserState[T]]):
         return captured        
 
     @classmethod
-    def token(cls, 
-              *,
-              text: Optional[str | re.Pattern[str]] = None, 
-              token_type: Optional[Enum] = None,           
-              case_sensitive: bool = False
-              ) -> Algebra[T, ParserState[T]]:
-        token_class: TokenClass = cls.config(TokenClass, TokenClass.simple())
-        pred = token_class.predicate(token_type=token_type, 
-                         text=text, 
-                         case_sensitive=case_sensitive)
-        return cls.primitive(predicate=pred)  
+    def token(cls,**kwargs: Any) -> Algebra[T, ParserState[T]]:
+        token_class: None | TokenClass = cls.config(TokenClass)
+        if token_class is None:
+            raise SyncraftError("TokenClass not configured for Parser", offending=cls, expect=TokenClass)
+        pred = token_class.predicate(**kwargs)
+        return cls.primitive(predicate=pred)
 
 
 
-
-# def sqlglot(parser: Syntax[Any, Any], dialect: str) -> Syntax[List[Any], ParserState[Any]]:
-#     """Map token tuples into sqlglot expressions for a given dialect via adapter.
-
-#     If sqlglot isn't available, this fails early with a clear error.
-#     """
-#     if not SQLGLOT_AVAILABLE:
-#         raise RuntimeError("sqlglot() requested but sqlglot is not installed. Install with: pip install sqlglot")
-#     return parser.map(lambda tokens: sqlglot_parse_expressions(tokens, dialect))
-
-
-
-def token(*,
-          text: Optional[str | re.Pattern[str]] = None, 
-          token_type: Optional[Enum] = None,           
-          case_sensitive: bool = False) -> Syntax[Any, Any]:
-    """Build a ``Syntax`` that matches a single token.
-
-    Convenience wrapper around ``Parser.token``. You can match by
-    type, exact text, or regex.
-
-    Args:
-        token_type: Expected token enum type.
-        text: Exact token text to match.
-        case_sensitive: Whether text matching respects case.
-        regex: Pattern to match token text.
-
-    Returns:
-        Syntax[Any, Any]: A syntax that matches one token.
-    """
-    return Syntax(
-        lambda cls: cls.factory('token', 
-                                token_type=token_type, 
-                                text=text, 
-                                case_sensitive=case_sensitive)
-        ).describe(name=f'token({str(text)})', fixity='prefix')
-
-    
-
-def literal(lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
-    """Match an exact literal string (case-sensitive)."""
-    return token(token_type=None, 
-                 text=lit, 
-                 case_sensitive=True)
-
-
-def lift(value: Any)-> Syntax[Any, Any]:
-    """Lift a Python value into the nearest matching token syntax.
-
-    - ``str`` -> ``literal``
-    - ``re.Pattern`` -> ``token`` with regex
-    - ``Enum`` -> ``token`` with type
-    - otherwise -> succeed with the value
-    """
-    if isinstance(value, (str, re.Pattern)):
-        return literal(value)
-    elif isinstance(value, Enum):
-        return token(token_type=value)
-    else:
-        return Syntax(lambda cls: cls.success(value))
-
-
-def parse_sql(syntax: Syntax[Any, Any], sql: str, dialect: str, *, adapter_lex=sqlglot_lex) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    tokens = adapter_lex(sql, dialect)
+def parse_word(syntax: Syntax[Any, Any], sql: str) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+    tokens = word_lexer(sql)
     return parse(syntax, tokens)
 
     

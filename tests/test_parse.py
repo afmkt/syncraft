@@ -1,19 +1,23 @@
 from __future__ import annotations
-from syncraft.parser import variable, parse_sql
-from syncraft.parser import literal
+from syncraft.parser import  parse_word
+from syncraft.syntax import Syntax
 import syncraft.generator as gen
+
+
+from syncraft.ast import TokenClass
+literal = Syntax.config(TokenClass.simple()).literal
+
 
 IF = literal("if")
 ELSE = literal("else")
 THEN = literal("then")
 END = literal("end")
-var = variable()
 
 
 def test_between()->None:
     sql = "then if then"
     syntax = IF.between(THEN, THEN)
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')    
+    ast, bound = parse_word(syntax, sql)    
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
     x, f = generated.bimap()
@@ -24,7 +28,7 @@ def test_between()->None:
 def test_sep_by()->None:
     sql = "if then if then if then if"
     syntax = IF.sep_by(THEN)
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')    
+    ast, bound = parse_word(syntax, sql)    
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
     x, f = generated.bimap()
@@ -37,7 +41,7 @@ def test_many_or()->None:
     END = literal("end")
     syntax = (IF.many() | THEN.many()).many() // END
     sql = "if if then end"
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    ast, bound = parse_word(syntax, sql)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
     x, f = generated.bimap()

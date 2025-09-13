@@ -1,29 +1,23 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing
+from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, TokenClass
 from syncraft.algebra import Error
-from syncraft.parser import  parse_sql
+from syncraft.parser import  parse_word
 import syncraft.generator as gen
-from syncraft.parser import literal
-from syncraft.generator import TokenSpec
-from syncraft.sqlglot_adapter import SQLGLOT_TokenType as TokenType, SQLGLOT_AVAILABLE
-import pytest
-if not SQLGLOT_AVAILABLE:  # pragma: no cover
-    pytest.skip("sqlglot not installed; skipping sqlglot-dependent tests", allow_module_level=True)
+from syncraft.syntax import Syntax
+
+
+
+literal = Syntax.config(TokenClass.simple()).literal
 
 def from_string(string: str) -> Token:
-    tt = TokenSpec.guess_type(string, 
-                                _type=TokenType, 
-                                escape_type=TokenType.VAR, 
-                                token_type=None, 
-                                case_sensitive=False)
-    return Token(token_type=tt, text=string)
+    return Token(text=string)
 
 def test1_simple_then() -> None:
     A, B, C = literal("a"), literal("b"), literal("c")
     syntax = A // B // C
     sql = "a b c"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     # print("---" * 40)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
@@ -40,7 +34,7 @@ def test2_named_results() -> None:
     A, B = literal("a").mark("x").mark('z'), literal("b").mark("y")
     syntax = A // B
     sql = "a b"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     # print("---" * 40)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
@@ -57,7 +51,7 @@ def test3_many_literals() -> None:
     A = literal("a")
     syntax = A.many()
     sql = "a a a"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     # print("---" * 40)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
@@ -74,7 +68,7 @@ def test4_mixed_many_named() -> None:
     B = literal("b")
     syntax = (A | B).many()
     sql = "a b a"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     # print("---" * 40)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
@@ -90,7 +84,7 @@ def test5_nested_then_many() -> None:
     IF, THEN, END = literal("if"), literal("then"), literal("end")
     syntax = (IF.many() // THEN.many()).many() // END
     sql = "if if then end"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     # print("---" * 40)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast, restore_pruned=True)
@@ -107,7 +101,7 @@ def test_then_flatten():
     A, B, C = literal("a"), literal("b"), literal("c")
     syntax = A + (B + C)
     sql = "a b c"
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    ast, bound = parse_word(syntax, sql)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
@@ -123,7 +117,7 @@ def test_named_in_then():
     C = literal("c").mark("third")
     syntax = A + B + C
     sql = "a b c"
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    ast, bound = parse_word(syntax, sql)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
@@ -136,7 +130,7 @@ def test_named_in_many():
     A = literal("x").mark("x")
     syntax = A.many()
     sql = "x x x"
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    ast, bound = parse_word(syntax, sql)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
@@ -150,7 +144,7 @@ def test_named_in_or():
     B = literal("b").mark("b")
     syntax = A | B
     sql = "b"
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    ast, bound = parse_word(syntax, sql)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
@@ -168,7 +162,7 @@ def test_deep_mix():
     C = literal("c").mark("c")
     syntax = ((A + B) | C).many() + B
     sql = "a b a b c b"
-    ast, bound = parse_sql(syntax, sql, dialect='sqlite')
+    ast, bound = parse_word(syntax, sql)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     # print('---' * 40)
@@ -183,7 +177,7 @@ def test_empty_many() -> None:
     A = literal("a")
     syntax = A.many()  # This should allow empty matches
     sql = ""
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     assert isinstance(ast, Error)
 
 
@@ -192,7 +186,7 @@ def test_backtracking_many() -> None:
     B = literal("b")
     syntax = (A.many() + B)  # must not eat the final "a" needed for B
     sql = "a a a a b"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     value, bmap = ast.bimap()
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == ast
@@ -203,7 +197,7 @@ def test_deep_nesting() -> None:
     for _ in range(100):
         syntax = syntax + A
     sql = " " .join("a" for _ in range(101))
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     assert ast is not None
 
 
@@ -211,7 +205,7 @@ def test_nested_many() -> None:
     A = literal("a")
     syntax = (A.many().many())  # groups of groups of "a"
     sql = "a a a"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     assert isinstance(ast, Many)
 
 
@@ -219,7 +213,7 @@ def test_named_many() -> None:
     A = literal("a").mark("alpha")
     syntax = A.many()
     sql = "a a"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     value, bmap = ast.bimap()
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == ast
@@ -230,7 +224,7 @@ def test_or_named() -> None:
     B = literal("b").mark("y")
     syntax = A | B
     sql = "b"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     value, bmap = ast.bimap()
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == ast
@@ -242,7 +236,7 @@ def test_then_associativity() -> None:
     C = literal("c")
     syntax = A + B + C
     sql = "a b c"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     # Should be Then(Then(A,B),C)
     assert ast == Then(kind=ThenKind.BOTH, 
                                    left=Then(kind=ThenKind.BOTH, 
@@ -256,7 +250,7 @@ def test_ambiguous() -> None:
     B = literal("a") + literal("b")
     syntax = A | B
     sql = "a"
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     # Does it prefer A (shorter) or B (fails)? Depends on design.
     assert ast == Choice[Token, Token](value=from_string("a"), kind=ChoiceKind.LEFT)
 
@@ -269,19 +263,19 @@ def test_combo() -> None:
     sql = "a b a b c b"
     # Should fail, as we discussed earlier
     # the working syntax should be ((A + B) | C).many() + B
-    ast, bound = parse_sql(syntax, sql, dialect="sqlite")
+    ast, bound = parse_word(syntax, sql)
     assert isinstance(ast, Error)
-    ast, bound = parse_sql(((A + B) | C).many() + B, sql, dialect="sqlite")
+    ast, bound = parse_word(((A + B) | C).many() + B, sql)
     assert not isinstance(ast, Error)
 
 
 def test_optional():
     A = literal("a").mark("a")
     syntax = A.optional()
-    ast1, bound = parse_sql(syntax, "", dialect="sqlite")
+    ast1, bound = parse_word(syntax, "")
     v1, _ = ast1.bimap()
     assert isinstance(v1, Nothing)
-    ast2, bound = parse_sql(syntax, "a", dialect="sqlite")
+    ast2, bound = parse_word(syntax, "a")
     v2, _ = ast2.bimap()
     assert v2 == Marked(name='a', value=from_string('a'))
 
@@ -290,7 +284,7 @@ def test_optional():
 def test_many_optional():
     A = literal("a")
     syntax = A.optional().many()
-    ast1, _ = parse_sql(syntax, "a a b", dialect="sqlite")
+    ast1, _ = parse_word(syntax, "a a b")
     # print(ast1)
     ast2, inv = ast1.bimap()
     assert Many(value=(Choice(kind=None, value=from_string('a')), Choice(kind=None, value=from_string('a')))) == inv(ast2)

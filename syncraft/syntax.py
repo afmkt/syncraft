@@ -9,9 +9,11 @@ from functools import reduce
 from syncraft.algebra import Algebra, Error, Right, Left, Incomplete
 from syncraft.cache import Cache
 from syncraft.constraint import Bindable
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, TokenClass
 from types import MethodType, FunctionType
 import keyword
+from enum import Enum
+import re
 
 
 def valid_name(name: str) -> bool:
@@ -108,7 +110,10 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def attach(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
-        return cls.transform(lambda a: type(a.__name__, (a,), attrs))
+        def attach_f(alg_cls: Type[Algebra[Any, Any]]) -> Type[Algebra[Any, Any]]:
+            old = getattr(alg_cls, '__syncraft_attachment__', {})
+            return type(alg_cls.__name__, (alg_cls,), {'__syncraft_attachment__': old | attrs})
+        return cls.transform(attach_f)
 
     @classmethod
     def config(cls, instance: Any) -> Type['Syntax[Any, Any]']:
@@ -565,7 +570,40 @@ class Syntax(Generic[A, S]):
             return algebra
         return cls(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))
 
+    @classmethod
+    def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
+        """Build a ``Syntax`` that matches a single token.
 
+        Convenience wrapper around ``Parser.token``. You can match by
+        type, exact text, or regex.
+
+        Args:
+            token_type: Expected token enum type.
+            text: Exact token text to match.
+            case_sensitive: Whether text matching respects case.
+            regex: Pattern to match token text.
+
+        Returns:
+            Syntax[Any, Any]: A syntax that matches one token.
+        """
+        return cls(
+            lambda cls: cls.factory('token', **kwargs)
+            ).describe(name=f'token({kwargs})', fixity='prefix')
+
+        
+    @classmethod
+    def literal(cls, lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
+        """Match an exact literal string (case-sensitive)."""
+        return cls.token(text=lit, case_sensitive=True)
+
+    @classmethod
+    def lift(cls, value: Any)-> Syntax[Any, Any]:
+        if isinstance(value, (str, re.Pattern)):
+            return cls.literal(value)
+        elif isinstance(value, Enum):
+            return cls.token(token_type=value)
+        else:
+            return cls(lambda cls: cls.success(value))
 
 
 

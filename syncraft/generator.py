@@ -368,19 +368,12 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     @classmethod
-    def token(cls, 
-              *,
-              text: Optional[str | re.Pattern[str]] = None, 
-              token_type: Optional[Enum] = None,           
-              case_sensitive: bool = False
-              )-> Algebra[ParseResult[T], GenState[T]]: 
-        token_class: TokenClass = cls.config(TokenClass, TokenClass.simple())         
-        gen = token_class.generator(token_type=token_type, 
-                        text=text, 
-                        case_sensitive=case_sensitive)  
-        pred = token_class.predicate(token_type=token_type, 
-                        text=text, 
-                        case_sensitive=case_sensitive)
+    def token(cls, **kwargs: Any)-> Algebra[ParseResult[T], GenState[T]]: 
+        token_class: None | TokenClass = cls.config(TokenClass)         
+        if token_class is None:
+            raise SyncraftError("TokenClass not configured for Generator", offending=cls, expect=TokenClass)
+        gen = token_class.generator(**kwargs)  
+        pred = token_class.predicate(**kwargs)
         return cls.primitive(
             predicate=pred,
             generator=gen)

@@ -12,10 +12,7 @@ from .algebra import (
 )
 from .parser import (
     Parser,
-    literal,    
 	parse,
-
-	token,
 )
 from .generator import (
     Generator,
@@ -56,7 +53,7 @@ __all__ = [
 	# syntax & core
 	"Syntax", "run", "Description",
 	# parsing/generation helpers
-	"parse", "token", "literal", 
+	"parse",
 	"generate", "generate_with", "validate", "Parser", "Generator",
 	# finder
 	"find", "matches", "anything", "Finder",

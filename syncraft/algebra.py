@@ -10,6 +10,7 @@ from syncraft.cache import Cache, LeftRecursionError
 from syncraft.constraint import Bindable
 from functools import cached_property
 import re
+import inspect
 from rich import print
 
 
@@ -51,6 +52,7 @@ class Error:
     fatal: bool = False
     previous: Optional[Error] = None
     
+
     def attach( self, 
                 *,
                 this: Any, 
@@ -81,8 +83,16 @@ class Algebra(Generic[A, S]):
     _name: str | Callable[[], str]
 
     @classmethod
-    def config(cls, typ: Type[Any], default: Any = None)-> Any:
-        return getattr(cls, typ.__name__, default)
+    def config(cls, typ: Type[Any] | str)-> Any:
+        d = getattr(cls, '__syncraft_attachment__', {})
+        name = typ.__name__ if not isinstance(typ, str) else typ
+        if name in d:
+            return d[name]
+        elif isinstance(typ, type):
+            for k, v in d.items():
+                if isinstance(v, typ):
+                    return v
+        return None
 
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
@@ -382,7 +392,7 @@ class Algebra(Generic[A, S]):
             def map_all_run_f(input:S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right(f(a, input))
-            return replace(self, _run=map_all_run_f) # type: ignore
+            return replace(self, run_f=map_all_run_f) # type: ignore
         return self.flat_map(map_all_f)
 
 

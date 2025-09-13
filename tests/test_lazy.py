@@ -1,29 +1,23 @@
 from __future__ import annotations
-from syncraft.ast import Nothing, TokenSpec, Token
-from syncraft.syntax import lazy
-from syncraft.parser import parse_sql, literal, regex, token
+from syncraft.ast import Nothing, Token
+from syncraft.parser import parse_word
 from syncraft.generator import generate_with
-from syncraft.sqlglot_adapter import SQLGLOT_TokenType as TokenType, SQLGLOT_AVAILABLE
+from syncraft.syntax import Syntax
 import pytest
 from syncraft.cache import LeftRecursionError
-if not SQLGLOT_AVAILABLE:  # pragma: no cover - conditional skip
-    pytest.skip("sqlglot not installed; skipping sqlglot-dependent tests", allow_module_level=True)
-
-
+import re
+from syncraft.ast import TokenClass
+literal = Syntax.config(TokenClass.simple()).literal
+token = Syntax.config(TokenClass.simple()).token
 
 def from_string(string: str) -> Token:
-    tt = TokenSpec.guess_type(string, 
-                                _type=TokenType, 
-                                escape_type=TokenType.VAR, 
-                                token_type=None, 
-                                case_sensitive=False)
-    return Token(token_type=tt, text=string)
+    return Token( text=string)
 
 
 
 def test_simple_recursion()->None:
-    A = lazy(lambda: literal('a') + ~A | literal('a'))
-    v, s = parse_sql(A, 'a a a', dialect='sqlite')
+    A = Syntax.lazy(lambda: literal('a') + ~A | literal('a'))
+    v, s = parse_word(A, 'a a a')
     # print(v)
     ast1, inv = v.bimap()
     # print(ast1)
@@ -48,8 +42,8 @@ def test_simple_recursion()->None:
 
 
 def test_direct_recursion()->None:
-    Expr1 = lazy(lambda: literal('a') + ~Expr1)
-    v, s = parse_sql(Expr1, 'a a a', dialect='sqlite')
+    Expr1 = Syntax.lazy(lambda: literal('a') + ~Expr1)
+    v, s = parse_word(Expr1, 'a a a')
     x, _ = v.bimap()
     assert x == (
         from_string('a'), 
@@ -64,9 +58,9 @@ def test_direct_recursion()->None:
 
 
 def test_mutual_recursion()->None:
-    A = lazy(lambda: literal('a') + B)
-    B = lazy(lambda: (literal('b') + A) | (literal('c')))
-    v, s = parse_sql(A, 'a b a b a c', dialect='sqlite')
+    A = Syntax.lazy(lambda: literal('a') + B)
+    B = Syntax.lazy(lambda: (literal('b') + A) | (literal('c')))
+    v, s = parse_word(A, 'a b a b a c')
     # print('--' * 20, "test_mutual_recursion", '--' * 20)
     # print(v)
     ast1, inv = v.bimap()
@@ -97,14 +91,14 @@ def test_mutual_recursion()->None:
 def test_recursion() -> None:
     A = literal('a')
     B = literal('b')
-    L = lazy(lambda: literal("if") >> (A | B) // literal('then'))
+    L = Syntax.lazy(lambda: literal("if") >> (A | B) // literal('then'))
 
     def parens():
-        return A + ~lazy(parens) + B
+        return A + ~Syntax.lazy(parens) + B
     p_code = 'a a b b'
     LL = parens() | L
     
-    v, s = parse_sql(LL, p_code, dialect='sqlite')
+    v, s = parse_word(LL, p_code)
     ast1, inv = v.bimap()
     assert ast1 == (
             from_string('a'), 
@@ -129,17 +123,17 @@ def test_recursion() -> None:
 
 def test_direct_left_recursion()->None:
     Term = literal('n')
-    Expr = lazy(lambda: Expr + literal('+') + Term | Term)
+    Expr = Syntax.lazy(lambda: Expr + literal('+') + Term | Term)
     with pytest.raises(LeftRecursionError):
-        v, s = parse_sql(Expr, 'n+n+n', dialect='sqlite')
+        v, s = parse_word(Expr, 'n+n+n')
 
 
 
 def test_indirect_left_recursion()->None:
-    NUMBER = regex(r'\d+').map(int)
+    NUMBER = literal(re.compile(r'\d+')).map(int)
     PLUS = token(text='+')
     STAR = token(text='*')
-    A = lazy(lambda: (B >> PLUS >> A) | B)
-    B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
+    A = Syntax.lazy(lambda: (B >> PLUS >> A) | B)
+    B = Syntax.lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
     with pytest.raises(LeftRecursionError):
-        v, s = parse_sql(A, '1 + 2 * 3', dialect='sqlite')
+        v, s = parse_word(A, '1 + 2 * 3')
