@@ -88,58 +88,98 @@ class DFA(Generic[C]):
         return self.complement
                        
 
-    def _product(self, other: DFA[C], accept_func: Callable[[bool, bool], bool]) -> DFA[C]:
+    def _product(self, other: "DFA[C]", accept_func: Callable[[bool, bool], bool]) -> "DFA[C]":
         if self.universe != other.universe:
             raise MixedUniverseError("Cannot combine DFAs with different universes",
                                     offending=(self.universe, other.universe))
-        
-        # Map state pairs to new FAState
+
+        # sentinel sink states for "no transition" from a DFA on a piece
+        sink1 = FAState()
+        sink2 = FAState()
+
+        # map (s1, s2) -> new FAState
         state_map: dict[tuple[FAState, FAState], FAState] = {}
         start_pair = (self.current, other.current)
         state_map[start_pair] = FAState()
         work_list = deque([start_pair])
+
         transitions: dict[FAState, dict[CharSet[C], FAState]] = {}
         accept: dict[FAState, frozenset[str | Enum]] = {}
-        
+
         while work_list:
             s1, s2 = work_list.popleft()
             new_state = state_map[(s1, s2)]
-            
-            # collect intersected CharSets for all transitions
-            next_trans: dict[CharSet[C], FAState] = {}
-            trans1 = self.transitions.get(s1, {})
-            trans2 = other.transitions.get(s2, {})
-            
-            for cs1, t1 in trans1.items():
-                for cs2, t2 in trans2.items():
-                    inter_cs = cs1 & cs2
-                    if inter_cs.interval:
-                        pair = (t1, t2)
-                        if pair not in state_map:
-                            state_map[pair] = FAState()
-                            work_list.append(pair)
-                        next_trans[inter_cs] = state_map[pair]
-            
-            transitions[new_state] = next_trans
-            
-            # decide if this new state is accepting
+
+            trans1 = dict(self.transitions.get(s1, {}))
+            trans2 = dict(other.transitions.get(s2, {}))
+
+            # collect all intervals from both transition maps and partition them
+            intvs: List[Tuple[int, int]] = []
+            for cs in trans1.keys():
+                intvs.extend(cs.interval)
+            for cs in trans2.keys():
+                intvs.extend(cs.interval)
+
+            # If there are no intervals on either side, we leave transitions empty.
+            if not intvs:
+                transitions[new_state] = {}
+            else:
+                pieces = CharSet.partition_charsets(intvs)
+                next_trans: dict[CharSet[C], FAState] = {}
+
+                for p in pieces:
+                    piece_cs: CharSet[C] = CharSet.from_interval([p], self.universe)
+
+                    # find target in trans1 that covers this piece (if any)
+                    t1 = None
+                    for cs1, tgt1 in trans1.items():
+                        if cs1.overlaps(p):
+                            t1 = tgt1
+                            break
+
+                    # find target in trans2 that covers this piece (if any)
+                    t2 = None
+                    for cs2, tgt2 in trans2.items():
+                        if cs2.overlaps(p):
+                            t2 = tgt2
+                            break
+
+                    # if neither automaton moves on this piece, skip it
+                    if t1 is None and t2 is None:
+                        continue
+
+                    tgt_pair = (t1 if t1 is not None else sink1, t2 if t2 is not None else sink2)
+                    if tgt_pair not in state_map:
+                        state_map[tgt_pair] = FAState()
+                        work_list.append(tgt_pair)
+
+                    next_trans[piece_cs] = state_map[tgt_pair]
+
+                # merge adjacent CharSets that target the same state (keeps DFAs tidy)
+                transitions[new_state] = DFA.merge_adjacent_transitions(self.universe, next_trans)
+
+            # acceptance of the product state
             b1 = s1 in self.accept
             b2 = s2 in other.accept
             if accept_func(b1, b2):
-                # merge tags from both DFAs
                 tags = set(self.accept.get(s1, frozenset())) | set(other.accept.get(s2, frozenset()))
                 accept[new_state] = frozenset(tags)
 
-        frozen_transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({s: FrozenDict(t) for s, t in transitions.items()})
+        # Optionally: we created sink1/sink2 FAState values; if any pair uses them they are already in state_map
+        # Build frozen structures
+        frozen_transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({
+            s: FrozenDict(t) for s, t in transitions.items()
+        })
         frozen_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict(accept)
-        
+
         return DFA(
             universe=self.universe,
             current=state_map[start_pair],
             accept=frozen_accept,
             transitions=frozen_transitions,
-            nfa2dfa=FrozenDict()  # optionally keep empty
+            nfa2dfa=FrozenDict()
         )
+
 
     def intersection(self, other: DFA[C]) -> DFA[C]:
         return self._product(other, lambda b1, b2: b1 and b2)    

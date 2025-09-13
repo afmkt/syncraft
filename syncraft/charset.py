@@ -46,7 +46,7 @@ class CodeUniverse(Generic[C]):
             return f"{self.space.__name__}({self.value[0]}-{self.value[1]})"
 
     def __repr__(self) -> str:
-        return f"CodeUniverse({str(self)}, {self.value})"
+        return self.__str__()
     
     def to_int(self, c: C) -> int:
         if isinstance(c, str):
@@ -103,10 +103,10 @@ class CodeUniverse(Generic[C]):
 
 @dataclass(frozen=True)
 class CharSet(Generic[C]):
-    predicate: Callable[[int], bool]       
+    predicate: Callable[[int], bool] = field(repr=False)      
     interval: Tuple[Tuple[int, int], ...] 
     universe: CodeUniverse
-    name: str
+
 
     @staticmethod
     def partition_charsets(intervals: list[Tuple[int, int]]) -> list[Tuple[int, int]]:
@@ -195,8 +195,7 @@ class CharSet(Generic[C]):
         return cls(
             predicate=lambda c: c in cs, 
             interval=intv,
-            universe=universe,
-            name=f"'{cs}'")
+            universe=universe)
     
     @classmethod
     def from_interval(cls, intv: List[Tuple[int, int]], universe: CodeUniverse) -> CharSet[C]:
@@ -204,24 +203,21 @@ class CharSet(Generic[C]):
         return cls(
             predicate=lambda c: any(start <= c <= end for start, end in merged), 
             interval=merged,
-            universe=universe,
-            name=f"{merged}")
+            universe=universe)
 
     @classmethod
     def any(cls, universe: CodeUniverse) -> CharSet[C]:
         return cls(
             predicate=lambda c: True, 
             interval=universe.interval,
-            universe=universe,
-            name=".")
+            universe=universe)
     
     @classmethod
     def none(cls, universe: CodeUniverse) -> CharSet[C]:
         return cls(
             predicate=lambda c: False, 
             interval=tuple(),
-            universe=universe,
-            name="∅")
+            universe=universe)
 
     def sample(self, rnd: random.Random) -> C:
         range = rnd.choice(self.interval)
@@ -271,8 +267,7 @@ class CharSet(Generic[C]):
         return CharSet(
             lambda c: self.predicate(c) or other.predicate(c), 
             intv,
-            universe=self.universe,
-            name=f"({self.name} | {other.name})")
+            universe=self.universe)
     def __or__(self, other: CharSet[C]) -> CharSet[C]:
         return self.union(other)
     
@@ -290,8 +285,7 @@ class CharSet(Generic[C]):
         return CharSet(
             lambda c: self.predicate(c) and other.predicate(c), 
             intv,
-            universe=self.universe,
-            name=f"({self.name} & {other.name})")
+            universe=self.universe)
     def __and__(self, other: CharSet[C]) -> CharSet[C]:
         return self.intersect(other)
 
@@ -308,8 +302,7 @@ class CharSet(Generic[C]):
         return CharSet(
             lambda c: self.predicate(c) and not other.predicate(c), 
             intv,
-            universe=self.universe,
-            name=f"({self.name} - {other.name})")
+            universe=self.universe)
     def __sub__(self, other: CharSet[C]) -> CharSet[C]:
         return self.difference(other)
     
@@ -321,8 +314,7 @@ class CharSet(Generic[C]):
         return CharSet(
             lambda c: not self.predicate(c), 
             intv,
-            universe=self.universe,
-            name=f"-{self.name}")
+            universe=self.universe)
     
     def __neg__(self) -> CharSet[C]:
         return self.complement

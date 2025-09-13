@@ -240,3 +240,59 @@ def test_tag_propagation():
             assert dfa.accept[fa_state] == frozenset(tags_from_nfa), (
                 f"Tags not propagated correctly for DFA state {fa_state}"
             )
+
+
+# --- DFA combinator tests ---
+def test_dfa_combinators_basic():
+    u = CodeUniverse.ascii()
+    from syncraft.fa import NFA
+    a = NFA.from_char('a', universe=u).dfa
+    b = NFA.from_char('b', universe=u).dfa
+    # complement
+    not_a = -a
+    assert not not_a.match(['a'])
+    assert not_a.match(['b'])
+    # intersection
+    ab = a & b
+    assert not ab.match(['a'])
+    assert not ab.match(['b'])
+    assert not ab.match(['a','b'])
+    # union
+    a_or_b = a | b
+    print('DFA a transitions:', a.transitions)
+    print('DFA a accept:', a.accept)
+    print('DFA b transitions:', b.transitions)
+    print('DFA b accept:', b.accept)
+    print('DFA a|b transitions:', a_or_b.transitions)
+    print('DFA a|b accept:', a_or_b.accept)
+    assert a_or_b.match(['a'])
+    assert a_or_b.match(['b'])
+    assert not a_or_b.match(['c'])
+    # difference
+    only_a = a - b
+    assert only_a.match(['a'])
+    assert not only_a.match(['b'])
+
+def test_dfa_tagged():
+    u = CodeUniverse.ascii()
+    from syncraft.fa import NFA
+    a = NFA.from_char('a', universe=u).dfa
+    tagged = a.tagged('X')
+    for tags in tagged.accept.values():
+        assert 'X' in tags
+    # append tag
+    tagged2 = tagged.tagged('Y', append=True)
+    for tags in tagged2.accept.values():
+        assert 'X' in tags and 'Y' in tags
+
+def test_dfa_combinator_chain():
+    u = CodeUniverse.ascii()
+    from syncraft.fa import NFA
+    a = NFA.from_char('a', universe=u).dfa
+    b = NFA.from_char('b', universe=u).dfa
+    c = NFA.from_char('c', universe=u).dfa
+    combo = ((a | b) & -c)
+    assert combo.match(['a'])
+    assert combo.match(['b'])
+    assert not combo.match(['c'])
+    assert not combo.match(['a','c'])

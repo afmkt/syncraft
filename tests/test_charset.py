@@ -8,6 +8,8 @@ from syncraft.charset import (
     MixedUniverseError,
     CodepointError,
 )
+from syncraft.algebra import SyncraftError
+import enum
 
 
 def test_charset_basic_matches() -> None:
@@ -102,3 +104,102 @@ def test_charset_any() -> None:
     assert any_uni("A")
     assert any_uni("\u2603")  # snowman
     assert any_uni.interval == CodeUniverse.unicode().interval
+
+
+# --- Enum support tests ---
+ 
+
+class Color(enum.Enum):
+    RED = 1
+    GREEN = 2
+    BLUE = 3
+
+def test_charset_enum_basic():
+    universe = CodeUniverse.enum(Color)
+    cs = CharSet.create([Color.RED, Color.BLUE], universe=universe)
+    assert cs(Color.RED)
+    assert cs(Color.BLUE)
+    assert not cs(Color.GREEN)
+    # Interval should match Enum indices
+    assert cs.interval == ((0,0),(2,2))
+
+def test_charset_enum_error():
+    universe = CodeUniverse.enum(Color)
+    cs = CharSet.create([Color.RED], universe=universe)
+    class Fake(enum.Enum):
+        FAKE = 99
+    with pytest.raises(CodepointError):
+        cs(Fake.FAKE)
+
+def test_charset_enum_empty():
+    class Empty(enum.Enum):
+        pass
+    with pytest.raises(SyncraftError):
+        CodeUniverse.enum(Empty)
+
+
+# --- CodeUniverse tests ---
+def test_codeuniverse_ascii():
+    u = CodeUniverse.ascii()
+    assert u.value == (0, 0x7F)
+    assert u.space is str
+    assert u.from_int(65) == 'A'
+    assert u.to_int('A') == 65
+    assert u.interval == ((0, 0x7F),)
+    with pytest.raises(CodepointError):
+        u.to_int('AB')
+    with pytest.raises(CodepointError):
+        u.from_int(0x80)
+
+def test_codeuniverse_unicode():
+    u = CodeUniverse.unicode()
+    assert u.value == (0, 0x10FFFF)
+    assert u.space is str
+    assert u.from_int(0x2603) == '\u2603'
+    assert u.to_int('\u2603') == 0x2603
+    assert u.interval == ((0, 0x10FFFF),)
+
+def test_codeuniverse_byte():
+    u = CodeUniverse.byte()
+    assert u.value == (0, 0xFF)
+    assert u.space is bytes
+    assert u.from_int(0x41) == b'A'
+    assert u.to_int(b'A') == 0x41
+    assert u.interval == ((0, 0xFF),)
+    with pytest.raises(CodepointError):
+        u.to_int(b'AB')
+    with pytest.raises(CodepointError):
+        u.from_int(0x100)
+
+def test_codeuniverse_enum():
+    class Fruit(enum.Enum):
+        APPLE = 1
+        BANANA = 2
+    u = CodeUniverse.enum(Fruit)
+    assert u.value == (0, 1)
+    assert u.space is Fruit
+    assert u.from_int(0) == Fruit.APPLE
+    assert u.from_int(1) == Fruit.BANANA
+    assert u.to_int(Fruit.APPLE) == 0
+    assert u.to_int(Fruit.BANANA) == 1
+    assert u.interval == ((0, 1),)
+    with pytest.raises(CodepointError):
+        u.from_int(2)
+    class Other(enum.Enum):
+        ORANGE = 3
+    with pytest.raises(CodepointError):
+        u.to_int(Other.ORANGE)
+
+
+def test_codeuniverse_enum_nonint():
+    class StrEnum(enum.Enum):
+        ALPHA = 'a'
+        BETA = 'b'
+    u = CodeUniverse.enum(StrEnum)
+    assert u.value == (0, 1)
+    assert u.space is StrEnum
+    assert u.from_int(0) == StrEnum.ALPHA
+    assert u.from_int(1) == StrEnum.BETA
+    assert u.to_int(StrEnum.ALPHA) == 0
+    assert u.to_int(StrEnum.BETA) == 1
+    assert u.interval == ((0, 1),)
