@@ -313,6 +313,7 @@ class CharSet(Generic[C]):
     def __sub__(self, other: CharSet[C]) -> CharSet[C]:
         return self.difference(other)
     
+    @property
     def complement(self) -> CharSet[C]:
         if self.interval == ():
             return CharSet.any(universe=self.universe)
@@ -321,7 +322,10 @@ class CharSet(Generic[C]):
             lambda c: not self.predicate(c), 
             intv,
             universe=self.universe,
-            name=f"~{self.name}")
-    def __invert__(self) -> CharSet[C]:
-        return self.complement()
+            name=f"-{self.name}")
+    
+    def __neg__(self) -> CharSet[C]:
+        return self.complement
 
+    def __bool__(self) -> bool:
+        return self.interval != ()

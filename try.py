@@ -19,7 +19,7 @@ literal = Syntax.config(TokenClass.simple()).literal
 
 def test_charset_invalid_length_error() -> None:
     cc: CharSet[str] = CharSet.create("A", universe=CodeUniverse.ascii())
-    # cc("AB")  # multi-character should raise
+    cc("AB")  # multi-character should raise
     cc_bytes: CharSet[bytes] = CharSet.create(b"A", universe=CodeUniverse.byte())
     cc_bytes(b"AB")
 

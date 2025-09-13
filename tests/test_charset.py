@@ -59,7 +59,7 @@ def test_charset_intersection_difference() -> None:
 
 def test_charset_complement() -> None:
     a: CharSet[str] = CharSet.create("A", universe=CodeUniverse.ascii())
-    comp = ~a
+    comp = -a
     assert not comp("A")
     assert comp("B")
     # Expect two intervals excluding 'A'
@@ -82,7 +82,7 @@ def test_charset_bytes_mode() -> None:
     assert b1(b"\x00")
     assert not b1(b"\x01")
     assert b1.interval == ((0x00, 0x00), (0x10, 0x10), (0x20, 0x20))
-    comp = ~b1
+    comp = -b1
     assert comp(b"\x01")
     assert not comp(b"\x10")
 
