@@ -109,15 +109,12 @@ class Syntax(Generic[A, S]):
         return type(cls.__name__, (cls,), {'__syncraft_transform__': lambda c: f(old(c))})
 
     @classmethod
-    def attach(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
+    def config(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
         def attach_f(alg_cls: Type[Algebra[Any, Any]]) -> Type[Algebra[Any, Any]]:
-            old = getattr(alg_cls, '__syncraft_attachment__', {})
-            return type(alg_cls.__name__, (alg_cls,), {'__syncraft_attachment__': old | attrs})
+            old = getattr(alg_cls, '__syncraft_config__', {})
+            return type(alg_cls.__name__, (alg_cls,), {'__syncraft_config__': old | attrs})
         return cls.transform(attach_f)
 
-    @classmethod
-    def config(cls, instance: Any) -> Type['Syntax[Any, Any]']:
-        return cls.attach(**{instance.__class__.__name__: instance})
 
     def __call__(self, alg: Type[Algebra[Any, Any]]) -> Algebra[A, S]:
         trans: None | Callable[[Type[Any]], Type[Any]] = getattr(self.__class__, '__syncraft_transform__', None)

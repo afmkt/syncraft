@@ -149,8 +149,10 @@ class Parser(Algebra[T, ParserState[T]]):
         return captured        
 
     @classmethod
-    def token(cls,**kwargs: Any) -> Algebra[T, ParserState[T]]:
-        token_class: None | TokenClass = cls.config(TokenClass)
+    def token(cls,
+              *, 
+              token_class:TokenClass, 
+              **kwargs: Any) -> Algebra[T, ParserState[T]]:
         if token_class is None:
             raise SyncraftError("TokenClass not configured for Parser", offending=cls, expect=TokenClass)
         pred = token_class.predicate(**kwargs)

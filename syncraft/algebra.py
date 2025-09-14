@@ -83,16 +83,8 @@ class Algebra(Generic[A, S]):
     _name: str | Callable[[], str]
 
     @classmethod
-    def config(cls, typ: Type[Any] | str)-> Any:
-        d = getattr(cls, '__syncraft_attachment__', {})
-        name = typ.__name__ if not isinstance(typ, str) else typ
-        if name in d:
-            return d[name]
-        elif isinstance(typ, type):
-            for k, v in d.items():
-                if isinstance(v, typ):
-                    return v
-        return None
+    def config(cls)-> Dict[str, Any]:
+        return getattr(cls, '__syncraft_config__', {})
 
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
@@ -179,7 +171,7 @@ class Algebra(Generic[A, S]):
         method = getattr(cls, name, None)
         if method is None or not callable(method):
             raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offending=method, expect='callable')
-        return cast(Algebra[A, S], method(*args, **kwargs))
+        return cast(Algebra[A, S], method(*args, **(cls.config() | kwargs)))
 
     def fatal(self) -> Algebra[A, S]:
         """Commit this branch by marking failures as fatal.

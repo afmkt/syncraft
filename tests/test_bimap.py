@@ -8,7 +8,7 @@ from syncraft.syntax import Syntax
 
 
 
-literal = Syntax.config(TokenClass.simple()).literal
+literal = Syntax.config(token_class = TokenClass.simple()).literal
 
 def from_string(string: str) -> Token:
     return Token(text=string)

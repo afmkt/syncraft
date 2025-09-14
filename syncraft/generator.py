@@ -370,8 +370,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     @classmethod
-    def token(cls, **kwargs: Any)-> Algebra[ParseResult[T], GenState[T]]: 
-        token_class: None | TokenClass = cls.config(TokenClass)         
+    def token(cls, 
+              *, 
+              token_class:TokenClass,               
+              **kwargs: Any)-> Algebra[ParseResult[T], GenState[T]]: 
         if token_class is None:
             raise SyncraftError("TokenClass not configured for Generator", offending=cls, expect=TokenClass)
         gen = token_class.generator(**kwargs)  

@@ -5,7 +5,7 @@ from syncraft.syntax import Syntax
 from dataclasses import dataclass
 
 from syncraft.ast import TokenClass
-literal = Syntax.config(TokenClass.simple()).literal
+literal = Syntax.config(token_class = TokenClass.simple()).literal
 
 def test_find()->None:
     @dataclass

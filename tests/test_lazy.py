@@ -7,8 +7,8 @@ import pytest
 from syncraft.cache import LeftRecursionError
 import re
 from syncraft.ast import TokenClass
-literal = Syntax.config(TokenClass.simple()).literal
-token = Syntax.config(TokenClass.simple()).token
+literal = Syntax.config(token_class = TokenClass.simple()).literal
+token = Syntax.config(token_class = TokenClass.simple()).token
 
 def from_string(string: str) -> Token:
     return Token( text=string)

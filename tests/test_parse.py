@@ -5,7 +5,7 @@ import syncraft.generator as gen
 
 
 from syncraft.ast import TokenClass
-literal = Syntax.config(TokenClass.simple()).literal
+literal = Syntax.config(token_class = TokenClass.simple()).literal
 
 
 IF = literal("if")
