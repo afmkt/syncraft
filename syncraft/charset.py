@@ -321,3 +321,14 @@ class CharSet(Generic[C]):
 
     def __bool__(self) -> bool:
         return self.interval != ()
+    
+    def __repr__(self) -> str:
+        parts = []
+        for start, end in self.interval:
+            if start == end:
+                parts.append(f"{self.universe.from_int(start)!r}")
+            else:
+                parts.append(f"{self.universe.from_int(start)!r}-{self.universe.from_int(end)!r}")
+        return f"CharSet({', '.join(parts)}).{self.universe}"
+    def __str__(self) -> str:
+        return self.__repr__()

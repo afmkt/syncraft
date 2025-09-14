@@ -6,21 +6,36 @@ from syncraft.syntax import Syntax
 literal = Syntax.config(TokenClass.simple()).literal
 
 
-def test_charset_invalid_length_error() -> None:
-    u:CodeUniverse[str] = CodeUniverse.ascii()
-    a: DFA[str] = NFA.from_char('a', universe=u).dfa
-    b: DFA[str] = NFA.from_char('b', universe=u).dfa
-    # union
-    a_or_b = a | b
-    print('DFA a transitions:', a.transitions)
-    print('DFA a accept:', a.accept)
-    print('DFA b transitions:', b.transitions)
-    print('DFA b accept:', b.accept)
-    print('DFA a|b transitions:', a_or_b.transitions)
-    print('DFA a|b accept:', a_or_b.accept)
-    assert a_or_b.match(['a'])
-    assert a_or_b.match(['b'])
-    assert not a_or_b.match(['c'])
+def test_dfa_transition_merge():
+    # NFA with overlapping intervals that go to the same target
+    nfa_a = NFA.from_char("a", universe=CodeUniverse.ascii())
+    nfa_b = NFA.from_char("b", universe=CodeUniverse.ascii())
+    nfa = nfa_a.union(nfa_b)
+    dfa = DFA.from_nfa(nfa)
+    # The DFA should merge the transitions to the same target
+    print(dfa)
+    for trans in dfa.transitions.values():
+        targets = set(trans.values())
+        # Multiple intervals pointing to same FAState should exist
+        for t in targets:
+            intervals = [iv for iv, tgt in trans.items() if tgt == t]
+            # There should be no overlapping intervals
+            print(intervals)
+            for i1, i2 in zip(intervals, intervals[1:]):
+                assert i1[1] < i2[0], f"Intervals {i1} and {i2} overlap, not merged properly"
+    print('--- After minimization ---')
+    m = dfa.minimize
+    print(m)
+    for trans in m.transitions.values():
+        targets = set(trans.values())
+        # Multiple intervals pointing to same FAState should exist
+        for t in targets:
+            intervals = [iv for iv, tgt in trans.items() if tgt == t]
+            print(intervals)
+            # There should be no overlapping intervals
+            for i1, i2 in zip(intervals, intervals[1:]):
+                assert i1[1] < i2[0], f"Intervals {i1} and {i2} overlap, not merged properly"
+
 
 if __name__ == "__main__":
-    test_charset_invalid_length_error()
+    test_dfa_transition_merge()

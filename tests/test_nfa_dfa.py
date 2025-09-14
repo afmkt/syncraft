@@ -14,9 +14,13 @@ def test_large_chain_dfa():
     for _ in range(n-1):
         nfa = nfa.then(NFA.from_char('a', universe=CodeUniverse.ascii()))
     dfa = nfa.dfa
+    m = dfa.minimize
     assert dfa.match(['a']*n)
+    assert m.match(['a']*n)
     assert not dfa.match(['a']*(n-1))
+    assert not m.match(['a']*(n-1))
     assert not dfa.match(['a']*n + ['b'])
+    assert not m.match(['a']*n + ['b'])
 
 def test_large_or_dfa():
     # DFA that accepts any of 1000 different single characters
@@ -25,9 +29,12 @@ def test_large_or_dfa():
     for c in chars[1:]:
         nfa = nfa | NFA.from_char(c, universe=CodeUniverse.unicode())
     dfa = nfa.dfa
+    d = dfa.minimize
     for c in chars:
         assert dfa.match([c])
+        assert d.match([c])
     assert not dfa.match(['z']) if 'z' not in chars else True
+    assert not d.match(['z']) if 'z' not in chars else True
 
 
 def test_deeply_nested_nfa():
@@ -81,16 +88,29 @@ def test_dfa_over_enum():
     from syncraft.fa import NFA
     nfa = NFA.from_char(Color.RED, universe=u) | NFA.from_char(Color.BLUE, universe=u)
     dfa = nfa.dfa
+    m = dfa.minimize
     assert dfa.match([Color.RED])
+    assert m.match([Color.RED])
     assert dfa.match([Color.BLUE])
+    assert m.match([Color.BLUE])
     assert not dfa.match([Color.GREEN])
+    assert not m.match([Color.GREEN])
 
 
 def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)->None:
+    nfa2 = dfa.nfa
     nfa_result = nfa.match(input)
     dfa_result = dfa.match(input)
+    nfa2_result = nfa2.match(input)
+    m = dfa.minimize
+    
+    m_result = m.match(input)
+    assert nfa2_result == expected, f"NFA from DFA failed on input {input}: expected {expected}, got {nfa2_result}"
     assert nfa_result == expected, f"NFA failed on input {input}: expected {expected}, got {nfa_result}"
     assert dfa_result == expected, f"DFA failed on input {input}: expected {expected}, got {dfa_result}"
+    assert m_result == expected, f"Minimized DFA failed on input {input}: expected {expected}, got {m_result}"
+    # assert m == m.minimize, "Minimized DFA is not idempotent"
+    # assert m == dfa.nfa.dfa.minimize, "Minimized DFA from DFA does not match minimized DFA from NFA"
 
 def test_from_char()->None:
     nfa = NFA.from_char('a', universe=CodeUniverse.ascii())
@@ -231,80 +251,78 @@ def test_complex()->None:
 def test_runner()->None:
     nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("b", universe=CodeUniverse.ascii())).then(NFA.from_char("c", universe=CodeUniverse.ascii()))
     dfa = DFA.from_nfa(nfa)
+    m = dfa.minimize
     runner = nfa.run(["a", "b", "c"])
     drunner = dfa.run(["a", "b", "c"])
+    mrunner = m.run(["a", "b", "c"])
     # print(runner)
     assert runner.is_accepted(nfa), "nfa is not accepted"
     assert drunner.is_accepted(dfa), "dfa is not accepted"
     r1 = runner.resumable(nfa)
     dr1 = drunner.resumable(dfa)
+    m1 = mrunner.resumable(m)
     # print(r1)
     assert not r1, "nfa runner is resumable"
     assert not dr1, "dfa runner is resumable"
+    assert not m1, "minimized dfa runner is resumable"
     runner = nfa.run(["a", "b"])
     drunner = dfa.run(["a", "b"])
+    mrunner = m.run(["a", "b"])
     assert not runner.is_accepted(nfa), "nfa is accepted"
     assert not drunner.is_accepted(dfa), "dfa is accepted"
+    assert not mrunner.is_accepted(m), "minimized dfa is accepted"
     dr2 = drunner.resumable(dfa)
     r2 = runner.resumable(nfa)
+    mr2 = mrunner.resumable(m)
+    assert mr2, "minimized dfa runner is not resumable"
     # print(r2)
     assert r2 , "nfa runner is not resumable"
     assert dr2, "dfa runner is not resumable"
     runner = nfa.run(["a", "b", "c", "d"])
     drunner = dfa.run(["a", "b", "c", "d"])
+    mrunner = m.run(["a", "b", "c", "d"])
     # print(runner)
     assert len(runner.accepted) == 1
     assert runner.accepted[0][0] == 2
     assert not runner.is_accepted(nfa), "nfa is accepted"
     assert not drunner.is_accepted(dfa), "dfa is accepted"
+    assert not mrunner.is_accepted(m), "minimized dfa is accepted"
     dr3 = drunner.resumable(dfa)
     r3 = runner.resumable(nfa)
+    mr3 = mrunner.resumable(m)
     # print(r3)
     assert not r3, "nfa runner is resumable"
     assert not dr3, "dfa runner is resumable"
+    assert not mr3, "minimized dfa runner is resumable"
 
 def test_gen()->None:
     nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("b", universe=CodeUniverse.ascii())).then(NFA.from_char("c", universe=CodeUniverse.ascii()))
     dfa = DFA.from_nfa(nfa)
+    m = dfa.minimize
     r = nfa.runner()
     dr = dfa.runner()
-
+    mr = m.runner()
     from_r = r.gen(nfa, 2)
     from_dr = dr.gen(dfa, 2)
-
+    from_mr = mr.gen(m, 2)
     assert all([nfa.match(x[0]) for x in from_r])
     assert all([dfa.match(x[0]) for x in from_dr])
+    assert all([m.match(x[0]) for x in from_mr])
 
 
 def test_dead_state():
     # NFA that can go to a dead state: "a" then optional "b"
     nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("b", universe=CodeUniverse.ascii()).optional)
     dfa = DFA.from_nfa(nfa)
-    
+    m = dfa.minimize
     # Check all DFA closures
     dead_states = [state for state, trans in dfa.transitions.items() if not trans]
-    
+    dead_states_m = [state for state, trans in m.transitions.items() if not trans]
     # There should be exactly one dead state
     assert len(dead_states) <= 1, f"Expected one dead state, got {len(dead_states)}"
+    assert len(dead_states_m) <= 1, f"Expected one dead state in minimized DFA, got {len(dead_states_m)}"
     
     # The dead state should not accept any input
-
-def test_dfa_transition_merge():
-    # NFA with overlapping intervals that go to the same target
-    nfa_a = NFA.from_char("a", universe=CodeUniverse.ascii())
-    nfa_b = NFA.from_char("b", universe=CodeUniverse.ascii())
-    nfa = nfa_a.union(nfa_b)
-    dfa = DFA.from_nfa(nfa)
-    
-    # The DFA should merge the transitions to the same target
-    for trans in dfa.transitions.values():
-        targets = set(trans.values())
-        # Multiple intervals pointing to same FAState should exist
-        for t in targets:
-            intervals = [iv for iv, tgt in trans.items() if tgt == t]
-            # There should be no overlapping intervals
-            for i1, i2 in zip(intervals, intervals[1:]):
-                assert i1[1] < i2[0], f"Intervals {i1} and {i2} overlap, not merged properly"
 
 
 def test_tag_propagation():
@@ -313,7 +331,7 @@ def test_tag_propagation():
     nfa_b = NFA.from_char("b", universe=CodeUniverse.ascii()).tagged("tag2")
     nfa = nfa_a.union(nfa_b)
     dfa = DFA.from_nfa(nfa)
-    
+    m = dfa.minimize
     # Every DFA accept state should contain all tags of NFA states it represents
     for nfa_states, fa_state in dfa.nfa2dfa.items():
         tags_from_nfa = set()
@@ -330,29 +348,39 @@ def test_dfa_combinators_basic():
     u = CodeUniverse.ascii()
     from syncraft.fa import NFA
     a = NFA.from_char('a', universe=u).dfa
+    ma = a.minimize
     b = NFA.from_char('b', universe=u).dfa
+    mb = b.minimize
     # complement
     not_a = -a
+    not_ma = -ma
+    assert not not_ma.match(['a'])
+    assert not_ma.match(['b'])
     assert not not_a.match(['a'])
     assert not_a.match(['b'])
     # intersection
     ab = a & b
+    abm = ma & mb
+    assert not abm.match(['a'])
+    assert not abm.match(['b'])
+    assert not abm.match(['a','b'])
     assert not ab.match(['a'])
     assert not ab.match(['b'])
     assert not ab.match(['a','b'])
     # union
     a_or_b = a | b
-    print('DFA a transitions:', a.transitions)
-    print('DFA a accept:', a.accept)
-    print('DFA b transitions:', b.transitions)
-    print('DFA b accept:', b.accept)
-    print('DFA a|b transitions:', a_or_b.transitions)
-    print('DFA a|b accept:', a_or_b.accept)
+    a_or_bm = ma | mb
+    assert a_or_bm.match(['a'])
+    assert a_or_bm.match(['b'])
+    assert not a_or_bm.match(['c'])
     assert a_or_b.match(['a'])
     assert a_or_b.match(['b'])
     assert not a_or_b.match(['c'])
     # difference
     only_a = a - b
+    only_am = ma - mb
+    assert only_am.match(['a'])
+    assert not only_am.match(['b'])
     assert only_a.match(['a'])
     assert not only_a.match(['b'])
 
@@ -360,11 +388,18 @@ def test_dfa_tagged():
     u = CodeUniverse.ascii()
     from syncraft.fa import NFA
     a = NFA.from_char('a', universe=u).dfa
+    ma = a.minimize
     tagged = a.tagged('X')
+    tagged_m = ma.tagged('X')
     for tags in tagged.accept.values():
+        assert 'X' in tags
+    for tags in tagged_m.accept.values():
         assert 'X' in tags
     # append tag
     tagged2 = tagged.tagged('Y', append=True)
+    tagged2_m = tagged_m.tagged('Y', append=True)
+    for tags in tagged2_m.accept.values():
+        assert 'X' in tags and 'Y' in tags
     for tags in tagged2.accept.values():
         assert 'X' in tags and 'Y' in tags
 
@@ -372,9 +407,17 @@ def test_dfa_combinator_chain():
     u = CodeUniverse.ascii()
     from syncraft.fa import NFA
     a = NFA.from_char('a', universe=u).dfa
+    ma = a.minimize
     b = NFA.from_char('b', universe=u).dfa
+    mb = b.minimize
     c = NFA.from_char('c', universe=u).dfa
+    mc = c.minimize
     combo = ((a | b) & -c)
+    combo_m = ((ma | mb) & -mc)
+    assert combo_m.match(['a'])
+    assert combo_m.match(['b'])
+    assert not combo_m.match(['c'])
+    assert not combo_m.match(['a','c'])
     assert combo.match(['a'])
     assert combo.match(['b'])
     assert not combo.match(['c'])

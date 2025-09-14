@@ -13,6 +13,8 @@ from syncraft.constraint import  FrozenDict
 from syncraft.charset import CharSet, CodeUniverse, MixedUniverseError, CodepointError
 from enum import Enum
 from rich import print
+from collections import defaultdict
+
 
 
 
@@ -37,6 +39,11 @@ class FAState:
         return f"s{self.id}"        
 
 
+
+
+
+
+
 @dataclass(frozen=True)
 class DFA(Generic[C]):
     universe: CodeUniverse
@@ -45,12 +52,97 @@ class DFA(Generic[C]):
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
     nfa2dfa: FrozenDict[frozenset[FAState], FAState]= field(default_factory=FrozenDict) 
 
+    @property
+    def minimize(self) -> DFA[C]:
+        # 1. Gather all states (not just those with transitions)
+        all_states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys()) | {self.current}
+
+        # 2. Initial partition: accepting vs non-accepting
+        accept_states = frozenset(s for s in all_states if s in self.accept)
+        non_accept_states = frozenset(all_states - accept_states)
+        P: List[frozenset[FAState]] = []
+        if accept_states:
+            P.append(accept_states)
+        if non_accept_states:
+            P.append(non_accept_states)
+
+        # Worklist of partitions to refine
+        W: List[frozenset[FAState]] = P.copy()
+
+        # Hopcroft refinement
+        while W:
+            A = W.pop()
+            # Find all predecessors that transition into A
+            symbol_to_predecessors: Dict[CharSet[C], Set[FAState]] = defaultdict(set)
+            for q, trans in self.transitions.items():
+                for charset, target in trans.items():
+                    if target in A:
+                        symbol_to_predecessors[charset].add(q)
+
+            newP: List[frozenset[FAState]] = []
+            for Y in P:
+                preds = set().union(*symbol_to_predecessors.values())
+                intersection = Y & preds
+                difference = Y - preds
+                if intersection and difference:
+                    newP.extend([frozenset(intersection), frozenset(difference)])
+                    if Y in W:
+                        W.remove(Y)
+                        W.extend([frozenset(intersection), frozenset(difference)])
+                    else:
+                        # Add the smaller subset to the worklist
+                        if len(intersection) <= len(difference):
+                            W.append(frozenset(intersection))
+                        else:
+                            W.append(frozenset(difference))
+                else:
+                    newP.append(Y)
+            P = newP
+
+        # 3. Build representative states
+        state_map: Dict[FAState, FAState] = {}
+        new_states: Dict[frozenset[FAState], FAState] = {}
+        for block in P:
+            rep = FAState()
+            new_states[block] = rep
+            for s in block:
+                state_map[s] = rep
+
+        # 4. Build transitions
+        new_transitions: Dict[FAState, Dict[CharSet[C], FAState]] = {}
+        for block, rep in new_states.items():
+            new_transitions[rep] = {}
+            orig = next(iter(block))
+            for charset, target in self.transitions.get(orig, {}).items():
+                new_transitions[rep][charset] = state_map[target]
+
+        # 5. Build accept states
+        new_accept: Dict[FAState, frozenset[str | Enum]] = {}
+        for block, rep in new_states.items():
+            if any(s in self.accept for s in block):
+                labels = frozenset().union(*(self.accept.get(s, frozenset()) for s in block))
+                new_accept[rep] = labels
+
+
+        # 6. New start state
+        new_start = state_map[self.current]
+
+        return DFA(
+            universe=self.universe,
+            current=new_start,
+            accept=FrozenDict(new_accept),
+            transitions=FrozenDict({k: FrozenDict(v) for k, v in new_transitions.items()}),
+            nfa2dfa=FrozenDict()
+        )
+    
+
+
+
     def tagged(self, tag: str | Enum, append:bool=False) -> DFA[C]:
         if append:
             return replace(self, accept=FrozenDict({a: (tags | frozenset({tag})) for a, tags in self.accept.items()}))
         else:
             return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
-
 
 
     @staticmethod
@@ -235,27 +327,27 @@ class DFA(Generic[C]):
     
     @property
     def nfa(self) -> NFA[C]:
-        """
-        Convert this DFA to an equivalent NFA.
-        Each DFA state becomes an NFA state with the same transitions.
-        """
-        state_map: dict[FAState, FAState] = {s: FAState() for s in self.transitions.keys()}
-        
-        # map DFA transitions to NFA transitions
+        all_states: set[FAState] = set(self.transitions.keys())
+        for trans in self.transitions.values():
+            all_states.update(trans.values())
+        all_states.update(self.accept.keys())
+        all_states.add(self.current)
+        state_map: dict[FAState, FAState] = {s: FAState() for s in all_states}
         nfa_trans: dict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = {}
         for s, trans in self.transitions.items():
             nfa_s = state_map[s]
-            nfa_trans[nfa_s] = FrozenDict({cs: frozenset({state_map[tgt]}) for cs, tgt in trans.items()})
-        
-        # accept states
-        nfa_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict({state_map[s]: tags for s, tags in self.accept.items()})
-        
+            nfa_trans[nfa_s] = FrozenDict(
+                {cs: frozenset({state_map[tgt]}) for cs, tgt in trans.items()}
+            )
+        nfa_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict(
+            {state_map[s]: tags for s, tags in self.accept.items()}
+        )
         return NFA(
             universe=self.universe,
             current=state_map[self.current],
             accept=nfa_accept,
             transitions=FrozenDict(nfa_trans),
-            epsilon=FrozenDict()  # DFA has no epsilon transitions
+            epsilon=FrozenDict()  
         )
     
     @property
