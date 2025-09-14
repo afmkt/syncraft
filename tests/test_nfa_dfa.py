@@ -1,6 +1,89 @@
+
 from __future__ import annotations
+import pytest
+import enum
 from syncraft.fa import NFA, DFA
 from syncraft.charset import CodeUniverse
+
+
+# --- Large, degenerate, and recursive automata tests ---
+def test_large_chain_dfa():
+    # DFA that accepts a long specific sequence (e.g., 1000 'a's)
+    n = 1000
+    nfa = NFA.from_char('a', universe=CodeUniverse.ascii())
+    for _ in range(n-1):
+        nfa = nfa.then(NFA.from_char('a', universe=CodeUniverse.ascii()))
+    dfa = nfa.dfa
+    assert dfa.match(['a']*n)
+    assert not dfa.match(['a']*(n-1))
+    assert not dfa.match(['a']*n + ['b'])
+
+def test_large_or_dfa():
+    # DFA that accepts any of 1000 different single characters
+    chars = [chr(32+i) for i in range(1000)]
+    nfa = NFA.from_char(chars[0], universe=CodeUniverse.unicode())
+    for c in chars[1:]:
+        nfa = nfa | NFA.from_char(c, universe=CodeUniverse.unicode())
+    dfa = nfa.dfa
+    for c in chars:
+        assert dfa.match([c])
+    assert not dfa.match(['z']) if 'z' not in chars else True
+
+
+def test_deeply_nested_nfa():
+    # NFA with deep nesting: (((a then b) then c) then ...)
+    seq = [chr(65+i) for i in range(20)]
+    nfa = NFA.from_char(seq[0], universe=CodeUniverse.ascii())
+    for c in seq[1:]:
+        nfa = nfa.then(NFA.from_char(c, universe=CodeUniverse.ascii()))
+    assert nfa.match(seq)
+    assert not nfa.match(seq[:-1])
+
+def test_recursive_nfa_star():
+    # NFA for (ab)*
+    nfa = NFA.from_char('a', universe=CodeUniverse.ascii()).then(NFA.from_char('b', universe=CodeUniverse.ascii())).star
+    # Accepts any even-length string of alternating a/b
+    for n in range(0, 20, 2):
+        s = ['a','b']*(n//2)
+        assert nfa.match(s)
+    assert not nfa.match(['a'])
+    assert not nfa.match(['b'])
+    assert not nfa.match(['a','a'])
+
+
+
+# --- Enum tag, NFA over enum, DFA over enum tests ---
+class Color(enum.Enum):
+    RED = 1
+    GREEN = 2
+    BLUE = 3
+
+def test_enum_tag_nfa():
+    u = CodeUniverse.enum(Color)
+    from syncraft.fa import NFA
+    nfa = NFA.from_char(Color.RED, universe=u).tagged('red')
+    assert nfa.match([Color.RED])
+    assert not nfa.match([Color.GREEN])
+    # Tag should be present in accept
+    for tags in nfa.accept.values():
+        assert 'red' in tags
+
+def test_nfa_over_enum():
+    u = CodeUniverse.enum(Color)
+    from syncraft.fa import NFA
+    nfa = NFA.from_char(Color.RED, universe=u) | NFA.from_char(Color.BLUE, universe=u)
+    assert nfa.match([Color.RED])
+    assert nfa.match([Color.BLUE])
+    assert not nfa.match([Color.GREEN])
+
+def test_dfa_over_enum():
+    u = CodeUniverse.enum(Color)
+    from syncraft.fa import NFA
+    nfa = NFA.from_char(Color.RED, universe=u) | NFA.from_char(Color.BLUE, universe=u)
+    dfa = nfa.dfa
+    assert dfa.match([Color.RED])
+    assert dfa.match([Color.BLUE])
+    assert not dfa.match([Color.GREEN])
 
 
 def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)->None:

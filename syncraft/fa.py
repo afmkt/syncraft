@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import (
     TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable
 )
-
+from typing import Dict
 from dataclasses import dataclass, field, replace
 from syncraft.algebra import (
     SyncraftError
@@ -50,6 +50,43 @@ class DFA(Generic[C]):
             return replace(self, accept=FrozenDict({a: (tags | frozenset({tag})) for a, tags in self.accept.items()}))
         else:
             return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
+
+
+
+    @staticmethod
+    def _complete_transitions(universe: CodeUniverse,
+                            transitions: dict[FAState, dict[CharSet[C], FAState]],
+                            accept: dict[FAState, frozenset]) -> tuple[dict[FAState, dict[CharSet[C], FAState]], dict[FAState, frozenset], FAState]:
+        # copy inputs shallow
+        trans_copy: Dict[FAState, Dict[CharSet[C], FAState]] = {s: dict(m) for s, m in transitions.items()}
+
+        # create sink state
+        sink = FAState()
+
+        # ensure sink exists in map to be consistent
+        trans_copy.setdefault(sink, {})
+
+        # For each state, compute covered charset and add missing piece mapped to sink
+        for s, mapping in list(trans_copy.items()):
+            # union all key charsets into 'covered'
+            covered: CharSet[C] = CharSet.none(universe)
+            for cs in mapping.keys():
+                covered = covered | cs
+            missing = (-covered)
+            if missing.interval:  # any uncovered codepoints
+                # If the state's mapping already has a CharSet that equals missing, merge would have caught it
+                mapping[missing] = sink
+                trans_copy[s] = mapping
+
+        # ensure sink loops to itself on all chars
+        trans_copy[sink] = {CharSet.any(universe): sink}
+
+        # Optionally: merge adjacent pieces in each state's mapping (keeps mapping compact)
+        for s, mapping in list(trans_copy.items()):
+            trans_copy[s] = DFA.merge_adjacent_transitions(universe, mapping)
+
+        return trans_copy, accept, sink
+
 
 
     @property
@@ -110,8 +147,8 @@ class DFA(Generic[C]):
             s1, s2 = work_list.popleft()
             new_state = state_map[(s1, s2)]
 
-            trans1 = dict(self.transitions.get(s1, {}))
-            trans2 = dict(other.transitions.get(s2, {}))
+            trans1: dict[CharSet[C], FAState] = dict(self.transitions.get(s1, {}))
+            trans2: dict[CharSet[C], FAState] = dict(other.transitions.get(s2, {}))
 
             # collect all intervals from both transition maps and partition them
             intvs: List[Tuple[int, int]] = []
