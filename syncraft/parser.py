@@ -167,7 +167,7 @@ def parse_word(syntax: Syntax[Any, Any], sql: str) -> Tuple[Any, None | FrozenDi
     
 def parse(syntax: Syntax[Any, Any], tokens: List[Token]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Parser, tokens=tokens)
+    v, s = run(syntax=syntax, alg=Parser, tokens=tokens, token_class=TokenClass.simple())
     if s is not None:
         return v, s.binding.bound()
     else:

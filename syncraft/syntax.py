@@ -9,7 +9,7 @@ from functools import reduce
 from syncraft.algebra import Algebra, Error, Right, Left, Incomplete
 from syncraft.cache import Cache
 from syncraft.constraint import Bindable
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, TokenClass
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, call_with
 from types import MethodType, FunctionType
 import keyword
 from enum import Enum
@@ -54,7 +54,7 @@ class Syntax(Generic[A, S]):
     """
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
     """
-    alg_f: Callable[[Type[Algebra[Any, Any]]], Algebra[A, S]]
+    alg_f: Callable[..., Algebra[A, S]]
     meta: Description = field(default_factory=Description, repr=False)
 
     def algebra(self, 
@@ -62,31 +62,18 @@ class Syntax(Generic[A, S]):
                 *args: Any, 
                 fallback: Optional[Syntax[A, S]] = None,
                 **kwargs: Any) -> Syntax[A, S]:
-        """Calling method of underlying algebra.
-
-        Allows calling Algebra instance methods (e.g., cut) by name, if the method 
-        is not exposed by Syntax.
-
-        Args:
-            name: Method name (string), bound method, or function to invoke.
-            *args: Positional arguments passed to the method.
-            **kwargs: Keyword arguments passed to the method.
-
-        Returns:
-            A new Syntax reflecting the transformed algebra.
-        """
-        def algebra_run(cls: Type[Algebra[Any, S]]) -> Algebra[Any, S]:
-            a = self(cls)
+        def algebra_run(cls: Type[Algebra[Any, S]], **global_kwargs: Any) -> Algebra[Any, S]:
+            a = self(cls, **global_kwargs)
             if isinstance(name, str):
                 attr = getattr(a, name, None) or getattr(cls, name, None)
                 if attr is None:
-                    return a if fallback is None else fallback(cls)
+                    return a if fallback is None else fallback(cls, **global_kwargs)
                 if isinstance(attr, (staticmethod, classmethod)):
                     attr = attr.__get__(None, cls)
                 elif isinstance(attr, FunctionType):
                     attr = MethodType(attr, a)
                 else:
-                    return a if fallback is None else fallback(cls)
+                    return a if fallback is None else fallback(cls, **global_kwargs)
                 return cast(Algebra[Any, S], attr(*args, **kwargs))
             elif isinstance(name, MethodType):
                 f = MethodType(name.__func__, a)
@@ -95,7 +82,7 @@ class Syntax(Generic[A, S]):
                 f = MethodType(name, a)
                 return cast(Algebra[Any, S], f(*args, **kwargs))
             else:
-                return a if fallback is None else fallback(cls)
+                return a if fallback is None else fallback(cls, **global_kwargs)
         return replace(self, alg_f=algebra_run)
         
 
@@ -116,10 +103,11 @@ class Syntax(Generic[A, S]):
         return cls.transform(attach_f)
 
 
-    def __call__(self, alg: Type[Algebra[Any, Any]]) -> Algebra[A, S]:
+    def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
         trans: None | Callable[[Type[Any]], Type[Any]] = getattr(self.__class__, '__syncraft_transform__', None)
         alg = alg if not callable(trans) else trans(alg)
-        return self.alg_f(alg)
+        cfg = getattr(alg, '__syncraft_config__', {})
+        return self.alg_f(alg, **(cfg | global_kwargs))
     
         
     def describe(
@@ -140,7 +128,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax with the given name.
         """
-        return replace(self, alg_f=lambda cls: self(cls).named(name))
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).named(name))
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
@@ -151,7 +139,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with the same resulting state.
         """
-        return replace(self, alg_f=lambda cls: self(cls).map(f)) # type: ignore
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f)) # type: ignore
 
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
@@ -166,7 +154,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return replace(self, alg_f=lambda cls: self(cls).bimap(f, i)) # type: ignore
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(f, i)) # type: ignore
         
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
@@ -178,7 +166,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding transformed value and state.
         """
-        return replace(self, alg_f=lambda cls: self(cls).map_all(f)) # type: ignore
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_all(f)) # type: ignore
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
         """Transform the error payload when this syntax fails.
@@ -189,7 +177,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that preserves successes and maps failures.
         """
-        return replace(self, alg_f=lambda cls: self(cls).map_error(f)) 
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_error(f)) 
         
 
     def map_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
@@ -201,7 +189,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that runs with f(state).
         """
-        return replace(self, alg_f=lambda cls: self(cls).map_state(f))
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_state(f))
         
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
@@ -213,7 +201,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding the result of the chained computation.
         """
-        return replace(self, alg_f=lambda cls: self(cls).flat_map(f)) # type: ignore
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).flat_map(f)) # type: ignore
 
     def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Many[A], S]:
         """Repeat this syntax and collect results into Many.
@@ -228,7 +216,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Many of values.
         """
         return replace(self, 
-                       alg_f=lambda cls: self(cls).many(at_least=at_least, at_most=at_most) # type: ignore
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).many(at_least=at_least, at_most=at_most) # type: ignore
                        ).describe(
                            name='*', 
                            fixity='prefix', 
@@ -347,7 +335,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that marks downstream failures as committed.
         """
-        return replace(self, alg_f=lambda cls: self(cls).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
 
     ###################################################### operator overloading #############################################
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -362,7 +350,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=LEFT).
         """
 
-        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls: self(cls).then_left(other(cls))) # type: ignore
+        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_left(other(cls, **global_kwargs))) # type: ignore
         
         return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
@@ -382,7 +370,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=BOTH).
         """
 
-        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls: self(cls).then_both(other(cls)))  # type: ignore
+        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_both(other(cls, **global_kwargs)))  # type: ignore
         return ret.describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __radd__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -401,7 +389,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=RIGHT).
         """
 
-        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls: self(cls).then_right(other(cls)))  # type: ignore
+        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_right(other(cls, **global_kwargs)))  # type: ignore
         return ret.describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
 
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -420,7 +408,7 @@ class Syntax(Generic[A, S]):
             Syntax producing Choice.LEFT or Choice.RIGHT.
         """
 
-        ret: Syntax[Choice[A, B], S] = replace(self, alg_f=lambda cls: self(cls).or_else(other(cls))) # type: ignore  
+        ret: Syntax[Choice[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs))) # type: ignore  
         return ret.describe(name='|', fixity='infix', parameter=(self, other))
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
@@ -518,7 +506,7 @@ class Syntax(Generic[A, S]):
         Returns:
             A Syntax object that always fails.
         """
-        return cls(lambda alg: alg.fail(error)).describe(name='fail', fixity='prefix', parameter=(error,))
+        return cls(lambda alg, **global_kwargs: alg.fail(error)).describe(name='fail', fixity='prefix', parameter=(error,))
 
     @classmethod
     def success(cls, value: Any) -> Syntax[Any, Any]:
@@ -531,7 +519,7 @@ class Syntax(Generic[A, S]):
         Returns:
             A Syntax object that always succeeds.
         """
-        return cls(lambda alg: alg.success(value)).describe(name='success', fixity='prefix', parameter=(value,))
+        return cls(lambda alg, **global_kwargs: alg.success(value)).describe(name='success', fixity='prefix', parameter=(value,))
 
 
     @classmethod
@@ -553,44 +541,33 @@ class Syntax(Generic[A, S]):
         syntax: Optional[Syntax[A, S]] = None
         previous_cls: Optional[Type[Algebra[Any, S]]] = None
         
-        def syntax_lazy_run(cls: Type[Algebra[Any, S]]) -> Algebra[A, S]:
+        def syntax_lazy_run(acls: Type[Algebra[Any, S]], **global_kwargs) -> Algebra[A, S]:
             nonlocal algebra, syntax, previous_cls
             if syntax is None:
                 syntax = thunk()
             def algebra_lazy_f():
                 if syntax is None:
                     raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
-                return syntax(cls)
-            if algebra is None or (previous_cls is not None and previous_cls is not cls):
-                algebra = cls.lazy(algebra_lazy_f)
-                previous_cls = cls
+                return syntax(acls, **global_kwargs)
+            if algebra is None or (previous_cls is not None and previous_cls is not acls):
+                algebra = acls.lazy(algebra_lazy_f)
+                previous_cls = acls
             return algebra
         return cls(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))
 
     @classmethod
-    def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
-        """Build a ``Syntax`` that matches a single token.
-
-        Convenience wrapper around ``Parser.token``. You can match by
-        type, exact text, or regex.
-
-        Args:
-            token_type: Expected token enum type.
-            text: Exact token text to match.
-            case_sensitive: Whether text matching respects case.
-            regex: Pattern to match token text.
-
-        Returns:
-            Syntax[Any, Any]: A syntax that matches one token.
-        """
+    def factory(cls, name: str, **kwargs: Any) -> Syntax[Any, Any]:
         return cls(
-            lambda cls: cls.factory('token', **kwargs)
-            ).describe(name=f'token({kwargs})', fixity='prefix')
+            lambda acls, **global_kwargs: acls.factory(name, **(global_kwargs | kwargs))
+            ).describe(name=f'factory({name})', fixity='prefix', parameter=tuple(kwargs.values()))
+
+    @classmethod
+    def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
+        return cls.factory('token', **kwargs).describe(name=f'token({kwargs})', fixity='prefix')
 
         
     @classmethod
     def literal(cls, lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
-        """Match an exact literal string (case-sensitive)."""
         return cls.token(text=lit, case_sensitive=True)
 
     @classmethod
@@ -600,7 +577,7 @@ class Syntax(Generic[A, S]):
         elif isinstance(value, Enum):
             return cls.token(token_type=value)
         else:
-            return cls(lambda cls: cls.success(value))
+            return cls(lambda cls, **global_kwargs: cls.success(value))
 
 
 
@@ -615,8 +592,8 @@ def run(*,
     Args:
         *args, **kwargs: the arguments passed to alg.state to construct the state object of the algebra.
     """
-    parser = syntax(alg)
-    input: Optional[S] = alg.state(**kwargs)
+    parser = syntax(alg, **kwargs)
+    input, _, _ = call_with(alg.state, **kwargs)
     if input:
         gen = parser.run(input, cache=Cache())
         try:

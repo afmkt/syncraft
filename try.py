@@ -1,41 +1,68 @@
 from __future__ import annotations
-from syncraft.ast import TokenClass
-from syncraft.fa import NFA, DFA, CodeUniverse
-from rich import print
+from typing import Any
+from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
-literal = Syntax.config(TokenClass.simple()).literal
+import syncraft.generator as gen
+from dataclasses import dataclass
+
+from syncraft.ast import TokenClass
+literal = Syntax.config(token_class=TokenClass.simple()).literal
 
 
-def test_dfa_transition_merge():
-    # NFA with overlapping intervals that go to the same target
-    nfa_a = NFA.from_char("a", universe=CodeUniverse.ascii())
-    nfa_b = NFA.from_char("b", universe=CodeUniverse.ascii())
-    nfa = nfa_a.union(nfa_b)
-    dfa = DFA.from_nfa(nfa)
-    # The DFA should merge the transitions to the same target
-    print(dfa)
-    for trans in dfa.transitions.values():
-        targets = set(trans.values())
-        # Multiple intervals pointing to same FAState should exist
-        for t in targets:
-            intervals = [iv for iv, tgt in trans.items() if tgt == t]
-            # There should be no overlapping intervals
-            print(intervals)
-            for i1, i2 in zip(intervals, intervals[1:]):
-                assert i1[1] < i2[0], f"Intervals {i1} and {i2} overlap, not merged properly"
-    print('--- After minimization ---')
-    m = dfa.minimize
-    print(m)
-    for trans in m.transitions.values():
-        targets = set(trans.values())
-        # Multiple intervals pointing to same FAState should exist
-        for t in targets:
-            intervals = [iv for iv, tgt in trans.items() if tgt == t]
-            print(intervals)
-            # There should be no overlapping intervals
-            for i1, i2 in zip(intervals, intervals[1:]):
-                assert i1[1] < i2[0], f"Intervals {i1} and {i2} overlap, not merged properly"
+def test_to() -> None:
+    @dataclass
+    class IfThenElse:
+        condition: Any
+        then: Any
+        otherwise: Any
+
+    @dataclass
+    class While:
+        condition:Any
+        body:Any
+
+    WHILE = literal("while")
+    IF = literal("if")
+    ELSE = literal("else")
+    THEN = literal("then")
+    END = literal("end")
+    A = literal('a')
+    B = literal('b')
+    C = literal('c')
+    D = literal('d')
+    M = literal(',')
+    var = A | B | C | D
+    condition = var.sep_by(M).mark('condition') 
+    ifthenelse = (IF >> condition
+              // THEN 
+              + var.sep_by(M).mark('then') 
+              // ELSE 
+              + var.sep_by(M).mark('otherwise') 
+              // END).to(IfThenElse).many()
+    syntax = (WHILE >> condition
+            + ifthenelse.mark('body')
+            // ~END).to(While)
+    sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
+    ast, bound = parse_word(syntax, sql)
+    # print(ast)
+    g, bound = gen.generate_with(syntax, ast, restore_pruned=True)
+    assert ast == g
+    x, f = g.bimap()
+    # print(1, x)
+    u,v = gen.generate_with(syntax, f(x), restore_pruned=True)
+    assert u == ast
+    x.body.append(x.body[0])
+    # print(2, x)
+    # print(f(x))
+    ast2, bound = gen.generate_with(syntax, f(x), restore_pruned=True) 
+    # print(ast2)
+    y, fy = ast2.bimap()
+    # print(3, y)
+    assert y == x
+    u, v = gen.generate_with(syntax, fy(y), restore_pruned=True)
+    assert u == ast2
+
 
 
 if __name__ == "__main__":
-    test_dfa_transition_merge()
+    test_to()

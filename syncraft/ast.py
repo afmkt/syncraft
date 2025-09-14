@@ -12,7 +12,121 @@ from typing import (
 import rstr
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
+import functools
+import types
+import inspect
 
+def get_callable_signature(obj, follow_wrapped: bool = True) -> inspect.Signature:
+    """
+    Given a callable object, retrieves its signature.
+    Handles normal functions, bound methods, unbound methods, 
+    classes (for __init__), static methods, class methods, and callable instances.
+    """
+    if not callable(obj):
+        raise TypeError(f"Object {obj} is not callable.")
+
+    # Case 1: If obj is a class, get the signature of its __init__ method
+    if inspect.isclass(obj):
+        return inspect.signature(obj.__init__, follow_wrapped=follow_wrapped)
+
+    # Case 2: Static method descriptor
+    if isinstance(obj, staticmethod):
+        return inspect.signature(obj.__func__, follow_wrapped=follow_wrapped)
+
+    # Case 3: Class method descriptor
+    if isinstance(obj, classmethod):
+        return inspect.signature(obj.__func__, follow_wrapped=follow_wrapped)
+
+    # Case 4: Coroutine or async function
+    if inspect.iscoroutinefunction(obj):
+        return inspect.signature(obj, follow_wrapped=follow_wrapped)
+
+    # Case 5: functools.partial
+    if isinstance(obj, functools.partial):
+        return inspect.signature(obj.func, follow_wrapped=follow_wrapped)
+
+    # Case 6: Bound or unbound method
+    if inspect.ismethod(obj):
+        return inspect.signature(obj, follow_wrapped=follow_wrapped)
+        # return inspect.signature(obj.__func__, follow_wrapped=follow_wrapped)
+
+    # Case 7: Regular function or lambda
+    if isinstance(obj, (types.FunctionType, types.LambdaType)):
+        return inspect.signature(obj, follow_wrapped=follow_wrapped)
+
+    try:
+        return inspect.signature(obj, follow_wrapped=follow_wrapped)
+    except (TypeError, ValueError):
+        # Fallback to inspecting __call__
+        return inspect.signature(obj.__call__, follow_wrapped=follow_wrapped)
+
+
+
+def call_with(specific_func:Callable[...,Any], *general_args:Any, **general_kwargs:Any)->Tuple[Any, list[Any], dict[str, Any]]:
+    sig = get_callable_signature(specific_func) 
+    params = sig.parameters.values()
+
+    args = []
+    kwargs = {}
+    remaining_args = []
+    remaining_kwargs = general_kwargs.copy()
+
+    arg_index = 0
+    num_args = len(general_args)
+
+    var_positional = False
+    var_keyword = False
+
+    consumed_kwargs = set()
+
+    for param in params:
+        if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+            if arg_index < num_args:
+                args.append(general_args[arg_index])
+                arg_index += 1
+            elif param.name in general_kwargs:
+                args.append(general_kwargs[param.name])
+                consumed_kwargs.add(param.name)
+            elif param.default is not inspect.Parameter.empty:
+                args.append(param.default)
+            else:
+                if param.name != 'self':  # Skip 'self' for instance methods
+                    raise TypeError(f"Missing required positional argument: {param.name}")
+
+        elif param.kind == inspect.Parameter.VAR_POSITIONAL:
+            var_positional = True
+            # collect remaining general_args into *args
+            args.extend(general_args[arg_index:])
+            arg_index = num_args  # mark all as used
+
+        elif param.kind == inspect.Parameter.KEYWORD_ONLY:
+            if param.name in general_kwargs:
+                kwargs[param.name] = general_kwargs[param.name]
+                consumed_kwargs.add(param.name)
+            elif param.default is not inspect.Parameter.empty:
+                kwargs[param.name] = param.default
+            else:
+                raise TypeError(f"Missing required keyword-only argument: {param.name}")
+
+        elif param.kind == inspect.Parameter.VAR_KEYWORD:
+            var_keyword = True
+            # allow all remaining kwargs
+            for k, v in general_kwargs.items():
+                if k not in consumed_kwargs and k not in kwargs:
+                    kwargs[k] = v
+                    consumed_kwargs.add(k)
+
+    # Collect unused arguments
+    if arg_index < num_args:
+        remaining_args = list(general_args[arg_index:]) if not var_positional else []
+
+    remaining_kwargs = {
+        k: v for k, v in general_kwargs.items()
+        if k not in consumed_kwargs and k not in kwargs
+    } if not var_keyword else {}
+
+    result = specific_func(*args, **kwargs)
+    return result, remaining_args, remaining_kwargs
 
 class SyncraftError(Exception):
     def __init__(self, message: str, offending: Any, expect: Any = None, **kwargs: Any) -> None:
@@ -631,7 +745,9 @@ class TokenClass(Generic[T]):
                         data[k] = v.pattern
                 else:
                     data[k] = v
-            return self.TokenConstructor(**data)  # type: ignore
+            # result = self.TokenConstructor(**data)
+            result, _, _ = call_with(self.TokenConstructor, **data)
+            return result
         gen.__name__ = f"G.{self.describe(**kwargs)})"
         return gen
 

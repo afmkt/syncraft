@@ -5,13 +5,16 @@ from typing import (
 )
 
 from dataclasses import dataclass, replace
-from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError
+from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError, call_with
 from syncraft.cache import Cache, LeftRecursionError
 from syncraft.constraint import Bindable
 from functools import cached_property
 import re
-import inspect
+
 from rich import print
+
+
+
 
 
 S = TypeVar('S', bound=Bindable)
@@ -81,11 +84,6 @@ class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[Either[Any, Tuple[Any, S]]]], Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]] 
     _name: str | Callable[[], str]
-
-    @classmethod
-    def config(cls)-> Dict[str, Any]:
-        return getattr(cls, '__syncraft_config__', {})
-
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
         return None
@@ -171,7 +169,8 @@ class Algebra(Generic[A, S]):
         method = getattr(cls, name, None)
         if method is None or not callable(method):
             raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offending=method, expect='callable')
-        return cast(Algebra[A, S], method(*args, **(cls.config() | kwargs)))
+        result, _, _ = call_with(method, *args, **kwargs)
+        return cast(Algebra[A, S], result)
 
     def fatal(self) -> Algebra[A, S]:
         """Commit this branch by marking failures as fatal.

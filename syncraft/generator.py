@@ -405,7 +405,12 @@ def generate_with(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Generator, ast=data, seed=seed, restore_pruned=restore_pruned)
+    v, s = run(syntax=syntax, 
+               alg=Generator, 
+               ast=data, 
+               seed=seed, 
+               restore_pruned=restore_pruned,
+               token_class = TokenClass.simple())
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -427,7 +432,12 @@ def validate(
         A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
     """
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Generator, ast=data, seed=0, restore_pruned=True)
+    v, s = run(syntax=syntax, 
+               alg=Generator, 
+               ast=data, 
+               seed=0, 
+               restore_pruned=True, 
+               token_class=TokenClass.simple())
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -447,7 +457,12 @@ def generate(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Generator, ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    v, s = run(syntax=syntax, 
+               alg=Generator, 
+               ast=None, 
+               seed=random.randint(0, 2**32 - 1), 
+               restore_pruned=False,
+               token_class = TokenClass.simple())
     if s is not None:
         return v, s.binding.bound()
     else:

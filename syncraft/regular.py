@@ -51,7 +51,7 @@ class Regular(Algebra[NFA[C], RegularState]):
     
 
     @classmethod
-    def any(cls, universe: CodeUniverse = CodeUniverse.UNICODE)-> Algebra[NFA[C], RegularState]:
+    def any(cls, universe: CodeUniverse)-> Algebra[NFA[C], RegularState]:
         def any_run(input: RegularState, cache:Cache[Either[Any, Tuple[NFA[C], RegularState]]]) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[NFA[C], RegularState]]]:
             a: CharSet[C] = CharSet.any(universe=universe)
             data = NFA.from_charset(a)
@@ -63,9 +63,8 @@ class Regular(Algebra[NFA[C], RegularState]):
     def charset(cls, 
                 *, 
                 text: C, 
-
                 negation:bool = False, 
-                universe:CodeUniverse = CodeUniverse.UNICODE)-> Algebra[NFA[C], RegularState]:      
+                universe:CodeUniverse)-> Algebra[NFA[C], RegularState]:      
         name = f'[{text!r}]' if not negation else f'[^{text!r}]'
         def charset_run(input: RegularState, cache:Cache[Either[Any, Tuple[NFA[C], RegularState]]]) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[NFA[C], RegularState]]]:
             data = NFA.from_char(text, universe=universe, negation=negation, tag=name)
@@ -113,7 +112,7 @@ class Regular(Algebra[NFA[C], RegularState]):
         def star_run(input: RegularState, cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):
                 case Right((nfa, from_self)):
-                    data = nfa.star()
+                    data = nfa.star
                     return (yield from cache.return_value(Right((data, from_self))))
                 case failed:
                     raise SyncraftError("star should always return a value or an error.", offending=failed, expect=Right)
@@ -124,7 +123,7 @@ class Regular(Algebra[NFA[C], RegularState]):
         def plus_run(input: RegularState, cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):
                 case Right((nfa, from_self)):
-                    data = nfa.plus()
+                    data = nfa.plus
                     return (yield from cache.return_value(Right((data, from_self))))
                 case failed:
                     raise SyncraftError("plus should always return a value or an error.", offending=failed, expect=Right)
@@ -139,7 +138,7 @@ class Regular(Algebra[NFA[C], RegularState]):
         def optional_run(input: RegularState, cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[Incomplete[RegularState], RegularState, Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):
                 case Right((nfa, from_self)):
-                    data = nfa.optional()
+                    data = nfa.optional
                     return (yield from cache.return_value(Right((data, from_self))))
                 case failed:
                     raise SyncraftError("optional should always return a value or an error.", offending=failed, expect=Right)
@@ -168,27 +167,4 @@ class Regular(Algebra[NFA[C], RegularState]):
         
 
 
-def charset(text: str | bytes, *, negation:bool = False, universe:CodeUniverse = CodeUniverse.UNICODE) -> Syntax[Any, Any]:
-    return Syntax(
-        lambda cls: cls.factory('charset', 
-                                text=text, 
-                                negation=negation, 
-                                universe=universe)
-        ).describe(name=f"{text!r}", fixity='prefix') 
 
-def any(universe:CodeUniverse = CodeUniverse.UNICODE) -> Syntax[Any, Any]:
-    return Syntax(
-        lambda cls: cls.factory('any', universe=universe)
-        ).describe(name='.', fixity='prefix')
-
-def star(this: Syntax[Any, Any]) -> Syntax[Any, Any]:
-    return this.algebra('star').describe(name=f"{this.meta.name}*", fixity='postfix', parameter=(this,)) 
-
-def plus(this: Syntax[Any, Any]) -> Syntax[Any, Any]:
-    return this.algebra('plus').describe(name=f"{this.meta.name}+", fixity='postfix', parameter=(this,))
-
-
-def nfa(syntax: Syntax[NFA, Any]) -> NFA:
-    from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Regular, cache=Cache())
-    return v

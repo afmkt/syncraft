@@ -551,7 +551,7 @@ class NFA(Generic[C]):
                               accept=other.accept, 
                               transitions=FrozenDict(new_transitions), 
                               epsilon=FrozenDict(eps))
-    def __add__(self, other: NFA[C]) -> NFA[C]:
+    def __rshift__(self, other: NFA[C]) -> NFA[C]:
         return self.then(other)
     
     def union(self, other: NFA[C]) -> NFA[C]:
