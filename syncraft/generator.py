@@ -409,8 +409,7 @@ def generate_with(
                alg=Generator, 
                ast=data, 
                seed=seed, 
-               restore_pruned=restore_pruned,
-               token_class = TokenClass.simple())
+               restore_pruned=restore_pruned)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -436,17 +435,14 @@ def validate(
                alg=Generator, 
                ast=data, 
                seed=0, 
-               restore_pruned=True, 
-               token_class=TokenClass.simple())
+               restore_pruned=True)
     if s is not None:
         return v, s.binding.bound()
     else:
         return v, None    
 
 
-def generate(
-    syntax
-) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
+def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     """
     Generate a random AST that conforms to the given syntax.
 
@@ -461,8 +457,7 @@ def generate(
                alg=Generator, 
                ast=None, 
                seed=random.randint(0, 2**32 - 1), 
-               restore_pruned=False,
-               token_class = TokenClass.simple())
+               restore_pruned=False)
     if s is not None:
         return v, s.binding.bound()
     else:
