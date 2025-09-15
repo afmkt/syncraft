@@ -709,8 +709,11 @@ class TokenClass(Generic[T]):
                         return False
                 else:
                     data = getattr(token, key)
-                    if isinstance(pattern, re.Pattern) and pattern.fullmatch(str(data)) is None:
-                        return False
+                    if isinstance(pattern, re.Pattern):
+                        if pattern.fullmatch(str(data)) is None:
+                            return False
+                        else:
+                            continue
                     elif isinstance(pattern, str):
                         if case_sensitive:
                             if str(data).strip() != pattern.strip():

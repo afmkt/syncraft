@@ -35,7 +35,8 @@ uv sync --group dev
 ```
 
 TODO
-- [ ]  Lexer + push parsing (core infra).
+- [ ]  Merge DFA/NFA into CFG parsing pipeline. Make lex node in Algebra, take FA builder.
+- [ ]  Refine the left-recursion handling, recover at or_else, or add Warth in Cache.
 - [ ]  Visualization (railroad diagrams + AST).
 - [ ]  Interactive dev (Jupyter).
 - [ ]  Semantic layer (datalog + unification).

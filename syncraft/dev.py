@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import Tuple, Any, Set, Optional
-from sqlglot.expressions import Expression
 from syncraft.syntax import Syntax
 from syncraft.algebra import  Left, Right, Error, Either, Algebra
 from syncraft.parser import ParserState, Token

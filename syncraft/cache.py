@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, overload, Literal, List
+from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List
 from weakref import WeakKeyDictionary
 from syncraft.ast import SyncraftError
 

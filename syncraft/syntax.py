@@ -593,7 +593,7 @@ def run(*,
         *args, **kwargs: the arguments passed to alg.state to construct the state object of the algebra.
     """
     parser = syntax(alg, **kwargs)
-    input, _, _ = call_with(alg.state, **kwargs)
+    input, a, b = call_with(alg.state, **kwargs)
     if input:
         gen = parser.run(input, cache=Cache())
         try:

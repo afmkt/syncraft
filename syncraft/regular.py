@@ -9,7 +9,6 @@ from syncraft.algebra import (
 )
 from syncraft.charset import CodeUniverse, CharSet
 from syncraft.fa import NFA
-from syncraft.syntax import Syntax
 
 from syncraft.constraint import Bindable
 from syncraft.cache import Cache

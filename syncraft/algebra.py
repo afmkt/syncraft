@@ -56,25 +56,24 @@ class Error:
     previous: Optional[Error] = None
     
 
-    def attach( self, 
+    def push( self, 
                 *,
                 this: Any, 
-                msg: Optional[str] = None,
-                err: Optional[str] = None, 
+                message: Optional[str] = None,
+                error: Optional[Any] = None, 
                 state: Optional[Any] = None) -> Error:
         return Error(
             this=this,
-            error=err,
-            message=msg or str(err),
+            error=error,
+            message=message or str(error),
             state=state,
             previous=self
         )
-    def to_list(self)->List[Dict[str, Any]]:
+    def to_list(self)->List[Error]:
         lst = []
         current: Optional[Error] = self
         while current is not None:
-            d = shallow_dict(current)
-            lst.append({k:v for k,v in d.items() if v is not None and k != 'previous'})
+            lst.append(current)
             current = current.previous
         return lst
 
@@ -95,8 +94,16 @@ class Algebra(Generic[A, S]):
     def name(self) -> str:
         if isinstance(self._name, str):
             return self._name
-        else:
+        elif callable(self._name):
             return self._name()
+        else:
+            return self.__class__.__name__
+        
+    def __repr__(self) -> str:
+        return self.name
+    
+    def __str__(self) -> str:
+        return self.__repr__()
 
     @cached_property
     def hashable(self)->Hashable:
@@ -108,12 +115,28 @@ class Algebra(Generic[A, S]):
 
     def run(self, input: S, cache: Cache[Either[Any, Tuple[Any, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
         try:
-            return (yield from cache.gen(self.run_f, input, cache))
+            match (yield from cache.gen(self.run_f, input, cache)):
+                case Right((value, state)):
+                    return Right((value, state))
+                case Left(Error(error=LeftRecursionError() as lftr) as err):
+                    if lftr.offending is self.run_f or len(lftr.stack) == 0:
+                        lftr = lftr.push(f"\u25cf {self.name}")
+                    else:
+                        lftr = lftr.push(self.name)
+                    return Left(err.push(this=self, state=input, error=lftr))
+                case Anything:
+                    return Anything
         except LeftRecursionError as e:
             if e.offending is self.run_f or len(e.stack) == 0:
-                raise e.push(f"\u25cf {self.name}")
+                e = e.push(f"\u25cf {self.name}")
             else:
-                raise e.push(self.name) 
+                e = e.push(self.name)
+            return Left(Error(
+                message="Left-recursion detected",
+                this=self,
+                error=e,
+                state=input
+            ))
         
 
     def as_(self, typ: Type[B])->B:
@@ -121,15 +144,11 @@ class Algebra(Generic[A, S]):
         
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
-        name: Optional[str] = None
         def algebra_lazy_run(input: S, cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[Incomplete[S], S, Either[Any, Tuple[A, S]]]:
-            nonlocal name
             alg = thunk()
-            if name is None:
-                name = alg.name if isinstance(alg.name, str) else alg.name()
             result = yield from alg.run(input, cache)
             return result
-        return cls(algebra_lazy_run, _name=lambda: f"{cls.__name__}.lazy({name if name is not None else '...'})")
+        return cls(algebra_lazy_run, _name=lambda: f"{cls.__name__}.lazy(...)")
     
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:

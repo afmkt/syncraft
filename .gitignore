@@ -13,3 +13,4 @@ wheels/
 prof/
 .venv
 site/
+.DS_Store

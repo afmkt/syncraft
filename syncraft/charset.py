@@ -4,7 +4,7 @@ from typing import (
     TypeVar, Generic, Tuple, List, Callable, Type, ClassVar
 )
 from syncraft.constraint import FrozenDict
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from syncraft.algebra import (
     SyncraftError
 )

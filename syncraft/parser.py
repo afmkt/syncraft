@@ -1,6 +1,4 @@
 from __future__ import annotations
-import re
-
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable
@@ -11,7 +9,6 @@ from syncraft.algebra import (
     Either, Left, Right, Error, Algebra, Incomplete
 )
 from dataclasses import dataclass, field, replace
-from enum import Enum
 
 from syncraft.syntax import Syntax
 
@@ -40,9 +37,11 @@ class ParserState(Bindable, Generic[T]):
     final: bool = False  # Whether this is a final state (for error reporting)
 
     def __repr__(self) -> str:
+        indicator = '\u25cf'
+        indicator = '\u007c\u25BA'  # right arrow
         return (f"ParserState("
                 f"@({self.current() if not self.ended() else 'EOF'}), "
-                f"input=[{self.before() + (' ' if len(self.before())>0 else '')}\u25cf{(' ' if len(self.after()) > 0 else '') + self.after()}], "
+                f"input=[{self.before() + (' ' if len(self.before())>0 else '')}{indicator}{(' ' if len(self.after()) > 0 else '') + self.after()}], "
                 f"ended={self.ended()}, "
                 f"pending={self.pending()})")
 

@@ -130,7 +130,7 @@ def test_direct_left_recursion()->None:
 
 
 def test_indirect_left_recursion()->None:
-    NUMBER = literal(re.compile(r'\d+')).map(int)
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
     PLUS = token(text='+')
     STAR = token(text='*')
     A = Syntax.lazy(lambda: (B >> PLUS >> A) | B)
