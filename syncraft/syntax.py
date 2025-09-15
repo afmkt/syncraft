@@ -9,7 +9,7 @@ from functools import reduce
 from syncraft.algebra import Algebra, Error, Right, Left, Incomplete
 from syncraft.cache import Cache
 from syncraft.constraint import Bindable
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, call_with
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
 from types import MethodType, FunctionType
 import keyword
 from enum import Enum
@@ -593,7 +593,7 @@ def run(*,
         *args, **kwargs: the arguments passed to alg.state to construct the state object of the algebra.
     """
     parser = syntax(alg, **kwargs)
-    input, a, b = call_with(alg.state, **kwargs)
+    input = CallWith(alg.state, **kwargs)()
     if input:
         gen = parser.run(input, cache=Cache())
         try:

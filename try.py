@@ -9,6 +9,9 @@ from syncraft.ast import TokenClass
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 from rich import print
+from syncraft.algebra import Error
+
+
 
 literal = Syntax.config(token_class = TokenClass.simple()).literal
 token = Syntax.config(token_class = TokenClass.simple()).token
@@ -89,11 +92,16 @@ def test(expr: str):
 
 
 def test_direct_left_recursion()->None:
-    Term = literal('n')
-    Expr = Syntax.lazy(lambda: Expr + literal('+') + Term)
+    Term = literal('n').named("Term")
+    Expr = Syntax.lazy(lambda: Expr + literal('+') + Term).named("Expr")
     
     v, s = parse_word(Expr, 'n + n + n')
-    print(v, s)
+    match v:
+        case Error(error=LeftRecursionError() as lftr):
+            print("Left recursion detected:", lftr)
+        case _:
+            print(v, s)
+            assert False, "Should have detected left recursion"
 
 
 
@@ -101,14 +109,10 @@ def test_indirect_left_recursion()->None:
     NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
     PLUS = token(text='+')
     STAR = token(text='*')
-    A = Syntax.lazy(lambda: (B >> PLUS >> A) | B)
-    B = Syntax.lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
+    A = Syntax.lazy(lambda: (B >> PLUS >> A) | B).named("A")
+    B = Syntax.lazy(lambda: (A >> STAR >> NUMBER) | NUMBER).named("B")
     v, s = parse_word(A, '1 + 2 * 3')
     print(v, s)
 
 if __name__ == "__main__":
-    # test("42")            # fails: Expr requires recursion
-    # test("42 + 7")        # works
-    # test("42 + 7 + 3")    # works
-    # test("1 + 2 + 3 + 4") # works
-    test_indirect_left_recursion()
+    test_direct_left_recursion()

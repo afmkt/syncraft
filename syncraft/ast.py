@@ -60,73 +60,79 @@ def get_callable_signature(obj, follow_wrapped: bool = True) -> inspect.Signatur
         # Fallback to inspecting __call__
         return inspect.signature(obj.__call__, follow_wrapped=follow_wrapped)
 
+class CallWith:
+    def __init__(self, specific_func:Callable[...,Any], *general_args:Any, **general_kwargs:Any) -> None:
+        self.func = specific_func
+        sig = get_callable_signature(specific_func) 
+        params = sig.parameters.values()
 
+        args = []
+        kwargs = {}
+        remaining_args = []
+        remaining_kwargs = general_kwargs.copy()
 
-def call_with(specific_func:Callable[...,Any], *general_args:Any, **general_kwargs:Any)->Tuple[Any, list[Any], dict[str, Any]]:
-    sig = get_callable_signature(specific_func) 
-    params = sig.parameters.values()
+        arg_index = 0
+        num_args = len(general_args)
 
-    args = []
-    kwargs = {}
-    remaining_args = []
-    remaining_kwargs = general_kwargs.copy()
+        var_positional = False
+        var_keyword = False
 
-    arg_index = 0
-    num_args = len(general_args)
+        consumed_kwargs = set()
 
-    var_positional = False
-    var_keyword = False
+        for param in params:
+            if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+                if arg_index < num_args:
+                    args.append(general_args[arg_index])
+                    arg_index += 1
+                elif param.name in general_kwargs:
+                    args.append(general_kwargs[param.name])
+                    consumed_kwargs.add(param.name)
+                elif param.default is not inspect.Parameter.empty:
+                    args.append(param.default)
+                else:
+                    if param.name != 'self':  # Skip 'self' for instance methods
+                        raise TypeError(f"Missing required positional argument: {param.name}")
 
-    consumed_kwargs = set()
+            elif param.kind == inspect.Parameter.VAR_POSITIONAL:
+                var_positional = True
+                # collect remaining general_args into *args
+                args.extend(general_args[arg_index:])
+                arg_index = num_args  # mark all as used
 
-    for param in params:
-        if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
-            if arg_index < num_args:
-                args.append(general_args[arg_index])
-                arg_index += 1
-            elif param.name in general_kwargs:
-                args.append(general_kwargs[param.name])
-                consumed_kwargs.add(param.name)
-            elif param.default is not inspect.Parameter.empty:
-                args.append(param.default)
-            else:
-                if param.name != 'self':  # Skip 'self' for instance methods
-                    raise TypeError(f"Missing required positional argument: {param.name}")
+            elif param.kind == inspect.Parameter.KEYWORD_ONLY:
+                if param.name in general_kwargs:
+                    kwargs[param.name] = general_kwargs[param.name]
+                    consumed_kwargs.add(param.name)
+                elif param.default is not inspect.Parameter.empty:
+                    kwargs[param.name] = param.default
+                else:
+                    raise TypeError(f"Missing required keyword-only argument: {param.name}")
 
-        elif param.kind == inspect.Parameter.VAR_POSITIONAL:
-            var_positional = True
-            # collect remaining general_args into *args
-            args.extend(general_args[arg_index:])
-            arg_index = num_args  # mark all as used
+            elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                var_keyword = True
+                # allow all remaining kwargs
+                for k, v in general_kwargs.items():
+                    if k not in consumed_kwargs and k not in kwargs:
+                        kwargs[k] = v
+                        consumed_kwargs.add(k)
 
-        elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-            if param.name in general_kwargs:
-                kwargs[param.name] = general_kwargs[param.name]
-                consumed_kwargs.add(param.name)
-            elif param.default is not inspect.Parameter.empty:
-                kwargs[param.name] = param.default
-            else:
-                raise TypeError(f"Missing required keyword-only argument: {param.name}")
+        # Collect unused arguments
+        if arg_index < num_args:
+            remaining_args = list(general_args[arg_index:]) if not var_positional else []
 
-        elif param.kind == inspect.Parameter.VAR_KEYWORD:
-            var_keyword = True
-            # allow all remaining kwargs
-            for k, v in general_kwargs.items():
-                if k not in consumed_kwargs and k not in kwargs:
-                    kwargs[k] = v
-                    consumed_kwargs.add(k)
+        remaining_kwargs = {
+            k: v for k, v in general_kwargs.items()
+            if k not in consumed_kwargs and k not in kwargs
+        } if not var_keyword else {}
 
-    # Collect unused arguments
-    if arg_index < num_args:
-        remaining_args = list(general_args[arg_index:]) if not var_positional else []
+        self.func = specific_func
+        self.args = args
+        self.kwargs = kwargs
+        self.unused_args = remaining_args
+        self.unused_kwargs = remaining_kwargs
 
-    remaining_kwargs = {
-        k: v for k, v in general_kwargs.items()
-        if k not in consumed_kwargs and k not in kwargs
-    } if not var_keyword else {}
-
-    result = specific_func(*args, **kwargs)
-    return result, remaining_args, remaining_kwargs
+    def __call__(self) -> Any:
+        return self.func(*self.args, **self.kwargs)
 
 class SyncraftError(Exception):
     def __init__(self, message: str, offending: Any, expect: Any = None, **kwargs: Any) -> None:
@@ -615,7 +621,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
 class Token(AST):
     text: str
     def __str__(self) -> str:
-        return f"{self.text.strip()}"
+        return f"t.{self.text.strip()}"
     
     def __repr__(self) -> str:
         return self.__str__()
@@ -664,13 +670,16 @@ class TokenClass(Generic[T]):
         Returns:
             str: A string representation of the token class and its specified fields.
         """
+        c = CallWith(self.TokenConstructor, **kwargs)
         parts = []
-        for k, v in kwargs.items():
+        for k, v in c.kwargs.items():
             if isinstance(v, re.Pattern):
                 parts.append(f"{k}=/{v.pattern}/")
             else:
                 parts.append(f"{k}={v}")
-        return f"{self.TokenConstructor.__name__}(" + ", ".join(parts) + ")"
+        for x in c.args:
+            parts.append(str(x))
+        return "(" + ", ".join(parts) + ")"
 
     def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
@@ -724,7 +733,7 @@ class TokenClass(Generic[T]):
                     elif pattern != data:
                         return False
             return True
-        pred.__name__ = f"P.{self.describe(**kwargs)})"
+        pred.__name__ = f"P{self.describe(**kwargs)})"
         return pred
 
     def generator(self, **kwargs: Any) -> Callable[[], T]:
@@ -748,10 +757,8 @@ class TokenClass(Generic[T]):
                         data[k] = v.pattern
                 else:
                     data[k] = v
-            # result = self.TokenConstructor(**data)
-            result, _, _ = call_with(self.TokenConstructor, **data)
-            return result
-        gen.__name__ = f"G.{self.describe(**kwargs)})"
+            return CallWith(self.TokenConstructor, **data)()
+        gen.__name__ = f"G{self.describe(**kwargs)})"
         return gen
 
 #: Union-like type describing the shape of AST parse results across nodes.

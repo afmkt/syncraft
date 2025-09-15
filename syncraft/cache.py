@@ -17,7 +17,7 @@ class LeftRecursionError(SyncraftError):
     
     def __repr__(self) -> str:
         stack = "\n-> ".join(reversed(self.stack))
-        hint = "Hint: Use right recursion or a repetition combinator (many/chain) to avoid left recursion."
+        hint = "Hint: Use right recursion or a repetition combinator to avoid left recursion."
         return f"{self.__class__.__name__}(\n{stack})\n{hint}"
     
 

@@ -5,7 +5,7 @@ from typing import (
 )
 
 from dataclasses import dataclass, replace
-from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError, call_with
+from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, shallow_dict, SyncraftError, CallWith
 from syncraft.cache import Cache, LeftRecursionError
 from syncraft.constraint import Bindable
 from functools import cached_property
@@ -188,7 +188,7 @@ class Algebra(Generic[A, S]):
         method = getattr(cls, name, None)
         if method is None or not callable(method):
             raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offending=method, expect='callable')
-        result, _, _ = call_with(method, *args, **kwargs)
+        result = CallWith(method, *args, **kwargs)()
         return cast(Algebra[A, S], result)
 
     def fatal(self) -> Algebra[A, S]:
