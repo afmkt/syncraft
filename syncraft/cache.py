@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple
 from weakref import WeakKeyDictionary
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
-from rich import print
+from collections import deque
+from syncraft.dev import debug_print
+
+
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
 S = TypeVar('S', bound=Bindable)
@@ -17,11 +20,11 @@ class Either(Generic[L, R]):
         return isinstance(self, Right)
 
 @dataclass(frozen=True)
-class Left(Either[L, R]):
+class Left(Either[L, Any]):
     value: Optional[L] = None
 
 @dataclass(frozen=True)
-class Right(Either[L, R]):
+class Right(Either[Any, R]):
     value: R
 
 
@@ -48,17 +51,31 @@ class LeftRecursionError(SyncraftError):
     
 Args = TypeVar('Args', bound=Hashable)
 A = TypeVar('A')
-Ret = TypeVar('Ret')
+Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 @dataclass(frozen=True)
 class InProgress(Generic[Ret]):
+    offending: Tuple[Callable[..., Any], str] | None = None
     payload: Optional[Ret] = None
-    
+
+@dataclass(frozen=True)
+class Finalized:
+    pass
+
+
+
 @dataclass
 class Cache(Generic[A, Ret]):
-    cache: WeakKeyDictionary[Callable[[A, Cache[A, Ret]], Any], Dict[A, Ret | InProgress[Ret]]] = field(default_factory=WeakKeyDictionary)
+    stack: deque[Tuple[Callable[..., Any], str]] = field(default_factory=deque)
+    cache: WeakKeyDictionary[Callable[..., Generator[Any, Any, Ret]], Dict[A, Ret | InProgress[Ret]]] = field(default_factory=WeakKeyDictionary)
 
-    def __contains__(self, f: Callable[[A, Cache[A, Ret]], Any]) -> bool:
+    def push(self, f: Callable[..., Generator[Any, Any, Ret]], name: str) -> Cache[A, Ret]:
+        self.stack.append((f, name))
+        return self
+    def pop(self) -> Tuple[Callable[..., Generator[Any, Any, Ret]], str]:
+        return self.stack.pop()
+
+    def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
 
     def __repr__(self) -> str:
@@ -87,14 +104,37 @@ class Cache(Generic[A, Ret]):
             f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], 
             key: A, 
             ) -> Generator[Any, Any, Ret]:
-        def grow_inprogress(d: Dict[A, Ret | InProgress[Ret]], key: A, fix: Ret) -> None:
+        def grow_inprogress(d: Dict[A, Ret | InProgress[Ret]], key: A, fix: Ret | Finalized) -> None:
             v = d.get(key, None)
             if isinstance(v, InProgress):
-                if v.payload != fix:
-                    d[key] = InProgress(fix)
+                if isinstance(fix, Finalized):
+                    assert v.payload is not None, "InProgress should have a payload to be finalized"
+                    debug_print(f'Finalizing InProgress at {key} => {v.payload}')
+                    d[key] = v.payload
+                elif v.payload != fix:
+                    if v.payload is None:
+                        debug_print(f'Growing InProgress at {key} => {fix}')
+                        d[key] = replace(v, payload=fix)
+                    elif isinstance(fix, Right):
+                        assert isinstance(v.payload, Right), "Can only combine Right with Right"
+                        assert isinstance(v.payload.value, tuple) and isinstance(fix.value, tuple) and len(v.payload.value) == 2 and len(fix.value) == 2, "Right values should be tuples of length 2"
+                        old_value = v.payload.value[0]
+                        old_state = v.payload.value[1]
+                        new_value = fix.value[0]
+                        new_state = fix.value[1]
+                        if old_value == new_value:
+                            debug_print(f'Fixing InProgress at {key} => <{v.payload}>')
+                            d[key] = v.payload  # type: ignore
+                        else:
+                            debug_print(f'Growing InProgress at {key} => {fix}')
+                            d[key] = replace(v, payload=fix) # type: ignore
+                    else:
+                        debug_print(f'Growing InProgress at {key} => {fix}')
+                        d[key] = replace(v, payload=fix)
                 else:
                     d[key] = fix
             else:
+                assert not isinstance(fix, Finalized), "Can not put Finalized into cache"
                 d[key] = fix
 
         if f not in self.cache:
@@ -108,12 +148,16 @@ class Cache(Generic[A, Ret]):
                     raise LeftRecursionError("Can not fix InProgress with another InProgress", offending=fix, expect="a final value")
                 grow_inprogress(c, key, fix)
                 v = c[key]
+            debug_print(f'--- {f} Cache hit ---')
             return v  
         try:
             c[key] = InProgress()
             result = yield from f(key, self)
             assert not isinstance(result, InProgress), "Function should not return InProgress"
+            debug_print(f'--- {list(map(lambda x: x[1], self.stack))} Cache updated ---')
+            debug_print(c[key])
             c[key] = result
+            debug_print(c[key])
             return result
         except Exception as e:
             c.pop(key, None)

@@ -137,3 +137,168 @@ def test_indirect_left_recursion()->None:
     B = Syntax.lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
     with pytest.raises(LeftRecursionError):
         v, s = parse_word(A, '1 + 2 * 3')
+
+
+
+
+def test_indirect_left_recursion_2()->None:
+    """
+    Grammar:
+        Expr → Expr "+" Term | Term
+        Term → Term "*" Factor | Factor
+        Factor → "(" Expr ")" | number    
+    Positive examples:
+        42
+        1 + 2
+        3 * 4
+        ( 1 )
+        1 + 2 * 3
+        ( 1 + 2 ) * 3
+        1 + 2 + 3 * 4
+    Negative examples:
+        + 1
+        1 *
+        1 + *
+        ( 1 + 2
+        1 + 2 )
+        ( )
+        1 * ( 2 + )
+    """
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
+    PLUS = token(text='+')
+    STAR = token(text='*')
+    LPAREN = token(text='(')
+    RPAREN = token(text=')')
+    Expr = Syntax.lazy(lambda: (Expr >> PLUS >> Term) | Term)
+    Term = Syntax.lazy(lambda: (Term >> STAR >> Factor) | Factor)
+    Factor = Syntax.lazy(lambda: (LPAREN >> Expr >> RPAREN) | NUMBER)
+    v, s = parse_word(Expr, '1 + 2 * 3')
+    v, s = parse_word(Expr, '(1 + 2) * 3')
+    v, s = parse_word(Expr, '1 + (2 * 3)')
+    v, s = parse_word(Expr, '((1 + 2) * 3) + 4 * 5 + 6')
+
+    # print(v)
+
+
+
+def test_indirect_left_recursion_3()->None:
+    """
+    Grammar:
+        List → List "," Item | Item
+        Item → "a" | "b"    
+    Positive examples:
+        a
+        b
+        a , b
+        b , a
+        a , b , a
+        a , a , a
+        b , b , b
+        b , a , b , b
+    Negative examples:
+        ''
+        , a
+        a ,
+        a , , b
+        c
+        , a ,
+        a , b ,
+        a , b ,
+    """    
+    A = token(text='a')
+    B = token(text='b')
+    Item = Syntax.lazy(lambda: A | B)
+    List = Syntax.lazy(lambda: (List >> token(text=',') >> Item) | Item)
+    with pytest.raises(LeftRecursionError):
+        v, s = parse_word(List, 'a,b,a')
+
+
+
+def test_indirect_left_recursion_4()->None:
+    """
+    Grammar:
+        A → B "x" | "a"
+        B → A "y" | "b"
+    Positive examples:
+        a
+        b
+        a x
+        a y
+        b x
+        b y
+        a y x
+        a y b x
+        b x a y
+        a y a y b x x
+        a x b y a x
+        b y a x b y b x
+    Negative examples:
+        ''
+        x x
+        y y
+        a b
+        x a
+        a x
+        a y x b
+        c
+        x a y
+        a y b x x
+        a y b x x
+    """
+    A = Syntax.lazy(lambda: (B >> token(text='x')) | token(text='a'))
+    B = Syntax.lazy(lambda: (A >> token(text='y')) | token(text='b'))
+    with pytest.raises(LeftRecursionError):
+        v, s = parse_word(A, 'a y b x')
+
+
+
+def test_indirect_left_recursion_5()->None:
+    """
+    Grammar:
+        Chain → Chain "->" Name | Name
+        Name → identifier    
+    Positive examples:
+        a
+        b
+        c
+        a -> b
+        a -> b -> c
+        x -> y -> z -> a -> b -> c
+    Negative examples:
+        ''
+        -> a
+        a ->
+        a -> ->
+        a b
+        a -> b c
+        a -> b ->
+        a -> b -> c ->
+        a -> b -> c -> ->
+        -> a ->
+        a -> -> b
+        a --> b
+        123
+    """
+    Name = token(text=re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*'))
+    Chain = Syntax.lazy(lambda: (Chain >> token(text='->') >> Name) | Name)
+    with pytest.raises(LeftRecursionError):
+        v, s = parse_word(Chain, 'a -> b -> c')
+
+
+def test_direct_left_recursion_2()->None:
+    """
+    Grammar:
+        S → S S | "a"
+    Positive examples:
+        a
+        a a
+        a a a
+        a a a a
+    Negative examples:
+        ''
+        b
+        ab
+    """
+    S = Syntax.lazy(lambda: (S >> S) | literal('a'))
+    with pytest.raises(LeftRecursionError):
+        v, s = parse_word(S, 'a a a')

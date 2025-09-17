@@ -17,7 +17,6 @@ import re
 
 
 
-from rich import print
 
 C = TypeVar('C', bound=str | bytes)
 

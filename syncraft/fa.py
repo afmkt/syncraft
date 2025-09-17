@@ -12,7 +12,7 @@ from collections import deque
 from syncraft.constraint import  FrozenDict
 from syncraft.charset import CharSet, CodeUniverse, MixedUniverseError, CodepointError
 from enum import Enum
-from rich import print
+from syncraft.dev import debug_print
 from collections import defaultdict
 
 

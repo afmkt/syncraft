@@ -6,12 +6,13 @@ from typing import (
 
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, SyncraftError, CallWith
-from syncraft.cache import Cache, InProgress, LeftRecursionError, Right, Left, Incomplete, Either
+from syncraft.cache import Cache, InProgress, LeftRecursionError, Right, Left, Incomplete, Either, Finalized
 from syncraft.constraint import Bindable
 from functools import cached_property
+from syncraft.dev import debug_print
 import re
 
-from rich import print
+
 
 
 
@@ -57,12 +58,12 @@ class Error:
             current = current.previous
         return lst
 
-YieldChannelType = Incomplete[S] | InProgress[Either[Any, Tuple[A, S]]]
+YieldChannelType = Incomplete[S] | InProgress[Either[Any, Tuple[A, S]]] | Finalized
 SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
 @dataclass(frozen=True)        
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
-    run_f: Callable[[S, Cache[S, Either[Any, Tuple[A, S]]]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]] 
+    run_f: Callable[[S, Cache[S, Either[Any, Tuple[A, S]]]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
     _name: str | Callable[[], str]
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
@@ -104,7 +105,10 @@ class Algebra(Generic[A, S]):
                                                                    SendChannelType, 
                                                                    Either[Any, Tuple[A, S]]]:
         try:
-            return (yield from cache.gen(self.run_f, input))
+            cache.push(self.run_f, self.name)
+            result = (yield from cache.gen(self.run_f, input))
+            f, n = cache.pop()
+            return result
         except LeftRecursionError as e:
             if e.offending is self.run_f or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")
@@ -121,11 +125,11 @@ class Algebra(Generic[A, S]):
         def algebra_lazy_run(input: S, 
                              cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                    SendChannelType, 
-                                                                                   Either[Any, Tuple[A, S]]]:
+                                                                                   Either[Any, Tuple[Any, S]]]:
             alg = thunk()
             result = yield from alg.run(input, cache)
             return result
-        return cls(algebra_lazy_run, _name=lambda: f"{cls.__name__}.lazy(...)")
+        return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
     
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:
@@ -200,7 +204,7 @@ class Algebra(Generic[A, S]):
                     [
                         Algebra[A, S], 
                         S, 
-                        Left[Any, Tuple[A, S]], 
+                        Left[Any], 
                         Any
                     ], 
                         Either[Any, Tuple[B, S]]
@@ -233,7 +237,7 @@ class Algebra(Generic[A, S]):
                         [
                             Algebra[A, S], 
                             S, 
-                            Right[Any, Tuple[A, S]], 
+                            Right[Tuple[A, S]], 
                             Any
                         ], 
                             Either[Any, Tuple[B, S]]
@@ -397,15 +401,25 @@ class Algebra(Generic[A, S]):
                                                                             Either[Any, Tuple[Choice[A, B], S]]]:
             try:
                 gen = self.run(input, cache)
-                send_value = None
+                send_value:Any = None
                 while True:
+                    debug_print()
+                    debug_print(f"send: {repr(send_value)}")
                     left = gen.send(send_value) 
                     match left:
+                        case InProgress(payload = Right((x_value, x_state))):
+                            other_result = yield from other.run(x_state, cache)
+                            match other_result:
+                                case Right((other_value, other_state)):
+                                    send_value = other_result
+                                    continue
+                                case Left(other_err):
+                                    return Left(other_err)
                         case InProgress(payload = _):
                             other_result = yield from other.run(input, cache)
                             match other_result:
-                                case Right((other_value, other_state)) as right:
-                                    send_value = right
+                                case Right((other_value, other_state)):
+                                    send_value = other_result
                                     continue
                                 case Left(other_err):
                                     return Left(other_err)
@@ -415,6 +429,7 @@ class Algebra(Generic[A, S]):
             except StopIteration as e:
                 match e.value:
                     case Right((value, state)) :
+                        debug_print(f"or_else succeeded with {value} at {state}")
                         return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))            
                     case Left(err):
                         if isinstance(err, Error):
@@ -423,8 +438,10 @@ class Algebra(Generic[A, S]):
                         other_result = yield from other.run(input, cache)
                         match other_result:
                             case Right((other_value, other_state)):
+                                debug_print(f"or_else other succeeded with {other_value} at {other_state}")
                                 return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
                             case Left(other_err):
+                                debug_print(f"or_else other failed with {other_err}")
                                 return Left(other_err)
                         raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
                 raise SyncraftError(f"Unexpected result type from {self}", offending=e.value, expect=(Left, Right))

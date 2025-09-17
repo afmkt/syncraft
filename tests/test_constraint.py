@@ -44,7 +44,6 @@ def test_to() -> None:
     sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
     ast, bound = parse_word(syntax, sql)
     def p(condition, then, otherwise)->bool:
-        # print({'condition':condition, 'then':then, 'otherwise':otherwise})
         return True
     if bound is not None:
         forall(p)(bound)

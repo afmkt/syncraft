@@ -15,4 +15,3 @@ import re
 import io
 from syncraft.syntax import Syntax
 
-from rich import print

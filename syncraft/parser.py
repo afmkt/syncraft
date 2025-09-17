@@ -44,7 +44,7 @@ class ParserState(Bindable, Generic[T]):
         input = f"input=[{self.before() + (' ' if len(self.before())>0 else '')}{indicator}{(' ' if len(self.after()) > 0 else '') + self.after()}]"
         ended = f"ended={self.ended()}" if self.ended() else ''
         pending = f"pending={self.pending()}" if self.pending() else ''
-        return ("ParserState(" + ", ".join(filter(lambda x: x != '', [input, current, ended, pending])) +")")
+        return ("ParserState(" + ", ".join(filter(lambda x: x != '', [input, ended, pending])) +")")
 
     def __str__(self) -> str:
         return self.__repr__()

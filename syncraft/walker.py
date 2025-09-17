@@ -14,7 +14,6 @@ from syncraft.constraint import Bindable, FrozenDict
 import re
 from syncraft.syntax import Syntax
 from syncraft.cache import Cache, LeftRecursionError
-from rich import print
 
 
 S = TypeVar('S', bound=Bindable)

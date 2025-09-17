@@ -3,6 +3,10 @@ from typing import Tuple, Any, Set, Optional
 from syncraft.syntax import Syntax
 from syncraft.algebra import  Left, Right, Error, Either, Algebra
 from syncraft.parser import ParserState, Token
+from rich import print
+
+def debug_print(*args: Any, **kwargs: Any) -> None:
+    print(*args, **kwargs)
 
 
 def rich_error(err: Error)->None:
