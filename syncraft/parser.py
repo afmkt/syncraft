@@ -122,7 +122,7 @@ class Parser(Algebra[T, ParserState[T]]):
                   )-> Algebra[T, ParserState[T]]:
         name = predicate.__name__ if predicate is not None else "." 
         def primitive_run(state: ParserState[T], 
-                          cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
+                          cache:Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, 
-    Type, Hashable, Generator, Union
+    Type, Hashable, Generator, Union, Protocol
 )
 
 from dataclasses import dataclass, replace
@@ -12,6 +12,8 @@ from functools import cached_property
 import re
 
 from rich import print
+
+
 
 
 
@@ -60,7 +62,7 @@ SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
 @dataclass(frozen=True)        
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
-    run_f: Callable[[S, Cache[Either[Any, Tuple[A, S]]]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]] 
+    run_f: Callable[[S, Cache[S, Either[Any, Tuple[A, S]]]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]] 
     _name: str | Callable[[], str]
     @classmethod
     def state(cls, **kwargs:Any)->Optional[S]: 
@@ -91,14 +93,14 @@ class Algebra(Generic[A, S]):
 
     def __call__(self, 
                  input: S, 
-                 cache: Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                 cache: Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                         SendChannelType, 
                                                                         Either[Any, Tuple[A, S]]]:
         return self.run(input, cache=cache)
 
     def run(self, 
             input: S, 
-            cache: Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+            cache: Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                    SendChannelType, 
                                                                    Either[Any, Tuple[A, S]]]:
         try:
@@ -117,7 +119,7 @@ class Algebra(Generic[A, S]):
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
         def algebra_lazy_run(input: S, 
-                             cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                             cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                    SendChannelType, 
                                                                                    Either[Any, Tuple[A, S]]]:
             alg = thunk()
@@ -128,7 +130,7 @@ class Algebra(Generic[A, S]):
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:
         def fail_run(input: S, 
-                     cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                     cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                            SendChannelType, 
                                                                            Either[Any, Tuple[A, S]]]:
             return (yield from cache.return_value(Left(Error(
@@ -142,7 +144,7 @@ class Algebra(Generic[A, S]):
     @classmethod
     def success(cls, value: Any) -> Algebra[Any, S]:
         def success_run(input: S, 
-                        cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                        cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                               SendChannelType, 
                                                                               Either[Any, Tuple[A, S]]]:
             return (yield from cache.return_value(Right((value, input)), input))
@@ -215,7 +217,7 @@ class Algebra(Generic[A, S]):
         """
         assert callable(func), "func must be callable"
         def fail_run(input: S, 
-                     cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                     cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                            SendChannelType, 
                                                                            Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
@@ -248,7 +250,7 @@ class Algebra(Generic[A, S]):
         """
         assert callable(func), "func must be callable"
         def success_run(input: S, 
-                        cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                        cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                               SendChannelType, 
                                                                               Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
@@ -271,7 +273,7 @@ class Algebra(Generic[A, S]):
             An algebra that runs with ``f(state)``.
         """
         def map_state_run(state: S, 
-                          cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                          cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType, 
                                                                                 Either[Any, Tuple[A, S]]]:
             result = yield from self.run(f(state), cache)
@@ -291,7 +293,7 @@ class Algebra(Generic[A, S]):
             An algebra that yields ``B`` with the same resulting state.
         """
         def map_run(input: S, 
-                    cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                    cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                           SendChannelType, 
                                                                           Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
@@ -333,7 +335,7 @@ class Algebra(Generic[A, S]):
             An algebra that preserves successes and maps failures.
         """
         def map_error_run(input: S, 
-                          cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                          cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType, 
                                                                                 Either[Any, Tuple[A, S]]]:
             parsed = yield from self.run(input, cache)
@@ -356,7 +358,7 @@ class Algebra(Generic[A, S]):
             An algebra yielding the result of the chained computation.
         """
         def flat_map_run(input: S, 
-                         cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
+                         cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                SendChannelType, 
                                                                                Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
@@ -378,7 +380,7 @@ class Algebra(Generic[A, S]):
         """
         def map_all_f(a : A) -> Algebra[B, S]:
             def map_all_run_f(input:S, 
-                              cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
+                              cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                                   SendChannelType, 
                                                                                   Either[Any, Tuple[B, S]]]:
                 yield from ()
@@ -390,7 +392,7 @@ class Algebra(Generic[A, S]):
     
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
         def or_else_run(input: S, 
-                        cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
+                        cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                             SendChannelType, 
                                                                             Either[Any, Tuple[Choice[A, B], S]]]:
             try:
@@ -526,7 +528,7 @@ class Algebra(Generic[A, S]):
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: S, 
-                     cache:Cache[Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
+                     cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                          SendChannelType, 
                                                                          Either[Any, Tuple[Many[A], S]]]:
             ret: List[A] = []

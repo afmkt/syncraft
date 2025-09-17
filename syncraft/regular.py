@@ -53,7 +53,7 @@ class Regular(Algebra[NFA[C], RegularState]):
     @classmethod
     def any(cls, universe: CodeUniverse)-> Algebra[NFA[C], RegularState]:
         def any_run(input: RegularState, 
-                    cache:Cache[Either[Any, Tuple[NFA[C], RegularState]]]) -> PyGenerator[YieldChannelType, 
+                    cache:Cache[RegularState, Either[Any, Tuple[NFA[C], RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                           SendChannelType, 
                                                                                           Either[Any, Tuple[NFA[C], RegularState]]]:
             a: CharSet[C] = CharSet.any(universe=universe)
@@ -70,7 +70,7 @@ class Regular(Algebra[NFA[C], RegularState]):
                 universe:CodeUniverse)-> Algebra[NFA[C], RegularState]:      
         name = f'[{text!r}]' if not negation else f'[^{text!r}]'
         def charset_run(input: RegularState, 
-                        cache:Cache[Either[Any, Tuple[NFA[C], RegularState]]]) -> PyGenerator[YieldChannelType, 
+                        cache:Cache[RegularState, Either[Any, Tuple[NFA[C], RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                               SendChannelType, 
                                                                                               Either[Any, Tuple[NFA[C], RegularState]]]:
             data = NFA.from_char(text, universe=universe, negation=negation, tag=name)
@@ -80,7 +80,7 @@ class Regular(Algebra[NFA[C], RegularState]):
     def then_both(self, other: Algebra[Any, RegularState]) -> Algebra[Any, RegularState]:
         name = f"{self.name} > {other.name}"
         def then_run(input: RegularState, 
-                     cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
+                     cache:Cache[RegularState, Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                         SendChannelType, 
                                                                                         Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):
@@ -108,7 +108,7 @@ class Regular(Algebra[NFA[C], RegularState]):
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: RegularState, 
-                     cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
+                     cache:Cache[RegularState, Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                         SendChannelType, 
                                                                                         Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache)):
@@ -122,7 +122,7 @@ class Regular(Algebra[NFA[C], RegularState]):
         
     def star(self) -> Algebra[Any, RegularState]:
         def star_run(input: RegularState, 
-                     cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
+                     cache:Cache[RegularState, Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                         SendChannelType, 
                                                                                         Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):
@@ -136,7 +136,7 @@ class Regular(Algebra[NFA[C], RegularState]):
     
     def plus(self) -> Algebra[Any, RegularState]:
         def plus_run(input: RegularState, 
-                     cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
+                     cache:Cache[RegularState, Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                         SendChannelType, 
                                                                                         Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):
@@ -154,7 +154,7 @@ class Regular(Algebra[NFA[C], RegularState]):
         self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
         name = f"{self_name}?"
         def optional_run(input: RegularState, 
-                         cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
+                         cache:Cache[RegularState, Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                             SendChannelType, 
                                                                                             Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):
@@ -174,7 +174,7 @@ class Regular(Algebra[NFA[C], RegularState]):
         other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
         name = f"{self_name} | {other_name}"
         def or_else_run(input: RegularState, 
-                        cache:Cache[Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
+                        cache:Cache[RegularState, Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                            SendChannelType, 
                                                                                            Either[Any, Tuple[Any, RegularState]]]:
             match (yield from self.run(input, cache=cache)):

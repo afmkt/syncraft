@@ -55,10 +55,10 @@ class InProgress(Generic[Ret]):
     payload: Optional[Ret] = None
     
 @dataclass
-class Cache(Generic[Ret]):
-    cache: WeakKeyDictionary[Callable[[Hashable, Cache[Ret]], Any], Dict[Hashable, Ret | InProgress[Ret]]] = field(default_factory=WeakKeyDictionary)
+class Cache(Generic[A, Ret]):
+    cache: WeakKeyDictionary[Callable[[A, Cache[A, Ret]], Any], Dict[A, Ret | InProgress[Ret]]] = field(default_factory=WeakKeyDictionary)
 
-    def __contains__(self, f: Callable[[Hashable, Cache[Ret]], Any]) -> bool:
+    def __contains__(self, f: Callable[[A, Cache[A, Ret]], Any]) -> bool:
         return f in self.cache
 
     def __repr__(self) -> str:
@@ -72,22 +72,22 @@ class Cache(Generic[Ret]):
     def __str__(self) -> str:
         return self.__repr__()
     
-    def __or__(self, other: Cache[Any]) -> Cache[Any]:
+    def __or__(self, other: Cache[A, Ret]) -> Cache[A, Ret]:
         assert self.cache is other.cache, "There should be only one global cache"
         return self
 
-    def return_value(self, v: Ret, s: Hashable) -> Generator[Any, Any, Ret]:
-        def return_value_f(_, cache: Cache[Ret]) -> Generator[Any, Any, Ret]:
+    def return_value(self, v: Ret, s: A) -> Generator[Any, Any, Ret]:
+        def return_value_f(_: A, cache: Cache[A, Ret]) -> Generator[Any, Any, Ret]:
             yield from ()
             return v
         return (yield from self.gen(return_value_f, s))
     
 
     def gen(self, 
-            f: Callable[[Hashable, Cache[Ret]], Generator[Any, Any, Ret]], 
-            key: Hashable, 
+            f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], 
+            key: A, 
             ) -> Generator[Any, Any, Ret]:
-        def grow_inprogress(d: Dict[Hashable, Ret | InProgress[Ret]], key: Hashable, fix: Ret) -> None:
+        def grow_inprogress(d: Dict[A, Ret | InProgress[Ret]], key: A, fix: Ret) -> None:
             v = d.get(key, None)
             if isinstance(v, InProgress):
                 if v.payload != fix:
@@ -99,7 +99,7 @@ class Cache(Generic[Ret]):
 
         if f not in self.cache:
             self.cache.setdefault(f, dict())
-        c: Dict[Hashable, Ret | InProgress[Ret]] = self.cache[f]
+        c: Dict[A, Ret | InProgress[Ret]] = self.cache[f]
         if key in c:
             v = c[key]
             while isinstance(v, InProgress):

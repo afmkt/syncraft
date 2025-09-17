@@ -37,7 +37,7 @@ class Finder(Generator[T], Generic[T]):
             tuple ``(input.ast, input)``.
         """
         def anything_run(input: GenState[T], 
-                         cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType ,
+                         cache:Cache[GenState[T],Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType ,
                                                                                            SendChannelType,
                                                                                            Either[Any, Tuple[Any, GenState[T]]]]:
             return (yield from (cache.return_value(Right((input.ast, input)), input)))
@@ -49,13 +49,13 @@ class Finder(Generator[T], Generic[T]):
 #: consuming or modifying state.
 anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
 
-def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[Any])-> bool:
+def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[GenState[T], Any])-> bool:
     state = GenState[Any].from_ast(ast = data, restore_pruned=True)
     result = alg.run(state, cache)
     return isinstance(result, Right)
 
 
-def _find(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[Any]) -> PyGenerator[ParseResult[Any], None, None]:
+def _find(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[GenState[T], Any]) -> PyGenerator[ParseResult[Any], None, None]:
     if not isinstance(data, (Marked, Collect)):
         if _matches(alg, data, cache):
             yield data
