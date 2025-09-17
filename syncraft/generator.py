@@ -364,16 +364,17 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             if input.pruned:
                 assert callable(generator), "In pruned mode, a generator function must be provided."
-                return (yield from cache.return_value(Right((generator(), input))))
+                return (yield from cache.return_value(Right((generator(), input)), input))
             else:
                 current = input.ast
                 assert callable(predicate), "In non-pruned mode, a predicate function must be provided."
                 if not isinstance(current, Token) or not predicate(current): # type: ignore
-                    return (yield from cache.return_value( Left(Error(None, 
-                                      message=f"Expected a token, but got {current}.", 
-                                      state=input))))
+                    return (yield from cache.return_value( 
+                        Left(Error(None, 
+                                  message=f"Expected a token, but got {current}.", 
+                                  state=input)), input))
                 else:
-                    return (yield from cache.return_value(Right((current, input))))
+                    return (yield from cache.return_value(Right((current, input)), input))
         return cls(primitive_run, _name=name)  # type: ignore
         
 

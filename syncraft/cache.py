@@ -56,9 +56,9 @@ class InProgress(Generic[Ret]):
     
 @dataclass
 class Cache(Generic[Ret]):
-    cache: WeakKeyDictionary[Callable[..., Any], Dict[Hashable, Ret | InProgress[Ret]]] = field(default_factory=WeakKeyDictionary)
+    cache: WeakKeyDictionary[Callable[[Hashable, Cache[Ret]], Any], Dict[Hashable, Ret | InProgress[Ret]]] = field(default_factory=WeakKeyDictionary)
 
-    def __contains__(self, f: Callable[..., Any]) -> bool:
+    def __contains__(self, f: Callable[[Hashable, Cache[Ret]], Any]) -> bool:
         return f in self.cache
 
     def __repr__(self) -> str:
@@ -75,39 +75,43 @@ class Cache(Generic[Ret]):
     def __or__(self, other: Cache[Any]) -> Cache[Any]:
         assert self.cache is other.cache, "There should be only one global cache"
         return self
-    
-    def return_value(self, v: Ret) -> Generator[Any, Any, Ret]:
-        def return_value_f()->Generator[Any, Any, Ret]:
+
+    def return_value(self, v: Ret, s: Hashable) -> Generator[Any, Any, Ret]:
+        def return_value_f(_, cache: Cache[Ret]) -> Generator[Any, Any, Ret]:
             yield from ()
             return v
-        return (yield from self.gen(return_value_f))
+        return (yield from self.gen(return_value_f, s))
     
 
     def gen(self, 
-            f: Callable[..., Generator[Any, Any, Ret]], 
-            *args: Any, 
-            **kwargs: Any) -> Generator[Any, Any, Ret]:
-        
+            f: Callable[[Hashable, Cache[Ret]], Generator[Any, Any, Ret]], 
+            key: Hashable, 
+            ) -> Generator[Any, Any, Ret]:
+        def grow_inprogress(d: Dict[Hashable, Ret | InProgress[Ret]], key: Hashable, fix: Ret) -> None:
+            v = d.get(key, None)
+            if isinstance(v, InProgress):
+                if v.payload != fix:
+                    d[key] = InProgress(fix)
+                else:
+                    d[key] = fix
+            else:
+                d[key] = fix
+
         if f not in self.cache:
             self.cache.setdefault(f, dict())
         c: Dict[Hashable, Ret | InProgress[Ret]] = self.cache[f]
-        key = (tuple(filter(lambda x: not isinstance(x, Cache), args)), tuple(sorted(filter(lambda item: not isinstance(item[1], Cache), kwargs.items()))))        
         if key in c:
-            while True:
+            v = c[key]
+            while isinstance(v, InProgress):
+                fix = yield v
+                if isinstance(fix, InProgress):
+                    raise LeftRecursionError("Can not fix InProgress with another InProgress", offending=fix, expect="a final value")
+                grow_inprogress(c, key, fix)
                 v = c[key]
-                if not isinstance(v, InProgress):
-                    return v
-                else:
-                    fix = yield v
-                    match fix:
-                        case InProgress(payload=_):
-                            # can not fix in progress with another in progress
-                            raise LeftRecursionError(f"Left-recursion detected in Algebra {f}", offending=f, state=args)
-                    c[key] = fix
-                    return fix
+            return v  
         try:
             c[key] = InProgress()
-            result = yield from f(*args, **kwargs)
+            result = yield from f(key, self)
             assert not isinstance(result, InProgress), "Function should not return InProgress"
             c[key] = result
             return result

@@ -128,7 +128,7 @@ class Parser(Algebra[T, ParserState[T]]):
                               Either[Any, Tuple[T, ParserState[T]]]]:
             while True:
                 if state.ended():
-                    return (yield from cache.return_value(Left(state)))
+                    return (yield from cache.return_value(Left(state), state))
                 elif state.pending():
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
@@ -137,9 +137,9 @@ class Parser(Algebra[T, ParserState[T]]):
                     token = state.current()
                     assert callable(predicate), "Predicate must be callable"
                     if token is None or not predicate(token):
-                        return (yield from cache.return_value(Left(state)))
+                        return (yield from cache.return_value(Left(state), state))
                     else:
-                        return (yield from cache.return_value(Right((token, state.advance()))))
+                        return (yield from cache.return_value(Right((token, state.advance())), state))
         captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):

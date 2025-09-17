@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Callable, Generic, Tuple, TypeVar, Optional, Any, Self, 
-    Generator, List, Dict
+    Generator, List, Dict, Hashable
 )
 from enum import Enum
 from dataclasses import dataclass, field, replace, is_dataclass, fields

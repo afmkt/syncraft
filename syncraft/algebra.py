@@ -102,7 +102,7 @@ class Algebra(Generic[A, S]):
                                                                    SendChannelType, 
                                                                    Either[Any, Tuple[A, S]]]:
         try:
-            return (yield from cache.gen(self.run_f, input, cache))
+            return (yield from cache.gen(self.run_f, input))
         except LeftRecursionError as e:
             if e.offending is self.run_f or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")
@@ -135,7 +135,7 @@ class Algebra(Generic[A, S]):
                 error=error,
                 this=cls,
                 state=input
-            ))))
+            )), input))
 
         return cls(fail_run, _name=cls.__name__ + '.fail')
     
@@ -145,7 +145,7 @@ class Algebra(Generic[A, S]):
                         cache:Cache[Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                               SendChannelType, 
                                                                               Either[Any, Tuple[A, S]]]:
-            return (yield from cache.return_value(Right((value, input))))
+            return (yield from cache.return_value(Right((value, input)), input))
         return cls(success_run, _name=cls.__name__ + '.success')
     
     @classmethod
@@ -409,7 +409,7 @@ class Algebra(Generic[A, S]):
                                     return Left(other_err)
                             raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
                         case _ as anything:
-                            yield anything
+                            send_value = yield anything
             except StopIteration as e:
                 match e.value:
                     case Right((value, state)) :
