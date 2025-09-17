@@ -4,6 +4,11 @@ from dataclasses import dataclass, field, replace
 import inspect
 import functools
 import types
+from rich import print
+
+def debug_print(*args: Any, **kwargs: Any) -> None:
+    # print(*args, **kwargs)
+    pass
 
 
 class CallWith:

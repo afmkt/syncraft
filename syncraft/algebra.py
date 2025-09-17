@@ -9,7 +9,7 @@ from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, InProgress, LeftRecursionError, Right, Left, Incomplete, Either, Finalized
 from syncraft.constraint import Bindable
 from functools import cached_property
-from syncraft.dev import debug_print
+from syncraft.utils import debug_print
 import re
 
 

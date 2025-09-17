@@ -6,7 +6,7 @@ from weakref import WeakKeyDictionary
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from collections import deque
-from syncraft.dev import debug_print
+from syncraft.utils import debug_print
 
 
 L = TypeVar('L')  # Left type for combined results
