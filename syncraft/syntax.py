@@ -6,8 +6,8 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Right, Left, Incomplete
-from syncraft.cache import Cache
+from syncraft.algebra import Algebra, Error
+from syncraft.cache import Cache, Right, Left, Incomplete, InProgress, LeftRecursionError
 from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
 from types import MethodType, FunctionType
@@ -595,13 +595,16 @@ def run(*,
     parser = syntax(alg, **kwargs)
     input = CallWith(alg.state, **kwargs)()
     if input:
-        gen = parser.run(input, cache=Cache())
         try:
+            gen = parser.run(input, cache=Cache())
             result = next(gen)
-            while isinstance(result, Incomplete):
-                old_input = result.state
-                result = gen.send(old_input)
-            return Error(this=result, message="Algebra yield data that is not Incomplete"), None 
+            while True:
+                if isinstance(result, Incomplete):
+                    old_input = result.state
+                    result = gen.send(old_input)
+                elif isinstance(result, InProgress):
+                    raise LeftRecursionError("Recursive parsing without progress", offending=parser, expect=Cache.gen)
+                return Error(this=result, message="Algebra yield data that is not Incomplete or InProgress"), None 
         except StopIteration as e:
             result = e.value                
             if isinstance(result, Right):

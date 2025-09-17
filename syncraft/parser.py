@@ -3,10 +3,10 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable
 )
-from syncraft.cache import Cache
+from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
-    Either, Left, Right, Error, Algebra, Incomplete
+     Error, Algebra, YieldChannelType, SendChannelType
 )
 from dataclasses import dataclass, field, replace
 
@@ -20,7 +20,8 @@ T = TypeVar('T', bound=Hashable)
 
 
 def underline(text: str) -> str:
-    return f"\033[4m{text}\033[0m"
+    return ''.join(ch + '\u0332' for ch in text)
+
 @dataclass(frozen=True)
 class ParserState(Bindable, Generic[T]):
     """Immutable state for the SQL token stream during parsing.
@@ -39,11 +40,11 @@ class ParserState(Bindable, Generic[T]):
     def __repr__(self) -> str:
         indicator = '\u25cf'
         indicator = '\u007c\u25BA'  # right arrow
-        return (f"ParserState("
-                f"@({self.current() if not self.ended() else 'EOF'}), "
-                f"input=[{self.before() + (' ' if len(self.before())>0 else '')}{indicator}{(' ' if len(self.after()) > 0 else '') + self.after()}], "
-                f"ended={self.ended()}, "
-                f"pending={self.pending()})")
+        current = f"@({self.current() if not self.ended() else 'EOF'})"
+        input = f"input=[{self.before() + (' ' if len(self.before())>0 else '')}{indicator}{(' ' if len(self.after()) > 0 else '') + self.after()}]"
+        ended = f"ended={self.ended()}" if self.ended() else ''
+        pending = f"pending={self.pending()}" if self.pending() else ''
+        return ("ParserState(" + ", ".join(filter(lambda x: x != '', [input, current, ended, pending])) +")")
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -122,14 +123,16 @@ class Parser(Algebra[T, ParserState[T]]):
         name = predicate.__name__ if predicate is not None else "." 
         def primitive_run(state: ParserState[T], 
                           cache:Cache[Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
-                              Incomplete[ParserState[T]], 
-                              ParserState[T], 
+                              YieldChannelType, 
+                              SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
             while True:
                 if state.ended():
                     return (yield from cache.return_value(Left(state)))
                 elif state.pending():
-                    state = yield Incomplete(state)
+                    tmp = yield Incomplete(state)
+                    assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
+                    state = tmp
                 else:
                     token = state.current()
                     assert callable(predicate), "Predicate must be callable"

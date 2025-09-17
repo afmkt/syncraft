@@ -1,95 +1,106 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Tuple, List
+from __future__ import annotations
+from syncraft.ast import Nothing, Token
+from syncraft.parser import parse_word
+from syncraft.generator import generate_with
+from syncraft.syntax import Syntax
 
-@dataclass
-class Result:
-    node: Any
-    pos: int
-    success: bool
+from syncraft.cache import LeftRecursionError
+import re
+from rich import print
+from syncraft.ast import TokenClass
+literal = Syntax.config(token_class = TokenClass.simple()).literal
 
-    def __repr__(self):
-        if not self.success:
-            return "Fail"
-        return f"({self.node}, pos={self.pos})"
 
-@dataclass
-class LeftRecEntry:
-    in_progress: bool
-    result: Result
+def test_direct_recursion()->None:
+    Expr1 = Syntax.lazy(lambda: literal('a') + ~Expr1)
+    v, s = parse_word(Expr1, 'a a a')
+    x, _ = v.bimap()
+    assert x == (
+        Token( text='a'), 
+        (
+            Token( text='a'), 
+            (
+                Token( text='a'), 
+                Nothing()
+            )
+        )
+    )
 
-class Parser:
-    def __init__(self, tokens: List[str]):
-        self.tokens = tokens
-        self.cache: Dict[Tuple[str, int], LeftRecEntry] = {}
-
-    def parse(self, rule: str, pos: int) -> Result:
-        key = (rule, pos)
-
-        # already cached?
-        if key in self.cache:
-            entry = self.cache[key]
-            if entry.in_progress:
-                # recursion without progress: return current seed
-                return entry.result
-            else:
-                return entry.result
-
-        # initialize with seed + in-progress flag
-        seed = Result(node=None, pos=pos, success=False)
-        self.cache[key] = LeftRecEntry(in_progress=True, result=seed)
-
-        # first attempt
-        result = self.run_rule(rule, pos)
-        if result.success:
-            self.cache[key].result = result
-
-            # growth loop: keep improving while progress
-            while True:
-                new_result = self.run_rule(rule, pos)
-                if new_result.success and new_result.pos > self.cache[key].result.pos:
-                    self.cache[key].result = new_result
-                else:
-                    break
-
-        # mark as finished
-        self.cache[key].in_progress = False
-        return self.cache[key].result
-
-    def run_rule(self, rule: str, pos: int) -> Result:
-        if rule == "Expr":
-            # Expr -> Expr "+" Term | Term
-            # Try left recursion first
-            left = self.parse("Expr", pos)
-            if left.success and left.pos < len(self.tokens) and self.tokens[left.pos] == "+":
-                right = self.parse("Term", left.pos + 1)
-                if right.success:
-                    return Result(
-                        node=("Add", left.node, right.node),
-                        pos=right.pos,
-                        success=True
+def test_mutual_recursion()->None:
+    A = Syntax.lazy(lambda: literal('a') + ~B | literal('a'))
+    B = Syntax.lazy(lambda: literal('b') + ~A | literal('b'))
+    v, s = parse_word(A, 'a b a b a')
+    ast1, inv = v.bimap()
+    assert ast1 == (
+        Token( text='a'), 
+        (
+            Token( text='b'), 
+            (
+                Token( text='a'), 
+                (
+                    Token( text='b'), 
+                    (
+                        Token( text='a'), 
+                        Nothing()
                     )
-            # Fallback: Term
-            return self.parse("Term", pos)
+                )
+            )
+        )
+    )
+    x, y = inv(ast1).bimap()
+    assert x == ast1
+    vv, ss = generate_with(A, y(x))
+    assert vv == v
 
-        elif rule == "Term":
-            # Term -> number
-            if pos < len(self.tokens) and self.tokens[pos].isdigit():
-                return Result(node=int(self.tokens[pos]), pos=pos + 1, success=True)
-            return Result(node=None, pos=pos, success=False)
+def test_fake_left_recursion()->None:
+    Expr1 = Syntax.lazy(lambda: ~Expr1 + literal('a'))
+    v, s = parse_word(Expr1, 'a a a')
+    print(v)
+    print(s)
 
-        raise ValueError(f"Unknown rule {rule}")
+def test_fake_left_recovery()->None:
+    Expr1 = Syntax.lazy(lambda: ~Expr1 + literal('a'))
+    v, s = parse_word(Expr1, 'a a a')
+    print(v)
+    print(s)
 
-# ------------------------------
-# Demo
-# ------------------------------
-def test(expr: str):
-    tokens = expr.split()
-    parser = Parser(tokens)
-    result = parser.parse("Expr", 0)
-    print(expr, "=>", result)
+def test_left_recursion_error()->None:
+    """
+    need better error message here, currently it is
+    LeftRecursionError(), should take the stack into consideration
+    """
+    Expr1 = Syntax.lazy(lambda: Expr1 + literal('a'))
+    v, s = parse_word(Expr1, 'a a a')
+    print(v)
+    print(s)
+
+
+def test_left_recursion_recover()->None:
+    a = literal('a')
+    Expr1 = Syntax.lazy(lambda: (Expr1 + a) | a)
+    v, s = parse_word(Expr1, 'a a a')
+    print("---" * 100)
+    print(v)
+    print(s)
+
+
+def test_indirect_left_recursion_error()->None:
+    A = Syntax.lazy(lambda: ~B + literal('a'))
+    B = Syntax.lazy(lambda: ~A + literal('b'))
+    v, s = parse_word(A, 'a b a b a')
+
+
+def test_indirect_left_recursion_recover()->None:
+    A = Syntax.lazy(lambda: ~B + literal('a') | literal('a'))
+    B = Syntax.lazy(lambda: ~A + literal('b') | literal('b'))
+    v, s = parse_word(A, 'a b a b a')    
+
 
 if __name__ == "__main__":
-    test("42")
-    test("42 + 7")
-    test("42 + 7 + 3")
-    test("1 + 2 + 3 + 4")
+    # test_direct_recursion()
+    # test_mutual_recursion()
+    # test_left_recursion_error()
+    # test_fake_left_recursion()
+    test_left_recursion_recover()
+    # test_indirect_left_recursion_error()
+    # test_indirect_left_recursion_recover()

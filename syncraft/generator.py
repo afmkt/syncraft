@@ -7,9 +7,9 @@ from typing import (
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
-    Algebra, Either, Left, Right, Error, Incomplete
+    Algebra, Error, YieldChannelType, SendChannelType
 )
-from syncraft.cache import Cache
+from syncraft.cache import Cache, Either, Left, Right, Incomplete
 
 from syncraft.ast import (
     ParseResult, AST, Token, TokenClass, 
@@ -183,7 +183,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         Returns:
             Algebra[B, GenState[T]]: An algebra yielding the final result.
         """
-        def flat_map_run(input: GenState[T], cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[B, GenState[T]]]]:
+        def flat_map_run(input: GenState[T], 
+                         cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType, 
+                                                                                           SendChannelType, 
+                                                                                           Either[Any, Tuple[B, GenState[T]]]]:
             if not input.pruned and (not isinstance(input.ast, Then) or isinstance(input.ast, Nothing)):
                 return Left(Error(this=self, 
                                     message=f"Expect Then got {input.ast}",
@@ -227,7 +230,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
-        def many_run(input: GenState[T], cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
+        def many_run(input: GenState[T], 
+                     cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType, 
+                                                                                       SendChannelType, 
+                                                                                       Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
             if input.pruned:
                 ret: List[Any] = []
                 while True:
@@ -286,10 +292,15 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: An
             algebra yielding which branch succeeded and its value.
         """
-        def or_else_run(input: GenState[T], cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+        def or_else_run(input: GenState[T], 
+                        cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType, 
+                                                                                          SendChannelType, 
+                                                                                          Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
             def exec(kind: ChoiceKind | None, 
                      left: GenState[T], 
-                     right: GenState[T]) -> PyGenerator[Incomplete[GenState[T]], GenState[T], Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+                     right: GenState[T]) -> PyGenerator[YieldChannelType, 
+                                                        SendChannelType, 
+                                                        Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
                 match kind:
                     case ChoiceKind.LEFT:
                         self_result = yield from self.run(left, cache)
@@ -312,9 +323,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
                             case Left(error):
                                 if isinstance(error, Error):
-                                    if error.fatal:
-                                        return Left(error)
-                                    elif error.committed:
+                                    if error.committed:
                                         return Left(replace(error, committed=False))
                                 other_result = yield from other.run(right, cache)
                                 match other_result:
@@ -350,8 +359,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         name = generator.__name__ if generator is not None else "." 
         def primitive_run(input: GenState[T], 
                           cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[
-                              Incomplete[GenState[T]], 
-                              GenState[T], 
+                              YieldChannelType, 
+                              SendChannelType, 
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             if input.pruned:
                 assert callable(generator), "In pruned mode, a generator function must be provided."

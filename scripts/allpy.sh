@@ -5,7 +5,7 @@ DIR="${1:-.}"  # default to current directory if no argument given
 
 # Find all .py files recursively
 find "$DIR" -type f -name "*.py" | while read -r file; do
-    echo "===== $file ====="
+    echo "# ===== $file ====="
     cat "$file"
     echo -e "\n"
 done

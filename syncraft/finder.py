@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import (
     Any, Tuple, Generator as PyGenerator, TypeVar, Generic, Hashable
 )
+
 from dataclasses import dataclass
 from syncraft.algebra import (
-    Algebra, Either, Right, Incomplete
+    Algebra, Error, YieldChannelType, SendChannelType
 )
 from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect
-
+from syncraft.cache import Either, Left, Right
 from syncraft.generator import GenState, Generator
 from syncraft.cache import Cache
 from syncraft.syntax import Syntax
@@ -35,7 +36,10 @@ class Finder(Generator[T], Generic[T]):
             Algebra[Any, GenState[T]]: An algebra that always succeeds with the
             tuple ``(input.ast, input)``.
         """
-        def anything_run(input: GenState[T], cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[Incomplete[GenState[T]] ,GenState[T],Either[Any, Tuple[Any, GenState[T]]]]:
+        def anything_run(input: GenState[T], 
+                         cache:Cache[Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType ,
+                                                                                           SendChannelType,
+                                                                                           Either[Any, Tuple[Any, GenState[T]]]]:
             return (yield from (cache.return_value(Right((input.ast, input)))))
         return cls(anything_run, _name=cls.__name__ + '.anything')
 
