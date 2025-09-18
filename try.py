@@ -211,12 +211,12 @@ def test_to() -> None:
     assert u == ast2
 
 if __name__ == "__main__":
-    test_indirect_left_recursion_2()
+    # test_indirect_left_recursion_2()
     # test_to()
     # test_direct_recursion()
     # test_mutual_recursion()
     # test_left_recursion_error()
     # test_fake_left_recursion()
-    # test_left_recursion_recover()
+    test_left_recursion_recover()
     # test_indirect_left_recursion_error()
     # test_indirect_left_recursion_recover()

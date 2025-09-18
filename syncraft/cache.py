@@ -135,7 +135,7 @@ class Cache(Generic[A, Ret]):
                         new_value = fix.value[0]
                         # new_state = fix.value[1]
                         if old_value == new_value:
-                            debug_print(f'Fixing InProgress at {key} => <{v.payload}>')
+                            debug_print(f'Fixing InProgress at {key} => {v.payload}')
                             d[key] = v.payload  # type: ignore
                         else:
                             debug_print(f'Growing InProgress at {key} => {fix}')
@@ -144,9 +144,11 @@ class Cache(Generic[A, Ret]):
                         debug_print(f'Growing InProgress at {key} => {fix}')
                         d[key] = replace(v, payload=fix)
                 else:
+                    debug_print(f'Update cache at {key} => {fix}')
                     d[key] = fix
             else:
                 assert not isinstance(fix, Finalized), "Can not put Finalized into cache"
+                debug_print(f'Update cache at {key} => {fix}')
                 d[key] = fix
 
         if f not in self.cache:
@@ -159,16 +161,15 @@ class Cache(Generic[A, Ret]):
                 fix = yield v
                 grow_inprogress(c, key, fix)
                 v = c[key]
-            debug_print(f'--- {f} Cache hit ---')
+            debug_print(f'--- {f} Cache hit at {key} ---')
+            debug_print(v)
             return v  
         try:
             c[key] = InProgress()
             result = yield from f(key, self)
             assert not isinstance(result, InProgress), "Function should not return InProgress"
-            debug_print(f'--- {f} Cache updated ---')
-            debug_print(c[key])
-            c[key] = result
-            debug_print(c[key])
+            debug_print(f'--- {f} Cache updated at {key} ---')
+            grow_inprogress(c, key, result)
             return result
         except Exception as e:
             c.pop(key, None)

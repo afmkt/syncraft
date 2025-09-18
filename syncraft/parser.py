@@ -9,12 +9,11 @@ from syncraft.algebra import (
      Error, Algebra, YieldChannelType, SendChannelType
 )
 from dataclasses import dataclass, field, replace
-
+from syncraft.utils import debug_print
 from syncraft.syntax import Syntax
 
 from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
 from syncraft.constraint import Bindable
-
 
 T = TypeVar('T', bound=Hashable)  
 
@@ -24,31 +23,40 @@ def underline(text: str) -> str:
 
 @dataclass(frozen=True)
 class ParserState(Bindable, Generic[T]):
-    """Immutable state for the SQL token stream during parsing.
 
-    Keeps a tuple of tokens and the current index. The state is passed through
-    parser combinators and can be copied or advanced safely.
-
-    Attributes:
-        input: The full, immutable sequence of tokens.
-        index: Current position within ``input``.
-    """
     input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
-    final: bool = False  # Whether this is a final state (for error reporting)
+    final: bool = False  
 
     def __repr__(self) -> str:
+        indicator = '.'
         indicator = '\u25cf'
-        indicator = '\u007c\u25BA'  # right arrow
-        current = f"@({self.current() if not self.ended() else 'EOF'})"
-        input = f"input=[{self.before() + (' ' if len(self.before())>0 else '')}{indicator}{(' ' if len(self.after()) > 0 else '') + self.after()}]"
-        ended = f"ended={self.ended()}" if self.ended() else ''
-        pending = f"pending={self.pending()}" if self.pending() else ''
-        return ("ParserState(" + ", ".join(filter(lambda x: x != '', [input, ended, pending])) +")")
+        indicator = '\u007c\u25BA'  
+        parts = [f"input=[{' '.join(self.before() + [indicator] + self.after())}]"]
+        if self.ended():
+            parts.append("ended=True")
+        if self.pending():
+            parts.append("pending=True")
+        return f"ParserState({', '.join(parts)})"
 
     def __str__(self) -> str:
         return self.__repr__()
+
+
+    def before(self, length: Optional[int] = 3)->List[str]:
+        length = min(self.index, length) if length is not None else self.index
+        ret = [underline(str(token)) for token in self.input[self.index - length:self.index]]
+        if self.index - length > 0:
+            ret = ["..."] + ret
+        return ret
     
+    def after(self, length: Optional[int] = 3)->List[str]:
+        length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
+        ret = [underline(str(token)) for token in self.input[self.index:self.index + length]]
+        if self.index + length < len(self.input):
+            ret = ret + ["..."]
+        return ret
+
     def __add__(self, other: 'ParserState[T]') -> 'ParserState[T]':
         if not isinstance(other, ParserState):
             raise SyncraftError("Can only concatenate ParserState with another ParserState", offender=self, expect="ParserState")
@@ -58,30 +66,10 @@ class ParserState(Bindable, Generic[T]):
 
 
 
-    def before(self, length: Optional[int] = 3)->str:
-        length = min(self.index, length) if length is not None else self.index
-        ret = " ".join(f"{underline(str(token))}" for token in self.input[self.index - length:self.index])
-        if self.index - length > 0:
-            ret = "... " + ret
-        return ret
-    
-    def after(self, length: Optional[int] = 3)->str:
-        length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
-        ret = " ".join(f"{underline(str(token))}" for token in self.input[self.index:self.index + length])
-        if self.index + length < len(self.input):
-            ret = ret + " ..."
-        return ret
+
 
 
     def current(self)->T:
-        """Get the current token at ``index``.
-
-        Returns:
-            T: The token at the current index.
-
-        Raises:
-            IndexError: If attempting to read past the end of the stream.
-        """
         if self.index >= len(self.input):
             raise SyncraftError("Attempted to access token beyond end of stream", offender=self, expect="index < len(input)")
         return self.input[self.index]
@@ -91,11 +79,9 @@ class ParserState(Bindable, Generic[T]):
         return self.index >= len(self.input) and not self.final
 
     def ended(self) -> bool:
-        """Whether the cursor is at or past the end of the token stream."""
         return self.index >= len(self.input) and self.final
 
     def advance(self) -> ParserState[T]:
-        """Return a new state advanced by one token (bounded at end)."""
         return replace(self, index=min(self.index + 1, len(self.input)))
             
     

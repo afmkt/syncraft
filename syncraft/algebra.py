@@ -127,7 +127,21 @@ class Algebra(Generic[A, S]):
                                                                                    SendChannelType, 
                                                                                    Either[Any, Tuple[Any, S]]]:
             alg = thunk()
-            result = yield from alg.run(input, cache)
+            last_result = None
+            while True:
+                result = yield from alg.run(input, cache)
+                match result:
+                    case Right(value=(v, s), offender=offender):
+                        debug_print(f'Lazy resolved to {v} at {s}')
+                        if offender is not algebra_lazy_run:
+                            break
+                        else:
+                            if last_result == result:
+                                break
+                            last_result = result
+                            continue
+                    case _:
+                        break
             return result
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
     
@@ -404,13 +418,14 @@ class Algebra(Generic[A, S]):
                 offender = None
                 send_value:Any = None
                 while True:
-                    # debug_print()
-                    # debug_print(f"send: {repr(send_value)}")
-                    # debug_print(f"offender: {offender}")
-                    # debug_print(cache.stack)
+                    debug_print()
+                    debug_print(f"send: {repr(send_value)}")
+                    debug_print(f"offender: {offender}")
+                    debug_print(cache.stack)
                     left = gen.send(send_value) 
                     match left:
                         case InProgress(payload = Right((x_value, x_state))):
+                            assert offender is None or offender is left.offender, "offender should not change"
                             offender = left.offender
                             other_result = yield from other.run(x_state, cache)
                             match other_result:
@@ -422,6 +437,7 @@ class Algebra(Generic[A, S]):
                                     continue
                                     
                         case InProgress(payload = _):
+                            assert offender is None or offender is left.offender, "offender should not change"
                             offender = left.offender
                             other_result = yield from other.run(input, cache)
                             match other_result:
@@ -438,10 +454,10 @@ class Algebra(Generic[A, S]):
             except StopIteration as e:
                 match e.value:
                     case Right((value, state)) :
-                        # debug_print(f"or_else succeeded with {value} at {state}")
-                        # debug_print(f"offender: {offender}")
-                        # debug_print(cache.stack)
-                        return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))            
+                        debug_print(f"or_else succeeded with {value} at {state}")
+                        debug_print(f"offender: {offender}")
+                        debug_print(cache.stack)
+                        return Right((Choice(kind=ChoiceKind.LEFT, value=value), state), offender=offender)
                     case Left(err):
                         if isinstance(err, Error):
                             if err.committed:
@@ -449,14 +465,14 @@ class Algebra(Generic[A, S]):
                         other_result = yield from other.run(input, cache)
                         match other_result:
                             case Right((other_value, other_state)):
-                                # debug_print(f"or_else other succeeded with {other_value} at {other_state}")
-                                # debug_print(f"offender: {offender}")
-                                # debug_print(cache.stack)
-                                return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
+                                debug_print(f"or_else other succeeded with {other_value} at {other_state}")
+                                debug_print(f"offender: {offender}")
+                                debug_print(cache.stack)
+                                return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state), offender=offender)
                             case Left(other_err):
-                                # debug_print(f"or_else other failed with {other_err}")
-                                # debug_print(f"offender: {offender}")
-                                # debug_print(cache.stack)
+                                debug_print(f"or_else other failed with {other_err}")
+                                debug_print(f"offender: {offender}")
+                                debug_print(cache.stack)
                                 return Left(other_err)
                         raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
                 raise SyncraftError(f"Unexpected result type from {self}", offender=e.value, expect=(Left, Right))
