@@ -27,6 +27,11 @@ class Left(Either[L, Any]):
 class Right(Either[Any, R]):
     value: R
     offender: Callable[..., Any] | None = None
+    def __repr__(self) -> str:
+        if isinstance(self.value, tuple):
+            s = '\n  => '.join([repr(self.value[0]), repr(self.value[1]), repr(self.offender)])
+            return f"Right({s})"
+        return f"Right({self.value})"
 
 
 @dataclass(frozen=True)
@@ -118,14 +123,17 @@ class Cache(Generic[A, Ret]):
                     if v.payload is None:
                         if fix.payload is None:
                             raise LeftRecursionError("Can not fix InProgress with another InProgress", offender=v.offender, expect="a final value")
-                        debug_print(f'Finalizing InProgress at {key} => {fix.payload}')
+                        debug_print(f'\nFinalizing InProgress at {key}')
+                        debug_print(f"=> {fix.payload}")
                         d[key] = fix.payload
                     else:
-                        debug_print(f'Finalizing InProgress at {key} => {v.payload}')
+                        debug_print(f'\nFinalizing InProgress at {key}')
+                        debug_print(f"=> {v.payload}")
                         d[key] = v.payload
                 elif v.payload != fix:
                     if v.payload is None:
-                        debug_print(f'Growing InProgress at {key} => {fix}')
+                        debug_print(f'\nGrowing InProgress at {key}') 
+                        debug_print(f'=> {fix}')
                         d[key] = replace(v, payload=fix)
                     elif isinstance(fix, Right):
                         assert isinstance(v.payload, Right), "Can only combine Right with Right"
@@ -135,20 +143,25 @@ class Cache(Generic[A, Ret]):
                         new_value = fix.value[0]
                         # new_state = fix.value[1]
                         if old_value == new_value:
-                            debug_print(f'Fixing InProgress at {key} => {v.payload}')
+                            debug_print(f'\nFixing InProgress at {key}')
+                            debug_print(f' => {v.payload}')
                             d[key] = v.payload  # type: ignore
                         else:
-                            debug_print(f'Growing InProgress at {key} => {fix}')
+                            debug_print(f'\nGrowing InProgress at {key}')
+                            debug_print(f' => {fix}')
                             d[key] = replace(v, payload=fix) # type: ignore
                     else:
-                        debug_print(f'Growing InProgress at {key} => {fix}')
+                        debug_print(f'\nGrowing InProgress at {key}')
+                        debug_print(f' => {fix}')
                         d[key] = replace(v, payload=fix)
                 else:
-                    debug_print(f'Update cache at {key} => {fix}')
+                    debug_print(f'\nUpdate cache at {key}')
+                    debug_print(f' => {fix}')
                     d[key] = fix
             else:
                 assert not isinstance(fix, Finalized), "Can not put Finalized into cache"
-                debug_print(f'Update cache at {key} => {fix}')
+                debug_print(f'\nUpdate cache at {key}')
+                debug_print(f' => {fix}')
                 d[key] = fix
 
         if f not in self.cache:
@@ -161,14 +174,14 @@ class Cache(Generic[A, Ret]):
                 fix = yield v
                 grow_inprogress(c, key, fix)
                 v = c[key]
-            debug_print(f'--- {f} Cache hit at {key} ---')
+            debug_print(f'\n--- {f} Cache hit at {key} ---')
             debug_print(v)
             return v  
         try:
             c[key] = InProgress()
             result = yield from f(key, self)
             assert not isinstance(result, InProgress), "Function should not return InProgress"
-            debug_print(f'--- {f} Cache updated at {key} ---')
+            debug_print(f'\n--- {f} Cache updated at {key} ---')
             grow_inprogress(c, key, result)
             return result
         except Exception as e:

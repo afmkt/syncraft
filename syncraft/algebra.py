@@ -132,7 +132,8 @@ class Algebra(Generic[A, S]):
                 result = yield from alg.run(input, cache)
                 match result:
                     case Right(value=(v, s), offender=offender):
-                        debug_print(f'Lazy resolved to {v} at {s}')
+                        debug_print(f'\n--- Lazy resolved at {s} ---')
+                        debug_print(f'=> {v}')
                         if offender is not algebra_lazy_run:
                             break
                         else:
@@ -419,7 +420,7 @@ class Algebra(Generic[A, S]):
                 send_value:Any = None
                 while True:
                     debug_print()
-                    debug_print(f"send: {repr(send_value)}")
+                    debug_print(f"\nsend: {repr(send_value)}")
                     debug_print(f"offender: {offender}")
                     debug_print(cache.stack)
                     left = gen.send(send_value) 
@@ -454,7 +455,7 @@ class Algebra(Generic[A, S]):
             except StopIteration as e:
                 match e.value:
                     case Right((value, state)) :
-                        debug_print(f"or_else succeeded with {value} at {state}")
+                        debug_print(f"\nor_else succeeded with {value} at {state}")
                         debug_print(f"offender: {offender}")
                         debug_print(cache.stack)
                         return Right((Choice(kind=ChoiceKind.LEFT, value=value), state), offender=offender)
@@ -465,12 +466,12 @@ class Algebra(Generic[A, S]):
                         other_result = yield from other.run(input, cache)
                         match other_result:
                             case Right((other_value, other_state)):
-                                debug_print(f"or_else other succeeded with {other_value} at {other_state}")
+                                debug_print(f"\nor_else other succeeded with {other_value} at {other_state}")
                                 debug_print(f"offender: {offender}")
                                 debug_print(cache.stack)
                                 return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state), offender=offender)
                             case Left(other_err):
-                                debug_print(f"or_else other failed with {other_err}")
+                                debug_print(f"\nor_else other failed with {other_err}")
                                 debug_print(f"offender: {offender}")
                                 debug_print(cache.stack)
                                 return Left(other_err)
