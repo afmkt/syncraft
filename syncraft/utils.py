@@ -5,10 +5,19 @@ import inspect
 import functools
 import types
 from rich import print
+import os
+from enum import Enum
+
+
+class ENV_VARS(Enum):
+    SYNCRAFT_DEBUG = "SYNCRAFT_DEBUG"
+
+def set_debug(value:bool = True)->None:
+    os.environ[ENV_VARS.SYNCRAFT_DEBUG.value] = "yes" if value else "no"
 
 def debug_print(*args: Any, **kwargs: Any) -> None:
-    # print(*args, **kwargs)
-    pass
+    if str(os.getenv(ENV_VARS.SYNCRAFT_DEBUG.value)).lower() in ("1", "true", "yes"):
+        print(*args, **kwargs)
 
 
 class CallWith:

@@ -8,8 +8,12 @@ import syncraft.generator as gen
 from typing import Any, Callable, TypeVar, Generic, Generator, cast
 from syncraft.cache import LeftRecursionError
 import re
-from rich import print
+from syncraft.utils import debug_print, set_debug
 from syncraft.ast import TokenClass
+
+set_debug(True)
+
+
 literal = Syntax.config(token_class = TokenClass.simple()).literal
 
 
@@ -57,14 +61,14 @@ def test_mutual_recursion()->None:
 def test_fake_left_recursion()->None:
     Expr1 = Syntax.lazy(lambda: ~Expr1 + literal('a'))
     v, s = parse_word(Expr1, 'a a a')
-    print(v)
-    print(s)
+    debug_print(v)
+    debug_print(s)
 
 def test_fake_left_recovery()->None:
     Expr1 = Syntax.lazy(lambda: ~Expr1 + literal('a'))
     v, s = parse_word(Expr1, 'a a a')
-    print(v)
-    print(s)
+    debug_print(v)
+    debug_print(s)
 
 def test_left_recursion_error()->None:
     """
@@ -73,16 +77,16 @@ def test_left_recursion_error()->None:
     """
     Expr1 = Syntax.lazy(lambda: Expr1 + literal('a'))
     v, s = parse_word(Expr1, 'a a a')
-    print(v)
-    print(s)
+    debug_print(v)
+    debug_print(s)
 
 
 def test_left_recursion_recover()->None:
     a = literal('a')
     Expr1 = Syntax.lazy(lambda: (Expr1 + a) | a)
     v, s = parse_word(Expr1, 'a a a')
-    print("---" * 20, "Parsed AST", "---" * 20)
-    print(v)
+    debug_print("---" * 20, "Parsed AST", "---" * 20)
+    debug_print(v)
 
 
 def test_indirect_left_recursion_error()->None:
@@ -132,20 +136,20 @@ def test_to() -> None:
             // ~END).to(While)
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
     ast, bound = parse_word(syntax, sql)
-    # print(ast)
+    # debug_print(ast)
     g, bound = gen.generate_with(syntax, ast, restore_pruned=True)
     assert ast == g
     x, f = g.bimap()
-    # print(1, x)
+    # debug_print(1, x)
     u,v = gen.generate_with(syntax, f(x), restore_pruned=True)
     assert u == ast
     x.body.append(x.body[0])
-    # print(2, x)
-    # print(f(x))
+    # debug_print(2, x)
+    # debug_print(f(x))
     ast2, bound = gen.generate_with(syntax, f(x), restore_pruned=True) 
-    # print(ast2)
+    # debug_print(ast2)
     y, fy = ast2.bimap()
-    # print(3, y)
+    # debug_print(3, y)
     assert y == x
     u, v = gen.generate_with(syntax, fy(y), restore_pruned=True)
     assert u == ast2
