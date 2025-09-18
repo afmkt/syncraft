@@ -65,7 +65,7 @@ class Walker(Algebra[Any, WalkerState]):
                 ref = input.visited[self.hashable]
                 return Right((RefSpec(ref=id(ref), referent= '' if not hasattr(ref, 'name') else ref.name), input))
             else:
-                return Right((RefSpec(ref=e.offending, referent=''), input))
+                return Right((RefSpec(ref=e.offender, referent=''), input))
         
     @classmethod
     def token(cls, 
@@ -98,7 +98,7 @@ class Walker(Algebra[Any, WalkerState]):
                     data: LazySpec[Any] = LazySpec(name=alg.name, value=value)
                     from_thunk = from_thunk.visit(alg, value) 
                     return Right((data, from_thunk.visit(this, data) if this is not None else from_thunk))
-            raise SyncraftError("flat_map should always return a value or an error.", offending=thunk_result, expect=(Left, Right))
+            raise SyncraftError("flat_map should always return a value or an error.", offender=thunk_result, expect=(Left, Right))
         this = cls(algebra_lazy_run, _name=lambda: f'lazy({this.name})' if this is not None else "lazy(?)", cache=cache)
         return this
 
@@ -116,7 +116,7 @@ class Walker(Algebra[Any, WalkerState]):
                             data = ThenSpec(name=name, kind=kind, left=value, right=result)
                             from_right = from_right.visit(other, result) 
                             return Right((data, from_right.visit(this, data) if this is not None else from_right))
-            raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
+            raise SyncraftError("flat_map should always return a value or an error.", offender=self_result, expect=(Left, Right))
         this = self.__class__(then_run, _name=name, cache=self.cache | other.cache) 
         return this
 
@@ -134,7 +134,7 @@ class Walker(Algebra[Any, WalkerState]):
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Any, WalkerState]:
         if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         this: None | Algebra[Any, WalkerState] = None
         def many_run(input: WalkerState, use_cache:bool) -> PyGenerator[Incomplete[WalkerState], WalkerState, Either[Any, Tuple[Any, WalkerState]]]:
             self_result = yield from self.run(input, use_cache)
@@ -143,7 +143,7 @@ class Walker(Algebra[Any, WalkerState]):
                     data = ManySpec(name=f"*({self.name})", value=value, at_least=at_least, at_most=at_most)
                     from_self = from_self.visit(self, value)
                     return Right((data, from_self.visit(this, data) if this is not None else from_self))
-            raise SyncraftError("many should always return a value or an error.", offending=self_result, expect=(Left, Right))
+            raise SyncraftError("many should always return a value or an error.", offender=self_result, expect=(Left, Right))
         this = self.__class__(many_run, _name=self.name, cache=self.cache)  
         return this
     
@@ -166,7 +166,7 @@ class Walker(Algebra[Any, WalkerState]):
                             data = ChoiceSpec(name=name, left=value, right=result)
                             from_right = from_right.visit(other, result) 
                             return Right((data, from_right.visit(this, data) if this is not None else from_right))
-            raise SyncraftError("", offending=self)
+            raise SyncraftError("", offender=self)
         this = self.__class__(or_else_run, _name=name, cache=self.cache | other.cache) 
         return this
 

@@ -179,7 +179,7 @@ class Constraint:
                 kw_params.append(pname)
             else:
                 raise SyncraftError(f"Unsupported parameter kind: {param.kind}", 
-                                    offending=param.kind, 
+                                    offender=param.kind, 
                                     expect=(inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY))
         def run_f(bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
             # positional argument values

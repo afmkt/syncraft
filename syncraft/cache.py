@@ -26,6 +26,7 @@ class Left(Either[L, Any]):
 @dataclass(frozen=True)
 class Right(Either[Any, R]):
     value: R
+    offender: Callable[..., Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -33,8 +34,8 @@ class Incomplete(Generic[S]):
     state: S
 
 class LeftRecursionError(SyncraftError):
-    def __init__(self, message: str, offending: Any, expect: Any = None, **kwargs: Any) -> None:
-        super().__init__(message, offending, expect, **kwargs)
+    def __init__(self, message: str, offender: Any, expect: Any = None, **kwargs: Any) -> None:
+        super().__init__(message, offender, expect, **kwargs)
         self.stack: List[str] = []
 
     def push(self, name: str) -> LeftRecursionError:
@@ -55,7 +56,7 @@ Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 @dataclass(frozen=True)
 class InProgress(Generic[Ret]):
-    offending: Callable[..., Any] | None = None
+    offender: Callable[..., Any] | None = None
     payload: Optional[Ret] = None
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ class Cache(Generic[A, Ret]):
 
     
     def mark(self, in_progress: InProgress[Ret]) -> InProgress[Ret]:
-        return replace(in_progress, offending=self.stack[-1][0])
+        return replace(in_progress, offender=self.stack[-1][0])
 
     def push(self, f: Callable[..., Generator[Any, Any, Ret]], name: str) -> Cache[A, Ret]:
         self.stack.append((f, name))
@@ -112,11 +113,11 @@ class Cache(Generic[A, Ret]):
             v = d.get(key, None)
             if isinstance(v, InProgress):
                 if isinstance(fix, InProgress):
-                    raise LeftRecursionError("Can not fix InProgress with another InProgress", offending=v.offending, expect="a final value")
+                    raise LeftRecursionError("Can not fix InProgress with another InProgress", offender=v.offender, expect="a final value")
                 elif isinstance(fix, Finalized):
                     if v.payload is None:
                         if fix.payload is None:
-                            raise LeftRecursionError("Can not fix InProgress with another InProgress", offending=v.offending, expect="a final value")
+                            raise LeftRecursionError("Can not fix InProgress with another InProgress", offender=v.offender, expect="a final value")
                         debug_print(f'Finalizing InProgress at {key} => {fix.payload}')
                         d[key] = fix.payload
                     else:

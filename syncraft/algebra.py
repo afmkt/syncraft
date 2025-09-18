@@ -110,7 +110,7 @@ class Algebra(Generic[A, S]):
             f, n = cache.pop()
             return result
         except LeftRecursionError as e:
-            if e.offending is self.run_f  or len(e.stack) == 0:
+            if e.offender is self.run_f  or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")
             else:
                 e = e.push(self.name)
@@ -174,7 +174,7 @@ class Algebra(Generic[A, S]):
         """
         method = getattr(cls, name, None)
         if method is None or not callable(method):
-            raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offending=method, expect='callable')
+            raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offender=method, expect='callable')
         result = CallWith(method, *args, **kwargs)()
         return cast(Algebra[A, S], result)
     
@@ -401,17 +401,17 @@ class Algebra(Generic[A, S]):
                                                                             Either[Any, Tuple[Choice[A, B], S]]]:
             try:
                 gen = self.run(input, cache)
-                offending = None
+                offender = None
                 send_value:Any = None
                 while True:
-                    debug_print()
-                    debug_print(f"send: {repr(send_value)}")
-                    debug_print(f"offending: {offending}")
-                    debug_print(cache.stack)
+                    # debug_print()
+                    # debug_print(f"send: {repr(send_value)}")
+                    # debug_print(f"offender: {offender}")
+                    # debug_print(cache.stack)
                     left = gen.send(send_value) 
                     match left:
                         case InProgress(payload = Right((x_value, x_state))):
-                            offending = left.offending
+                            offender = left.offender
                             other_result = yield from other.run(x_state, cache)
                             match other_result:
                                 case Right((other_value, other_state)):
@@ -422,7 +422,7 @@ class Algebra(Generic[A, S]):
                                     continue
                                     
                         case InProgress(payload = _):
-                            offending = left.offending
+                            offender = left.offender
                             other_result = yield from other.run(input, cache)
                             match other_result:
                                 case Right((other_value, other_state)):
@@ -432,15 +432,15 @@ class Algebra(Generic[A, S]):
                                     send_value = Finalized(Left(other_err))
                                     continue
 
-                            raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
+                            raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
                         case _ as anything:
                             send_value = yield anything
             except StopIteration as e:
                 match e.value:
                     case Right((value, state)) :
-                        debug_print(f"or_else succeeded with {value} at {state}")
-                        debug_print(f"offending: {offending}")
-                        debug_print(cache.stack)
+                        # debug_print(f"or_else succeeded with {value} at {state}")
+                        # debug_print(f"offender: {offender}")
+                        # debug_print(cache.stack)
                         return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))            
                     case Left(err):
                         if isinstance(err, Error):
@@ -449,17 +449,17 @@ class Algebra(Generic[A, S]):
                         other_result = yield from other.run(input, cache)
                         match other_result:
                             case Right((other_value, other_state)):
-                                debug_print(f"or_else other succeeded with {other_value} at {other_state}")
-                                debug_print(f"offending: {offending}")
-                                debug_print(cache.stack)
+                                # debug_print(f"or_else other succeeded with {other_value} at {other_state}")
+                                # debug_print(f"offender: {offender}")
+                                # debug_print(cache.stack)
                                 return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
                             case Left(other_err):
-                                debug_print(f"or_else other failed with {other_err}")
-                                debug_print(f"offending: {offending}")
-                                debug_print(cache.stack)
+                                # debug_print(f"or_else other failed with {other_err}")
+                                # debug_print(f"offender: {offender}")
+                                # debug_print(cache.stack)
                                 return Left(other_err)
-                        raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
-                raise SyncraftError(f"Unexpected result type from {self}", offending=e.value, expect=(Left, Right))
+                        raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
+                raise SyncraftError(f"Unexpected result type from {self}", offender=e.value, expect=(Left, Right))
         return replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
         
 
@@ -558,7 +558,7 @@ class Algebra(Generic[A, S]):
             ``at_most<at_least``).
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: S, 
                      cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                          SendChannelType, 

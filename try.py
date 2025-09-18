@@ -125,19 +125,37 @@ def test_indirect_left_recursion_2()->None:
         1 * ( 2 + )
     """
     NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
-    PLUS = literal('+')
-    STAR = literal('*')
-    LPAREN = literal('(')
-    RPAREN = literal(')')
-    Expr = Syntax.lazy(lambda: (Expr >> PLUS >> Term) | Term)
-    Term = Syntax.lazy(lambda: (Term >> STAR >> Factor) | Factor)
-    Factor = Syntax.lazy(lambda: (LPAREN >> Expr >> RPAREN) | NUMBER)
-    v, s = parse_word(Expr, '1 + 2 * 3')
-    # v, s = parse_word(Expr, '(1 + 2) * 3')
-    # v, s = parse_word(Expr, '1 + (2 * 3)')
-    # v, s = parse_word(Expr, '((1 + 2) * 3) + 4 * 5 + 6')
+    PLUS = literal('+').map(lambda x: x.text)
+    STAR = literal('*').map(lambda x: x.text)
+    LPAREN = literal('(').map(lambda x: x.text)
+    RPAREN = literal(')').map(lambda x: x.text)
+    Expr = Syntax.lazy(lambda: (Expr + PLUS + Term) | Term)
+    Term = Syntax.lazy(lambda: (Term + STAR + Factor) | Factor)
+    Factor = Syntax.lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
+    v, _ = parse_word(Expr, '1 + 2 * 3')
+    x, y = v.bimap()
+    assert x == (1, '+', (2, '*', 3))
+    p, _ = y(x).bimap()
+    assert p == x
+    
+    v, s = parse_word(Expr, '( 1 + 2 ) * 3')
+    x, y = v.bimap()
+    assert x == (('(', (1, '+', 2), ')'), '*', 3)
+    p, _ = y(x).bimap()
+    assert p == x
 
+    v, s = parse_word(Expr, '1 + ( 2 * 3 )')
+    x, y = v.bimap()
+    assert x == (1, '+', ('(', (2, '*', 3), ')'))
+    p, _ = y(x).bimap()
+    assert p == x
 
+    v, s = parse_word(Expr, '( ( 1 + 2 ) * 3 ) + 4 * 5 + 6')
+    x, y = v.bimap()
+    print(x)
+    assert x == (('(', (('(', (1, '+', 2), ')'), '*', 3), ')'), '+', 4), f"Unexpected AST: {x}"
+    p, _ = y(x).bimap()
+    assert p == x
 
 def test_to() -> None:
     @dataclass

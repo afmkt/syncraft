@@ -51,9 +51,9 @@ class ParserState(Bindable, Generic[T]):
     
     def __add__(self, other: 'ParserState[T]') -> 'ParserState[T]':
         if not isinstance(other, ParserState):
-            raise SyncraftError("Can only concatenate ParserState with another ParserState", offending=self, expect="ParserState")
+            raise SyncraftError("Can only concatenate ParserState with another ParserState", offender=self, expect="ParserState")
         if self.final:
-            raise SyncraftError("Cannot concatenate to a final ParserState", offending=self, expect="not final")
+            raise SyncraftError("Cannot concatenate to a final ParserState", offender=self, expect="not final")
         return replace(self, input=self.input + other.input, final=other.final)
 
 
@@ -83,7 +83,7 @@ class ParserState(Bindable, Generic[T]):
             IndexError: If attempting to read past the end of the stream.
         """
         if self.index >= len(self.input):
-            raise SyncraftError("Attempted to access token beyond end of stream", offending=self, expect="index < len(input)")
+            raise SyncraftError("Attempted to access token beyond end of stream", offender=self, expect="index < len(input)")
         return self.input[self.index]
     
 
@@ -157,7 +157,7 @@ class Parser(Algebra[T, ParserState[T]]):
               token_class:TokenClass, 
               **kwargs: Any) -> Algebra[T, ParserState[T]]:
         if token_class is None:
-            raise SyncraftError("TokenClass not configured for Parser", offending=cls, expect=TokenClass)
+            raise SyncraftError("TokenClass not configured for Parser", offender=cls, expect=TokenClass)
         pred = token_class.predicate(**kwargs)
         return cls.primitive(predicate=pred)
 

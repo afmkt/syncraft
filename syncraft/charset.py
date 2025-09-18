@@ -51,26 +51,26 @@ class CodeUniverse(Generic[C]):
     def to_int(self, c: C) -> int:
         if isinstance(c, str):
             if len(c) != 1:
-                raise CodepointError(f"Expected single character, got {c!r}", offending=c, expect="single character")
+                raise CodepointError(f"Expected single character, got {c!r}", offender=c, expect="single character")
             cp = ord(c)
         elif isinstance(c, bytes):
             if len(c) != 1:
-                raise CodepointError(f"Expected single byte, got {c!r}", offending=c, expect="single byte")
+                raise CodepointError(f"Expected single byte, got {c!r}", offender=c, expect="single byte")
             cp = c[0]
         elif self.space is bytes and isinstance(c, int):
             cp = c
         elif isinstance(c, Enum):
             if c not in self.c2int:
-                raise CodepointError(f"Enum value {c!r} not in universe {self}", offending=c, expect=f"Enum in {list(self.c2int.keys())}")
+                raise CodepointError(f"Enum value {c!r} not in universe {self}", offender=c, expect=f"Enum in {list(self.c2int.keys())}")
             cp = self.c2int[c]
         else:
-            raise CodepointError(f"Expected str, bytes, or Enum, got {type(c)}", offending=c, expect="str, bytes, or Enum")
+            raise CodepointError(f"Expected str, bytes, or Enum, got {type(c)}", offender=c, expect="str, bytes, or Enum")
         if not (self.value[0] <= cp <= self.value[1]):
-            raise CodepointError(f"Character {c!r} (codepoint {cp}) out of bounds for universe {self}", offending=c, expect=f"codepoint in range {self.value}")
+            raise CodepointError(f"Character {c!r} (codepoint {cp}) out of bounds for universe {self}", offender=c, expect=f"codepoint in range {self.value}")
         return cp
     def from_int(self, cp: int) -> C:
         if not (self.value[0] <= cp <= self.value[1]):
-            raise CodepointError(f"Codepoint {cp} out of bounds for universe {self}", offending=cp, expect=f"codepoint in range {self.value}")
+            raise CodepointError(f"Codepoint {cp} out of bounds for universe {self}", offender=cp, expect=f"codepoint in range {self.value}")
         if cp in self.int2c:
             return self.int2c[cp]
         if self.space is str:
@@ -78,7 +78,7 @@ class CodeUniverse(Generic[C]):
         elif self.space is bytes:
             return bytes([cp])  # type: ignore
         else:
-            raise CodepointError(f"Cannot convert codepoint {cp} to {self.space}", offending=cp, expect=self.space)
+            raise CodepointError(f"Cannot convert codepoint {cp} to {self.space}", offender=cp, expect=self.space)
 
     @classmethod
     def ascii(cls) -> CodeUniverse[C]:
@@ -96,7 +96,7 @@ class CodeUniverse(Generic[C]):
     def enum(cls, enum_type: Type[Enum]) -> CodeUniverse[C]:
         members = list(enum_type)
         if not members:
-            raise SyncraftError(f"Cannot create CodeUniverse from empty Enum {enum_type}", offending=enum_type, expect="non-empty Enum")
+            raise SyncraftError(f"Cannot create CodeUniverse from empty Enum {enum_type}", offender=enum_type, expect="non-empty Enum")
         int2c: FrozenDict[int, Enum] = FrozenDict({i: m for i, m in enumerate(members)})
         c2int: FrozenDict[Enum, int] = FrozenDict({m: i for i, m in enumerate(members)})
         return cls(value=(0, len(members)-1), space=enum_type, int2c=int2c, c2int=c2int) # type: ignore
@@ -262,7 +262,7 @@ class CharSet(Generic[C]):
         if other.interval == ():
             return self
         if self.universe != other.universe:
-            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
+            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offender=other.universe, expect=self.universe)
         intv = tuple(self.merge_intervals(list(self.interval) + list(other.interval)))
         return CharSet(
             lambda c: self.predicate(c) or other.predicate(c), 
@@ -279,7 +279,7 @@ class CharSet(Generic[C]):
         if other.interval == ():
             return other
         if self.universe != other.universe:
-            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
+            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offender=other.universe, expect=self.universe)
         intv = tuple(self.intersect_interval(list(self.interval), list(other.interval)))
         
         return CharSet(
@@ -297,7 +297,7 @@ class CharSet(Generic[C]):
         if other.interval == ():
             return self
         if self.universe != other.universe:
-            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offending=other.universe, expect=self.universe)
+            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offender=other.universe, expect=self.universe)
         intv = tuple(self.difference_interval(list(self.interval), list(other.interval)))
         return CharSet(
             lambda c: self.predicate(c) and not other.predicate(c), 

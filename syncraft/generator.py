@@ -204,7 +204,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             return Left(e)
                         case Right((result, next_input)):
                             return Right((result, next_input))
-            raise SyncraftError("flat_map should always return a value or an error.", offending=self_result, expect=(Left, Right))
+            raise SyncraftError("flat_map should always return a value or an error.", offender=self_result, expect=(Left, Right))
         return replace(self, run_f=flat_map_run) # type: ignore
         
 
@@ -229,7 +229,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             ValueError: If bounds are invalid.
         """
         if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: GenState[T], 
                      cache:Cache[GenState[T], Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType, 
                                                                                        SendChannelType, 
@@ -331,7 +331,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                         return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
                                     case Left(error):
                                         return Left(error)
-                raise SyncraftError(f"Invalid ChoiceKind: {kind}", offending=kind, expect=(ChoiceKind.LEFT, ChoiceKind.RIGHT, None))
+                raise SyncraftError(f"Invalid ChoiceKind: {kind}", offender=kind, expect=(ChoiceKind.LEFT, ChoiceKind.RIGHT, None))
 
             if input.pruned:
                 forked_input = input.fork(tag="or_else")
@@ -385,7 +385,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
               token_class:TokenClass,               
               **kwargs: Any)-> Algebra[ParseResult[T], GenState[T]]: 
         if token_class is None:
-            raise SyncraftError("TokenClass not configured for Generator", offending=cls, expect=TokenClass)
+            raise SyncraftError("TokenClass not configured for Generator", offender=cls, expect=TokenClass)
         gen = token_class.generator(**kwargs)  
         pred = token_class.predicate(**kwargs)
         return cls.primitive(

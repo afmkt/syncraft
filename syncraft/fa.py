@@ -219,7 +219,7 @@ class DFA(Generic[C]):
     def _product(self, other: "DFA[C]", accept_func: Callable[[bool, bool], bool]) -> "DFA[C]":
         if self.universe != other.universe:
             raise MixedUniverseError("Cannot combine DFAs with different universes",
-                                    offending=(self.universe, other.universe))
+                                    offender=(self.universe, other.universe))
 
         # sentinel sink states for "no transition" from a DFA on a piece
         sink1 = FAState()
@@ -524,13 +524,13 @@ class NFA(Generic[C]):
         if negation:
             charset = -charset
         if charset.interval == tuple():
-            raise CodepointError(f"Character {char!r} is not valid in the specified universe {universe}", offending=char, universe=universe)
+            raise CodepointError(f"Character {char!r} is not valid in the specified universe {universe}", offender=char, universe=universe)
         return cls.from_charset(charset, tag=tag)
 
 
     def then(self, other: NFA[C]) -> NFA[C]:
         if self.universe != other.universe:
-            raise MixedUniverseError("Cannot combine NFAs with different universes", offending=(self.universe, other.universe))
+            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.universe, other.universe))
         this = self.clone()
             
         eps = {**this.epsilon}
@@ -555,7 +555,7 @@ class NFA(Generic[C]):
     
     def union(self, other: NFA[C]) -> NFA[C]:
         if self.universe != other.universe:
-            raise MixedUniverseError("Cannot combine NFAs with different universes", offending=(self.universe, other.universe))
+            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.universe, other.universe))
         if self is other:
             return self
         new_current: FAState = FAState()
@@ -617,7 +617,7 @@ class NFA(Generic[C]):
     
     def many(self, at_least: int = 1, at_most: Optional[int] = None) -> NFA[C]:
         if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         if at_least == 1 and at_most is None:
             return self.plus
         nfa = self

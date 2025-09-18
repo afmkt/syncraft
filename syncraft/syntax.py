@@ -268,11 +268,11 @@ class Syntax(Generic[A, S]):
                 ):
                     return Many(value=(left,) + tuple([b.right for b in bs]))
                 case _:
-                    raise SyncraftError(f"Bad data shape {a}", offending=a, expect="Then(BOTH) with Choice on the right")
+                    raise SyncraftError(f"Bad data shape {a}", offender=a, expect="Then(BOTH) with Choice on the right")
 
         def i(a: Many[A]) -> Then[A, Choice[Many[Then[B | None, A]], Optional[Nothing]]]:
             if not isinstance(a, Many) or len(a.value) < 1:
-                raise SyncraftError(f"sep_by inverse expect Many with at least one element, got {a}", offending=a, expect="Many with at least one element")
+                raise SyncraftError(f"sep_by inverse expect Many with at least one element, got {a}", offender=a, expect="Many with at least one element")
             if len(a.value) == 1:
                 return Then(
                     kind=ThenKind.BOTH,
@@ -547,7 +547,7 @@ class Syntax(Generic[A, S]):
                 syntax = thunk()
             def algebra_lazy_f():
                 if syntax is None:
-                    raise SyncraftError("Lazy thunk did not resolve to a Syntax", offending=thunk, expect="a Syntax")
+                    raise SyncraftError("Lazy thunk did not resolve to a Syntax", offender=thunk, expect="a Syntax")
                 return syntax(acls, **global_kwargs)
             if algebra is None or (previous_cls is not None and previous_cls is not acls):
                 algebra = acls.lazy(algebra_lazy_f)
@@ -603,7 +603,7 @@ def run(*,
                     old_input = result.state
                     result = gen.send(old_input)
                 elif isinstance(result, InProgress):
-                    raise LeftRecursionError("Recursive parsing without progress", offending=result.offending, expect="a final value")
+                    raise LeftRecursionError("Recursive parsing without progress", offender=result.offender, expect="a final value")
                 return Error(this=result, message="Algebra yield data that is not Incomplete or InProgress"), None 
         except StopIteration as e:
             result = e.value                

@@ -46,7 +46,7 @@ class Regular(Algebra[NFA[C], RegularState]):
     # error on recursion
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[Any, RegularState]]) -> Algebra[Any, RegularState]:
-        raise RecursionNotSupportedError("Regular language does not support recursion, so lazy is not supported.", offending=thunk)
+        raise RecursionNotSupportedError("Regular language does not support recursion, so lazy is not supported.", offender=thunk)
     
 
     @classmethod
@@ -90,9 +90,9 @@ class Regular(Algebra[NFA[C], RegularState]):
                             data = value.then(result)
                             return (yield from cache.return_value(Right((data, from_right)), from_right))
                         case failed:
-                            raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
+                            raise SyncraftError("Building NFA from regular language failed.", offender=failed, expect=Right)
                 case failed:
-                    raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
+                    raise SyncraftError("Building NFA from regular language failed.", offender=failed, expect=Right)
         return replace(self, run_f=then_run, _name=name)
         
 
@@ -105,7 +105,7 @@ class Regular(Algebra[NFA[C], RegularState]):
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Any, RegularState]:
         if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offending=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: RegularState, 
                      cache:Cache[RegularState, Either[Any, Tuple[Any, RegularState]]]) -> PyGenerator[YieldChannelType, 
                                                                                         SendChannelType, 
@@ -115,7 +115,7 @@ class Regular(Algebra[NFA[C], RegularState]):
                     data = nfa.many(at_least=at_least, at_most=at_most)
                     return (yield from cache.return_value(Right((data, from_self)), from_self))
                 case failed:
-                    raise SyncraftError("many should always return a value or an error.", offending=failed, expect=Right)
+                    raise SyncraftError("many should always return a value or an error.", offender=failed, expect=Right)
         return replace(self, run_f=many_run, _name=f"{self.name}{{{at_least},{at_most}}}")
         
         
@@ -129,7 +129,7 @@ class Regular(Algebra[NFA[C], RegularState]):
                     data = nfa.star
                     return (yield from cache.return_value(Right((data, from_self)), from_self))
                 case failed:
-                    raise SyncraftError("star should always return a value or an error.", offending=failed, expect=Right)
+                    raise SyncraftError("star should always return a value or an error.", offender=failed, expect=Right)
         return replace(self, run_f=star_run, _name=f"{self.name}*")
         
     
@@ -143,7 +143,7 @@ class Regular(Algebra[NFA[C], RegularState]):
                     data = nfa.plus
                     return (yield from cache.return_value(Right((data, from_self)), from_self))
                 case failed:
-                    raise SyncraftError("plus should always return a value or an error.", offending=failed, expect=Right)
+                    raise SyncraftError("plus should always return a value or an error.", offender=failed, expect=Right)
         return replace(self, run_f=plus_run, _name=f"{self.name}+")
         
 
@@ -161,7 +161,7 @@ class Regular(Algebra[NFA[C], RegularState]):
                     data = nfa.optional
                     return (yield from cache.return_value(Right((data, from_self)), from_self))
                 case failed:
-                    raise SyncraftError("optional should always return a value or an error.", offending=failed, expect=Right)
+                    raise SyncraftError("optional should always return a value or an error.", offender=failed, expect=Right)
         return replace(self, run_f=optional_run, _name=name)
         
  
@@ -183,9 +183,9 @@ class Regular(Algebra[NFA[C], RegularState]):
                             data = left_nfa.union(right_nfa)
                             return (yield from cache.return_value(Right((data, from_right)), from_right))
                         case failed:
-                            raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
+                            raise SyncraftError("Building NFA from regular language failed.", offender=failed, expect=Right)
                 case failed:    
-                    raise SyncraftError("Building NFA from regular language failed.", offending=failed, expect=Right)
+                    raise SyncraftError("Building NFA from regular language failed.", offender=failed, expect=Right)
         return replace(self, run_f=or_else_run, _name=name)
         
 
