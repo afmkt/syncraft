@@ -55,12 +55,13 @@ Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 @dataclass(frozen=True)
 class InProgress(Generic[Ret]):
-    offending: Tuple[Callable[..., Any], str] | None = None
+    offending: Callable[..., Any] | None = None
     payload: Optional[Ret] = None
 
 @dataclass(frozen=True)
 class Finalized:
-    pass
+    payload: Optional[Any] = None
+    
 
 
 
@@ -68,6 +69,10 @@ class Finalized:
 class Cache(Generic[A, Ret]):
     stack: deque[Tuple[Callable[..., Any], str]] = field(default_factory=deque)
     cache: WeakKeyDictionary[Callable[..., Generator[Any, Any, Ret]], Dict[A, Ret | InProgress[Ret]]] = field(default_factory=WeakKeyDictionary)
+
+    
+    def mark(self, in_progress: InProgress[Ret]) -> InProgress[Ret]:
+        return replace(in_progress, offending=self.stack[-1][0])
 
     def push(self, f: Callable[..., Generator[Any, Any, Ret]], name: str) -> Cache[A, Ret]:
         self.stack.append((f, name))
@@ -102,15 +107,21 @@ class Cache(Generic[A, Ret]):
 
     def gen(self, 
             f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], 
-            key: A, 
-            ) -> Generator[Any, Any, Ret]:
+            key: A) -> Generator[Any, Any, Ret]:
         def grow_inprogress(d: Dict[A, Ret | InProgress[Ret]], key: A, fix: Ret | Finalized) -> None:
             v = d.get(key, None)
             if isinstance(v, InProgress):
-                if isinstance(fix, Finalized):
-                    assert v.payload is not None, "InProgress should have a payload to be finalized"
-                    debug_print(f'Finalizing InProgress at {key} => {v.payload}')
-                    d[key] = v.payload
+                if isinstance(fix, InProgress):
+                    raise LeftRecursionError("Can not fix InProgress with another InProgress", offending=v.offending, expect="a final value")
+                elif isinstance(fix, Finalized):
+                    if v.payload is None:
+                        if fix.payload is None:
+                            raise LeftRecursionError("Can not fix InProgress with another InProgress", offending=v.offending, expect="a final value")
+                        debug_print(f'Finalizing InProgress at {key} => {fix.payload}')
+                        d[key] = fix.payload
+                    else:
+                        debug_print(f'Finalizing InProgress at {key} => {v.payload}')
+                        d[key] = v.payload
                 elif v.payload != fix:
                     if v.payload is None:
                         debug_print(f'Growing InProgress at {key} => {fix}')
@@ -119,9 +130,9 @@ class Cache(Generic[A, Ret]):
                         assert isinstance(v.payload, Right), "Can only combine Right with Right"
                         assert isinstance(v.payload.value, tuple) and isinstance(fix.value, tuple) and len(v.payload.value) == 2 and len(fix.value) == 2, "Right values should be tuples of length 2"
                         old_value = v.payload.value[0]
-                        old_state = v.payload.value[1]
+                        # old_state = v.payload.value[1]
                         new_value = fix.value[0]
-                        new_state = fix.value[1]
+                        # new_state = fix.value[1]
                         if old_value == new_value:
                             debug_print(f'Fixing InProgress at {key} => <{v.payload}>')
                             d[key] = v.payload  # type: ignore
@@ -143,9 +154,8 @@ class Cache(Generic[A, Ret]):
         if key in c:
             v = c[key]
             while isinstance(v, InProgress):
+                v = c[key] = self.mark(v)
                 fix = yield v
-                if isinstance(fix, InProgress):
-                    raise LeftRecursionError("Can not fix InProgress with another InProgress", offending=fix, expect="a final value")
                 grow_inprogress(c, key, fix)
                 v = c[key]
             debug_print(f'--- {f} Cache hit ---')
@@ -154,7 +164,7 @@ class Cache(Generic[A, Ret]):
             c[key] = InProgress()
             result = yield from f(key, self)
             assert not isinstance(result, InProgress), "Function should not return InProgress"
-            debug_print(f'--- {list(map(lambda x: x[1], self.stack))} Cache updated ---')
+            debug_print(f'--- {f} Cache updated ---')
             debug_print(c[key])
             c[key] = result
             debug_print(c[key])

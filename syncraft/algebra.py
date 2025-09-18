@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, 
-    Type, Hashable, Generator, Union, Protocol
+    Type, Hashable, Generator, Union
 )
 
 from dataclasses import dataclass, replace
@@ -110,7 +110,7 @@ class Algebra(Generic[A, S]):
             f, n = cache.pop()
             return result
         except LeftRecursionError as e:
-            if e.offending is self.run_f or len(e.stack) == 0:
+            if e.offending is self.run_f  or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")
             else:
                 e = e.push(self.name)
@@ -401,28 +401,37 @@ class Algebra(Generic[A, S]):
                                                                             Either[Any, Tuple[Choice[A, B], S]]]:
             try:
                 gen = self.run(input, cache)
+                offending = None
                 send_value:Any = None
                 while True:
                     debug_print()
                     debug_print(f"send: {repr(send_value)}")
+                    debug_print(f"offending: {offending}")
+                    debug_print(cache.stack)
                     left = gen.send(send_value) 
                     match left:
                         case InProgress(payload = Right((x_value, x_state))):
+                            offending = left.offending
                             other_result = yield from other.run(x_state, cache)
                             match other_result:
                                 case Right((other_value, other_state)):
                                     send_value = other_result
                                     continue
                                 case Left(other_err):
-                                    return Left(other_err)
+                                    send_value = Finalized(Left(other_err))
+                                    continue
+                                    
                         case InProgress(payload = _):
+                            offending = left.offending
                             other_result = yield from other.run(input, cache)
                             match other_result:
                                 case Right((other_value, other_state)):
                                     send_value = other_result
                                     continue
                                 case Left(other_err):
-                                    return Left(other_err)
+                                    send_value = Finalized(Left(other_err))
+                                    continue
+
                             raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
                         case _ as anything:
                             send_value = yield anything
@@ -430,6 +439,8 @@ class Algebra(Generic[A, S]):
                 match e.value:
                     case Right((value, state)) :
                         debug_print(f"or_else succeeded with {value} at {state}")
+                        debug_print(f"offending: {offending}")
+                        debug_print(cache.stack)
                         return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))            
                     case Left(err):
                         if isinstance(err, Error):
@@ -439,9 +450,13 @@ class Algebra(Generic[A, S]):
                         match other_result:
                             case Right((other_value, other_state)):
                                 debug_print(f"or_else other succeeded with {other_value} at {other_state}")
+                                debug_print(f"offending: {offending}")
+                                debug_print(cache.stack)
                                 return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
                             case Left(other_err):
                                 debug_print(f"or_else other failed with {other_err}")
+                                debug_print(f"offending: {offending}")
+                                debug_print(cache.stack)
                                 return Left(other_err)
                         raise SyncraftError(f"Unexpected result type from {other}", offending=other_result, expect=(Left, Right))
                 raise SyncraftError(f"Unexpected result type from {self}", offending=e.value, expect=(Left, Right))

@@ -603,7 +603,7 @@ def run(*,
                     old_input = result.state
                     result = gen.send(old_input)
                 elif isinstance(result, InProgress):
-                    raise LeftRecursionError("Recursive parsing without progress", offending=parser, expect=Cache.gen)
+                    raise LeftRecursionError("Recursive parsing without progress", offending=result.offending, expect="a final value")
                 return Error(this=result, message="Algebra yield data that is not Incomplete or InProgress"), None 
         except StopIteration as e:
             result = e.value                

@@ -101,6 +101,44 @@ def test_indirect_left_recursion_recover()->None:
     v, s = parse_word(A, 'a b a b a')    
 
 
+def test_indirect_left_recursion_2()->None:
+    """
+    Grammar:
+        Expr → Expr "+" Term | Term
+        Term → Term "*" Factor | Factor
+        Factor → "(" Expr ")" | number    
+    Positive examples:
+        42
+        1 + 2
+        3 * 4
+        ( 1 )
+        1 + 2 * 3
+        ( 1 + 2 ) * 3
+        1 + 2 + 3 * 4
+    Negative examples:
+        + 1
+        1 *
+        1 + *
+        ( 1 + 2
+        1 + 2 )
+        ( )
+        1 * ( 2 + )
+    """
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
+    PLUS = literal('+')
+    STAR = literal('*')
+    LPAREN = literal('(')
+    RPAREN = literal(')')
+    Expr = Syntax.lazy(lambda: (Expr >> PLUS >> Term) | Term)
+    Term = Syntax.lazy(lambda: (Term >> STAR >> Factor) | Factor)
+    Factor = Syntax.lazy(lambda: (LPAREN >> Expr >> RPAREN) | NUMBER)
+    v, s = parse_word(Expr, '1 + 2 * 3')
+    # v, s = parse_word(Expr, '(1 + 2) * 3')
+    # v, s = parse_word(Expr, '1 + (2 * 3)')
+    # v, s = parse_word(Expr, '((1 + 2) * 3) + 4 * 5 + 6')
+
+
+
 def test_to() -> None:
     @dataclass
     class IfThenElse:
@@ -155,11 +193,12 @@ def test_to() -> None:
     assert u == ast2
 
 if __name__ == "__main__":
+    test_indirect_left_recursion_2()
     # test_to()
     # test_direct_recursion()
     # test_mutual_recursion()
     # test_left_recursion_error()
     # test_fake_left_recursion()
-    test_left_recursion_recover()
+    # test_left_recursion_recover()
     # test_indirect_left_recursion_error()
     # test_indirect_left_recursion_recover()

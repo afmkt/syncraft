@@ -139,7 +139,8 @@ class Parser(Algebra[T, ParserState[T]]):
                     if token is None or not predicate(token):
                         return (yield from cache.return_value(Left(state), state))
                     else:
-                        return (yield from cache.return_value(Right((token, state.advance())), state))
+                        state = state.advance()
+                        return (yield from cache.return_value(Right((token, state)), state))
         captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
