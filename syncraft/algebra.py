@@ -6,12 +6,11 @@ from typing import (
 
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, SyncraftError, CallWith
-from syncraft.cache import Cache, InProgress, LeftRecursionError, Right, Left, Incomplete, Either, Finalized
+from syncraft.cache import Cache, InProgress, LeftRecursionError, Right, Left, Incomplete, Either, Finalized, table_printer
 from syncraft.constraint import Bindable
 from functools import cached_property
-from syncraft.utils import debug_print
+from syncraft.utils import debug_print, callable_str
 import re
-
 
 
 
@@ -108,6 +107,8 @@ class Algebra(Generic[A, S]):
             cache.push(self.run_f, self.name)
             result = (yield from cache.gen(self.run_f, input))
             f, n = cache.pop()
+            # table_printer.print('Cache', f"Cache AFTER {callable_str(self.run_f)}", *cache.flat_cache())
+            # table_printer.print('Stack', "Stack", *cache.flat_stack())
             return result
         except LeftRecursionError as e:
             if e.offender is self.run_f  or len(e.stack) == 0:
@@ -127,22 +128,7 @@ class Algebra(Generic[A, S]):
                                                                                    SendChannelType, 
                                                                                    Either[Any, Tuple[Any, S]]]:
             alg = thunk()
-            last_result = None
-            while True:
-                result = yield from alg.run(input, cache)
-                match result:
-                    case Right(value=(v, s), offender=offender):
-                        debug_print(f'\n--- Lazy resolved at {s} ---')
-                        debug_print(f'=> {v}')
-                        if offender is not algebra_lazy_run:
-                            break
-                        else:
-                            if last_result == result:
-                                break
-                            last_result = result
-                            continue
-                    case _:
-                        break
+            result = yield from alg.run(input, cache)
             return result
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
     
@@ -156,7 +142,7 @@ class Algebra(Generic[A, S]):
                 error=error,
                 this=cls,
                 state=input
-            )), input))
+            )), input, name=cls.__name__ + '.fail'))
 
         return cls(fail_run, _name=cls.__name__ + '.fail')
     
@@ -166,7 +152,7 @@ class Algebra(Generic[A, S]):
                         cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                               SendChannelType, 
                                                                               Either[Any, Tuple[A, S]]]:
-            return (yield from cache.return_value(Right((value, input)), input))
+            return (yield from cache.return_value(Right((value, input)), input, name=cls.__name__ + '.success'))
         return cls(success_run, _name=cls.__name__ + '.success')
     
     @classmethod
@@ -174,19 +160,6 @@ class Algebra(Generic[A, S]):
                 name: str, 
                 *args: Any, 
                 **kwargs: Any) -> Algebra[A, S]:
-        """Call a named class method to construct an algebra.
-
-        Args:
-            name: Name of a classmethod/staticmethod on this class.
-            *args: Positional args passed to the method.
-            **kwargs: Keyword args passed to the method.
-
-        Returns:
-            The algebra returned by the method.
-
-        Raises:
-            ValueError: If the method is missing or not callable.
-        """
         method = getattr(cls, name, None)
         if method is None or not callable(method):
             raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offender=method, expect='callable')
@@ -194,14 +167,6 @@ class Algebra(Generic[A, S]):
         return cast(Algebra[A, S], result)
     
     def cut(self) -> Algebra[A, S]:
-        """Commit this branch by marking failures as committed.
-
-        Converts downstream errors into committed errors (``committed=True``),
-        which prevents alternatives from being tried in ``or_else``.
-
-        Returns:
-            An algebra that commits errors produced by this one.
-        """
         def commit_error(e: Any) -> Error:
             match e:
                 case Error():
@@ -225,15 +190,6 @@ class Algebra(Generic[A, S]):
                         Either[Any, Tuple[B, S]]
                     ], 
                 ctx: Optional[Any] = None) -> Algebra[A | B, S]:
-        """Run a handler only when this algebra fails.
-
-        Args:
-            func: Callback ``(alg, input, left, ctx) -> Either`` executed on failure.
-            ctx: Optional context object passed to the callback.
-
-        Returns:
-            An algebra that intercepts failures and can recover or transform them.
-        """
         assert callable(func), "func must be callable"
         def fail_run(input: S, 
                      cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
@@ -258,15 +214,6 @@ class Algebra(Generic[A, S]):
                             Either[Any, Tuple[B, S]]
                         ], 
                     ctx: Optional[Any] = None) -> Algebra[A | B, S]:
-        """Run a handler only when this algebra succeeds.
-
-        Args:
-            func: Callback ``(alg, input, right, ctx) -> Either`` executed on success.
-            ctx: Optional context object passed to the callback.
-
-        Returns:
-            An algebra that can transform or post-process successes.
-        """
         assert callable(func), "func must be callable"
         def success_run(input: S, 
                         cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
@@ -283,14 +230,6 @@ class Algebra(Generic[A, S]):
 
 ######################################################## map on state ###########################################
     def map_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
-        """Map the input state before running this algebra.
-
-        Args:
-            f: ``S -> S`` function applied to the state prior to running.
-
-        Returns:
-            An algebra that runs with ``f(state)``.
-        """
         def map_state_run(state: S, 
                           cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType, 
@@ -303,14 +242,6 @@ class Algebra(Generic[A, S]):
 
 ######################################################## fundamental combinators ############################################    
     def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
-        """Transform the success value, leaving the state unchanged.
-
-        Args:
-            f: Mapper from ``A`` to ``B``.
-
-        Returns:
-            An algebra that yields ``B`` with the same resulting state.
-        """
         def map_run(input: S, 
                     cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                           SendChannelType, 
@@ -324,35 +255,9 @@ class Algebra(Generic[A, S]):
 
         
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
-        """Bidirectionally map values with an inverse, updating the state.
-
-        Applies ``f`` to the success value. The state is pre-mapped with the
-        inverse ``i`` via the state's ``map`` method to preserve round-trips.
-
-        Args:
-            f: Forward mapping ``A -> B``.
-            i: Inverse mapping ``B -> A`` applied to the state.
-
-        Returns:
-            An algebra producing ``B`` while keeping value/state alignment.
-        
-        Note:
-            Different subclass of Algebra can override state.map method to change 
-            the behavior of bimap. For example, ParserState.map will return the
-            state unchanged, and GenState.map will apply the inverse map and update 
-            the next AST node for generation.
-        """
         return self.map(f).map_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
-        """Transform the error payload when this algebra fails.
-
-        Args:
-            f: Function applied to the error payload inside ``Left``.
-
-        Returns:
-            An algebra that preserves successes and maps failures.
-        """
         def map_error_run(input: S, 
                           cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType, 
@@ -365,17 +270,6 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=map_error_run) 
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Algebra[B, S]:
-        """Chain computations where the next algebra depends on the value.
-
-        On success, passes the produced value to ``f`` to obtain the next
-        algebra, then runs it with the resulting state.
-
-        Args:
-            f: Mapper from a value to the next algebra.
-
-        Returns:
-            An algebra yielding the result of the chained computation.
-        """
         def flat_map_run(input: S, 
                          cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                                SendChannelType, 
@@ -389,14 +283,6 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=flat_map_run) # type: ignore
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
-        """Map both the produced value and the resulting state on success.
-
-        Args:
-            f: Function mapping ``(value, state)`` to ``(new_value, new_state)``.
-
-        Returns:
-            An algebra producing the transformed value and state.
-        """
         def map_all_f(a : A) -> Algebra[B, S]:
             def map_all_run_f(input:S, 
                               cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
@@ -412,85 +298,28 @@ class Algebra(Generic[A, S]):
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
         def or_else_run(input: S, 
                         cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
-                                                                            SendChannelType, 
-                                                                            Either[Any, Tuple[Choice[A, B], S]]]:
-            try:
-                gen = self.run(input, cache)
-                offender = None
-                send_value:Any = None
-                while True:
-                    debug_print()
-                    debug_print(f"\nsend: {repr(send_value)}")
-                    debug_print(f"offender: {offender}")
-                    debug_print(cache.stack)
-                    left = gen.send(send_value) 
-                    match left:
-                        case InProgress(payload = Right((x_value, x_state))):
-                            assert offender is None or offender is left.offender, "offender should not change"
-                            offender = left.offender
-                            other_result = yield from other.run(x_state, cache)
-                            match other_result:
-                                case Right((other_value, other_state)):
-                                    send_value = other_result
-                                    continue
-                                case Left(other_err):
-                                    send_value = Finalized(Left(other_err))
-                                    continue
-                                    
-                        case InProgress(payload = _):
-                            assert offender is None or offender is left.offender, "offender should not change"
-                            offender = left.offender
-                            other_result = yield from other.run(input, cache)
-                            match other_result:
-                                case Right((other_value, other_state)):
-                                    send_value = other_result
-                                    continue
-                                case Left(other_err):
-                                    send_value = Finalized(Left(other_err))
-                                    continue
-
-                            raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
-                        case _ as anything:
-                            send_value = yield anything
-            except StopIteration as e:
-                match e.value:
-                    case Right((value, state)) :
-                        debug_print(f"\nor_else succeeded with {value} at {state}")
-                        debug_print(f"offender: {offender}")
-                        debug_print(cache.stack)
-                        return Right((Choice(kind=ChoiceKind.LEFT, value=value), state), offender=offender)
-                    case Left(err):
-                        if isinstance(err, Error):
-                            if err.committed:
-                                return Left(replace(err, committed=False))
-                        other_result = yield from other.run(input, cache)
-                        match other_result:
-                            case Right((other_value, other_state)):
-                                debug_print(f"\nor_else other succeeded with {other_value} at {other_state}")
-                                debug_print(f"offender: {offender}")
-                                debug_print(cache.stack)
-                                return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state), offender=offender)
-                            case Left(other_err):
-                                debug_print(f"\nor_else other failed with {other_err}")
-                                debug_print(f"offender: {offender}")
-                                debug_print(cache.stack)
-                                return Left(other_err)
-                        raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
-                raise SyncraftError(f"Unexpected result type from {self}", offender=e.value, expect=(Left, Right))
+                                                                                SendChannelType, 
+                                                                                Either[Any, Tuple[Choice[A, B], S]]]:
+            left = yield from self.run(input, cache)
+            match left:
+                case Right((value, state)) :
+                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))
+                case Left(err):
+                    if isinstance(err, Error):
+                        if err.committed:
+                            return Left(replace(err, committed=False))
+                    other_result = yield from other.run(input, cache)
+                    match other_result:
+                        case Right((other_value, other_state)):
+                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
+                        case Left(other_err):
+                            return Left(other_err)
+                    raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
+            raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
         return replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
         
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        """Sequence two algebras and keep both values.
-
-        Returns a ``Then(kind=BOTH)`` holding the left and right values.
-
-        Args:
-            other: The algebra to run after this one.
-
-        Returns:
-            An algebra producing ``Then(left, right, kind=BOTH)``.
-        """
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
@@ -506,16 +335,6 @@ class Algebra(Generic[A, S]):
         
 
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        """Sequence two algebras, keep the left value in the result.
-
-        Produces ``Then(kind=LEFT)`` with both values attached.
-
-        Args:
-            other: The algebra to run after this one.
-
-        Returns:
-            An algebra producing ``Then(left, right, kind=LEFT)``.
-        """
         def then_left_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
@@ -531,16 +350,6 @@ class Algebra(Generic[A, S]):
         
 
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        """Sequence two algebras, keep the right value in the result.
-
-        Produces ``Then(kind=RIGHT)`` with both values attached.
-
-        Args:
-            other: The algebra to run after this one.
-
-        Returns:
-            An algebra producing ``Then(left, right, kind=RIGHT)``.
-        """
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
@@ -556,24 +365,6 @@ class Algebra(Generic[A, S]):
         
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
-        """Repeat this algebra and collect results into ``Many``.
-
-        Repeats greedily until failure or no progress. Enforces cardinality
-        constraints. If ``at_most`` is ``None``, there is no upper bound.
-
-        Args:
-            at_least: Minimum number of matches required (>= 1).
-            at_most: Optional maximum number of matches.
-
-        Returns:
-            On success, ``Right((Many(values), state))``.
-        Note:
-            at_most, if given, is enforced strictly, more than at_most matches 
-            is treated as an error.
-        Raises:
-            ValueError: If bounds are invalid (e.g., ``at_least<=0`` or
-            ``at_most<at_least``).
-        """
         if at_least <=0 or (at_most is not None and at_most < at_least):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: S, 

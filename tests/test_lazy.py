@@ -172,10 +172,11 @@ def test_indirect_left_recursion_2()->None:
     Expr = Syntax.lazy(lambda: (Expr >> PLUS >> Term) | Term)
     Term = Syntax.lazy(lambda: (Term >> STAR >> Factor) | Factor)
     Factor = Syntax.lazy(lambda: (LPAREN >> Expr >> RPAREN) | NUMBER)
-    v, s = parse_word(Expr, '1 + 2 * 3')
-    v, s = parse_word(Expr, '(1 + 2) * 3')
-    v, s = parse_word(Expr, '1 + (2 * 3)')
-    v, s = parse_word(Expr, '((1 + 2) * 3) + 4 * 5 + 6')
+    with pytest.raises(LeftRecursionError):
+        v, s = parse_word(Expr, '1 + 2 * 3')
+        v, s = parse_word(Expr, '(1 + 2) * 3')
+        v, s = parse_word(Expr, '1 + (2 * 3)')
+        v, s = parse_word(Expr, '((1 + 2) * 3) + 4 * 5 + 6')
 
     # print(v)
 

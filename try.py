@@ -71,10 +71,6 @@ def test_fake_left_recovery()->None:
     debug_print(s)
 
 def test_left_recursion_error()->None:
-    """
-    need better error message here, currently it is
-    LeftRecursionError(), should take the stack into consideration
-    """
     Expr1 = Syntax.lazy(lambda: Expr1 + literal('a'))
     v, s = parse_word(Expr1, 'a a a')
     debug_print(v)
@@ -84,7 +80,7 @@ def test_left_recursion_error()->None:
 def test_left_recursion_recover()->None:
     a = literal('a')
     Expr1 = Syntax.lazy(lambda: (Expr1 + a) | a)
-    v, s = parse_word(Expr1, 'a a a')
+    v, s = parse_word(Expr1, 'a a a a')
     debug_print("---" * 20, "Parsed AST", "---" * 20)
     debug_print(v)
 
@@ -133,6 +129,7 @@ def test_indirect_left_recursion_2()->None:
     Term = Syntax.lazy(lambda: (Term + STAR + Factor) | Factor)
     Factor = Syntax.lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
     v, _ = parse_word(Expr, '1 + 2 * 3')
+    
     x, y = v.bimap()
     assert x == (1, '+', (2, '*', 3))
     p, _ = y(x).bimap()

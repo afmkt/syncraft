@@ -613,7 +613,7 @@ class TokenClass(Generic[T]):
                     elif pattern != data:
                         return False
             return True
-        pred.__name__ = f"P{self.describe(**kwargs)})"
+        pred.__name__ = f"P{self.describe(**kwargs)}"
         return pred
 
     def generator(self, **kwargs: Any) -> Callable[[], T]:
@@ -638,7 +638,7 @@ class TokenClass(Generic[T]):
                 else:
                     data[k] = v
             return CallWith(self.TokenConstructor, **data)()
-        gen.__name__ = f"G{self.describe(**kwargs)})"
+        gen.__name__ = f"G{self.describe(**kwargs)}"
         return gen
 
 #: Union-like type describing the shape of AST parse results across nodes.

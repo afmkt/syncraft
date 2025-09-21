@@ -1,13 +1,46 @@
 from __future__ import annotations
-from typing import Any, Callable, Generator,Generic, TypeVar, cast
-from dataclasses import dataclass
+from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, List, Tuple
+from dataclasses import dataclass, field, replace, fields, is_dataclass
 import inspect
 import functools
 import types
 from rich.console import Console
-
+from rich import box
 import os
 from enum import Enum
+
+class TablePrinter:
+    def __init__(self)->None:
+        self._delta = True
+        self.data: Dict[str, set[Tuple[Any, ...]]] = dict()
+    @property
+    def delta(self) -> bool:
+        return self._delta
+    
+    @delta.setter
+    def delta(self, value: bool) -> None:
+        self._delta = value
+
+    def print(self, name: str, title: str, *args: Any)->None:
+        if len(args) == 0:
+            return
+        if name not in self.data or not self.delta:
+            debug_table(*args, title=title)
+            self.data[name] = set(args[1:])
+        else:
+            old_data = self.data[name]
+            new_data = set(args[1:])
+            deleted = old_data - new_data
+            added = new_data - old_data
+            if len(deleted) > 0:
+                debug_table(*([args[0]] + list(deleted)), title=f"{title} - [bold green]Deleted[/bold green]")
+            if len(added) > 0:
+                debug_table(*([args[0]] + list(added)), title=f"{title} - [bold green]Added[/bold green]")
+            self.data[name] = new_data
+
+
+        
+
 
 
 class ENV_VARS(Enum):
@@ -16,11 +49,55 @@ class ENV_VARS(Enum):
 def set_debug(value:bool = True)->None:
     os.environ[ENV_VARS.SYNCRAFT_DEBUG.value] = "yes" if value else "no"
 
+
+def callable_str(obj:Any)->str:
+    if hasattr(obj, '__name__'):
+        return f"<{obj.__name__} @ {hex(id(obj))}>"
+    else:
+        return f"<{obj.__class__.__name__} instance @ {hex(id(obj))}>"
+
 def debug_print(*args: Any) -> None:
     if str(os.getenv(ENV_VARS.SYNCRAFT_DEBUG.value)).lower() in ("1", "true", "yes"):
+        # Console().print('\n', markup=False)
         Console().print(*args, markup=False)
-    
 
+def debug_table(*args: Any, title: None | str = None) -> None:
+    if str(os.getenv(ENV_VARS.SYNCRAFT_DEBUG.value)).lower() in ("1", "true", "yes"):
+        from rich.table import Table
+        if len(args) == 0:
+            return
+        if is_dataclass(args[0]):
+            table = Table(show_header=True, 
+                          header_style="bold magenta", 
+                          box=box.DOUBLE_EDGE, 
+                          show_lines=True, 
+                          title=title, 
+                          title_style="yellow",
+                          title_justify="left")
+            for f in fields(args[0]):
+                table.add_column(f.name)        
+            for inst in args:
+                row = [str(getattr(inst, f.name)) for f in fields(inst)]
+                table.add_row(*row)
+            Console().print(table, markup=False)
+        else:
+            table = Table(show_header=True, 
+                          header_style="bold magenta", 
+                          box=box.DOUBLE_EDGE, 
+                          show_lines=True, 
+                          title=title,
+                          title_style="yellow",
+                          title_justify="left")
+            max_len = max(len(a) for a in args)
+            for i in range(max_len):
+                table.add_column(f"{args[0][i] if i < len(args[0]) else ''}")
+            for inst in args[1:]:
+                if isinstance(inst, (list, tuple)):
+                    row = [str(a) for a in inst]
+                else:
+                    row = [str(inst)]
+                table.add_row(*row) 
+            Console().print(table, markup=False)
 
 class CallWith:
     @staticmethod
