@@ -78,8 +78,8 @@ def test_left_recursion_error()->None:
 
 
 def test_left_recursion_recover()->None:
-    a = literal('a')
-    Expr1 = Syntax.lazy(lambda: (Expr1 + a) | a)
+    a = literal('a').named('a')
+    Expr1 = Syntax.lazy(lambda: (Expr1 + a) | a).named('Expr1')
     v, s = parse_word(Expr1, 'a a a a')
     debug_print("---" * 20, "Parsed AST", "---" * 20)
     debug_print(v)

@@ -48,9 +48,9 @@ class LeftRecursionError(SyncraftError):
         return self
     
     def __repr__(self) -> str:
-        stack = "-> ".join(reversed(self.stack))
+        stack = "\n-> ".join(reversed(self.stack))
         hint = "Hint: Use right recursion or a repetition combinator to avoid left recursion."
-        return f"{self.__class__.__name__}({stack}){hint}"
+        return f"\n{stack}\n{hint}"
     
     def __str__(self) -> str:
         return self.__repr__()
@@ -226,7 +226,7 @@ class Cache(Generic[A, Ret]):
         if key in c:
             v = c[key]
             if isinstance(v, InProgress):
-                raise LeftRecursionError("Left recursion detected", offender=v.offender, expect="a final value").push(f.__name__)
+                raise LeftRecursionError("Left recursion detected", offender=f, expect="a final value")
             return v  
         try:
             c[key] = InProgress()
