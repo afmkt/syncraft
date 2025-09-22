@@ -551,6 +551,11 @@ class Syntax(Generic[A, S]):
                 return syntax(acls, **global_kwargs)
             if algebra is None or (previous_cls is not None and previous_cls is not acls):
                 algebra = acls.lazy(algebra_lazy_f)
+                # Attach rule id to this algebra's run_f for stable identity
+                try:
+                    setattr(algebra.run_f, '_rule_id', thunk)
+                except Exception:
+                    pass
                 previous_cls = acls
             return algebra
         return cls(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))

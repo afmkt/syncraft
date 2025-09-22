@@ -55,6 +55,26 @@ Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 
 @dataclass
+class LRGroup(Generic[A, Ret]):
+    """Represents a mutually (indirect) left-recursive group of rule invocations at one input key.
+
+    All members share the same starting key (position). After seeding all members, we perform
+    a fixed-point growth pass: iteratively attempt each member; if any improves (consumes more
+    input), we repeat until no member improves.
+
+    Attributes:
+        members: InProgress entries participating in the cycle.
+        seeding_remaining: Countdown of how many members still in seeding phase.
+        finalized: Whether fixed-point growth has already been performed.
+    """
+    members: List["InProgress[A, Ret]"] = field(default_factory=list)
+    seeding_remaining: int = 0
+    finalized: bool = False
+
+    def add(self, ip: "InProgress[A, Ret]") -> None:
+        self.members.append(ip)
+
+@dataclass
 class InProgress(Generic[A, Ret]):
     """Represents (and now replaces) all intermediate left-recursion states.
 
@@ -89,6 +109,11 @@ class InProgress(Generic[A, Ret]):
     improved: bool = False
     seeding: bool = True
     head: bool = False
+    group: Optional[LRGroup[A, Ret]] = None  # Multi-head group reference (if indirect cycle)
+    group_leader: bool = False  # True for first detected member in a cycle slice
+    finalized: bool = False  # Unified path: marks that growth completed (group may also mark finalized)
+    probing: bool = False  # True during growth iteration attempts
+    # removed seeded_choice for Option A approach
 
 
 
@@ -96,6 +121,10 @@ class InProgress(Generic[A, Ret]):
 @dataclass
 class Cache(Generic[A, Ret]):
     cache: dict[Callable[..., Any], Dict[A, Ret | InProgress[A, Ret]]] = field(default_factory=dict)
+    max_growth_iterations: int = 256  # Protection against runaway single-head growth
+    _lr_stack: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)  # active in-progress chain
+    _canonical: Dict[Callable[..., Any], Callable[..., Any]] = field(default_factory=dict, init=False, repr=False)
+    # _best removed (Option A does not need cross-wrapper substitution)
 
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
@@ -162,60 +191,157 @@ class Cache(Generic[A, Ret]):
     def gen(self,
             f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]],
             key: A) -> Generator[Any, Any, Ret]:
-        if f not in self.cache:
-            self.cache.setdefault(f, dict())
-        c: Dict[A, Ret | InProgress[A, Ret]] = self.cache[f]  
-
-        entry = c.get(key, None)
-        # Case: already have a final value
-        if entry is not None and not isinstance(entry, InProgress):
-            return entry  
-        
-        if isinstance(entry, InProgress):
-            # Re-entry. If still seeding, mark as head and return failure-like Left.
-            if entry.seeding:
-                entry.head = True
-                return Left(key)  # type: ignore
-            # Growth phase: return current best (may be None prior to seed finalization, but in practice seed sets result first)
-            if entry.result is not None:
-                return entry.result  
-            return Left(key)  # type: ignore  # fallback: Left works as failure sentinel
-
-        # Initial invocation: create seeding head placeholder
+        # Step 1: canonicalize function identity
+        f = self._canonicalize(f)
+        # Step 2: fetch or initialize entry
+        cache_bucket = self.cache.setdefault(f, {})
+        existing = cache_bucket.get(key)
+        if existing is not None and not isinstance(existing, InProgress):
+            return existing
+        if isinstance(existing, InProgress):
+            return (yield from self._handle_reentry(existing, key))
+        # Step 3: seed new head
         head = InProgress(f=f, key=key)
-        c[key] = head
+        if f not in self._canonical:
+            self._canonical[f] = f
+        cache_bucket[key] = head
+        self._lr_stack.append(head)
         try:
             seed = yield from f(key, self)
         except Exception as e:
-            # Clean up on exception
-            c.pop(key, None)
+            cache_bucket.pop(key, None)
+            self._lr_stack.pop()
             raise e
+        # Step 4: finalize or prepare for growth
+        return (yield from self._complete_seed(head, seed))
 
-        # Mark seeding done
+    # --------------------- Helper Methods (Refactor) ---------------------
+    def _canonicalize(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]]):
+        rule_id = getattr(f, '_rule_id', None)
+        if rule_id is not None:
+            for existing_f, rep in self._canonical.items():
+                if getattr(existing_f, '_rule_id', None) is rule_id:
+                    return rep
+            self._canonical[f] = f
+        return f
+
+    def _handle_reentry(self, entry: InProgress[A, Ret], key: A) -> Generator[Any, Any, Ret]:
+        # Make this a generator-friendly helper (even if we don't currently yield diagnostic info)
+        yield from ()
+        if entry.seeding:
+            return self._handle_seeding_reentry(entry, key)
+        # Post-seeding
+        if entry.group is not None:
+            if entry.probing:
+                return entry.result if entry.result is not None else Left(key)  # type: ignore
+            if entry.group.finalized or entry.finalized:
+                assert entry.result is not None
+                return entry.result
+            return entry.result if entry.result is not None else Left(key)  # type: ignore
+        return entry.result if entry.result is not None else Left(key)  # type: ignore
+
+    def _handle_seeding_reentry(self, entry: InProgress[A, Ret], key: A) -> Ret:
+        entry.head = True
+        try:
+            self._lr_stack.index(entry)
+        except ValueError:
+            return Left(key)  # type: ignore
+        if entry.group is None:
+            # Attempt to detect existing compatible groups on the stack (same key) to merge into.
+            # For now, linear scan from top (closest) downward until different key encountered.
+            merged = False
+            for other in reversed(self._lr_stack):
+                if other is entry:
+                    continue
+                if other.key != key:
+                    continue
+                if other.group is not None:
+                    # Reuse other's group
+                    other.group.add(entry)
+                    entry.group = other.group
+                    merged = True
+                    break
+            if not merged:
+                group = LRGroup[A, Ret]()
+                group.add(entry)
+                group.seeding_remaining = 1
+                entry.group = group
+                entry.group_leader = True
+        return Left(("LR_SEED", key))  # type: ignore
+
+    def _complete_seed(self, head: InProgress[A, Ret], seed: Ret) -> Generator[Any, Any, Ret]:
         head.seeding = False
-
-        # If no recursion occurred, finalize with seed result directly
+        if head.group is not None:
+            head.group.seeding_remaining -= 1
+        # No left recursion observed
         if not head.head:
-            c[key] = seed
+            self.cache[head.f][head.key] = seed
+            self._lr_stack.pop()
             return seed
-
-        # Left recursion detected: perform growth iterations starting from seed
+        # Ensure group exists
+        if head.group is None:
+            group = LRGroup[A, Ret]()
+            head.group = group
+            head.group_leader = True
+            group.add(head)
+            group.seeding_remaining = 0
         head.result = seed
-        improved_once = False
-        while True:
-            attempt = yield from f(key, self)
-            if self._improved(key, head.result, attempt):
-                head.result = attempt
-                improved_once = True
-                continue
-            break
+        # Growth phase (single-head now; multi-head hook later)
+        if head.group_leader and not head.group.finalized:
+            yield from self._grow_group(head.group, offender=head.f)
+        self._lr_stack.pop()
+        assert head.result is not None
+        return head.result  # type: ignore
 
-        if not improved_once and not self._is_success(head.result):
-
-            raise LeftRecursionError("Left recursion without progress", offender=f, expect="progress")
-
-        c[key] = head.result  # store final result
-        return head.result  
+    def _grow_group(self, group: LRGroup[A, Ret], offender: Any) -> Generator[Any, Any, None]:
+        iterations = 0
+        members_snapshot = list(group.members)
+        if len(members_snapshot) == 1:
+            member = members_snapshot[0]
+            best = member.result
+            member.probing = True
+            while True:
+                iterations += 1
+                if iterations > self.max_growth_iterations:
+                    member.probing = False
+                    raise LeftRecursionError(
+                        "Left recursion growth iteration limit exceeded (single-head)",
+                        offender=offender,
+                        expect=f"<= {self.max_growth_iterations} iterations"
+                    )
+                attempt = yield from member.f(member.key, self)
+                if self._improved(member.key, best, attempt):
+                    best = attempt
+                    member.result = best
+                    continue
+                else:
+                    break
+            member.probing = False
+        else:
+            changed = True
+            while changed:
+                changed = False
+                iterations += 1
+                if iterations > self.max_growth_iterations:
+                    raise LeftRecursionError(
+                        "Left recursion growth iteration limit exceeded (multi-head)",
+                        offender=offender,
+                        expect=f"<= {self.max_growth_iterations} iterations"
+                    )
+                for member in list(group.members):
+                    attempt = yield from member.f(member.key, self)
+                    if self._improved(member.key, member.result, attempt):
+                        member.result = attempt
+                        changed = True
+        # Finalize
+        group.finalized = True
+        finalized_members = [m for m in group.members if m.result is not None]
+        group.members = finalized_members
+        for member in finalized_members:
+            member.finalized = True
+            assert member.result is not None
+            self.cache[member.f][member.key] = member.result
+        yield from ()
         
 
 

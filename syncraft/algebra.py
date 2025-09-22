@@ -6,10 +6,9 @@ from typing import (
 
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, SyncraftError, CallWith
-from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either, table_printer
+from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 from functools import cached_property
-from syncraft.utils import debug_print, callable_str
 import re
 
 
@@ -121,13 +120,14 @@ class Algebra(Generic[A, S]):
         
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
-        def algebra_lazy_run(input: S, 
-                             cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
-                                                                                   SendChannelType, 
-                                                                                   Either[Any, Tuple[Any, S]]]:
+        def algebra_lazy_run(input: S,
+                             cache: Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType,
+                                                                                         SendChannelType,
+                                                                                         Either[Any, Tuple[Any, S]]]:
+            # Defer acquiring the underlying algebra until invocation time.
             alg = thunk()
-            result = yield from alg.run(input, cache)
-            return result
+            return (yield from alg.run(input, cache))
+        # No _rule_id tagging here; Syntax.lazy is the authoritative place for stable rule identity.
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
     
     @classmethod
