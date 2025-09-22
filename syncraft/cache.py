@@ -47,21 +47,97 @@ class Incomplete(Generic[S]):
     state: S
 
 class LeftRecursionError(SyncraftError):
+    """Raised when left-recursive growth cannot make progress or hits a safety cap.
+
+    Additional attributes beyond the base ``SyncraftError``:
+        stack: List of rule names (outermost last) accumulated via ``push``.
+        iterations: Number of growth iterations attempted (if known).
+        seed_consumed: Tokens consumed by the initial (base) seed parse, ``-1`` if unknown.
+        best_consumed: Tokens consumed by the best improvement before failure, ``-1`` if none.
+        group_size: Size of the left‑recursive group (1 for direct recursion, >1 for mutual).
+        limit: Configured iteration limit that was exceeded (if applicable).
+        reason: Machine-friendly string describing failure mode (``iteration-cap`` | ``no-progress``).
+    """
     def __init__(self, message: str, offender: Any, expect: Any = None, **kwargs: Any) -> None:
         super().__init__(message, offender, expect, **kwargs)
         self.stack: List[str] = []
+        self.iterations: int | None = kwargs.get('iterations')
+        self.seed_consumed: int | None = kwargs.get('seed_consumed')
+        self.best_consumed: int | None = kwargs.get('best_consumed')
+        self.group_size: int | None = kwargs.get('group_size')
+        self.limit: int | None = kwargs.get('limit')
+        self.reason: str | None = kwargs.get('reason')
 
     def push(self, name: str) -> LeftRecursionError:
         self.stack.append(name)
         return self
-    
+
+    def _format_metrics(self) -> str:
+        parts: List[str] = []
+        if self.iterations is not None:
+            parts.append(f"iterations={self.iterations}")
+        if self.limit is not None:
+            parts.append(f"limit={self.limit}")
+        if self.group_size is not None:
+            parts.append(f"group={self.group_size}")
+        if self.seed_consumed is not None:
+            parts.append(f"seed={self.seed_consumed}")
+        if self.best_consumed is not None and (self.best_consumed != self.seed_consumed):
+            parts.append(f"best={self.best_consumed}")
+        if self.reason:
+            parts.append(f"reason={self.reason}")
+        return ("; ".join(parts)) if parts else ""
+
     def __repr__(self) -> str:
         stack = "\n-> ".join(reversed(self.stack))
-        hint = "Hint: Use right recursion or a repetition combinator to avoid left recursion."
-        return f"\n{stack}\n{hint}"
-    
+        metrics = self._format_metrics()
+        hint_lines = [
+            "Hint: Consider one of:",
+            "  • Refactor the rule to be right-recursive (e.g. A -> term (op term)*)",
+            "  • Introduce an explicit repetition combinator instead of naive left recursion",
+            "  • Ensure there's a non-empty base alternative (no nullable left recursion)",
+            "  • Increase 'max_growth_iterations' if grammar is intentionally deep",
+        ]
+        metrics_line = ("[" + metrics + "]\n") if metrics else ""
+        return f"\n{stack}\n{metrics_line}" + "\n".join(hint_lines)
+
     def __str__(self) -> str:
         return self.__repr__()
+
+# ---------------------------------------------------------------------------
+# Left recursion recovery design notes
+# ---------------------------------------------------------------------------
+# Algorithm (single-head):
+#   1. Seed rule with left-recursive alternatives suppressed (re-entries during seeding
+#      return a Left sentinel so only base (non-left-recursive) branches run).
+#   2. If recursion detected (a re-entry occurred), iteratively re-run the head while
+#      each new attempt strictly consumes more input than the previous best.
+#   3. Stop once no improvement (consumption increase) occurs, or iteration cap reached.
+#
+# Algorithm (multi-head / mutual recursion):
+#   * All seeding heads sharing the same start index are grouped (LRGroup). After seeding
+#     completes for the group, we cycle through members attempting improvements until a
+#     full pass yields no changes or the cap is hit. Any improvement increments a global
+#     version and may schedule earlier heads (agenda) whose spans can extend due to later
+#     growth (precedence-like chains).
+#
+# Improvement metric:
+#   Strictly greater token span (end_index - start_index). Structural richness is ignored—
+#   this guarantees termination provided grammar cannot inflate without consuming input.
+#
+# Diagnostics (LeftRecursionError fields):
+#   iterations:    Number of growth attempts performed for the failing group.
+#   group_size:    1 for direct recursion; >1 for mutual cycles.
+#   seed_consumed: Span length of the initial base parse (if any succeeded).
+#   best_consumed: Longest span achieved before failure.
+#   limit:         Configured iteration budget (max_growth_iterations) if cap exceeded.
+#   reason:        "iteration-cap" for safety cap; future values may include "no-progress".
+#
+# Future enhancements:
+#   * Explicit detection & classification of nullable / unproductive left recursion (S -> S | ε)
+#   * Public API hook to inject custom Cache (to test iteration-cap behavior deterministically)
+#   * Structural improvement heuristics (optional) while keeping consumption primary.
+# ---------------------------------------------------------------------------
     
 Args = TypeVar('Args', bound=Hashable)
 A = TypeVar('A')
@@ -378,6 +454,15 @@ class Cache(Generic[A, Ret]):
             # (already handled in loop). If somehow no leader, set entry as fallback.
             if not any(m.group_leader for m in group.members):
                 entry.group_leader = True
+            # Mark all grouped frames as heads to ensure growth logic executes even if base-only blocked recursive alts.
+            if len(group.members) > 1:
+                for m in group.members:
+                    m.head = True
+        # DEBUG: group formation details (remove after troubleshooting)
+        try:
+            _ = len(entry.group.members) if entry.group else 0
+        except Exception:
+            pass
         # If still in base-only phase for this entry (no consumption yet), block the recursive
         # expansion by returning a sentinel failure; base alternatives may still succeed.
         if entry.base_only:
@@ -417,6 +502,31 @@ class Cache(Generic[A, Ret]):
             head.result = _cast(Optional[Ret], head.result if (head.result is not None and isinstance(head.result, Right)) else None)
         # Growth phase: only when all seeds complete
         if head.group_leader and not head.group.finalized and head.group.seeding_remaining == 0:
+            # Early multi-head zero-consumption detection: if all members succeeded (Right) with zero consumption
+            # after seeding, classify as no-progress and raise before entering growth.
+            if len(head.group.members) > 1:
+                all_zero = True
+                any_success = False
+                for m in head.group.members:
+                    sr = m.result if m.result is not None else m.seed_result
+                    if sr is None or not isinstance(sr, Right):  # type: ignore
+                        continue
+                    any_success = True
+                    if self._consumed(m.key, sr) > 0:  # type: ignore[arg-type]
+                        all_zero = False
+                        break
+                if any_success and all_zero:
+                    raise LeftRecursionError(
+                        "Left recursion with no progress (nullable or unproductive mutual cycle)",
+                        offender=offender if (offender := head.f) else head.f,  # type: ignore
+                        expect="> 0 token consumption",
+                        iterations=0,
+                        seed_consumed=None,
+                        best_consumed=None,
+                        group_size=len(head.group.members),
+                        limit=self.max_growth_iterations,
+                        reason="no-progress"
+                    )
             yield from self._grow_group(head.group, offender=head.f)
         self._lr_stack.pop()
         # May still be None if no base alternative succeeded; growth might not improve (leave as failure)
@@ -430,132 +540,55 @@ class Cache(Generic[A, Ret]):
             best = member.result
             member.probing = True
             self._enter_lr_growth()
-            version_on_best = self._lr_version
-            # Zero-progress heuristic state: counts consecutive iterations where
-            # consumption did not increase and no nested version change occurred.
-            same_consumption_runs = 0
-            last_best_consumed = self._consumed(member.key, best) if best else -1
-            seed_consumed = last_best_consumed
-            # Collapse short-circuit: if seed consumed <= 1 token, and the first recursive
-            # attempt fails to strictly extend span, we can finalize immediately. We probe once.
-            if seed_consumed <= 1 and seed_consumed >= 0:
-                self._force = member
-                try:
-                    probe = yield from member.f(member.key, self)
-                finally:
-                    self._force = None
-                # Process any agenda side-effects (though unlikely here)
-                yield from self._process_agenda()
-                yield from self._global_fixpoint()
-                if not self._improved(member.key, best, probe):
-                    member.probing = False
-                    self._exit_lr_growth()
-                    group.finalized = True
-                    member.finalized = True
-                    return
+            seed_consumed = self._consumed(member.key, best) if best else -1
             while True:
                 iterations += 1
-                # Track consecutive stagnation (no improvement, no nested version change, or regressions)
-                if iterations == 1:
-                    stagnation = 0
-                    no_growth_cycles = 0  # counts iterations with no consumption improvement regardless of nested version bumps
                 if iterations > self.max_growth_iterations:
                     member.probing = False
                     self._exit_lr_growth()
                     raise LeftRecursionError(
                         "Left recursion growth iteration limit exceeded (single-head)",
                         offender=offender,
-                        expect=f"<= {self.max_growth_iterations} iterations"
+                        expect=f"<= {self.max_growth_iterations} iterations",
+                        iterations=iterations,
+                        seed_consumed=seed_consumed,
+                        best_consumed=self._consumed(member.key, best) if best else None,
+                        group_size=1,
+                        limit=self.max_growth_iterations,
+                        reason="iteration-cap"
                     )
-                # Run attempt; if nested improvements happen during the run, immediately re-run to pick them up.
-                nested_version_before = self._lr_version
                 self._force = member
                 try:
                     attempt = yield from member.f(member.key, self)
                 finally:
                     self._force = None
-                # Allow any newly created heads at later indices to grow before evaluating improvement
+                # Process cross-index agenda before evaluating improvement
                 yield from self._process_agenda()
-                yield from self._global_fixpoint()
-                while self._lr_version > nested_version_before:
-                    nested_version_before = self._lr_version
-                    self._force = member
-                    try:
-                        refreshed = yield from member.f(member.key, self)
-                    finally:
-                        self._force = None
-                    yield from self._process_agenda()
-                    yield from self._global_fixpoint()
-                    # Prefer refreshed if it consumes more.
-                    from typing import cast as _cast
-                    old_for_check = _cast(Optional[Ret], attempt if isinstance(attempt, Right) else None)
-                    if self._improved(member.key, old_for_check, refreshed):
-                        attempt = refreshed
                 if self._improved(member.key, best, attempt):
                     best = attempt
                     member.result = best
                     self._lr_version += 1
-                    version_on_best = self._lr_version
-                    # Cross-index propagation for single-head improvements
                     self._propagate_improvement(member)
-                    stagnation = 0
-                    # Reset zero-progress heuristic counters on genuine improvement
-                    same_consumption_runs = 0
-                    last_best_consumed = self._consumed(member.key, best)
-                    no_growth_cycles = 0
                     continue
-                else:
-                    current_best_consumed_outer = self._consumed(member.key, best) if best else -1
-                    # If no improvement and no nested version change occurred during attempt, stop.
-                    if self._lr_version == version_on_best:
-                        # Early collapse: if consumption never exceeded seed consumption
-                        # and current best equals seed, additional iterations can't help.
-                        current_best_consumed = self._consumed(member.key, best) if best else -1
-                        if current_best_consumed == seed_consumed and seed_consumed >= 0:
-                            break
-                        stagnation += 1
-                        # Zero-progress: if consumption has not increased since last best for 2 consecutive
-                        # non-improving iterations, we finalize early. This captures collapse grammars like
-                        # S -> S S | 'a' where only the base seed is useful and recursive expansions do not
-                        # extend span length (due to a consuming both branches but collapsing structure).
-                        current_best_consumed = self._consumed(member.key, best) if best else -1
-                        if current_best_consumed == last_best_consumed and current_best_consumed >= 0:
-                            same_consumption_runs += 1
-                        else:
-                            same_consumption_runs = 0
-                            last_best_consumed = current_best_consumed
-                        if same_consumption_runs >= 2:
-                            break
-                        if stagnation >= 8:
-                            break
-                        break
-                    # Allow regressions (smaller consumption) to be skipped; they may trigger nested growth.
-                    best_consumed = self._consumed(member.key, best) if best else -1
-                    att_consumed = self._consumed(member.key, attempt)
-                    if att_consumed < best_consumed:
-                        stagnation += 1
-                        if stagnation >= 8:
-                            break
-                        # Retry to allow nested groups (e.g., Term inside Expr) to finish growth.
-                        continue
-                    if self._lr_version > version_on_best:
-                        # Even though nested versions changed, if our own consumption has not improved
-                        # for several consecutive cycles, break to avoid unproductive looping (collapse grammar).
-                        if current_best_consumed_outer == last_best_consumed and current_best_consumed_outer >= 0:
-                            no_growth_cycles += 1
-                        else:
-                            no_growth_cycles = 0
-                            last_best_consumed = current_best_consumed_outer
-                        if no_growth_cycles >= 4:
-                            break
-                        stagnation = 0
-                        continue
+                # Early collapse: if no improvement and consumption never exceeded seed span, stop.
+                if seed_consumed >= 0 and (best is None or self._consumed(member.key, best) == seed_consumed):
+                    # Detect unproductive (no-progress) nullable left recursion: zero consumption overall.
+                    if seed_consumed == 0:
+                        member.probing = False
+                        self._exit_lr_growth()
+                        raise LeftRecursionError(
+                            "Left recursion with no progress (nullable or unproductive cycle)",
+                            offender=offender,
+                            expect="> 0 token consumption",
+                            iterations=iterations,
+                            seed_consumed=seed_consumed,
+                            best_consumed=self._consumed(member.key, best) if best else None,
+                            group_size=1,
+                            limit=self.max_growth_iterations,
+                            reason="no-progress"
+                        )
                     break
-                # Fallback safeguard: if after several iterations we have *never* exceeded
-                # the original seed consumption, further attempts cannot produce additional
-                # span growth for purely collapsing recursive alternatives (e.g. S -> S S | 'a').
-                if seed_consumed >= 0 and self._consumed(member.key, best) == seed_consumed and iterations >= 4:
-                    break
+                break
             member.probing = False
             self._exit_lr_growth()
         else:
@@ -566,10 +599,20 @@ class Cache(Generic[A, Ret]):
                 iterations += 1
                 if iterations > self.max_growth_iterations:
                     self._exit_lr_growth()
+                    # Capture representative metrics from first member that has a result
+                    sample = next((m for m in group.members if m.result is not None), None)
+                    seed_c = self._consumed(sample.key, sample.seed_result) if (sample and sample.seed_result) else None  # type: ignore
+                    best_c = self._consumed(sample.key, sample.result) if (sample and sample.result) else None  # type: ignore
                     raise LeftRecursionError(
                         "Left recursion growth iteration limit exceeded (multi-head)",
                         offender=offender,
-                        expect=f"<= {self.max_growth_iterations} iterations"
+                        expect=f"<= {self.max_growth_iterations} iterations",
+                        iterations=iterations,
+                        seed_consumed=seed_c,
+                        best_consumed=best_c,
+                        group_size=len(group.members),
+                        limit=self.max_growth_iterations,
+                        reason="iteration-cap"
                     )
                 idx = 0
                 members_list = list(group.members)
@@ -581,6 +624,13 @@ class Cache(Generic[A, Ret]):
                         attempt = yield from member.f(member.key, self)
                     finally:
                         self._force = None
+                    # DEBUG: log attempt consumption for multi-head detection troubleshooting
+                    # (Will be removed after test passes.)
+                    try:
+                        if isinstance(attempt, Right):  # type: ignore
+                            _ = self._consumed(member.key, attempt)  # type: ignore[arg-type]
+                    except Exception:
+                        pass
                     # (Debug logging removed in principled refactor)
                     if self._improved(member.key, member.result, attempt):
                         # Unwrap Choice(LEFT, Then(BOTH,...)) to raw Then for better flattening
@@ -604,7 +654,60 @@ class Cache(Generic[A, Ret]):
                         idx = 0
                         continue
                     idx += 1
+                # If no member improved this pass (changed == False) we can classify potential no-progress.
+                if not changed:
+                    # Collect consumption metrics for all members with seed_result or result.
+                    consumptions: list[int] = []
+                    any_success = False
+                    for m in group.members:
+                        # Prefer current best result; fallback to seed_result.
+                        cur = m.result if m.result is not None else m.seed_result
+                        if cur is None or not isinstance(cur, Right):  # type: ignore
+                            continue
+                        any_success = True
+                        # Type narrowing: cur is treated as Ret (Right subtype) for consumption metric
+                        c = self._consumed(m.key, cur)  # type: ignore[arg-type]
+                        consumptions.append(c)
+                    if any_success and consumptions and all(c <= 0 for c in consumptions):
+                        self._exit_lr_growth()
+                        # Use representative sample for metrics
+                        sample = next((m for m in group.members if m.result is not None or m.seed_result is not None), None)
+                        seed_c = self._consumed(sample.key, sample.seed_result) if (sample and sample.seed_result) else None  # type: ignore
+                        best_c = self._consumed(sample.key, sample.result) if (sample and sample.result) else None  # type: ignore
+                        raise LeftRecursionError(
+                            "Left recursion with no progress (nullable or unproductive mutual cycle)",
+                            offender=offender,
+                            expect="> 0 token consumption",
+                            iterations=iterations,
+                            seed_consumed=seed_c,
+                            best_consumed=best_c,
+                            group_size=len(group.members),
+                            limit=self.max_growth_iterations,
+                            reason="no-progress"
+                        )
             self._exit_lr_growth()
+            # Fallback classification: if group finalized growth without improvement and all successes consume 0.
+            if not any(m.result is not None and self._consumed(m.key, m.result) > 0 for m in group.members):
+                # Gather consumptions from any successful member (seed or result)
+                consumptions_fallback: list[int] = []
+                for m in group.members:
+                    cur = m.result if m.result is not None else m.seed_result
+                    if cur is None or not isinstance(cur, Right):  # type: ignore
+                        continue
+                    c = self._consumed(m.key, cur)  # type: ignore[arg-type]
+                    consumptions_fallback.append(c)
+                if consumptions_fallback and all(c <= 0 for c in consumptions_fallback):
+                    raise LeftRecursionError(
+                        "Left recursion with no progress (nullable or unproductive mutual cycle)",
+                        offender=offender,
+                        expect="> 0 token consumption",
+                        iterations=iterations,
+                        seed_consumed=None,
+                        best_consumed=None,
+                        group_size=len(group.members),
+                        limit=self.max_growth_iterations,
+                        reason="no-progress"
+                    )
         # Finalize
         group.finalized = True
         for member in group.members:
@@ -614,6 +717,31 @@ class Cache(Generic[A, Ret]):
             if member.result is not None:
                 # nothing to store; InProgress already holds result
                 pass
+        # Final-stage multi-head no-progress detection (robust against earlier classification misses).
+        if len(group.members) > 1:
+            all_non_positive = True
+            any_success = False
+            for m in group.members:
+                cur = m.result if m.result is not None else m.seed_result
+                if cur is None or not isinstance(cur, Right):  # type: ignore
+                    continue
+                any_success = True
+                consumed_cur = self._consumed(m.key, cur)  # type: ignore[arg-type]
+                if consumed_cur > 0:
+                    all_non_positive = False
+                    break
+            if any_success and all_non_positive:
+                raise LeftRecursionError(
+                    "Left recursion with no progress (nullable or unproductive mutual cycle)",
+                    offender=offender,
+                    expect="> 0 token consumption",
+                    iterations=None,
+                    seed_consumed=None,
+                    best_consumed=None,
+                    group_size=len(group.members),
+                    limit=self.max_growth_iterations,
+                    reason="no-progress"
+                )
         # After primary group growth, process any scheduled agenda heads.
         yield from self._process_agenda()
         # Global fixed-point across all heads (cross-index) to incorporate improvements from later spans.

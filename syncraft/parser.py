@@ -148,15 +148,17 @@ class Parser(Algebra[T, ParserState[T]]):
 
 
 
-def parse_word(syntax: Syntax[Any, Any], sql: str) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     tokens = word_lexer(sql)
-    return parse(syntax, tokens)
+    return parse(syntax, tokens, cache=cache)
 
     
 def parse(syntax: Syntax[Any, Any], 
-          tokens: List[Token]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+          tokens: List[Token],
+          *,
+          cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Parser, tokens=tokens)
+    v, s = run(syntax=syntax, alg=Parser, tokens=tokens, cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:

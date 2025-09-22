@@ -6,8 +6,8 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error
-from syncraft.cache import Cache, Right, Left, Incomplete
+from syncraft.algebra import Algebra, Error, Either, Left, Right
+from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
 from types import MethodType, FunctionType
@@ -588,9 +588,10 @@ class Syntax(Generic[A, S]):
 
 
 def run(*,
-        syntax: Syntax[A, S], 
-        alg: Type[Algebra[A, S]], 
-        **kwargs: Any) -> Tuple[Any, None | S]:
+    syntax: Syntax[A, S], 
+    alg: Type[Algebra[A, S]], 
+    cache: Optional[Cache[S, Either[Any, Tuple[A, S]]]] = None,
+    **kwargs: Any) -> Tuple[Any, None | S]:
     """
     Run the syntax over the given algebra, and return the result and bind.
 
@@ -601,7 +602,8 @@ def run(*,
     input = CallWith(alg.state, **kwargs)()
     if input:
         try:
-            gen = parser.run(input, cache=Cache())
+            gen_cache = cache or Cache()
+            gen = parser.run(input, cache=gen_cache)
             result = next(gen)
             while True:
                 if isinstance(result, Incomplete):
