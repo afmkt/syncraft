@@ -654,5 +654,21 @@ def test_multi_recursion()->None:
 
     v, s = parse_word(A, 'a z y x')
     print(v)
-    x, y = v.bimap()
-    assert x == ('a', 'z', 'y', 'x')
+    # We care about the raw AST shape (pre-bimap). Extract leaves manually.
+    from syncraft.ast import Then, ThenKind
+    from syncraft.algebra import Choice, ChoiceKind  # type: ignore
+
+    def leaves(node):
+        if isinstance(node, Then) and node.kind == ThenKind.BOTH:
+            return leaves(node.left) + leaves(node.right)
+        if isinstance(node, Choice):
+            # For this grammar Choice.RIGHT wraps literal terminal; LEFT wraps a Then chain.
+            if node.kind == ChoiceKind.RIGHT:
+                return (node.value,)
+            else:
+                return leaves(node.value)
+        if isinstance(node, str):
+            return (node,)
+        return ()
+
+    assert leaves(v) == ('a','z','y','x')

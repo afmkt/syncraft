@@ -249,7 +249,9 @@ class Algebra(Generic[A, S]):
                 return Right((f(parsed.value[0]), parsed.value[1]))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        return replace(self, run_f=map_run) # type: ignore
+        alg = replace(self, run_f=map_run) # type: ignore
+        from typing import cast as _cast
+        return _cast(Algebra[B, S], alg)
 
         
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
@@ -278,7 +280,9 @@ class Algebra(Generic[A, S]):
                 return result
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        return replace(self, run_f=flat_map_run) # type: ignore
+        alg = replace(self, run_f=flat_map_run) # type: ignore
+        from typing import cast as _cast
+        return _cast(Algebra[B, S], alg)
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
         def map_all_f(a : A) -> Algebra[B, S]:
@@ -300,12 +304,11 @@ class Algebra(Generic[A, S]):
                                                                                 Either[Any, Tuple[Choice[A, B], S]]]:
             left = yield from self.run(input, cache)
             match left:
-                case Right((value, state)) :
+                case Right((value, state)):
                     return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))
                 case Left(err):
-                    if isinstance(err, Error):
-                        if err.committed:
-                            return Left(replace(err, committed=False))
+                    if isinstance(err, Error) and err.committed:
+                        return Left(replace(err, committed=False))
                     other_result = yield from other.run(input, cache)
                     match other_result:
                         case Right((other_value, other_state)):
@@ -314,7 +317,10 @@ class Algebra(Generic[A, S]):
                             return Left(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
-        return replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
+        alg = replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
+        # Deliberately do NOT propagate _rule_id from children; wrappers should not masquerade as heads.
+        from typing import cast as _cast
+        return _cast(Algebra[Choice[A, B], S], alg)
         
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
