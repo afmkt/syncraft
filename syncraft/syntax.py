@@ -7,7 +7,7 @@ from typing import (
 from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error
-from syncraft.cache import Cache, Right, Left, Incomplete, InProgress, LeftRecursionError
+from syncraft.cache import Cache, Right, Left, Incomplete
 from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
 from types import MethodType, FunctionType
@@ -602,9 +602,6 @@ def run(*,
                 if isinstance(result, Incomplete):
                     old_input = result.state
                     result = gen.send(old_input)
-                elif isinstance(result, InProgress):
-                    raise LeftRecursionError("Recursive parsing without progress", offender=result.offender, expect="a final value")
-                return Error(this=result, message="Algebra yield data that is not Incomplete or InProgress"), None 
         except StopIteration as e:
             result = e.value                
             if isinstance(result, Right):

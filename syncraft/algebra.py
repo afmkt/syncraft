@@ -6,7 +6,7 @@ from typing import (
 
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, SyncraftError, CallWith
-from syncraft.cache import Cache, InProgress, LeftRecursionError, Right, Left, Incomplete, Either, Finalized, table_printer
+from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either, table_printer
 from syncraft.constraint import Bindable
 from functools import cached_property
 from syncraft.utils import debug_print, callable_str
@@ -57,7 +57,7 @@ class Error:
             current = current.previous
         return lst
 
-YieldChannelType = Incomplete[S] | InProgress[Either[Any, Tuple[A, S]]] | Finalized
+YieldChannelType = Incomplete[S] 
 SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
 @dataclass(frozen=True)        
 class Algebra(Generic[A, S]):
@@ -104,11 +104,9 @@ class Algebra(Generic[A, S]):
                                                                    SendChannelType, 
                                                                    Either[Any, Tuple[A, S]]]:
         try:
-            cache.push(self.run_f, self.name)
+            
             result = (yield from cache.gen(self.run_f, input))
-            f, n = cache.pop()
-            # table_printer.print('Cache', f"Cache AFTER {callable_str(self.run_f)}", *cache.flat_cache())
-            # table_printer.print('Stack', "Stack", *cache.flat_stack())
+
             return result
         except LeftRecursionError as e:
             if e.offender is self.run_f  or len(e.stack) == 0:
