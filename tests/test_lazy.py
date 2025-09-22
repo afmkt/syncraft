@@ -134,6 +134,12 @@ def test_direct_left_recursion()->None:
     assert counts.get('n', 0) == 3
     assert counts.get('+', 0) == 2
 
+def test_left_recursion_recover()->None:
+    a = literal('a').map(lambda x: x.text).named('a')
+    Expr1 = Syntax.lazy(lambda: (Expr1 + a) | a).named('Expr1')
+    v, s = parse_word(Expr1, 'a a a a')
+    ast, inv = v.bimap()
+    assert ast == ((('a', 'a'), 'a'), 'a')
 
 
 def test_indirect_left_recursion()->None:
@@ -331,3 +337,61 @@ def test_direct_left_recursion_2()->None:
     S = Syntax.lazy(lambda: (S >> S) | literal('a'))
     with pytest.raises(LeftRecursionError):
         parse_word(S, 'a a a')
+
+
+
+
+@pytest.mark.xfail(reason="Failure detection granularity: error stack does not yet include the offending rule name.")
+def test_left_recursion_error_stack_contains_rule():
+    """
+    Grammar:
+        S → S S | "a"
+    Input forces unproductive / non-improving left recursion growth.
+    Desired future behavior: LeftRecursionError.stack contains 'S'.
+    """
+    S = Syntax.lazy(lambda: (S >> S) | literal('a'))
+    with pytest.raises(LeftRecursionError) as exc:
+        parse_word(S, 'a a a')
+    assert any(frame == 'S' for frame in exc.value.stack), "Expected 'S' in LeftRecursionError stack"
+
+
+@pytest.mark.xfail(reason="Multi-head / indirect left recursion cycle not yet detected collectively (no combined stack of heads).")
+def test_indirect_multi_head_cycle_stack_reports_all_heads():
+    """
+    Grammar:
+        A → B "x" | "a"
+        B → A "y" | "b"
+    Desired future behavior: detecting the A↔B cycle and reporting both in error (or at least in diagnostics)
+    for an input that forces repeated mutual expansion attempts.
+    """
+    A = Syntax.lazy(lambda: (B >> token(text='x')) | token(text='a'))
+    B = Syntax.lazy(lambda: (A >> token(text='y')) | token(text='b'))
+    # Input chosen to bounce between A and B expansions.
+    try:
+        parse_word(A, 'a y a y b x')
+    except LeftRecursionError as exc:
+        # Future expectation: both A and B in stack
+        assert {'A', 'B'}.issubset(set(exc.stack)), f"Expected A and B in stack, got {exc.stack}"
+        return
+    # Current behavior: succeeds (partial) or raises without full stack; mark xfail.
+    pytest.fail("Expected LeftRecursionError with both A and B in stack (future behavior).")
+
+
+@pytest.mark.xfail(reason="No iteration cap / runaway growth protection implemented.")
+def test_runaway_growth_iteration_limit():
+    """
+    Grammar:
+        T → T "+" "a" | "a"
+    Intentionally long chain to trigger many growth iterations.
+    Desired future behavior: parser enforces a max growth iteration limit and raises LeftRecursionError
+    with message mentioning 'limit'.
+    """
+    T = Syntax.lazy(lambda: (T >> token(text='+') >> token(text='a')) | token(text='a'))
+    # Long chain to amplify growth loop
+    input_text = 'a ' + ' + a' * 120
+    try:
+        parse_word(T, input_text)
+    except LeftRecursionError as exc:
+        assert 'limit' in str(exc).lower(), "Expected 'limit' mention in error message"
+        return
+    pytest.fail("Expected LeftRecursionError due to growth iteration limit (future behavior).")        

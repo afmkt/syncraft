@@ -78,11 +78,11 @@ def test_left_recursion_error()->None:
 
 
 def test_left_recursion_recover()->None:
-    a = literal('a').named('a')
+    a = literal('a').map(lambda x: x.text).named('a')
     Expr1 = Syntax.lazy(lambda: (Expr1 + a) | a).named('Expr1')
     v, s = parse_word(Expr1, 'a a a a')
-    debug_print("---" * 20, "Parsed AST", "---" * 20)
-    debug_print(v)
+    ast, inv = v.bimap()
+    assert ast == ((('a', 'a'), 'a'), 'a')
 
 
 def test_indirect_left_recursion_error()->None:
@@ -131,6 +131,7 @@ def test_indirect_left_recursion_2()->None:
     v, _ = parse_word(Expr, '1 + 2 * 3')
     
     x, y = v.bimap()
+    print(x)
     assert x == (1, '+', (2, '*', 3))
     p, _ = y(x).bimap()
     assert p == x
@@ -208,12 +209,11 @@ def test_to() -> None:
     assert u == ast2
 
 if __name__ == "__main__":
-    # test_indirect_left_recursion_2()
+    test_indirect_left_recursion_2()
     # test_to()
     # test_direct_recursion()
     # test_mutual_recursion()
     # test_left_recursion_error()
     # test_fake_left_recursion()
-    test_left_recursion_recover()
     # test_indirect_left_recursion_error()
     # test_indirect_left_recursion_recover()
