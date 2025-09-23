@@ -692,5 +692,22 @@ def test_mutual_unproductive_cycle_no_progress():
 
 
 
+def test_mutual_unproductive_cycle_no_progress():
+    """Grammar:
+        A -> B
+        B -> C
+        C -> A
+    Input: ''
+    Expect: LeftRecursionError(reason='no-progress') because there is no productive (non-recursive) base.
+    """
+    A = Syntax.lazy(lambda: B)  # type: ignore  # noqa: F821
+    B = Syntax.lazy(lambda: C)  # type: ignore  # noqa: F821
+    C = Syntax.lazy(lambda: A)  # type: ignore  # noqa: F821
+    with pytest.raises(LeftRecursionError) as exc:
+        parse_word(A, '')
+    assert exc.value.reason == 'no-progress'
+
+
+
 
 
