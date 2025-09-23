@@ -80,20 +80,20 @@ def test_charset_universe_mismatch() -> None:
 
 
 def test_charset_bytes_mode() -> None:
-    b1: CharSet[bytes] = CharSet.create(b"\x00\x10\x20", universe=CodeUniverse.byte())
-    assert b1(b"\x00")
-    assert not b1(b"\x01")
+    b1: CharSet[int] = CharSet.create(b"\x00\x10\x20", universe=CodeUniverse.byte())
+    assert b1(0x00)
+    assert not b1(0x01)
     assert b1.interval == ((0x00, 0x00), (0x10, 0x10), (0x20, 0x20))
     comp = -b1
-    assert comp(b"\x01")
-    assert not comp(b"\x10")
+    assert comp(0x01)
+    assert not comp(0x10)
 
 
 def test_charset_invalid_length_error() -> None:
     cc: CharSet[str] = CharSet.create("A", universe=CodeUniverse.ascii())
     with pytest.raises(CodepointError):
         cc("AB")  # multi-character should raise
-    cc_bytes: CharSet[bytes] = CharSet.create(b"A", universe=CodeUniverse.byte())
+    cc_bytes: CharSet[int] = CharSet.create(b"A", universe=CodeUniverse.byte())
     with pytest.raises(CodepointError):
         cc_bytes(b"AB")
 
@@ -143,33 +143,33 @@ def test_codeuniverse_ascii():
     u = CodeUniverse.ascii()
     assert u.value == (0, 0x7F)
     assert u.space is str
-    assert u.from_int(65) == 'A'
-    assert u.to_int('A') == 65
+    assert u.code_from_int(65) == 'A'
+    assert u.code_to_int('A') == 65
     assert u.interval == ((0, 0x7F),)
     with pytest.raises(CodepointError):
-        u.to_int('AB')
+        u.code_to_int('AB')
     with pytest.raises(CodepointError):
-        u.from_int(0x80)
+        u.code_from_int(0x80)
 
 def test_codeuniverse_unicode():
     u = CodeUniverse.unicode()
     assert u.value == (0, 0x10FFFF)
     assert u.space is str
-    assert u.from_int(0x2603) == '\u2603'
-    assert u.to_int('\u2603') == 0x2603
+    assert u.code_from_int(0x2603) == '\u2603'
+    assert u.code_to_int('\u2603') == 0x2603
     assert u.interval == ((0, 0x10FFFF),)
 
 def test_codeuniverse_byte():
     u = CodeUniverse.byte()
     assert u.value == (0, 0xFF)
     assert u.space is bytes
-    assert u.from_int(0x41) == b'A'
-    assert u.to_int(b'A') == 0x41
+    assert u.code_from_int(0x41) == b'A'
+    assert u.code_to_int(b'A') == 0x41
     assert u.interval == ((0, 0xFF),)
     with pytest.raises(CodepointError):
-        u.to_int(b'AB')
+        u.code_to_int(b'AB')
     with pytest.raises(CodepointError):
-        u.from_int(0x100)
+        u.code_from_int(0x100)
 
 def test_codeuniverse_enum():
     class Fruit(enum.Enum):
@@ -178,17 +178,17 @@ def test_codeuniverse_enum():
     u = CodeUniverse.enum(Fruit)
     assert u.value == (0, 1)
     assert u.space is Fruit
-    assert u.from_int(0) == Fruit.APPLE
-    assert u.from_int(1) == Fruit.BANANA
-    assert u.to_int(Fruit.APPLE) == 0
-    assert u.to_int(Fruit.BANANA) == 1
+    assert u.code_from_int(0) == Fruit.APPLE
+    assert u.code_from_int(1) == Fruit.BANANA
+    assert u.code_to_int(Fruit.APPLE) == 0
+    assert u.code_to_int(Fruit.BANANA) == 1
     assert u.interval == ((0, 1),)
     with pytest.raises(CodepointError):
-        u.from_int(2)
+        u.code_from_int(2)
     class Other(enum.Enum):
         ORANGE = 3
     with pytest.raises(CodepointError):
-        u.to_int(Other.ORANGE)
+        u.code_to_int(Other.ORANGE)
 
 
 def test_codeuniverse_enum_nonint():
@@ -198,8 +198,8 @@ def test_codeuniverse_enum_nonint():
     u = CodeUniverse.enum(StrEnum)
     assert u.value == (0, 1)
     assert u.space is StrEnum
-    assert u.from_int(0) == StrEnum.ALPHA
-    assert u.from_int(1) == StrEnum.BETA
-    assert u.to_int(StrEnum.ALPHA) == 0
-    assert u.to_int(StrEnum.BETA) == 1
+    assert u.code_from_int(0) == StrEnum.ALPHA
+    assert u.code_from_int(1) == StrEnum.BETA
+    assert u.code_to_int(StrEnum.ALPHA) == 0
+    assert u.code_to_int(StrEnum.BETA) == 1
     assert u.interval == ((0, 1),)

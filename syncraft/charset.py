@@ -48,7 +48,7 @@ class CodeUniverse(Generic[C]):
     def __repr__(self) -> str:
         return self.__str__()
     
-    def to_int(self, c: C) -> int:
+    def code_to_int(self, c: C) -> int:
         if isinstance(c, str):
             if len(c) != 1:
                 raise CodepointError(f"Expected single character, got {c!r}", offender=c, expect="single character")
@@ -69,7 +69,7 @@ class CodeUniverse(Generic[C]):
             raise CodepointError(f"Character {c!r} (codepoint {cp}) out of bounds for universe {self}", offender=c, expect=f"codepoint in range {self.value}")
         return cp
     
-    def from_int(self, cp: int) -> C:
+    def code_from_int(self, cp: int) -> C:
         if not (self.value[0] <= cp <= self.value[1]):
             raise CodepointError(f"Codepoint {cp} out of bounds for universe {self}", offender=cp, expect=f"codepoint in range {self.value}")
         if cp in self.int2c:
@@ -191,7 +191,7 @@ class CharSet(Generic[C]):
 
     @classmethod
     def create(cls, char: str | bytes | List[Enum], universe: CodeUniverse) -> CharSet[C]:
-        cs: frozenset[int] = frozenset(universe.to_int(x) for x in char)
+        cs: frozenset[int] = frozenset(universe.code_to_int(x) for x in char)
         intv = tuple((c, c) for c in sorted(cs))
         return cls(
             predicate=lambda c: c in cs, 
@@ -223,7 +223,7 @@ class CharSet(Generic[C]):
     def sample(self, rnd: random.Random) -> C:
         range = rnd.choice(self.interval)
         point = rnd.randint(range[0], range[1])
-        return self.universe.from_int(point)
+        return self.universe.code_from_int(point)
 
     def overlaps(self, intv: Tuple[int, int]) -> bool:
         for start, end in self.interval:
@@ -232,11 +232,11 @@ class CharSet(Generic[C]):
         return False
 
     def matches_interval(self, cc: C) -> bool:
-        c = self.universe.to_int(cc)
+        c = self.universe.code_to_int(cc)
         return any(start <= c <= end for start, end in self.interval)
 
     def matches(self, c: C) -> bool:
-        return self.predicate(self.universe.to_int(c))
+        return self.predicate(self.universe.code_to_int(c))
         
     def __call__(self, c: C) -> bool:
         assert self.matches(c) == self.matches_interval(c)
@@ -327,9 +327,9 @@ class CharSet(Generic[C]):
         parts = []
         for start, end in self.interval:
             if start == end:
-                parts.append(f"{self.universe.from_int(start)!r}")
+                parts.append(f"{self.universe.code_from_int(start)!r}")
             else:
-                parts.append(f"{self.universe.from_int(start)!r}-{self.universe.from_int(end)!r}")
+                parts.append(f"{self.universe.code_from_int(start)!r}-{self.universe.code_from_int(end)!r}")
         return f"CharSet({', '.join(parts)}).{self.universe}"
     def __str__(self) -> str:
         return self.__repr__()
