@@ -487,6 +487,31 @@ class Cache(Generic[A, Ret]):
             # Early multi-head zero-consumption detection: if all members succeeded (Right) with zero consumption
             # after seeding, classify as no-progress and raise before entering growth.
             if len(head.group.members) > 1:
+                # NEW: Detect pure unproductive mutual cycle (no member produced any successful seed result).
+                # Example: A -> B; B -> A on empty input. All seeds fail because recursion is suppressed
+                # during seeding and there are no base (non-recursive) alternatives. Previous logic required
+                # at least one successful seed (any_success) to classify no-progress, so such grammars silently
+                # failed without a diagnostic. We now raise a LeftRecursionError(reason='no-progress') early.
+                # NOTE: Added to support test 'test_mutual_unproductive_cycle_no_progress' which asserts
+                # that a purely unproductive mutual cycle (A -> B; B -> A) raises reason='no-progress'.
+                # Without this branch such a grammar produced no successful seed and silently failed.
+                no_seed_success = all(
+                    not (m.result is not None and isinstance(m.result, Right))
+                    and not (m.seed_result is not None and isinstance(m.seed_result, Right))
+                    for m in head.group.members
+                )
+                if no_seed_success:
+                    raise LeftRecursionError(
+                        "Left recursion with no progress (no productive base in mutual cycle)",
+                        offender=offender if (offender := head.f) else head.f,  # type: ignore
+                        expect="> 0 token consumption via at least one base alternative",
+                        iterations=0,
+                        seed_consumed=None,
+                        best_consumed=None,
+                        group_size=len(head.group.members),
+                        limit=self.max_growth_iterations,
+                        reason="no-progress"
+                    )
                 all_zero = True
                 any_success = False
                 for m in head.group.members:
