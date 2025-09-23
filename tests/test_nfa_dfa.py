@@ -10,52 +10,52 @@ from syncraft.charset import CodeUniverse
 def test_large_chain_dfa():
     # DFA that accepts a long specific sequence (e.g., 1000 'a's)
     n = 1000
-    nfa = NFA.from_char('a', universe=CodeUniverse.ascii())
+    nfa = NFA.from_charset('a', universe=CodeUniverse.ascii())
     for _ in range(n-1):
-        nfa = nfa.then(NFA.from_char('a', universe=CodeUniverse.ascii()))
+        nfa = nfa.then(NFA.from_charset('a', universe=CodeUniverse.ascii()))
     dfa = nfa.dfa
     m = dfa.minimize
-    assert dfa.match(['a']*n)
-    assert m.match(['a']*n)
-    assert not dfa.match(['a']*(n-1))
-    assert not m.match(['a']*(n-1))
-    assert not dfa.match(['a']*n + ['b'])
-    assert not m.match(['a']*n + ['b'])
+    assert dfa.match('a'*n)
+    assert m.match('a'*n)
+    assert not dfa.match('a'*(n-1))
+    assert not m.match('a'*(n-1))
+    assert not dfa.match('a'*n + 'b')
+    assert not m.match('a'*n + 'b')
 
 def test_large_or_dfa():
     # DFA that accepts any of 1000 different single characters
     chars = [chr(32+i) for i in range(1000)]
-    nfa = NFA.from_char(chars[0], universe=CodeUniverse.unicode())
+    nfa = NFA.from_charset(chars[0], universe=CodeUniverse.unicode())
     for c in chars[1:]:
-        nfa = nfa | NFA.from_char(c, universe=CodeUniverse.unicode())
+        nfa = nfa | NFA.from_charset(c, universe=CodeUniverse.unicode())
     dfa = nfa.dfa
     d = dfa.minimize
     for c in chars:
-        assert dfa.match([c])
-        assert d.match([c])
-    assert not dfa.match(['z']) if 'z' not in chars else True
-    assert not d.match(['z']) if 'z' not in chars else True
+        assert dfa.match(c)
+        assert d.match(c)
+    assert not dfa.match('z') if 'z' not in chars else True
+    assert not d.match('z') if 'z' not in chars else True
 
 
 def test_deeply_nested_nfa():
     # NFA with deep nesting: (((a then b) then c) then ...)
     seq = [chr(65+i) for i in range(20)]
-    nfa = NFA.from_char(seq[0], universe=CodeUniverse.ascii())
+    nfa = NFA.from_charset(seq[0], universe=CodeUniverse.ascii())
     for c in seq[1:]:
-        nfa = nfa.then(NFA.from_char(c, universe=CodeUniverse.ascii()))
-    assert nfa.match(seq)
-    assert not nfa.match(seq[:-1])
+        nfa = nfa.then(NFA.from_charset(c, universe=CodeUniverse.ascii()))
+    assert nfa.match(''.join(seq))
+    assert not nfa.match(''.join(seq[:-1]))
 
 def test_recursive_nfa_star():
     # NFA for (ab)*
-    nfa = NFA.from_char('a', universe=CodeUniverse.ascii()).then(NFA.from_char('b', universe=CodeUniverse.ascii())).star
+    nfa = NFA.from_charset('a', universe=CodeUniverse.ascii()).then(NFA.from_charset('b', universe=CodeUniverse.ascii())).star
     # Accepts any even-length string of alternating a/b
     for n in range(0, 20, 2):
         s = ['a','b']*(n//2)
-        assert nfa.match(s)
-    assert not nfa.match(['a'])
-    assert not nfa.match(['b'])
-    assert not nfa.match(['a','a'])
+        assert nfa.match(''.join(s))
+    assert not nfa.match('a')
+    assert not nfa.match('b')
+    assert not nfa.match('aa')
 
 
 
@@ -68,7 +68,7 @@ class Color(enum.Enum):
 def test_enum_tag_nfa():
     u = CodeUniverse.enum(Color)
     from syncraft.fa import NFA
-    nfa = NFA.from_char(Color.RED, universe=u).tagged('red')
+    nfa = NFA.from_charset([Color.RED], universe=u).tagged('red')
     assert nfa.match([Color.RED])
     assert not nfa.match([Color.GREEN])
     # Tag should be present in accept
@@ -78,7 +78,7 @@ def test_enum_tag_nfa():
 def test_nfa_over_enum():
     u = CodeUniverse.enum(Color)
     from syncraft.fa import NFA
-    nfa = NFA.from_char(Color.RED, universe=u) | NFA.from_char(Color.BLUE, universe=u)
+    nfa = NFA.from_charset([Color.RED], universe=u) | NFA.from_charset([Color.BLUE], universe=u)
     assert nfa.match([Color.RED])
     assert nfa.match([Color.BLUE])
     assert not nfa.match([Color.GREEN])
@@ -86,7 +86,7 @@ def test_nfa_over_enum():
 def test_dfa_over_enum():
     u = CodeUniverse.enum(Color)
     from syncraft.fa import NFA
-    nfa = NFA.from_char(Color.RED, universe=u) | NFA.from_char(Color.BLUE, universe=u)
+    nfa = NFA.from_charset([Color.RED], universe=u) | NFA.from_charset([Color.BLUE], universe=u)
     dfa = nfa.dfa
     m = dfa.minimize
     assert dfa.match([Color.RED])
@@ -97,7 +97,7 @@ def test_dfa_over_enum():
     assert not m.match([Color.GREEN])
 
 
-def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)->None:
+def assert_both(nfa: NFA[str], dfa: DFA[str], input: str, expected: bool)->None:
     nfa2 = dfa.nfa
     nfa_result = nfa.match(input)
     dfa_result = dfa.match(input)
@@ -113,148 +113,148 @@ def assert_both(nfa: NFA[str], dfa: DFA[str], input: list[str], expected: bool)-
     # assert m == dfa.nfa.dfa.minimize, "Minimized DFA from DFA does not match minimized DFA from NFA"
 
 def test_from_char()->None:
-    nfa = NFA.from_char('a', universe=CodeUniverse.ascii())
+    nfa: NFA[str] = NFA.from_charset('a', universe=CodeUniverse.ascii())
     dfa = DFA.from_nfa(nfa)
     assert nfa.current in nfa.transitions
-    assert_both(nfa, dfa, ['a'], True)
-    assert_both(nfa, dfa, ['b'], False)
-    assert_both(nfa, dfa, [], False)
+    assert_both(nfa, dfa, 'a', True)
+    assert_both(nfa, dfa, 'b', False)
+    assert_both(nfa, dfa, '', False)
     
 
 
 
 
 def test_then():
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("b", universe=CodeUniverse.ascii()))
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).then(NFA.from_charset("b", universe=CodeUniverse.ascii()))
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, ["a", "b"], True)
-    assert_both(nfa, dfa, ["a"], False)
-    assert_both(nfa, dfa, ["b"], False)
-    assert_both(nfa, dfa, ["a", "c"], False)
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("a", universe=CodeUniverse.ascii()))
+    assert_both(nfa, dfa, "ab", True)
+    assert_both(nfa, dfa, "a", False)
+    assert_both(nfa, dfa, "b", False)
+    assert_both(nfa, dfa, "ac", False)
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).then(NFA.from_charset("a", universe=CodeUniverse.ascii()))
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, ["a", "a"], True)
-    assert_both(nfa, dfa, ["a", "c"], False)
-    assert_both(nfa, dfa, ["a"], False)
-    assert_both(nfa, dfa, [], False)
-    assert_both(nfa, dfa, ["b"], False)
-    assert_both(nfa, dfa, ["a", "b"], False)
-    assert_both(nfa, dfa, ["a", "a", "a"], False)
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii())
+    assert_both(nfa, dfa, "aa", True)
+    assert_both(nfa, dfa, "ac", False)
+    assert_both(nfa, dfa, "a", False)
+    assert_both(nfa, dfa, '', False)
+    assert_both(nfa, dfa, "b", False)
+    assert_both(nfa, dfa, "ab", False)
+    assert_both(nfa, dfa, "aaa", False)
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii())
     nfa = nfa.then(nfa).then(nfa)  # aaa
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, ["a", "a", "a"], True)
-    assert_both(nfa, dfa, ["a", "a"], False)
-    assert_both(nfa, dfa, ["a"], False)
-    assert_both(nfa, dfa, [], False)
-    assert_both(nfa, dfa, ["b"], False)
-    assert_both(nfa, dfa, ["a", "b"], False)
-    assert_both(nfa, dfa, ["a", "a", "a", "a"], False)
+    assert_both(nfa, dfa, "aaa", True)
+    assert_both(nfa, dfa, "aa", False)
+    assert_both(nfa, dfa, "a", False)
+    assert_both(nfa, dfa, '', False)
+    assert_both(nfa, dfa, "b", False)
+    assert_both(nfa, dfa, "ab", False)
+    assert_both(nfa, dfa, "aaaa", False)
 
 
 
 def test_or_else():
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).union(NFA.from_char("b", universe=CodeUniverse.ascii()))
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).union(NFA.from_charset("b", universe=CodeUniverse.ascii()))
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, ["a"], True)
-    assert_both(nfa, dfa, ["b"], True)
-    assert_both(nfa, dfa, ["c"], False)
-    assert_both(nfa, dfa, [], False)
+    assert_both(nfa, dfa, "a", True)
+    assert_both(nfa, dfa, "b", True)
+    assert_both(nfa, dfa, "c", False)
+    assert_both(nfa, dfa, '', False)
 
 
 def test_optional():
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).optional
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).optional
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, [], True)          # epsilon path
-    assert_both(nfa, dfa, ["a"], True)       # one "a"
-    assert_both(nfa, dfa, ["b"], False)      # not "a"
-    assert_both(nfa, dfa, ["a", "a"], False) # not "aa"
+    assert_both(nfa, dfa, '', True)          # epsilon path
+    assert_both(nfa, dfa, "a", True)       # one "a"
+    assert_both(nfa, dfa, "b", False)      # not "a"
+    assert_both(nfa, dfa, "aa", False) # not "aa"
 
 
 def test_many():
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).many()
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).many()
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, [], False)          # epsilon path
-    assert_both(nfa, dfa, ["a"], True)       # one "a"
-    assert_both(nfa, dfa, ["a", "a"], True)  # two "a"
-    assert_both(nfa, dfa, ["a", "a", "a"], True) # three "a"
-    assert_both(nfa, dfa, ["b"], False)      # not "a"
-    assert_both(nfa, dfa, ["a", "b"], False) # not "aa"
-    assert_both(nfa, dfa, ["b", "a"], False) # not "aa"
-    assert_both(nfa, dfa, ["a", "a", "b"], False)
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).many(2, 4)
+    assert_both(nfa, dfa, '', False)          # epsilon path
+    assert_both(nfa, dfa, "a", True)       # one "a"
+    assert_both(nfa, dfa, "aa", True)  # two "a"
+    assert_both(nfa, dfa, "aaa", True) # three "a"
+    assert_both(nfa, dfa, "b", False)      # not "a"
+    assert_both(nfa, dfa, "ab", False) # not "aa"
+    assert_both(nfa, dfa, "ba", False) # not "aa"
+    assert_both(nfa, dfa, "aab", False)
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).many(2, 4)
     dfa = DFA.from_nfa(nfa)
 
-    assert_both(nfa, dfa, [], False)         # requires at least two
-    assert_both(nfa, dfa, ["a"], False)      # requires at least two
-    assert_both(nfa, dfa, ["a", "a"], True)
-    assert_both(nfa, dfa, ["a", "a", "a"], True)
-    assert_both(nfa, dfa, ["a", "a", "a", "a"], True)
-    assert_both(nfa, dfa, ["a", "a", "a", "a", "a"], False) # at most four
-    assert_both(nfa, dfa, ["b"], False)      # not "a"
-    assert_both(nfa, dfa, ["a", "b"], False)
-    assert_both(nfa, dfa, ["a", "a", "b"], False)
-    assert_both(nfa, dfa, ["a", "a", "a", "b"], False)
-    assert_both(nfa, dfa, ["a", "a", "a", "a", "b"], False)
-    assert_both(nfa, dfa, ["a", "a", "a", "a", "a", "b"], False)
+    assert_both(nfa, dfa, '', False)         # requires at least two
+    assert_both(nfa, dfa, "a", False)      # requires at least two
+    assert_both(nfa, dfa, "aa", True)
+    assert_both(nfa, dfa, 'aaa', True)
+    assert_both(nfa, dfa, 'aaaa', True)
+    assert_both(nfa, dfa, 'aaaaa', False) # at most four
+    assert_both(nfa, dfa, "b", False)      # not "a"
+    assert_both(nfa, dfa, "ab", False)
+    assert_both(nfa, dfa, 'aab', False)
+    assert_both(nfa, dfa, 'aaab', False)
+    assert_both(nfa, dfa, 'aaaab', False)
+    assert_both(nfa, dfa, 'aaaaab', False)
 
 def test_plus():
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).plus
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).plus
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, ["a"], True)
-    assert_both(nfa, dfa, ["a", "a"], True)
-    assert_both(nfa, dfa, ["a", "a", "a"], True)
-    assert_both(nfa, dfa, [], False)         # requires at least one
+    assert_both(nfa, dfa, "a", True)
+    assert_both(nfa, dfa, "aa", True)
+    assert_both(nfa, dfa, "aaa", True)
+    assert_both(nfa, dfa, '', False)         # requires at least one
 
 def test_star():
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).star
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).star
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, [], True)          # epsilon path
-    assert_both(nfa, dfa, ["a"], True)       # one "a"
-    assert_both(nfa, dfa, ["a", "a"], True)  # two "a"
-    assert_both(nfa, dfa, ["a", "a", "a"], True) # three "a"
-    assert_both(nfa, dfa, ["b"], False)      # not "a"
-    assert_both(nfa, dfa, ["a", "b"], False) # not "aa"
-    assert_both(nfa, dfa, ["b", "a"], False) # not "aa"
-    assert_both(nfa, dfa, ["a", "a", "b"], False) # not "aa"
-    assert_both(nfa, dfa, ["b", "a", "a"], False) # not "aa"
-    assert_both(nfa, dfa, ["a", "b", "a"], False) # not "aa"
-    assert_both(nfa, dfa, ["b", "a", "b"], False) # not "aa"
-    assert_both(nfa, dfa, ["b", "b", "a"], False) # not "aa"
-    assert_both(nfa, dfa, ["b", "b", "b"], False) # not "aa"
+    assert_both(nfa, dfa, '', True)          # epsilon path
+    assert_both(nfa, dfa, "a", True)       # one "a"
+    assert_both(nfa, dfa, "aa", True)  # two "a"
+    assert_both(nfa, dfa, "aaa", True) # three "a"
+    assert_both(nfa, dfa, "b", False)      # not "a"
+    assert_both(nfa, dfa, 'ab', False) # not "aa"
+    assert_both(nfa, dfa, 'ba', False) # not "aa"
+    assert_both(nfa, dfa, 'aab', False) # not "aa"
+    assert_both(nfa, dfa, 'baa', False) # not "aa"
+    assert_both(nfa, dfa, 'aba', False) # not "aa"
+    assert_both(nfa, dfa, 'bab', False) # not "aa"
+    assert_both(nfa, dfa, 'bba', False) # not "aa"
+    assert_both(nfa, dfa, 'bbb', False) # not "aa"
 
 
 def test_complex()->None:
-    a = NFA.from_char('a', universe=CodeUniverse.ascii())
-    b = NFA.from_char('b', universe=CodeUniverse.ascii())
-    c = NFA.from_char('c', universe=CodeUniverse.ascii())
+    a: NFA[str] = NFA.from_charset('a', universe=CodeUniverse.ascii())
+    b: NFA[str] = NFA.from_charset('b', universe=CodeUniverse.ascii())
+    c: NFA[str] = NFA.from_charset('c', universe=CodeUniverse.ascii())
     a_or_b = a.union(b)
     a_or_b_then_c = a_or_b.then(c)
     nfa = a_or_b_then_c.many(2, 4)
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, ['a', 'b', 'c', 'a', 'c'], False)
-    assert_both(nfa, dfa, ['a', 'b', 'c'], False)
-    assert_both(nfa, dfa, ['a', 'c', 'b', 'c', 'a', 'c'], True)
-    assert_both(nfa, dfa, ['a', 'b', 'c', 'a', 'b', 'c', 'a', 'b', 'c'], False)
-    assert_both(nfa, dfa, ['a', 'c', 'b', 'c', 'b', 'c', 'a', 'c'], True)
-    assert_both(nfa, dfa, ['a', 'c', 'b', 'c', 'b', 'c', 'a', 'c', 'b'], False)
-    assert_both(nfa, dfa, ['a', 'c', 'b', 'c', 'b', 'c', 'a', 'c', 'b', 'c'], False)
-    assert_both(nfa, dfa, ['a', 'b'], False)
-    assert_both(nfa, dfa, ['c'], False)
-    assert_both(nfa, dfa, [], False)
-    assert_both(nfa, dfa, ['a', 'c', 'b', 'c'], True)
-    assert_both(nfa, dfa, ['b', 'c', 'a', 'c'], True)
-    assert_both(nfa, dfa, ['a', 'c', 'a', 'c'], True)
+    assert_both(nfa, dfa, ''.join(['a', 'b', 'c', 'a', 'c']), False)
+    assert_both(nfa, dfa, ''.join(['a', 'b', 'c']), False)
+    assert_both(nfa, dfa, ''.join(['a', 'c', 'b', 'c', 'a', 'c']), True)
+    assert_both(nfa, dfa, ''.join(['a', 'b', 'c', 'a', 'b', 'c', 'a', 'b', 'c']), False)
+    assert_both(nfa, dfa, ''.join(['a', 'c', 'b', 'c', 'b', 'c', 'a', 'c']), True)
+    assert_both(nfa, dfa, ''.join(['a', 'c', 'b', 'c', 'b', 'c', 'a', 'c', 'b']), False)
+    assert_both(nfa, dfa, ''.join(['a', 'c', 'b', 'c', 'b', 'c', 'a', 'c', 'b', 'c']), False)
+    assert_both(nfa, dfa, ''.join(['a', 'b']), False)
+    assert_both(nfa, dfa, ''.join(['c']), False)
+    assert_both(nfa, dfa, '', False)
+    assert_both(nfa, dfa, ''.join(['a', 'c', 'b', 'c']), True)
+    assert_both(nfa, dfa, ''.join(['b', 'c', 'a', 'c']), True)
+    assert_both(nfa, dfa, ''.join(['a', 'c', 'a', 'c']), True)
 
 
 
 def test_runner()->None:
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("b", universe=CodeUniverse.ascii())).then(NFA.from_char("c", universe=CodeUniverse.ascii()))
+    nfa: NFA[str] = NFA.from_charset("a", universe=CodeUniverse.ascii()).then(NFA.from_charset("b", universe=CodeUniverse.ascii())).then(NFA.from_charset("c", universe=CodeUniverse.ascii()))
     dfa = DFA.from_nfa(nfa)
     m = dfa.minimize
-    runner = nfa.run(["a", "b", "c"])
-    drunner = dfa.run(["a", "b", "c"])
-    mrunner = m.run(["a", "b", "c"])
+    runner = nfa.run("abc")
+    drunner = dfa.run("abc")
+    mrunner = m.run("abc")
     # print(runner)
     assert runner.is_accepted(nfa), "nfa is not accepted"
     assert drunner.is_accepted(dfa), "dfa is not accepted"
@@ -265,9 +265,9 @@ def test_runner()->None:
     assert not r1, "nfa runner is resumable"
     assert not dr1, "dfa runner is resumable"
     assert not m1, "minimized dfa runner is resumable"
-    runner = nfa.run(["a", "b"])
-    drunner = dfa.run(["a", "b"])
-    mrunner = m.run(["a", "b"])
+    runner = nfa.run("ab")
+    drunner = dfa.run("ab")
+    mrunner = m.run("ab")
     assert not runner.is_accepted(nfa), "nfa is accepted"
     assert not drunner.is_accepted(dfa), "dfa is accepted"
     assert not mrunner.is_accepted(m), "minimized dfa is accepted"
@@ -278,9 +278,9 @@ def test_runner()->None:
     # print(r2)
     assert r2 , "nfa runner is not resumable"
     assert dr2, "dfa runner is not resumable"
-    runner = nfa.run(["a", "b", "c", "d"])
-    drunner = dfa.run(["a", "b", "c", "d"])
-    mrunner = m.run(["a", "b", "c", "d"])
+    runner = nfa.run("abcd")
+    drunner = dfa.run("abcd")
+    mrunner = m.run("abcd")
     # print(runner)
     assert len(runner.accepted) == 1
     assert runner.accepted[0][0] == 2
@@ -296,7 +296,7 @@ def test_runner()->None:
     assert not mr3, "minimized dfa runner is resumable"
 
 def test_gen()->None:
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("b", universe=CodeUniverse.ascii())).then(NFA.from_char("c", universe=CodeUniverse.ascii()))
+    nfa: NFA[str] = NFA.from_charset("a", universe=CodeUniverse.ascii()).then(NFA.from_charset("b", universe=CodeUniverse.ascii())).then(NFA.from_charset("c", universe=CodeUniverse.ascii()))
     dfa = DFA.from_nfa(nfa)
     m = dfa.minimize
     r = nfa.runner()
@@ -312,7 +312,7 @@ def test_gen()->None:
 
 def test_dead_state():
     # NFA that can go to a dead state: "a" then optional "b"
-    nfa = NFA.from_char("a", universe=CodeUniverse.ascii()).then(NFA.from_char("b", universe=CodeUniverse.ascii()).optional)
+    nfa = NFA.from_charset("a", universe=CodeUniverse.ascii()).then(NFA.from_charset("b", universe=CodeUniverse.ascii()).optional)
     dfa = DFA.from_nfa(nfa)
     m = dfa.minimize
     # Check all DFA closures
@@ -327,8 +327,8 @@ def test_dead_state():
 
 def test_tag_propagation():
     # NFA with multiple accepting states with tags
-    nfa_a = NFA.from_char("a", universe=CodeUniverse.ascii()).tagged("tag1")
-    nfa_b = NFA.from_char("b", universe=CodeUniverse.ascii()).tagged("tag2")
+    nfa_a = NFA.from_charset("a", universe=CodeUniverse.ascii()).tagged("tag1")
+    nfa_b = NFA.from_charset("b", universe=CodeUniverse.ascii()).tagged("tag2")
     nfa = nfa_a.union(nfa_b)
     dfa = DFA.from_nfa(nfa)
     m = dfa.minimize
@@ -347,47 +347,47 @@ def test_tag_propagation():
 def test_dfa_combinators_basic():
     u = CodeUniverse.ascii()
     from syncraft.fa import NFA
-    a = NFA.from_char('a', universe=u).dfa
+    a = NFA.from_charset('a', universe=u).dfa
     ma = a.minimize
-    b = NFA.from_char('b', universe=u).dfa
+    b = NFA.from_charset('b', universe=u).dfa
     mb = b.minimize
     # complement
     not_a = -a
     not_ma = -ma
-    assert not not_ma.match(['a'])
-    assert not_ma.match(['b'])
-    assert not not_a.match(['a'])
-    assert not_a.match(['b'])
+    assert not not_ma.match('a')
+    assert not_ma.match('b')
+    assert not not_a.match('a')
+    assert not_a.match('b')
     # intersection
     ab = a & b
     abm = ma & mb
-    assert not abm.match(['a'])
-    assert not abm.match(['b'])
-    assert not abm.match(['a','b'])
-    assert not ab.match(['a'])
-    assert not ab.match(['b'])
-    assert not ab.match(['a','b'])
+    assert not abm.match('a')
+    assert not abm.match('b')
+    assert not abm.match('ab')
+    assert not ab.match('a')
+    assert not ab.match('b')
+    assert not ab.match('ab')
     # union
     a_or_b = a | b
     a_or_bm = ma | mb
-    assert a_or_bm.match(['a'])
-    assert a_or_bm.match(['b'])
-    assert not a_or_bm.match(['c'])
-    assert a_or_b.match(['a'])
-    assert a_or_b.match(['b'])
-    assert not a_or_b.match(['c'])
+    assert a_or_bm.match('a')
+    assert a_or_bm.match('b')
+    assert not a_or_bm.match('c')
+    assert a_or_b.match('a')
+    assert a_or_b.match('b')
+    assert not a_or_b.match('c')
     # difference
     only_a = a - b
     only_am = ma - mb
-    assert only_am.match(['a'])
-    assert not only_am.match(['b'])
-    assert only_a.match(['a'])
-    assert not only_a.match(['b'])
+    assert only_am.match('a')
+    assert not only_am.match('b')
+    assert only_a.match('a')
+    assert not only_a.match('b')
 
 def test_dfa_tagged():
     u = CodeUniverse.ascii()
     from syncraft.fa import NFA
-    a = NFA.from_char('a', universe=u).dfa
+    a = NFA.from_charset('a', universe=u).dfa
     ma = a.minimize
     tagged = a.tagged('X')
     tagged_m = ma.tagged('X')
@@ -406,19 +406,19 @@ def test_dfa_tagged():
 def test_dfa_combinator_chain():
     u = CodeUniverse.ascii()
     from syncraft.fa import NFA
-    a = NFA.from_char('a', universe=u).dfa
+    a = NFA.from_charset('a', universe=u).dfa
     ma = a.minimize
-    b = NFA.from_char('b', universe=u).dfa
+    b = NFA.from_charset('b', universe=u).dfa
     mb = b.minimize
-    c = NFA.from_char('c', universe=u).dfa
+    c = NFA.from_charset('c', universe=u).dfa
     mc = c.minimize
     combo = ((a | b) & -c)
     combo_m = ((ma | mb) & -mc)
-    assert combo_m.match(['a'])
-    assert combo_m.match(['b'])
-    assert not combo_m.match(['c'])
-    assert not combo_m.match(['a','c'])
-    assert combo.match(['a'])
-    assert combo.match(['b'])
-    assert not combo.match(['c'])
-    assert not combo.match(['a','c'])
+    assert combo_m.match('a')
+    assert combo_m.match('b')
+    assert not combo_m.match('c')
+    assert not combo_m.match('ac')
+    assert combo.match('a')
+    assert combo.match('b')
+    assert not combo.match('c')
+    assert not combo.match('ac')

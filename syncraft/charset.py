@@ -19,7 +19,7 @@ class MixedUniverseError(SyncraftError):
 class CodepointError(SyncraftError):
     pass
 
-C = TypeVar('C', bound=str | bytes | Enum)
+C = TypeVar('C', bound=str | int | Enum)
 
 
 @dataclass(frozen=True)
@@ -68,6 +68,7 @@ class CodeUniverse(Generic[C]):
         if not (self.value[0] <= cp <= self.value[1]):
             raise CodepointError(f"Character {c!r} (codepoint {cp}) out of bounds for universe {self}", offender=c, expect=f"codepoint in range {self.value}")
         return cp
+    
     def from_int(self, cp: int) -> C:
         if not (self.value[0] <= cp <= self.value[1]):
             raise CodepointError(f"Codepoint {cp} out of bounds for universe {self}", offender=cp, expect=f"codepoint in range {self.value}")

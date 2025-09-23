@@ -17,7 +17,7 @@ from collections import defaultdict
 
 
 
-C = TypeVar('C', bound=str | bytes | Enum)
+C = TypeVar('C', bound=str | int | Enum)
 
 @dataclass(frozen=True)
 class FAState:
@@ -430,10 +430,10 @@ class DFA(Generic[C]):
     def runner(self) -> DFARunner[C]:
         return DFARunner.create(self)
 
-    def run(self, input_seq: list[C]) -> DFARunner[C]:
+    def run(self, input_seq: str | bytes | list[Enum]) -> DFARunner[C]:
         return self.runner().steps(self, input_seq)
 
-    def match(self, input_seq: list[C]) -> bool:
+    def match(self, input_seq: str | bytes | list[Enum]) -> bool:
         return self.run(input_seq).is_accepted(self)
 
 @dataclass(frozen=True)
@@ -492,14 +492,14 @@ class NFA(Generic[C]):
     def runner(self) -> NFARunner[C]:
         return NFARunner.create(self)
 
-    def run(self, input_seq: list[C]) -> NFARunner[C]:
+    def run(self, input_seq: str | bytes | list[Enum]) -> NFARunner[C]:
         return self.runner().steps(self, input_seq)
 
-    def match(self, input_seq: list[C]) -> bool:
+    def match(self, input_seq: str | bytes | list[Enum]) -> bool:
         return self.run(input_seq).is_accepted(self)
 
     @classmethod
-    def from_charset(cls, c: CharSet[C], tag: Optional[str|Enum] = None) -> NFA[C]:
+    def _from_charset(cls, c: CharSet[C], tag: Optional[str|Enum] = None) -> NFA[C]:
         assert c.interval != tuple(), "charset cannot be empty"
         current: FAState = FAState()
         accept: FAState = FAState()
@@ -513,19 +513,17 @@ class NFA(Generic[C]):
                    epsilon=FrozenDict())
 
     @classmethod
-    def from_char(cls, 
-                  char: C, 
+    def from_charset(cls, 
+                  char: str | bytes | list[Enum], 
                   universe: CodeUniverse, 
                   negation:bool = False,  
-                  tag: Optional[str|Enum] = None) -> NFA[C]:
-        c = [char] if isinstance(char, Enum) else char
-        assert len(c) >= 1, "char cannot be empty"
-        charset: CharSet[C] = CharSet.create(c, universe=universe)
+                  tag: Optional[str|Enum] = None) -> NFA[Any]:
+        charset: CharSet[C] = CharSet.create(char, universe=universe)
         if negation:
             charset = -charset
         if charset.interval == tuple():
             raise CodepointError(f"Character {char!r} is not valid in the specified universe {universe}", offender=char, universe=universe)
-        return cls.from_charset(charset, tag=tag)
+        return cls._from_charset(charset, tag=tag)
 
 
     def then(self, other: NFA[C]) -> NFA[C]:
@@ -638,7 +636,7 @@ class Runner(Protocol[C, Automata]):
     @classmethod
     def create(cls, a: Automata) -> Self: ...
     def step(self, a: Automata, symbol: C, pos: int) -> Self: ...
-    def steps(self, fa: Automata, input: list[C]) -> Self:
+    def steps(self, fa: Automata, input: str | bytes | list[Enum]) -> Self:
         runner = self
         for i, symbol in enumerate(input):
             runner = runner.step(fa, symbol, i)
@@ -650,7 +648,7 @@ class Runner(Protocol[C, Automata]):
     def is_valid(self) -> bool: ...
     def resumable(self, a: Automata) -> frozenset[CharSet[C]]: ...
     def tags(self, a: Automata) -> frozenset[str|Enum]: ...
-    def gen(self, a: Automata, times: int = 1) -> List[Tuple[List[C], frozenset[str|Enum]]]: 
+    def gen(self, a: Automata, times: int = 1) -> List[Tuple[List[Enum] | str | bytes, frozenset[str | Enum]]]:
         def gen_one(r: Self, a: Automata) -> Optional[Tuple[C, Self]]:
             possible_steps = r.resumable(a)
             if possible_steps:
@@ -661,10 +659,10 @@ class Runner(Protocol[C, Automata]):
                 return c, r.step(a, c, 0)
             else:
                 return None
-        ret = []
+        ret: List[Tuple[List[Enum] | str | bytes, frozenset[str | Enum]]] = []
         runner = self
         for _ in range(times):
-            txt: List[C] = []
+            txt: List[Any]= []
             while runner.resumable(a):
                 match gen_one(runner, a):
                     case None:
@@ -673,7 +671,13 @@ class Runner(Protocol[C, Automata]):
                         txt.append(c)
                         runner = r
                 if runner.is_accepted(a):
-                    ret.append((txt, runner.tags(a)))
+                    if len(txt) > 0:
+                        if isinstance(txt[0], str):
+                            ret.append((''.join(txt), runner.tags(a)))
+                        elif isinstance(txt[0], int):
+                            ret.append((bytes(txt), runner.tags(a)))
+                        else:
+                            ret.append((txt, runner.tags(a)))
                     import random
                     if random.random() < 0.5:
                         break
@@ -689,7 +693,7 @@ class NFARunner(Runner[C, NFA[C]]):
         return cls(current=frozenset(current), accepted=tuple())
     
     def step(self, nfa: NFA[C], symbol: C, pos: int) -> NFARunner[C]:
-        ss = [symbol] if isinstance(symbol, Enum) else symbol
+        ss = [symbol] if isinstance(symbol, Enum) else (bytes(symbol) if isinstance(symbol, int) else symbol)
         assert len(ss) == 1, "symbol must be a single character"
         next_states = set()
         for s in self.current:
@@ -734,7 +738,8 @@ class DFARunner(Runner[C, DFA[C]]):
         return cls(current=current, accepted=tuple())
     
     def step(self, dfa: DFA[C], symbol: C, pos: int) -> DFARunner[C]:
-        ss = [symbol] if isinstance(symbol, Enum) else symbol
+        ss = [symbol] if isinstance(symbol, Enum) else (bytes([symbol]) if isinstance(symbol, int) else symbol)
+        assert len(ss) == 1, "symbol must be a single character"
         next_state: Optional[FAState] = None
         entry: FrozenDict[CharSet[C], FAState] = dfa.transitions.get(self.current, {})
         k: CharSet[C] = CharSet.create(ss, universe=dfa.universe)
@@ -766,3 +771,13 @@ class DFARunner(Runner[C, DFA[C]]):
         return dfa.accept.get(self.current, frozenset())
 
         
+@dataclass(frozen=True)
+class Automaton(Generic[C]):
+    fa: NFA[C] | DFA[C]
+    runner: Runner[C, NFA[C]] | Runner[C, DFA[C]]
+
+    @property
+    def universe(self) -> CodeUniverse:
+        return self.fa.universe
+    
+
