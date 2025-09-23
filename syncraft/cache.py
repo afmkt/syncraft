@@ -1,17 +1,3 @@
-"""Left recursion recovery (principled variant)
-================================================
-
-Summary:
-  Seed each left-recursive head with left-recursive alternatives blocked, group same-index
-  heads, iteratively grow to a local fixed point (consumption-based improvement), and finally
-  run a global fixpoint to propagate cross-index improvements (e.g. precedence chains).
-
-Key points:
-  - Improvement == strictly more input consumed.
-  - Direct and indirect cycles share code via LRGroup.
-  - Agenda + global fixpoint revisit earlier heads after later-span growth.
-  - Safety caps: per-group iteration limit + global pass limit.
-"""
 
 from __future__ import annotations
 
@@ -28,10 +14,7 @@ R = TypeVar('R')  # Right type for combined results
 S = TypeVar('S', bound=Bindable)
 
 class Either(Generic[L, R]):
-    def is_left(self) -> bool:
-        return isinstance(self, Left)
-    def is_right(self) -> bool:
-        return isinstance(self, Right)
+    pass
 
 @dataclass(frozen=True)
 class Left(Either[L, Any]):
@@ -223,7 +206,6 @@ class Cache(Generic[A, Ret]):
     _lr_version: int = 0  # Monotonic counter incremented on any improvement (nested or local)
     _agenda: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)
     _heads_by_start: Dict[int, List[InProgress[A, Ret]]] = field(default_factory=dict, init=False, repr=False)
-    # _best removed (Option A does not need cross-wrapper substitution)
 
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache

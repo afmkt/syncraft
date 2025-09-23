@@ -4,6 +4,7 @@ from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
 import re
+import pytest
 from syncraft.ast import TokenClass
 from .test_utils import token_multiset
 literal = Syntax.config(token_class = TokenClass.simple()).literal
@@ -616,8 +617,7 @@ def test_direct_left_recursion_growth_still_collapses()->None:
 
 
 def test_indirect_multi_head_cycle_parses_successfully():
-    """Previously xfailed: expected diagnostic stack for multi-head cycle.
-
+    """
     With multi-head fixed-point implemented, mutual recursion A↔B should parse successfully.
     We assert the resulting AST string contains at least one of the starting terminals.
     """
@@ -672,3 +672,21 @@ def test_multi_recursion()->None:
         return ()
 
     assert leaves(v) == ('a','z','y','x')
+
+
+
+def test_mutual_epsilon_recursion_rejected():
+    from syncraft.cache import LeftRecursionError
+    with pytest.raises(LeftRecursionError):
+        # A → B
+        # B → A
+        A = Syntax.lazy(lambda: B)
+        B = Syntax.lazy(lambda: A)
+
+
+
+
+
+
+
+

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from typing import (
-    Any, Tuple, Generator as PyGenerator, TypeVar, Generic, Optional, Callable, Hashable
+    Any, Tuple, Generator as PyGenerator, TypeVar, Optional, Callable, Hashable
 )
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, Either, Right, Incomplete, Left, SyncraftError
 )
-from syncraft.ast import TokenSpec, ThenSpec, ManySpec, ChoiceSpec, LazySpec, ThenKind, RefSpec
-from syncraft.parser import TokenType
+from syncraft.ast import ThenSpec, ManySpec, ChoiceSpec, LazySpec, ThenKind, RefSpec
 from syncraft.constraint import Bindable, FrozenDict
 
 import re

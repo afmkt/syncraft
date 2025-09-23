@@ -63,12 +63,7 @@ class ParserState(Bindable, Generic[T]):
         if self.final:
             raise SyncraftError("Cannot concatenate to a final ParserState", offender=self, expect="not final")
         return replace(self, input=self.input + other.input, final=other.final)
-
-
-
-
-
-
+    
     def current(self)->T:
         if self.index >= len(self.input):
             raise SyncraftError("Attempted to access token beyond end of stream", offender=self, expect="index < len(input)")

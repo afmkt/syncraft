@@ -35,10 +35,7 @@ uv sync --group dev
 ```
 
 TODO
-- [ ]  Fix bug in or_else, fire Finalized
-- [ ]  Fix lazy, retry parsing when 
 - [ ]  Merge DFA/NFA into CFG parsing pipeline. Make lex node in Algebra, take FA builder.
-- [ ]  Refine the left-recursion handling, recover at or_else, or add Warth in Cache.
 - [ ]  Visualization (railroad diagrams + AST).
 - [ ]  Interactive dev (Jupyter).
 - [ ]  Semantic layer (datalog + unification).
