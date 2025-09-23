@@ -3,6 +3,7 @@ from syncraft.ast import Nothing, Token
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
+from syncraft.parser import ParserState
 from dataclasses import dataclass
 import syncraft.generator as gen
 from typing import Any, Callable, TypeVar, Generic, Generator, cast
@@ -21,12 +22,11 @@ lazy = Syntax.config(token_class = TokenClass.simple()).lazy
 
 
 def test()->None:
-    A = Syntax.lazy(lambda: B)
-    B = Syntax.lazy(lambda: A)
-    v, s = parse_word(A, '')
-    print(v)
-    print(s)
+    s: ParserState[str] = ParserState(input=tuple(), final=True)
+    
 
+
+    print(s)
 
 
 
