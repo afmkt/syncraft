@@ -9,7 +9,8 @@ from syncraft.algebra import (
      Error, Algebra, YieldChannelType, SendChannelType
 )
 from dataclasses import dataclass, field, replace
-from syncraft.utils import debug_print
+from functools import total_ordering
+
 from syncraft.syntax import Syntax
 
 from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
@@ -21,11 +22,13 @@ T = TypeVar('T', bound=Hashable)
 def underline(text: str) -> str:
     return ''.join(ch + '\u0332' for ch in text)
 
+@total_ordering
 @dataclass(frozen=True)
 class ParserState(Bindable, Generic[T]):
 
     input: Tuple[T, ...] = field(default_factory=tuple)
     index: int = 0
+    base: int = 0
     final: bool = False  
 
     def __repr__(self) -> str:
@@ -57,12 +60,28 @@ class ParserState(Bindable, Generic[T]):
             ret = ret + ["..."]
         return ret
 
-    def __add__(self, other: 'ParserState[T]') -> 'ParserState[T]':
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ParserState):
+            return False
+        return (self.base, self.index) == (other.base, other.index)
+
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(other, ParserState):
+            return NotImplemented
+        return (self.base, self.index) < (other.base, other.index)
+
+    def __add__(self, other: ParserState[T]) -> ParserState[T]:
         if not isinstance(other, ParserState):
             raise SyncraftError("Can only concatenate ParserState with another ParserState", offender=self, expect="ParserState")
         if self.final:
             raise SyncraftError("Cannot concatenate to a final ParserState", offender=self, expect="not final")
-        return replace(self, input=self.input + other.input, final=other.final)
+        if self.base + len(self.input) != other.base:
+            raise SyncraftError("Cannot concatenate ParserState with non-matching base", offender=self, expect=f"base {self.base} + len(input) {len(self.input)} == other.base {other.base}")
+        return replace(self, 
+                       input=self.input[self.index:] + other.input, 
+                       final=other.final, 
+                       base=self.base + self.index, 
+                       index=0)
     
     def current(self)->T:
         if self.index >= len(self.input):
@@ -82,7 +101,7 @@ class ParserState(Bindable, Generic[T]):
     
     @classmethod
     def from_tokens(cls, tokens: Tuple[T, ...]) -> ParserState[T]:
-        return cls(input=tokens, index=0, final=True)
+        return cls(input=tokens, index=0, final=True, base=0)
 
 
 

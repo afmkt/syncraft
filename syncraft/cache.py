@@ -98,15 +98,16 @@ class LeftRecursionError(SyncraftError):
 #   3. Stop once no improvement (consumption increase) occurs, or iteration cap reached.
 #
 # Algorithm (multi-head / mutual recursion):
-#   * All seeding heads sharing the same start index are grouped (LRGroup). After seeding
+#   * All seeding heads sharing the same start position are grouped (LRGroup). After seeding
 #     completes for the group, we cycle through members attempting improvements until a
 #     full pass yields no changes or the cap is hit. Any improvement increments a global
 #     version and may schedule earlier heads (agenda) whose spans can extend due to later
 #     growth (precedence-like chains).
 #
 # Improvement metric:
-#   Strictly greater token span (end_index - start_index). Structural richness is ignored—
-#   this guarantees termination provided grammar cannot inflate without consuming input.
+#   Strictly greater token span measured by a caller-provided distance/measure, or by
+#   ordering of states (end > start). Structural richness is ignored—this guarantees
+#   termination provided grammar cannot inflate without consuming input.
 #
 # Diagnostics (LeftRecursionError fields):
 #   iterations:    Number of growth attempts performed for the failing group.
@@ -205,7 +206,14 @@ class Cache(Generic[A, Ret]):
     _force: Optional[InProgress[A, Ret]] = None  # Entry scheduled for forced recompute during growth
     _lr_version: int = 0  # Monotonic counter incremented on any improvement (nested or local)
     _agenda: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)
-    _heads_by_start: Dict[int, List[InProgress[A, Ret]]] = field(default_factory=dict, init=False, repr=False)
+    # Heads grouped by a hashable start key (caller-provided mapping or the state itself)
+    _heads_by_start: Dict[Hashable, List[InProgress[A, Ret]]] = field(default_factory=dict, init=False, repr=False)
+
+    # Optional decoupling hook (caller may provide):
+    # - position_key: map a state to a hashable "start position" key (for grouping).
+    # next_state is always Right.value[1] on success; distance always falls back to ordering.
+    position_key: Optional[Callable[[A], Hashable]] = None
+    
 
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
@@ -251,27 +259,82 @@ class Cache(Generic[A, Ret]):
         # Provisional is a subclass of Right and should be considered success.
         return isinstance(ret, Right)
 
-    def _consumed(self, key: Any, ret: Ret) -> int:
-        """Calculate how much input was consumed; -1 if not measurable.
-        Expects Right((value, next_state)) where states have 'index'."""
+    # -------- Generic position helpers (no structural assumptions about state) --------
+    def _start_key(self, s: A) -> Hashable:
+        # Prefer caller-provided mapping; else try using the state itself; if unhashable, use id(s)
+        if self.position_key is not None:
+            try:
+                return self.position_key(s)  # type: ignore[call-arg]
+            except Exception:
+                pass
         try:
-            if isinstance(ret, Right):
-                value, state = ret.value  # type: ignore
-                if hasattr(key, 'index') and hasattr(state, 'index'):
-                    return int(getattr(state, 'index')) - int(getattr(key, 'index'))
+            hash(s)  # type: ignore[arg-type]
+            return s  # type: ignore[return-value]
         except Exception:
+            return id(s)
+
+    def _extract_next_state(self, ret: Ret) -> Optional[A]:
+        if isinstance(ret, Right):
+            try:
+                v = ret.value  # type: ignore[assignment]
+                if isinstance(v, tuple) and len(v) >= 2:
+                    return v[1]  # type: ignore[return-value]
+            except Exception:
+                return None
+        return None
+
+    def _cmp(self, a: A, b: A) -> Optional[int]:
+        # Comparison that doesn't require static knowledge of A's ordering; uses Python runtime semantics.
+        try:
+            if a == b:
+                return 0
+            # Prefer native __lt__; if not supported, attempt reverse; else treat as not less.
+            from typing import cast as _cast
+            if _cast(Any, a) < b:  # type: ignore[operator]
+                return -1
+            return 1
+        except Exception:
+            # Last resort: try reverse comparison
+            try:
+                if _cast(Any, b) < a:  # type: ignore[operator]
+                    return 1
+                return None
+            except Exception:
+                return None
+
+    def _consumed(self, key: A, ret: Ret) -> int:
+        """Calculate how much input was consumed using ordering fallback; -1 if not measurable.
+        If ret is a Right, extract end state as Right.value[1] and compare with key using total order on A:
+        - return 1 if end > start, 0 if end == start, -1 otherwise; if comparison not supported, return -1.
+        """
+        if not isinstance(ret, Right):
             return -1
+        from typing import cast as _cast
+        nxt = self._extract_next_state(_cast(Ret, ret))
+        if nxt is not None:
+            cmp_res = self._cmp(key, nxt)
+            if cmp_res is not None:
+                return 1 if cmp_res < 0 else (0 if cmp_res == 0 else -1)
         return -1
 
-    def _improved(self, key: Any, old: Optional[Ret], new: Ret) -> bool:
-        # Only consider improvements that consume strictly more input.
+    def _end_state_of(self, ret: Ret) -> Optional[A]:
+        return self._extract_next_state(ret)
+
+    def _improved(self, key: A, old: Optional[Ret], new: Ret) -> bool:
+        # Improvement = strictly further end state via ordering (fallback to measure if provided)
         if not self._is_success(new):
             return False
+        new_end = self._end_state_of(new)
+        if new_end is None:
+            return False
         if old is None or not self._is_success(old):
+            cmp0 = self._cmp(key, new_end)
+            return cmp0 is not None and cmp0 < 0
+        old_end = self._end_state_of(old)
+        if old_end is None:
             return True
-        old_c = self._consumed(key, old)
-        new_c = self._consumed(key, new)
-        return new_c > old_c
+        cmp1 = self._cmp(old_end, new_end)
+        return cmp1 is not None and cmp1 < 0
 
     def _struct_metric(self, ret: Ret) -> int:
         if not isinstance(ret, Right):
@@ -341,10 +404,9 @@ class Cache(Generic[A, Ret]):
             self._canonical[f] = f
         cache_bucket[key] = head
         self._lr_stack.append(head)
-        # Register head for potential cross-index revisits (agenda scheduling)
-        start_index = getattr(key, 'index', None)
-        if isinstance(start_index, int):
-            self._heads_by_start.setdefault(start_index, []).append(head)
+        # Register head for potential cross-position revisits (agenda scheduling)
+        start_key = self._start_key(key)
+        self._heads_by_start.setdefault(start_key, []).append(head)
         try:
             # Opportunistic co-seeding: if this rule is an Expr-like head referencing another lazy head
             # at the same starting position (e.g., Expr vs Term), ensure both are seeded so they will be grouped.
@@ -391,12 +453,13 @@ class Cache(Generic[A, Ret]):
             return Left(key)  # type: ignore
         if entry.group is None:
             # Build a new group including ALL currently seeding frames on the stack
-            # that share the same starting key. This captures mutually left-recursive
-            # heads (multi-head). We assume stack order = call order; earliest becomes leader.
-            start_index = getattr(key, 'index', None)
+            # that share the same starting key (as defined by _start_key). This captures
+            # mutually left-recursive heads (multi-head). We assume stack order = call order;
+            # earliest becomes leader.
+            start_key = self._start_key(key)
             candidate_frames: list[InProgress[A, Ret]] = [
                 frame for frame in self._lr_stack
-                if frame.seeding and getattr(frame.key, 'index', None) == start_index
+                if frame.seeding and self._start_key(frame.key) == start_key
             ]
             # Limit group to canonical rule heads (functions tagged with _rule_id) to avoid
             # mixing in internal combinator frames (or_else_run / flat_map_run / etc) which
@@ -547,7 +610,7 @@ class Cache(Generic[A, Ret]):
             best = member.result
             member.probing = True
             self._enter_lr_growth()
-            seed_consumed = self._consumed(member.key, best) if best else -1
+            seed_end = self._end_state_of(best) if best is not None else None
             while True:
                 iterations += 1
                 if iterations > self.max_growth_iterations:
@@ -558,7 +621,7 @@ class Cache(Generic[A, Ret]):
                         offender=offender,
                         expect=f"<= {self.max_growth_iterations} iterations",
                         iterations=iterations,
-                        seed_consumed=seed_consumed,
+                        seed_consumed=None,
                         best_consumed=self._consumed(member.key, best) if best else None,
                         group_size=1,
                         limit=self.max_growth_iterations,
@@ -569,7 +632,7 @@ class Cache(Generic[A, Ret]):
                     attempt = yield from member.f(member.key, self)
                 finally:
                     self._force = None
-                # Process cross-index agenda before evaluating improvement
+                # Process cross-position agenda before evaluating improvement
                 yield from self._process_agenda()
                 if self._improved(member.key, best, attempt):
                     best = attempt
@@ -577,10 +640,12 @@ class Cache(Generic[A, Ret]):
                     self._lr_version += 1
                     self._propagate_improvement(member)
                     continue
-                # Early collapse: if no improvement and consumption never exceeded seed span, stop.
-                if seed_consumed >= 0 and (best is None or self._consumed(member.key, best) == seed_consumed):
-                    # Detect unproductive (no-progress) nullable left recursion: zero consumption overall.
-                    if seed_consumed == 0:
+                # Early collapse: if no improvement and best end did not move past seed end, stop.
+                best_end = self._end_state_of(best) if best is not None else None
+                if seed_end is not None and (best_end is None or self._cmp(best_end, seed_end) == 0):
+                    # Detect unproductive (no-progress) nullable left recursion: zero progress overall.
+                    cmp_seed = self._cmp(member.key, seed_end)
+                    if cmp_seed is not None and cmp_seed == 0:
                         member.probing = False
                         self._exit_lr_growth()
                         raise LeftRecursionError(
@@ -588,8 +653,8 @@ class Cache(Generic[A, Ret]):
                             offender=offender,
                             expect="> 0 token consumption",
                             iterations=iterations,
-                            seed_consumed=seed_consumed,
-                            best_consumed=self._consumed(member.key, best) if best else None,
+                            seed_consumed=None,
+                            best_consumed=None,
                             group_size=1,
                             limit=self.max_growth_iterations,
                             reason="no-progress"
@@ -663,24 +728,24 @@ class Cache(Generic[A, Ret]):
                     idx += 1
                 # If no member improved this pass (changed == False) we can classify potential no-progress.
                 if not changed:
-                    # Collect consumption metrics for all members with seed_result or result.
-                    consumptions: list[int] = []
+                    # No member improved this pass; check no-progress using ordering
                     any_success = False
+                    all_non_positive = True
                     for m in group.members:
-                        # Prefer current best result; fallback to seed_result.
                         cur = m.result if m.result is not None else m.seed_result
                         if cur is None or not isinstance(cur, Right):  # type: ignore
                             continue
                         any_success = True
-                        # Type narrowing: cur is treated as Ret (Right subtype) for consumption metric
-                        c = self._consumed(m.key, cur)  # type: ignore[arg-type]
-                        consumptions.append(c)
-                    if any_success and consumptions and all(c <= 0 for c in consumptions):
+                        from typing import cast as _cast
+                        end_cur = self._end_state_of(_cast(Ret, cur))
+                        cmp_cur = (self._cmp(m.key, end_cur) if end_cur is not None else None)
+                        if cmp_cur is not None and cmp_cur < 0:
+                            all_non_positive = False
+                            break
+                    if any_success and all_non_positive:
                         self._exit_lr_growth()
-                        # Use representative sample for metrics
-                        sample = next((m for m in group.members if m.result is not None or m.seed_result is not None), None)
-                        seed_c = self._consumed(sample.key, sample.seed_result) if (sample and sample.seed_result) else None  # type: ignore
-                        best_c = self._consumed(sample.key, sample.result) if (sample and sample.result) else None  # type: ignore
+                        seed_c = None
+                        best_c = None
                         raise LeftRecursionError(
                             "Left recursion with no progress (nullable or unproductive mutual cycle)",
                             offender=offender,
@@ -693,17 +758,21 @@ class Cache(Generic[A, Ret]):
                             reason="no-progress"
                         )
             self._exit_lr_growth()
-            # Fallback classification: if group finalized growth without improvement and all successes consume 0.
-            if not any(m.result is not None and self._consumed(m.key, m.result) > 0 for m in group.members):
-                # Gather consumptions from any successful member (seed or result)
-                consumptions_fallback: list[int] = []
-                for m in group.members:
-                    cur = m.result if m.result is not None else m.seed_result
-                    if cur is None or not isinstance(cur, Right):  # type: ignore
-                        continue
-                    c = self._consumed(m.key, cur)  # type: ignore[arg-type]
-                    consumptions_fallback.append(c)
-                if consumptions_fallback and all(c <= 0 for c in consumptions_fallback):
+            # Fallback classification: if group finalized growth without improvement and all successes are non-positive by ordering.
+            any_success_fb = False
+            any_positive_fb = False
+            for m in group.members:
+                cur = m.result if m.result is not None else m.seed_result
+                if cur is None or not isinstance(cur, Right):  # type: ignore
+                    continue
+                any_success_fb = True
+                from typing import cast as _cast
+                end_cur = self._end_state_of(_cast(Ret, cur))
+                cmp_fb = (self._cmp(m.key, end_cur) if end_cur is not None else None)
+                if cmp_fb is not None and cmp_fb < 0:
+                    any_positive_fb = True
+                    break
+            if any_success_fb and not any_positive_fb:
                     raise LeftRecursionError(
                         "Left recursion with no progress (nullable or unproductive mutual cycle)",
                         offender=offender,
@@ -733,8 +802,10 @@ class Cache(Generic[A, Ret]):
                 if cur is None or not isinstance(cur, Right):  # type: ignore
                     continue
                 any_success = True
-                consumed_cur = self._consumed(m.key, cur)  # type: ignore[arg-type]
-                if consumed_cur > 0:
+                from typing import cast as _cast
+                end_sr = self._end_state_of(_cast(Ret, cur))
+                cmp_sr = (self._cmp(m.key, end_sr) if end_sr is not None else None)
+                if cmp_sr is not None and cmp_sr < 0:
                     all_non_positive = False
                     break
             if any_success and all_non_positive:
@@ -751,42 +822,38 @@ class Cache(Generic[A, Ret]):
                 )
         # After primary group growth, process any scheduled agenda heads.
         yield from self._process_agenda()
-        # Global fixed-point across all heads (cross-index) to incorporate improvements from later spans.
+    # Global fixed-point across all heads (cross-position) to incorporate improvements from later spans.
         yield from self._global_fixpoint()
         yield from ()
 
-    # ---------------- Agenda (cross-index propagation) ------------------
+    # ---------------- Agenda (cross-position propagation) ------------------
     def _propagate_improvement(self, improved: InProgress[A, Ret]) -> None:
         """Schedule earlier-starting finalized heads whose span could extend due to this improvement.
 
-        Heuristic: If an earlier head's current consumed span end index is strictly before the improved
-        span end index, re-enqueue it for one more attempt (single forced recompute) in case its rule
+        Heuristic: If an earlier head's current consumed span end position is strictly before the improved
+        span end position, re-enqueue it for one more attempt (single forced recompute) in case its rule
         references the improved region (e.g., Expr depending on a longer Term to its right).
         """
         if improved.result is None:
             return
-        key = improved.key
-        start = getattr(key, 'index', None)
-        if not isinstance(start, int):
+        start_state = improved.key
+        # Ordering-based propagation: earlier start (h.key < start_state) and h_end < end_improved
+        end_improved_state = self._extract_next_state(improved.result)
+        if end_improved_state is None:
             return
-        end_improved = start + self._consumed(key, improved.result)
-        if end_improved <= start:
-            return
-        # Iterate earlier start indices
-        for s_idx, heads in list(self._heads_by_start.items()):
-            if s_idx >= start:
-                continue
+        for heads in list(self._heads_by_start.values()):
             for h in heads:
-                if h is improved:
+                if h is improved or h.seeding or h.result is None or not h.finalized:
                     continue
-                if h.seeding:
+                cs = self._cmp(h.key, start_state)
+                if cs is None or cs >= 0:
                     continue
-                if h.result is None:
+                h_end_state = self._extract_next_state(h.result)
+                if h_end_state is None:
                     continue
-                # Current end span for h
-                h_end = s_idx + self._consumed(h.key, h.result)
-                if h_end < end_improved and h.finalized and h not in self._agenda:
-                    h.finalized = False  # reopen for revisit
+                ce = self._cmp(h_end_state, end_improved_state)
+                if ce is not None and ce < 0 and h not in self._agenda:
+                    h.finalized = False
                     self._agenda.append(h)
 
     def _process_agenda(self) -> Generator[Any, Any, None]:
@@ -810,8 +877,8 @@ class Cache(Generic[A, Ret]):
     def _global_fixpoint(self, max_passes: int = 64) -> Generator[Any, Any, None]:
         """Run a global fixed-point over all recorded left-recursive heads.
 
-        This mitigates cross-index dependency gaps where an earlier head (Expr at 0)
-        depends structurally on improvements in a later-start head (Term at 2) whose
+    This mitigates cross-position dependency gaps where an earlier head (Expr at pos A)
+    depends structurally on improvements in a later-start head (Term at pos B) whose
         growth completed after the earlier head finalized. We re-open finalized heads
         and force recomputation while any consumption improvements occur.
         """
@@ -820,9 +887,10 @@ class Cache(Generic[A, Ret]):
         while changed and passes < max_passes:
             passes += 1
             changed = False
-            # Iterate start indices ascending for deterministic convergence
-            for start_idx in sorted(self._heads_by_start.keys()):
-                for head in list(self._heads_by_start.get(start_idx, [])):
+            # Iterate by insertion order of grouped heads
+            iter_heads = list(self._heads_by_start.values())
+            for heads in iter_heads:
+                for head in list(heads):
                     if head.seeding:
                         continue
                     if not head.head:  # only heads participating in LR cycles

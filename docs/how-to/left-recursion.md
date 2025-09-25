@@ -98,3 +98,26 @@ If you see `iteration-cap`:
 ---
 For further reference see inline comments in `syncraft/cache.py` near the definition of
 `LeftRecursionError` and `_grow_group`.
+
+## Caution: `Choice.kind` after `ast.bimap()`
+
+`AST.bimap()` intentionally drops branch annotations on `Choice` nodes: the returned inverse cannot know
+whether an edited value should go back to the left or right branch, so `Choice.kind` becomes `None`.
+
+During `validate()`/`generate_with()`, the Generator will attempt to resolve `kind=None` by trying branches.
+This resolution is generally sufficient for direct left recursion. However, for mutually left‑recursive grammars
+the lack of branch hints can make resolution ambiguous and, in some shapes, lead to failure even if the original
+parsed tree succeeded before mapping.
+
+Practical guidance for now:
+
+- If you round‑trip through `bimap()` and then need to validate/generate with a mutually left‑recursive grammar,
+  consider preserving/adding explicit `Choice(LEFT/RIGHT, ...)` wrappers at recursive decision points when you
+  know which branch is intended.
+- Alternatively, avoid editing the parts of the projection that correspond to ambiguous mutual LR boundaries.
+- You can use the tree search utilities to locate the ambiguous decision points. For example, `Finder.find(...)`
+   can be used with a predicate `Syntax.choice(anything, anything)` (or a more specific selector) to iterate over
+   `Choice` nodes in your reconstructed AST. You can then assign `kind=ChoiceKind.LEFT` or `kind=ChoiceKind.RIGHT`
+   on those nodes explicitly to guide `validate()`/`generate_with()`.
+
+We plan to improve branch resolution for `kind=None` in mutual LR scenarios. Track the project changelog for updates.
