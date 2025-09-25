@@ -3,10 +3,13 @@ from syncraft.syntax import Syntax
 from dataclasses import dataclass
 from typing import Any, List, Tuple
 from enum import Enum
+from syncraft.algebra import Error
+from syncraft.generator import generate_with, generate, validate
+from syncraft.parser import parse_word
 from syncraft.fa import NFA, DFA, CodeUniverse
 from syncraft.utils import set_debug
 from syncraft.ast import TokenClass
-
+from rich import print
 set_debug(True)
 
 
@@ -127,6 +130,36 @@ def test_gen():
     assert all(match(dfa, s) for s, _ in from_dr)
     assert all(match(m, s) for s, _ in from_mr)
 
+
+def tok(text: str):
+    return Syntax.token(token_class=TokenClass.simple(), text=text, case_sensitive=True)
+
+
+def test_mutual_left_recursion_with_base_after_bimap_A():
+    # Grammar: A := (A + 'b') | 'a'  and  B := (B + 'a') | 'b' would not alternate as intended.
+    # Use standard mutual LR with base on each:
+    #   A := (B + 'a') | 'a'
+    #   B := (A + 'b') | 'b'
+    A = Syntax.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    B = Syntax.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
+
+    # Parse a sequence that fits A: 'a b a' via A -> B + 'a', B -> A + 'b', A -> 'a'
+    ast, _ = parse_word(A, 'a b a')
+    assert not isinstance(ast, Error)
+
+    x, invf = ast.bimap()
+    reconstructed = invf(x)
+
+    v1, b1 = validate(A, reconstructed)
+    print(v1, b1)
+    assert not isinstance(v1, Error)
+    assert b1 is not None
+
+    v2, b2 = generate_with(A, reconstructed)
+    assert not isinstance(v2, Error)
+    assert b2 is not None
+
+
+
 if __name__ == "__main__":
-    # test_runner()
-    test_gen()
+    test_mutual_left_recursion_with_base_after_bimap_A()

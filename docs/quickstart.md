@@ -110,15 +110,12 @@ Many(
 See also: `bimap` on AST and `generate` in the [API reference](reference.md).
 
 > Note
-> When you call `ast.bimap()`, any `Choice` nodes in the tree drop their `kind` (branch) to `None` by design.
-> This is because the forward mapping hides structural details and lets you edit the projected value freely;
-> the inverse cannot assume which branch you intended. During generation/validation, Syncraft tries branches
-> to resolve `kind=None`. This works well for common/direct left‑recursive patterns, but for mutually left‑recursive
-> grammars it may need additional guidance. Until a general strategy is finalized, prefer keeping branch hints (e.g.,
-> wrapping with `Choice(LEFT/RIGHT, ...)`) when validating deeply mutual LR shapes after editing, or expect that
-> some reconstructions may fail. You can also search your tree for `Choice` nodes using `Finder.find(...)` and
-> assign `kind` explicitly to disambiguate before calling `validate()`/`generate_with()`. See the left‑recursion
-> how‑to for details.
+> `ast.bimap()` drops `Choice.kind` to `None` by design. For left‑recursive grammars, the Parser’s LR recovery
+> produces `Then(kind=BOTH, ...)` chains that the Generator cannot generally re‑thread without those branch hints.
+> Therefore, left‑recursive grammars are not guaranteed to round‑trip after `bimap()`; mutually left‑recursive
+> cases are especially prone to failure. If round‑trip is a requirement, prefer right‑recursive/iterative forms
+> (e.g., `Term (op Term)*`), or preserve/re‑introduce explicit branch kinds before `validate()`/`generate_with()`.
+> See the left‑recursion how‑to for details.
 
 ## 6. Add illegal data and see what happens on generation
 When you include values that don’t fit the grammar, they’ll be dropped during generation.

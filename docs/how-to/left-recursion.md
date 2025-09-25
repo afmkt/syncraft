@@ -99,25 +99,65 @@ If you see `iteration-cap`:
 For further reference see inline comments in `syncraft/cache.py` near the definition of
 `LeftRecursionError` and `_grow_group`.
 
-## Caution: `Choice.kind` after `ast.bimap()`
+## Limitation: round‑tripping left‑recursive grammars (bimap → inverse → validate/generate)
 
-`AST.bimap()` intentionally drops branch annotations on `Choice` nodes: the returned inverse cannot know
-whether an edited value should go back to the left or right branch, so `Choice.kind` becomes `None`.
+`AST.bimap()` intentionally drops branch annotations on `Choice` nodes: the returned inverse cannot know which
+branch you intended after editing, so `Choice.kind` becomes `None`.
 
-During `validate()`/`generate_with()`, the Generator will attempt to resolve `kind=None` by trying branches.
-This resolution is generally sufficient for direct left recursion. However, for mutually left‑recursive grammars
-the lack of branch hints can make resolution ambiguous and, in some shapes, lead to failure even if the original
-parsed tree succeeded before mapping.
+For non‑left‑recursive or simple direct LR shapes, the Generator can often resolve `kind=None` by trying both
+branches where a `Choice` is expected. However, left‑recursive recovery in the Parser constructs a cascade of
+`Then(kind=BOTH, ...)` nodes as it grows the span. After a `bimap()` round‑trip, you typically end up with a
+`Then` chain that no longer carries the precise `Choice` decisions. During validation, Generator combinators like
+`or_else` expect to see a `Choice` at those decision points; when they encounter a `Then` instead, you’ll see
+errors similar to:
 
-Practical guidance for now:
+   Error(this=Generator(...), message="Expect Choice got Then(kind=BOTH, ...)", ...)
 
-- If you round‑trip through `bimap()` and then need to validate/generate with a mutually left‑recursive grammar,
-  consider preserving/adding explicit `Choice(LEFT/RIGHT, ...)` wrappers at recursive decision points when you
-  know which branch is intended.
-- Alternatively, avoid editing the parts of the projection that correspond to ambiguous mutual LR boundaries.
-- You can use the tree search utilities to locate the ambiguous decision points. For example, `Finder.find(...)`
-   can be used with a predicate `Syntax.choice(anything, anything)` (or a more specific selector) to iterate over
-   `Choice` nodes in your reconstructed AST. You can then assign `kind=ChoiceKind.LEFT` or `kind=ChoiceKind.RIGHT`
-   on those nodes explicitly to guide `validate()`/`generate_with()`.
+In other words, the Parser’s LR growth and the Generator’s branching cannot, in general, be threaded back together
+solely from the post‑bimap structure. There is no total order/progress metric on `GenState` to “grow” generation
+the way parsing does. As a result:
 
-We plan to improve branch resolution for `kind=None` in mutual LR scenarios. Track the project changelog for updates.
+- Round‑tripping left‑recursive grammars through `bimap()` is not guaranteed to succeed on validation/generation.
+- This limitation is fundamental for mutually left‑recursive grammars and often appears even with direct LR once
+   structure is projected and branch hints are lost.
+
+What to do instead:
+
+- Prefer non‑LR encodings for round‑trip workflows: refactor to right‑recursive or iterative forms, e.g.
+   `Expr -> Term (op Term)*`.
+- If you must validate/generate against a reconstructed AST, preserve or re‑introduce branch hints before calling
+   `validate()`/`generate_with()`. You can locate critical `Choice` nodes with finder utilities and set
+   `kind=ChoiceKind.LEFT`/`RIGHT` explicitly. Note that for mutual LR, even explicit hints may need to be applied at
+   several decision points to disambiguate fully.
+- Alternatively, validate against the original parsed AST (pre‑bimap) when possible, or avoid editing the parts of
+   the projection that correspond to ambiguous LR boundaries.
+
+Summary: left‑recursive grammars are supported by the Parser (with principled growth and diagnostics), but they are
+not generally round‑tripable via `bimap()` → `inverse` → Generator. Plan grammars accordingly when round‑trip editing
+is a requirement.
+
+### Example: hinting branch decisions with Finder
+
+When you have a reconstructed AST and you know which branch each recursive decision should take, you can
+locate `Choice` nodes and set their kinds explicitly before validation:
+
+```python
+from syncraft.finder import find, anything
+from syncraft.ast import Choice, ChoiceKind
+
+# reconstructed is your AST obtained via inverse(value)
+
+def set_first_choice_left(ast):
+      # naive example: set the first encountered Choice to LEFT
+      for node in find(anything, ast):
+            if isinstance(node, Choice) and node.kind is None and node.value is not None:
+                  return Choice(kind=ChoiceKind.LEFT, value=node.value)
+      return ast
+
+hinted = set_first_choice_left(reconstructed)
+v, b = validate(syntax, hinted)
+```
+
+In real grammars you’ll want a more targeted predicate than `anything` to select only relevant
+decision points (e.g., the specific `Syntax` for a sub‑rule) and you may need to set multiple
+choices along a chain.
