@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable
+    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable, Dict
 )
-from typing import Dict
+
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from syncraft.algebra import (
@@ -614,6 +614,8 @@ class NFA(Generic[C]):
                    }),
                    epsilon=FrozenDict())
 
+    # (anchor helpers removed for reconsideration)
+
     @classmethod
     def from_charset(cls, 
                   char: str | bytes | list[Enum] | list[C], 
@@ -779,6 +781,7 @@ class Runner(Protocol[C, Automata]):
     @cached_property
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[str|Enum]: ...    
+    def finalize(self, pos: int = 0) -> RunnerResult[C, Automata]: ...
     def gen(self, rnd:random.Random, pos:int = 0) -> None | Tuple[List[C] | List[Enum] | str | bytes, frozenset[str | Enum]]:
         def gen_one(r: Runner[C, Automata], possible_steps:frozenset[CharSet[C]]) -> Optional[Tuple[C, Runner[C, Automata]]]:
             nonlocal pos
@@ -825,7 +828,19 @@ class NFARunner(Runner[C, NFA[C]]):
     current: frozenset[FAState] = field(default_factory=frozenset)
     @classmethod
     def create(cls, nfa: NFA[C]) -> NFARunner[C]:
-        return cls(current=nfa.closure({nfa.init}), fa=nfa)
+        # Initialize at epsilon-closure of init, then virtually consume one START anchor if present
+        start_states = nfa.closure({nfa.init})
+        # Try to advance via START once (canonical: interval == ((-1,-1),))
+        advanced: set[FAState] = set()
+        for s in start_states:
+            entry = nfa.transitions.get(s, {})
+            for cs, tgts in entry.items():
+                # canonical START detection: exact (-1,-1)
+                if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
+                    advanced.update(tgts)
+        if advanced:
+            start_states = nfa.closure(advanced)
+        return cls(current=start_states, fa=nfa)
     
     def step(self, symbol: C, pos: int) -> RunnerResult[C, NFA[C]]:
         ss: str|bytes|list[Enum]|list[C]
@@ -858,11 +873,19 @@ class NFARunner(Runner[C, NFA[C]]):
         else:
             new_current = self.fa.closure(next_states)
             new_runner = replace(self, current=frozenset(new_current))
-            has_future = any(new_runner.fa.transitions.get(s) for s in new_current)
+            # final should consider only non-anchor transitions
+            has_future_non_anchor = False
+            for s2 in new_current:
+                for cs2 in new_runner.fa.transitions.get(s2, {}).keys():
+                    if not any(lo < 0 or hi < 0 for (lo, hi) in cs2.interval):
+                        has_future_non_anchor = True
+                        break
+                if has_future_non_anchor:
+                    break
             return RunnerResult(
                 runner=new_runner,
                 accepted=new_runner.is_accepted(),
-                final=not has_future,
+                final=not has_future_non_anchor,
                 position=pos,
                 tags=new_runner.post_processing(tuple(new_runner.tags()))
             )
@@ -878,13 +901,39 @@ class NFARunner(Runner[C, NFA[C]]):
         result: Set[CharSet[C]] = set()
         for s in self.current:
             result.update(self.nfa.transitions.get(s, {}).keys())
-        return frozenset(result)
+        # Canonical anchor detection: any interval with negative codepoints
+        filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
+        return frozenset(filtered)
 
     def tags(self) -> frozenset[str | Enum]:
         tags: Set[str | Enum] = set()
         for s in self.current:
             tags.update(self.nfa.accept.get(s, frozenset()))
         return frozenset(tags)
+    
+    def finalize(self, pos: int = 0) -> RunnerResult[C, NFA[C]]:
+        """Virtually consume one END anchor (if present) and return final acceptance status.
+        This does not modify the underlying FA, only advances the runner for end-of-input.
+        """
+        # Attempt a single END transition from any current state
+        next_states: set[FAState] = set()
+        for s in self.current:
+            entry = self.fa.transitions.get(s, {})
+            for cs, tgts in entry.items():
+                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
+                    next_states.update(tgts)
+        if next_states:
+            new_current = self.fa.closure(next_states)
+        else:
+            new_current = frozenset(self.current)
+        new_runner = replace(self, current=new_current)
+        return RunnerResult(
+            runner=new_runner,
+            accepted=new_runner.is_accepted(),
+            final=True,
+            position=pos,
+            tags=new_runner.post_processing(tuple(new_runner.tags()))
+        )
     
 
 @dataclass(frozen=True)
@@ -893,7 +942,28 @@ class DFARunner(Runner[C, DFA[C]]):
 
     @classmethod
     def create(cls, dfa: DFA[C]) -> DFARunner[C]:
-        return cls(current=dfa.init, fa=dfa)
+        # Initialize at DFA init, then virtually consume one START anchor if present
+        cur = dfa.init
+        entry = dfa.transitions.get(cur, {})
+        for cs, tgt in entry.items():
+            if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
+                cur = tgt
+                break
+        return cls(current=cur, fa=dfa)
+
+    def _has_future_non_anchor(self, state: Optional[FAState]) -> bool:
+        if state is None:
+            return False
+        for cs in self.fa.transitions.get(state, {}).keys():
+            # Only count non-anchor charsets as future steps
+            if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval):
+                return True
+        return False
+
+    def _advance_end_once(self, state: Optional[FAState]) -> Optional[FAState]:
+        return state
+    def _is_newline(self, symbol: C) -> bool:
+        return False
 
     def step(self, symbol: C, pos: int) -> RunnerResult[C, DFA[C]]:
         ss: str|bytes|list[Enum]|list[C]
@@ -915,7 +985,7 @@ class DFARunner(Runner[C, DFA[C]]):
                     next_state = targets
                     break
         new_runner = replace(self, current=next_state)
-        has_future = bool(new_runner.fa.transitions.get(next_state, {}))
+        has_future = self._has_future_non_anchor(next_state)
         return RunnerResult(
             runner=new_runner,
             position=pos,
@@ -933,10 +1003,30 @@ class DFARunner(Runner[C, DFA[C]]):
     
     @cached_property
     def resumable(self) -> frozenset[CharSet[C]]:
-        return frozenset(self.dfa.transitions.get(self.current, {}).keys())
+        keys = self.dfa.transitions.get(self.current, {}).keys()
+        filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
+        return frozenset(filtered)
 
     def tags(self) -> frozenset[str|Enum]:
         return self.dfa.accept.get(self.current, frozenset())
+
+    def finalize(self, pos: int = 0) -> RunnerResult[C, DFA[C]]:
+        """Virtually consume one END anchor if present and report final status."""
+        cur = self.current
+        if cur is not None:
+            entry = self.fa.transitions.get(cur, {})
+            for cs, tgt in entry.items():
+                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
+                    cur = tgt
+                    break
+        new_runner = replace(self, current=cur)
+        return RunnerResult(
+            runner=new_runner,
+            position=pos,
+            accepted=new_runner.is_accepted(),
+            final=True,
+            tags=new_runner.post_processing(tuple(new_runner.tags())),
+        )
 
 
 

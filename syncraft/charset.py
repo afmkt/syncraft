@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar, Dict, Any, Iterable
+    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar, Any, Iterable
 )
 
 from syncraft.constraint import FrozenDict
@@ -12,15 +12,6 @@ from syncraft.algebra import (
 import random
 from functools import cached_property, lru_cache
 from enum import Enum
-
-# @runtime_checkable
-# class Comparable(Protocol):
-#     def __lt__(self, other: object) -> bool: ...
-#     def __le__(self, other: object) -> bool: ...
-#     def __gt__(self, other: object) -> bool: ...
-#     def __ge__(self, other: object) -> bool: ...
-#     def __eq__(self, other: object) -> bool: ...
-#     def __ne__(self, other: object) -> bool: ...
 
 class MixedUniverseError(SyncraftError):
     pass
@@ -128,6 +119,9 @@ class CodeUniverse(Generic[C]):
 
 @dataclass(frozen=True)
 class CharSet(Generic[C]):
+    # Internal sentinel codepoints for anchors (not part of any CodeUniverse interval)
+    START_CP: ClassVar[int] = -1
+    END_CP: ClassVar[int] = -2
     predicate: Callable[[int], bool] = field(repr=False)
     interval: Tuple[Tuple[int, int], ...]
     universe: CodeUniverse
@@ -278,6 +272,26 @@ class CharSet(Generic[C]):
             universe=universe)
 
     @classmethod
+    def start(cls, universe: CodeUniverse) -> CharSet[C]:
+        return cls.from_interval([(cls.START_CP, cls.START_CP)], universe)
+
+    @classmethod
+    def end(cls, universe: CodeUniverse) -> CharSet[C]:
+        return cls.from_interval([(cls.END_CP, cls.END_CP)], universe)
+
+    @classmethod
+    def is_start(cls, cs: 'CharSet') -> bool:
+        return cs.interval == ((cls.START_CP, cls.START_CP),)
+
+    @classmethod
+    def is_end(cls, cs: 'CharSet') -> bool:
+        return cs.interval == ((cls.END_CP, cls.END_CP),)
+
+    def is_anchor(self) -> bool:
+        return any(start in (self.START_CP, self.END_CP) or end in (self.START_CP, self.END_CP)
+                   for start, end in self.interval)
+
+    @classmethod
     def any(cls, universe: CodeUniverse) -> CharSet[C]:
         return cls(
             predicate=lambda c: True, 
@@ -397,10 +411,19 @@ class CharSet(Generic[C]):
     def __repr__(self) -> str:
         parts = []
         for start, end in self.interval:
+            def fmt(cp: int) -> str:
+                if cp == CharSet.START_CP:
+                    return "<START>"
+                if cp == CharSet.END_CP:
+                    return "<END>"
+                try:
+                    return repr(self.universe.int2code(cp))
+                except Exception:
+                    return f"<{cp}>"
             if start == end:
-                parts.append(f"{self.universe.int2code(start)!r}")
+                parts.append(fmt(start))
             else:
-                parts.append(f"{self.universe.int2code(start)!r}-{self.universe.int2code(end)!r}")
+                parts.append(f"{fmt(start)}-{fmt(end)}")
         return f"CharSet({', '.join(parts)}).{self.universe}"
     def __str__(self) -> str:
         return self.__repr__()
