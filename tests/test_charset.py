@@ -143,33 +143,33 @@ def test_codeuniverse_ascii():
     u = CodeUniverse.ascii()
     assert u.value == (0, 0x7F)
     assert u.space is str
-    assert u.code_from_int(65) == 'A'
-    assert u.code_to_int('A') == 65
+    assert u.int2code(65) == 'A'
+    assert u.code2int('A') == 65
     assert u.interval == ((0, 0x7F),)
     with pytest.raises(CodepointError):
-        u.code_to_int('AB')
+        u.code2int('AB')
     with pytest.raises(CodepointError):
-        u.code_from_int(0x80)
+        u.int2code(0x80)
 
 def test_codeuniverse_unicode():
     u = CodeUniverse.unicode()
     assert u.value == (0, 0x10FFFF)
     assert u.space is str
-    assert u.code_from_int(0x2603) == '\u2603'
-    assert u.code_to_int('\u2603') == 0x2603
+    assert u.int2code(0x2603) == '\u2603'
+    assert u.code2int('\u2603') == 0x2603
     assert u.interval == ((0, 0x10FFFF),)
 
 def test_codeuniverse_byte():
     u = CodeUniverse.byte()
     assert u.value == (0, 0xFF)
     assert u.space is bytes
-    assert u.code_from_int(0x41) == b'A'
-    assert u.code_to_int(b'A') == 0x41
+    assert u.int2code(0x41) == b'A'
+    assert u.code2int(b'A') == 0x41
     assert u.interval == ((0, 0xFF),)
     with pytest.raises(CodepointError):
-        u.code_to_int(b'AB')
+        u.code2int(b'AB')
     with pytest.raises(CodepointError):
-        u.code_from_int(0x100)
+        u.int2code(0x100)
 
 def test_codeuniverse_enum():
     class Fruit(enum.Enum):
@@ -178,17 +178,17 @@ def test_codeuniverse_enum():
     u = CodeUniverse.enum(Fruit)
     assert u.value == (0, 1)
     assert u.space is Fruit
-    assert u.code_from_int(0) == Fruit.APPLE
-    assert u.code_from_int(1) == Fruit.BANANA
-    assert u.code_to_int(Fruit.APPLE) == 0
-    assert u.code_to_int(Fruit.BANANA) == 1
+    assert u.int2code(0) == Fruit.APPLE
+    assert u.int2code(1) == Fruit.BANANA
+    assert u.code2int(Fruit.APPLE) == 0
+    assert u.code2int(Fruit.BANANA) == 1
     assert u.interval == ((0, 1),)
     with pytest.raises(CodepointError):
-        u.code_from_int(2)
+        u.int2code(2)
     class Other(enum.Enum):
         ORANGE = 3
     with pytest.raises(CodepointError):
-        u.code_to_int(Other.ORANGE)
+        u.code2int(Other.ORANGE)
 
 
 def test_codeuniverse_enum_nonint():
@@ -198,8 +198,8 @@ def test_codeuniverse_enum_nonint():
     u = CodeUniverse.enum(StrEnum)
     assert u.value == (0, 1)
     assert u.space is StrEnum
-    assert u.code_from_int(0) == StrEnum.ALPHA
-    assert u.code_from_int(1) == StrEnum.BETA
-    assert u.code_to_int(StrEnum.ALPHA) == 0
-    assert u.code_to_int(StrEnum.BETA) == 1
+    assert u.int2code(0) == StrEnum.ALPHA
+    assert u.int2code(1) == StrEnum.BETA
+    assert u.code2int(StrEnum.ALPHA) == 0
+    assert u.code2int(StrEnum.BETA) == 1
     assert u.interval == ((0, 1),)

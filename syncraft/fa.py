@@ -5,6 +5,7 @@ from typing import (
 )
 from typing import Dict
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from syncraft.algebra import (
     SyncraftError
 )
@@ -14,10 +15,10 @@ from syncraft.charset import CharSet, CodeUniverse, MixedUniverseError, Codepoin
 from enum import Enum
 from collections import defaultdict
 
+import random
 
 
-
-C = TypeVar('C', bound=str | int | Enum)
+C = TypeVar('C', bound=str | int | Enum | Any)
 
 @dataclass(frozen=True)
 class FAState:
@@ -36,101 +37,213 @@ class FAState:
 
     def __repr__(self) -> str:
         return f"s{self.id}"        
-
-
-
-
-
-
-
+    
 @dataclass(frozen=True)
 class DFA(Generic[C]):
     universe: CodeUniverse
-    current: FAState
+    init: FAState
     accept: FrozenDict[FAState, frozenset[str | Enum]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
     nfa2dfa: FrozenDict[frozenset[FAState], FAState]= field(default_factory=FrozenDict) 
 
     @property
     def minimize(self) -> DFA[C]:
-        # 1. Gather all states (not just those with transitions)
-        all_states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys()) | {self.current}
+        """Return the (language) minimal DFA using Hopcroft's algorithm.
 
-        # 2. Initial partition: accepting vs non-accepting
-        accept_states = frozenset(s for s in all_states if s in self.accept)
-        non_accept_states = frozenset(all_states - accept_states)
+        This replaces the previous implementation which incorrectly merged states by
+        unifying predecessors across all symbols. We:
+          1. Build a global partition of the alphabet from all transition CharSets.
+          2. For each state and each partition piece, define a total transition
+             (adding a synthetic sink only if needed for missing pieces).
+          3. Apply Hopcroft refinement using piece indices as alphabet symbols.
+          4. Reconstruct minimized DFA merging contiguous intervals that target the
+             same new state.
+        """
+        if not self.transitions:
+            # Edge: single state DFA (maybe accepting)
+            return self
+
+        universe = self.universe
+
+        # Collect all states explicitly referenced.
+        states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys())
+        for trans in self.transitions.values():
+            states.update(trans.values())
+        states.add(self.init)
+
+        # Build global disjoint alphabet partition from all outgoing CharSet intervals.
+        all_intvs: List[Tuple[int, int]] = []
+        for mapping in self.transitions.values():
+            for cs in mapping.keys():
+                all_intvs.extend(cs.interval)
+        # If no intervals (degenerate), return self
+        if not all_intvs:
+            return self
+        pieces: List[Tuple[int, int]] = CharSet.partition_charsets(all_intvs)
+        piece_charsets: List[CharSet[C]] = [CharSet.from_interval([p], universe) for p in pieces]
+
+        # Map: state -> list[target_state or None] per piece; also build reverse maps.
+        sink: Optional[FAState] = None
+        # reverse[piece_index][target_state] = set(source_states)
+        reverse: List[Dict[FAState, Set[FAState]]] = [defaultdict(set) for _ in piece_charsets]
+
+        # For each state we keep parallel arrays:
+        #  - targets: the (possibly sink) target for each piece (used during refinement)
+        #  - real_mask: True if the transition existed in the original DFA, False if it was synthesized (missing piece -> sink)
+        per_state_targets: Dict[FAState, List[FAState]] = {}
+        per_state_real_mask: Dict[FAState, List[bool]] = {}
+        for s in states:
+            targets: List[FAState] = []
+            real_mask: List[bool] = []
+            mapping = self.transitions.get(s, {})
+            for i, pcs in enumerate(piece_charsets):
+                tgt: Optional[FAState] = None
+                # Find matching outgoing transition (deterministic => first overlap)
+                for cs, dest in mapping.items():
+                    # CharSets used in DFA transitions are disjoint per state, so cheap overlap
+                    if cs.overlaps(pcs.interval[0]):
+                        tgt = dest
+                        break
+                if tgt is None:
+                    # Missing piece -> implicit dead sink
+                    if sink is None:
+                        sink = FAState()
+                    tgt = sink
+                    real_mask.append(False)
+                else:
+                    real_mask.append(True)
+                targets.append(tgt)
+                reverse[i][tgt].add(s)
+            per_state_targets[s] = targets
+            per_state_real_mask[s] = real_mask
+
+        if sink is not None and sink not in states:
+            # Add sink transitions: loops to itself on every piece
+            states.add(sink)
+            per_state_targets[sink] = [sink] * len(piece_charsets)
+            per_state_real_mask[sink] = [False] * len(piece_charsets)
+            for i in range(len(piece_charsets)):
+                reverse[i][sink].add(sink)
+
+        # Initial partition: accepting vs non-accepting.
+        accept_block = frozenset(s for s in states if s in self.accept)
+        non_accept_block = frozenset(states - accept_block)
         P: List[frozenset[FAState]] = []
-        if accept_states:
-            P.append(accept_states)
-        if non_accept_states:
-            P.append(non_accept_states)
+        if accept_block:
+            P.append(accept_block)
+        if non_accept_block:
+            P.append(non_accept_block)
+        W: Set[frozenset[FAState]] = set(P)  # use set for O(1) lookup
 
-        # Worklist of partitions to refine
-        W: List[frozenset[FAState]] = P.copy()
-
-        # Hopcroft refinement
+        # Hopcroft refinement using piece indices.
         while W:
             A = W.pop()
-            # Find all predecessors that transition into A
-            symbol_to_predecessors: Dict[CharSet[C], Set[FAState]] = defaultdict(set)
-            for q, trans in self.transitions.items():
-                for charset, target in trans.items():
-                    if target in A:
-                        symbol_to_predecessors[charset].add(q)
-
-            newP: List[frozenset[FAState]] = []
-            for Y in P:
-                preds = set().union(*symbol_to_predecessors.values())
-                intersection = Y & preds
-                difference = Y - preds
-                if intersection and difference:
-                    newP.extend([frozenset(intersection), frozenset(difference)])
-                    if Y in W:
-                        W.remove(Y)
-                        W.extend([frozenset(intersection), frozenset(difference)])
-                    else:
-                        # Add the smaller subset to the worklist
-                        if len(intersection) <= len(difference):
-                            W.append(frozenset(intersection))
+            # For each symbol piece, compute predecessors leading into A.
+            for i in range(len(piece_charsets)):
+                # Gather preds: union of reverse[i][t] for t in A
+                preds: Set[FAState] = set()
+                add = preds.add
+                rev_i = reverse[i]
+                for t in A:
+                    sset = rev_i.get(t)
+                    if sset:
+                        for s in sset:
+                            add(s)
+                if not preds:
+                    continue
+                new_P: List[frozenset[FAState]] = []
+                for Y in P:
+                    inter = Y & preds
+                    diff = Y - preds
+                    if inter and diff:
+                        inter_fs = frozenset(inter)
+                        diff_fs = frozenset(diff)
+                        new_P.extend([inter_fs, diff_fs])
+                        if Y in W:
+                            W.remove(Y)
+                            # add both parts
+                            if len(inter) <= len(diff):
+                                W.add(inter_fs)
+                            else:
+                                W.add(diff_fs)
                         else:
-                            W.append(frozenset(difference))
-                else:
-                    newP.append(Y)
-            P = newP
+                            # add smaller part
+                            if len(inter) <= len(diff):
+                                W.add(inter_fs)
+                            else:
+                                W.add(diff_fs)
+                    else:
+                        new_P.append(Y)
+                P = new_P
 
-        # 3. Build representative states
-        state_map: Dict[FAState, FAState] = {}
-        new_states: Dict[frozenset[FAState], FAState] = {}
+        # Map old states to new representatives
+        block_rep: Dict[FAState, FAState] = {}
+        new_accept: Dict[FAState, frozenset[str | Enum]] = {}
         for block in P:
             rep = FAState()
-            new_states[block] = rep
             for s in block:
-                state_map[s] = rep
+                block_rep[s] = rep
+            # Union tags if any state accepting
+            tags: Set[str | Enum] = set()
+            accepting = False
+            for s in block:
+                if s in self.accept:
+                    accepting = True
+                    tags.update(self.accept.get(s, frozenset()))
+            if accepting:
+                new_accept[rep] = frozenset(tags)
 
-        # 4. Build transitions
+        # Rebuild transitions only for pieces that were REAL in the original DFA (skip synthesized sink edges)
         new_transitions: Dict[FAState, Dict[CharSet[C], FAState]] = {}
-        for block, rep in new_states.items():
-            new_transitions[rep] = {}
-            orig = next(iter(block))
-            for charset, target in self.transitions.get(orig, {}).items():
-                new_transitions[rep][charset] = state_map[target]
+        for block in P:
+            exemplar = next(iter(block))
+            rep = block_rep[exemplar]
+            targets = per_state_targets[exemplar]
+            rm = per_state_real_mask.get(exemplar)
+            if rm is None:
+                rm = [False] * len(pieces)  # treat all as synthetic
+            real_mask = rm
+            grouped: List[Tuple[List[Tuple[int, int]], FAState]] = []
+            for idx, tgt in enumerate(targets):
+                if not real_mask[idx]:
+                    continue  # Skip synthesized edge
+                tgt_rep = block_rep.get(tgt)
+                if tgt_rep is None:
+                    continue
+                if grouped and grouped[-1][1] == tgt_rep:
+                    grouped[-1][0].append(pieces[idx])
+                else:
+                    grouped.append(([pieces[idx]], tgt_rep))
+            rep_trans: Dict[CharSet[C], FAState] = {}
+            for intv_list, tgt_rep in grouped:
+                cs = CharSet.from_interval(intv_list, universe)
+                rep_trans[cs] = tgt_rep
+            if rep_trans:
+                # Optional: merge adjacent for same target (already contiguous grouping but safe)
+                rep_trans = DFA.merge_adjacent_transitions(universe, rep_trans)
+                new_transitions[rep] = rep_trans
 
-        # 5. Build accept states
-        new_accept: Dict[FAState, frozenset[str | Enum]] = {}
-        for block, rep in new_states.items():
-            if any(s in self.accept for s in block):
-                labels = frozenset().union(*(self.accept.get(s, frozenset()) for s in block))
-                new_accept[rep] = labels
+        # Prune unreachable states (e.g. sink representative if all synthesized edges were removed)
+        reachable: Set[FAState] = set()
+        work = [block_rep[self.init]]
+        while work:
+            s = work.pop()
+            if s in reachable:
+                continue
+            reachable.add(s)
+            for tgt in new_transitions.get(s, {}).values():
+                if tgt not in reachable:
+                    work.append(tgt)
+        new_accept = {s: tags for s, tags in new_accept.items() if s in reachable}
+        new_transitions = {s: m for s, m in new_transitions.items() if s in reachable}
 
-
-        # 6. New start state
-        new_start = state_map[self.current]
+        new_init = block_rep[self.init]
 
         return DFA(
-            universe=self.universe,
-            current=new_start,
+            universe=universe,
+            init=new_init,
             accept=FrozenDict(new_accept),
-            transitions=FrozenDict({k: FrozenDict(v) for k, v in new_transitions.items()}),
+            transitions=FrozenDict({s: FrozenDict(m) for s, m in new_transitions.items()}),
             nfa2dfa=FrozenDict()
         )
     
@@ -206,7 +319,7 @@ class DFA(Generic[C]):
         frozen_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict(new_accept)
         return DFA(
             universe=universe,
-            current=self.current,
+            init=self.init,
             accept=frozen_accept,
             transitions=frozen_trans,
             nfa2dfa=self.nfa2dfa
@@ -227,7 +340,7 @@ class DFA(Generic[C]):
 
         # map (s1, s2) -> new FAState
         state_map: dict[tuple[FAState, FAState], FAState] = {}
-        start_pair = (self.current, other.current)
+        start_pair = (self.init, other.init)
         state_map[start_pair] = FAState()
         work_list = deque([start_pair])
 
@@ -302,7 +415,7 @@ class DFA(Generic[C]):
 
         return DFA(
             universe=self.universe,
-            current=state_map[start_pair],
+            init=state_map[start_pair],
             accept=frozen_accept,
             transitions=frozen_transitions,
             nfa2dfa=FrozenDict()
@@ -330,7 +443,7 @@ class DFA(Generic[C]):
         for trans in self.transitions.values():
             all_states.update(trans.values())
         all_states.update(self.accept.keys())
-        all_states.add(self.current)
+        all_states.add(self.init)
         state_map: dict[FAState, FAState] = {s: FAState() for s in all_states}
         nfa_trans: dict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = {}
         for s, trans in self.transitions.items():
@@ -343,7 +456,7 @@ class DFA(Generic[C]):
         )
         return NFA(
             universe=self.universe,
-            current=state_map[self.current],
+            init=state_map[self.init],
             accept=nfa_accept,
             transitions=FrozenDict(nfa_trans),
             epsilon=FrozenDict()  
@@ -378,7 +491,7 @@ class DFA(Generic[C]):
 
     @classmethod
     def from_nfa(cls, nfa: NFA[C]) -> DFA[C]:
-        start:frozenset[FAState] = nfa.closure({nfa.current})
+        start:frozenset[FAState] = nfa.closure({nfa.init})
         work_list = deque([start])
         dfa_states : dict[frozenset[FAState], FAState] = {start: FAState()}
         trans: dict[FAState, dict[CharSet[C], FAState]] = {}
@@ -421,7 +534,7 @@ class DFA(Generic[C]):
         
         return cls(
                    universe=nfa.universe,
-                   current=dfa_states[start],
+                   init=dfa_states[start],
                    accept=FrozenDict(accept),
                    transitions=transitions,
                    nfa2dfa=FrozenDict(dfa_states)
@@ -429,17 +542,11 @@ class DFA(Generic[C]):
 
     def runner(self) -> DFARunner[C]:
         return DFARunner.create(self)
-
-    def run(self, input_seq: str | bytes | list[Enum]) -> DFARunner[C]:
-        return self.runner().steps(self, input_seq)
-
-    def match(self, input_seq: str | bytes | list[Enum]) -> bool:
-        return self.run(input_seq).is_accepted(self)
-
+    
 @dataclass(frozen=True)
 class NFA(Generic[C]):
     universe: CodeUniverse
-    current: FAState
+    init: FAState
     accept: FrozenDict[FAState, frozenset[str | Enum]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = field(default_factory=FrozenDict)
     epsilon: FrozenDict[FAState, frozenset[FAState]] = field(default_factory=FrozenDict)
@@ -454,7 +561,7 @@ class NFA(Generic[C]):
             if s not in state_map:
                 state_map[s] = FAState()
             return state_map[s]
-        new_start = get_clone(self.current)
+        new_start = get_clone(self.init)
         new_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict({get_clone(a):b for a,b in self.accept.items()})
         new_transitions: dict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = {}
         for k, v in self.transitions.items():
@@ -467,7 +574,7 @@ class NFA(Generic[C]):
             for k, v in self.epsilon.items()
         })
         return replace(self,
-                        current=new_start,
+                        init=new_start,
                         accept=new_accept,
                         transitions=FrozenDict(new_transitions),
                         epsilon=new_epsilon)
@@ -491,12 +598,7 @@ class NFA(Generic[C]):
     
     def runner(self) -> NFARunner[C]:
         return NFARunner.create(self)
-
-    def run(self, input_seq: str | bytes | list[Enum]) -> NFARunner[C]:
-        return self.runner().steps(self, input_seq)
-
-    def match(self, input_seq: str | bytes | list[Enum]) -> bool:
-        return self.run(input_seq).is_accepted(self)
+    
 
     @classmethod
     def _from_charset(cls, c: CharSet[C], tag: Optional[str|Enum] = None) -> NFA[C]:
@@ -505,7 +607,7 @@ class NFA(Generic[C]):
         accept: FAState = FAState()
         return cls(
                    universe=c.universe,
-                   current=current, 
+                   init=current, 
                    accept=FrozenDict({accept: frozenset({tag}) if tag else frozenset()}),
                    transitions=FrozenDict({
                        current: FrozenDict({c: frozenset({accept})})
@@ -514,7 +616,7 @@ class NFA(Generic[C]):
 
     @classmethod
     def from_charset(cls, 
-                  char: str | bytes | list[Enum], 
+                  char: str | bytes | list[Enum] | list[C], 
                   universe: CodeUniverse, 
                   negation:bool = False,  
                   tag: Optional[str|Enum] = None) -> NFA[Any]:
@@ -533,7 +635,7 @@ class NFA(Generic[C]):
             
         eps = {**this.epsilon}
         for a in this.accept:
-            eps[a] = eps.get(a, frozenset()) | frozenset({other.current})
+            eps[a] = eps.get(a, frozenset()) | frozenset({other.init})
         
         for k, v in other.epsilon.items():
             eps[k] = eps.get(k, frozenset()) | v
@@ -544,7 +646,7 @@ class NFA(Generic[C]):
             
         return this.__class__(
                               universe=this.universe,
-                              current=this.current, 
+                              init=this.init, 
                               accept=other.accept, 
                               transitions=FrozenDict(new_transitions), 
                               epsilon=FrozenDict(eps))
@@ -557,7 +659,7 @@ class NFA(Generic[C]):
         if self is other:
             return self
         new_current: FAState = FAState()
-        eps = {new_current: frozenset({self.current, other.current})}
+        eps = {new_current: frozenset({self.init, other.init})}
         for k, v in self.epsilon.items():
             eps[k] = eps.get(k, frozenset()) | v
         for k, v in other.epsilon.items():
@@ -568,7 +670,7 @@ class NFA(Generic[C]):
             new_transitions[k] = new_transitions.get(k, FrozenDict()) | v
         return replace(self,
                        universe=self.universe,
-                       current=new_current, 
+                       init=new_current, 
                        accept=self.accept | other.accept, 
                        transitions=FrozenDict(new_transitions), 
                        epsilon=FrozenDict(eps))    
@@ -578,11 +680,11 @@ class NFA(Generic[C]):
     @property
     def star(self) -> NFA[C]:
         new_current: FAState = FAState()
-        eps = {**self.epsilon, new_current: frozenset({self.current})}
+        eps = {**self.epsilon, new_current: frozenset({self.init})}
         for a in self.accept:
-            eps[a] = eps.get(a, frozenset()) | frozenset({self.current})
+            eps[a] = eps.get(a, frozenset()) | frozenset({self.init})
         return replace(self,
-                        current=new_current, 
+                        init=new_current, 
                         accept=self.accept | FrozenDict({new_current: frozenset()}), 
                         transitions=self.transitions, 
                         epsilon=FrozenDict(eps))
@@ -590,9 +692,9 @@ class NFA(Generic[C]):
     @property
     def optional(self)->NFA[C]:
         new_current: FAState = FAState()
-        eps = {**self.epsilon, new_current: frozenset({self.current})}
+        eps = {**self.epsilon, new_current: frozenset({self.init})}
         return replace(self,
-                        current=new_current, 
+                        init=new_current, 
                         accept=self.accept | FrozenDict({new_current: frozenset()}), 
                         transitions=self.transitions, 
                         epsilon=FrozenDict(eps))
@@ -603,9 +705,9 @@ class NFA(Generic[C]):
     def plus(self) -> NFA[C]:
         eps = {**self.epsilon}
         for a in self.accept:
-            eps[a] = eps.get(a, frozenset()) | frozenset({self.current})
+            eps[a] = eps.get(a, frozenset()) | frozenset({self.init})
         return replace(self,
-                        current=self.current, 
+                        init=self.init, 
                         accept=self.accept, 
                         transitions=self.transitions, 
                         epsilon=FrozenDict(eps))
@@ -629,59 +731,93 @@ class NFA(Generic[C]):
                 nfa = nfa.then(self.optional)
         return nfa
     
-Automata = TypeVar('Automata', bound=Any, contravariant=True)
+Automata = TypeVar('Automata', bound=NFA | DFA)
+
+
+@dataclass(frozen=True)
+class RunnerResult(Generic[C, Automata]):
+    runner: Runner[C, Automata]
+    accepted: bool
+    final: bool
+    position: int
+    tags: Tuple[str | Enum, ...] = field(default_factory=tuple)
+
+
 @dataclass(frozen=True)
 class Runner(Protocol[C, Automata]):
-    accepted: Tuple[Tuple[int, Any, frozenset[str | Enum]], ...] = field(default_factory=tuple)
+    fa: Automata
+    post_processing: Callable[[tuple[str|Enum, ...]], tuple[str|Enum, ...]] = lambda t: tuple(sorted(dict.fromkeys(t), key=str))
+    
+    def priority(self, d: dict[str|Enum, int])->Runner[C, Automata]:
+        def f(t: tuple[str|Enum, ...])->tuple[str|Enum, ...]:
+            return tuple(sorted(self.post_processing(t), key=lambda x: d.get(x, -1), reverse=True))
+        return replace(self, post_processing = f)
+    
+    def skip(self, *tag: str | Enum)->Runner[C, Automata]:
+        ignore: frozenset[str|Enum] = frozenset(tag)
+        def f(t: tuple[str|Enum, ...])->tuple[str|Enum, ...]:
+            return tuple(filter(lambda x: x not in ignore,  self.post_processing(t)))
+        return replace(self, post_processing = f)
+        
+    @property
+    def dfa(self) -> DFA[C]:
+        if isinstance(self.fa, DFA):
+            return self.fa
+        else:
+            return self.fa.dfa
+    @property
+    def nfa(self) -> NFA[C]:
+        if isinstance(self.fa, NFA):
+            return self.fa
+        else:
+            return self.fa.nfa
     @classmethod
     def create(cls, a: Automata) -> Self: ...
-    def step(self, a: Automata, symbol: C, pos: int) -> Self: ...
-    def steps(self, fa: Automata, input: str | bytes | list[Enum]) -> Self:
-        runner = self
-        for i, symbol in enumerate(input):
-            runner = runner.step(fa, symbol, i)
-            if not runner.is_valid():
-                break  # no valid transitions, stop early
-        return replace(runner, accepted=tuple(sorted(runner.accepted, key=lambda x: x[0], reverse=True)))
-
-    def is_accepted(self, a: Automata) -> bool: ...
+    def step(self, symbol: C, pos: int) -> RunnerResult[C, Automata]: ...
+    def is_accepted(self) -> bool: ...
     def is_valid(self) -> bool: ...
-    def resumable(self, a: Automata) -> frozenset[CharSet[C]]: ...
-    def tags(self, a: Automata) -> frozenset[str|Enum]: ...
-    def gen(self, a: Automata, times: int = 1) -> List[Tuple[List[Enum] | str | bytes, frozenset[str | Enum]]]:
-        def gen_one(r: Self, a: Automata) -> Optional[Tuple[C, Self]]:
-            possible_steps = r.resumable(a)
+    @cached_property
+    def resumable(self) -> frozenset[CharSet[C]]: ...
+    def tags(self) -> frozenset[str|Enum]: ...    
+    def gen(self, rnd:random.Random, pos:int = 0) -> None | Tuple[List[C] | List[Enum] | str | bytes, frozenset[str | Enum]]:
+        def gen_one(r: Runner[C, Automata], possible_steps:frozenset[CharSet[C]]) -> Optional[Tuple[C, Runner[C, Automata]]]:
+            nonlocal pos
             if possible_steps:
-                import random
-                rnd = random.Random()
                 ccls = rnd.choice(list(possible_steps))
                 c = ccls.sample(rnd)
-                return c, r.step(a, c, 0)
+                result = r.step(c, pos)
+                pos += 1
+                return c, result.runner
             else:
                 return None
-        ret: List[Tuple[List[Enum] | str | bytes, frozenset[str | Enum]]] = []
         runner = self
-        for _ in range(times):
-            txt: List[Any]= []
-            while runner.resumable(a):
-                match gen_one(runner, a):
-                    case None:
-                        break
-                    case (c, r):
-                        txt.append(c)
-                        runner = r
-                if runner.is_accepted(a):
-                    if len(txt) > 0:
-                        if isinstance(txt[0], str):
-                            ret.append((''.join(txt), runner.tags(a)))
-                        elif isinstance(txt[0], int):
-                            ret.append((bytes(txt), runner.tags(a)))
-                        else:
-                            ret.append((txt, runner.tags(a)))
-                    import random
-                    if random.random() < 0.5:
-                        break
-        return ret
+        txt: List[Any]= []
+        possible_steps = runner.resumable
+        while possible_steps:
+            match gen_one(runner, possible_steps):
+                case None:
+                    break
+                case (c, r):
+                    txt.append(c)
+                    runner = r
+            if runner.is_accepted():
+                if len(txt) > 0:
+                    break
+                if rnd.random() < 0.5:
+                    break
+            possible_steps = runner.resumable
+        if txt:
+            if isinstance(txt[0], str):
+                return (''.join(txt), runner.tags())                        
+            elif isinstance(txt[0], int):
+                return (bytes(txt), runner.tags())
+            else:
+                return (txt, runner.tags())
+        return None
+        
+    @classmethod
+    def generate(cls, a: Automata, pos: int = 0) -> None | Tuple[List[C] | List[Enum] | str | bytes, frozenset[str | Enum]]:
+        return cls.create(a).gen(rnd=random.Random(), pos=pos)
 
 
 @dataclass(frozen=True)
@@ -689,42 +825,65 @@ class NFARunner(Runner[C, NFA[C]]):
     current: frozenset[FAState] = field(default_factory=frozenset)
     @classmethod
     def create(cls, nfa: NFA[C]) -> NFARunner[C]:
-        current = nfa.closure({nfa.current})
-        return cls(current=frozenset(current), accepted=tuple())
+        return cls(current=nfa.closure({nfa.init}), fa=nfa)
     
-    def step(self, nfa: NFA[C], symbol: C, pos: int) -> NFARunner[C]:
-        ss = [symbol] if isinstance(symbol, Enum) else (bytes(symbol) if isinstance(symbol, int) else symbol)
+    def step(self, symbol: C, pos: int) -> RunnerResult[C, NFA[C]]:
+        ss: str|bytes|list[Enum]|list[C]
+        if isinstance(symbol, str):
+            ss = symbol
+        elif isinstance(symbol, int):
+            ss = bytes([symbol])
+        else:   
+            ss = [symbol]
         assert len(ss) == 1, "symbol must be a single character"
         next_states = set()
         for s in self.current:
-            entry: FrozenDict[CharSet[C], frozenset[FAState]] = nfa.transitions.get(s, {})
-            k: CharSet[C] = CharSet.create(ss, universe=nfa.universe)
+            entry: FrozenDict[CharSet[C], frozenset[FAState]] = self.fa.transitions.get(s, {})
+            k: CharSet[C] = CharSet.create(ss, universe=self.fa.universe)
             if k in entry:
                 next_states.update(entry[k])
             else:
                 for char_class, targets in entry.items():
                     if isinstance(char_class, CharSet) and char_class(symbol):
                         next_states.update(targets)
-        new_current = nfa.closure(next_states)
-        new_accepted = self.accepted + tuple(((pos, a, tag) for a, tag in nfa.accept.items() if a in new_current))
-        return NFARunner(current=frozenset(new_current), accepted=new_accepted)
+
+        if not next_states:
+            return RunnerResult(
+                runner=replace(self, current=frozenset()),
+                accepted=False,
+                final=True,
+                position=pos,
+                tags=self.post_processing(tuple())
+            )                        
+        else:
+            new_current = self.fa.closure(next_states)
+            new_runner = replace(self, current=frozenset(new_current))
+            has_future = any(new_runner.fa.transitions.get(s) for s in new_current)
+            return RunnerResult(
+                runner=new_runner,
+                accepted=new_runner.is_accepted(),
+                final=not has_future,
+                position=pos,
+                tags=new_runner.post_processing(tuple(new_runner.tags()))
+            )
     
-    def is_accepted(self, nfa: NFA[C]) -> bool:
-        return any(st in nfa.accept for st in self.current)
+    def is_accepted(self) -> bool:
+        return any(st in self.nfa.accept for st in self.current)
     
     def is_valid(self) -> bool:
         return bool(self.current)
 
-    def resumable(self, nfa: NFA[C]) -> frozenset[CharSet[C]]:
+    @cached_property
+    def resumable(self) -> frozenset[CharSet[C]]:
         result: Set[CharSet[C]] = set()
         for s in self.current:
-            result.update(nfa.transitions.get(s, {}).keys())
+            result.update(self.nfa.transitions.get(s, {}).keys())
         return frozenset(result)
 
-    def tags(self, nfa: NFA[C]) -> frozenset[str | Enum]:
+    def tags(self) -> frozenset[str | Enum]:
         tags: Set[str | Enum] = set()
         for s in self.current:
-            tags.update(nfa.accept.get(s, frozenset()))  
+            tags.update(self.nfa.accept.get(s, frozenset()))
         return frozenset(tags)
     
 
@@ -734,15 +893,20 @@ class DFARunner(Runner[C, DFA[C]]):
 
     @classmethod
     def create(cls, dfa: DFA[C]) -> DFARunner[C]:
-        current = dfa.current
-        return cls(current=current, accepted=tuple())
-    
-    def step(self, dfa: DFA[C], symbol: C, pos: int) -> DFARunner[C]:
-        ss = [symbol] if isinstance(symbol, Enum) else (bytes([symbol]) if isinstance(symbol, int) else symbol)
+        return cls(current=dfa.init, fa=dfa)
+
+    def step(self, symbol: C, pos: int) -> RunnerResult[C, DFA[C]]:
+        ss: str|bytes|list[Enum]|list[C]
+        if isinstance(symbol, str):
+            ss = symbol
+        elif isinstance(symbol, int):
+            ss = bytes([symbol])
+        else:   
+            ss = [symbol]
         assert len(ss) == 1, "symbol must be a single character"
         next_state: Optional[FAState] = None
-        entry: FrozenDict[CharSet[C], FAState] = dfa.transitions.get(self.current, {})
-        k: CharSet[C] = CharSet.create(ss, universe=dfa.universe)
+        entry: FrozenDict[CharSet[C], FAState] = self.fa.transitions.get(self.current, {})
+        k: CharSet[C] = CharSet.create(ss, universe=self.fa.universe)
         if k in entry:
             next_state = entry[k]
         else:
@@ -750,34 +914,33 @@ class DFARunner(Runner[C, DFA[C]]):
                 if isinstance(char_class, CharSet) and char_class(symbol):
                     next_state = targets
                     break
-        if next_state in dfa.accept:
-            new_accepted = self.accepted + ((pos, next_state, dfa.accept[next_state]),)
-            return DFARunner(current=next_state, accepted=new_accepted)
-        else:
-            return replace(self, current=next_state)
+        new_runner = replace(self, current=next_state)
+        has_future = bool(new_runner.fa.transitions.get(next_state, {}))
+        return RunnerResult(
+            runner=new_runner,
+            position=pos,
+            accepted=new_runner.is_accepted(),
+            final=not has_future,
+            tags=new_runner.post_processing(tuple(new_runner.tags())),
+        )
+    
 
-
-
-    def is_accepted(self, dfa: DFA[C]) -> bool:
-        return self.current in dfa.accept
+    def is_accepted(self) -> bool:
+        return self.current in self.dfa.accept
 
     def is_valid(self) -> bool:
         return bool(self.current)
     
-    def resumable(self, dfa: DFA[C]) -> frozenset[CharSet[C]]:
-        return frozenset(dfa.transitions.get(self.current, {}).keys())
+    @cached_property
+    def resumable(self) -> frozenset[CharSet[C]]:
+        return frozenset(self.dfa.transitions.get(self.current, {}).keys())
 
-    def tags(self, dfa: DFA[C]) -> frozenset[str|Enum]:
-        return dfa.accept.get(self.current, frozenset())
+    def tags(self) -> frozenset[str|Enum]:
+        return self.dfa.accept.get(self.current, frozenset())
 
-        
-@dataclass(frozen=True)
-class Automaton(Generic[C]):
-    fa: NFA[C] | DFA[C]
-    runner: Runner[C, NFA[C]] | Runner[C, DFA[C]]
 
-    @property
-    def universe(self) -> CodeUniverse:
-        return self.fa.universe
+
+            
     
-
+    
+    

@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar
+    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar, Dict, Any, Iterable
 )
+
 from syncraft.constraint import FrozenDict
 from dataclasses import dataclass, field
 from syncraft.algebra import (
     SyncraftError
 )
 import random
-from functools import cached_property
+from functools import cached_property, lru_cache
 from enum import Enum
 
+# @runtime_checkable
+# class Comparable(Protocol):
+#     def __lt__(self, other: object) -> bool: ...
+#     def __le__(self, other: object) -> bool: ...
+#     def __gt__(self, other: object) -> bool: ...
+#     def __ge__(self, other: object) -> bool: ...
+#     def __eq__(self, other: object) -> bool: ...
+#     def __ne__(self, other: object) -> bool: ...
 
 class MixedUniverseError(SyncraftError):
     pass
@@ -19,7 +28,7 @@ class MixedUniverseError(SyncraftError):
 class CodepointError(SyncraftError):
     pass
 
-C = TypeVar('C', bound=str | int | Enum)
+C = TypeVar('C', bound=str | int | Enum | Any)
 
 
 @dataclass(frozen=True)
@@ -28,7 +37,7 @@ class CodeUniverse(Generic[C]):
     UNICODE: ClassVar[Tuple[int, int]] = (0, 0x10FFFF)
     BYTE: ClassVar[Tuple[int, int]] = (0, 0xFF)
     value: Tuple[int, int]
-    space: Type[C]
+    space: Type[C] | frozenset[C]
     int2c: FrozenDict[int, C] = field(default_factory=FrozenDict, repr=False)
     c2int: FrozenDict[C, int] = field(default_factory=FrozenDict, repr=False)
     @cached_property
@@ -43,12 +52,15 @@ class CodeUniverse(Generic[C]):
         elif self.value == self.BYTE:
             return "BYTE"
         else:
-            return f"{self.space.__name__}({self.value[0]}-{self.value[1]})"
+            if isinstance(self.space, (frozenset)):
+                return f"FROZENSET({self.value[0]}-{self.value[1]})"
+            else:
+                return f"{self.space.__name__}({self.value[0]}-{self.value[1]})"
 
     def __repr__(self) -> str:
         return self.__str__()
     
-    def code_to_int(self, c: C) -> int:
+    def code2int(self, c: C) -> int:
         if isinstance(c, str):
             if len(c) != 1:
                 raise CodepointError(f"Expected single character, got {c!r}", offender=c, expect="single character")
@@ -63,13 +75,17 @@ class CodeUniverse(Generic[C]):
             if c not in self.c2int:
                 raise CodepointError(f"Enum value {c!r} not in universe {self}", offender=c, expect=f"Enum in {list(self.c2int.keys())}")
             cp = self.c2int[c]
+        elif isinstance(self.space, frozenset):
+            if c not in self.space or c not in self.c2int:
+                raise CodepointError(f"Expected single character, got set {c!r}", offender=c, expect="single character")
+            cp = self.c2int[c]
         else:
             raise CodepointError(f"Expected str, bytes, or Enum, got {type(c)}", offender=c, expect="str, bytes, or Enum")
         if not (self.value[0] <= cp <= self.value[1]):
             raise CodepointError(f"Character {c!r} (codepoint {cp}) out of bounds for universe {self}", offender=c, expect=f"codepoint in range {self.value}")
         return cp
     
-    def code_from_int(self, cp: int) -> C:
+    def int2code(self, cp: int) -> C:
         if not (self.value[0] <= cp <= self.value[1]):
             raise CodepointError(f"Codepoint {cp} out of bounds for universe {self}", offender=cp, expect=f"codepoint in range {self.value}")
         if cp in self.int2c:
@@ -102,11 +118,37 @@ class CodeUniverse(Generic[C]):
         c2int: FrozenDict[Enum, int] = FrozenDict({m: i for i, m in enumerate(members)})
         return cls(value=(0, len(members)-1), space=enum_type, int2c=int2c, c2int=c2int) # type: ignore
 
+    @classmethod
+    def set(cls, space: frozenset[C]) -> CodeUniverse[C]:
+        if not space:
+            raise SyncraftError("Cannot create CodeUniverse from empty set", offender=space, expect="non-empty set")
+        int2c: FrozenDict[int, C] = FrozenDict({i: c for i, c in enumerate(space)})
+        c2int: FrozenDict[C, int] = FrozenDict({c: i for i, c in enumerate(space)})
+        return cls(value=(0, len(space)-1), space=space, int2c=int2c, c2int=c2int) # type: ignore
+
 @dataclass(frozen=True)
 class CharSet(Generic[C]):
-    predicate: Callable[[int], bool] = field(repr=False)      
-    interval: Tuple[Tuple[int, int], ...] 
+    predicate: Callable[[int], bool] = field(repr=False)
+    interval: Tuple[Tuple[int, int], ...]
     universe: CodeUniverse
+
+    @staticmethod
+    @lru_cache(maxsize=4096)  
+    def _build(universe: CodeUniverse, codepoints: Tuple[int, ...]) -> 'CharSet':
+        cs_frozen: frozenset[int] = frozenset(codepoints)
+        intv: Tuple[Tuple[int, int], ...] = tuple((c, c) for c in codepoints)
+        def _pred(c: int, _cs: frozenset[int] = cs_frozen) -> bool:
+            return c in _cs
+        return CharSet(
+            predicate=_pred,
+            interval=intv,
+            universe=universe
+        )
+
+    @classmethod
+    def cache_info(cls):  # pragma: no cover - utility
+        """Expose LRU cache statistics (hits, misses, current size, max size)."""
+        return cls._build.cache_info()  # type: ignore[attr-defined]
 
 
     @staticmethod
@@ -190,14 +232,43 @@ class CharSet(Generic[C]):
         return merged
 
     @classmethod
-    def create(cls, char: str | bytes | List[Enum], universe: CodeUniverse) -> CharSet[C]:
-        cs: frozenset[int] = frozenset(universe.code_to_int(x) for x in char)
-        intv = tuple((c, c) for c in sorted(cs))
-        return cls(
-            predicate=lambda c: c in cs, 
-            interval=intv,
-            universe=universe)
-    
+    def create(cls, char: str | bytes | List[Enum] | List[C], universe: CodeUniverse) -> 'CharSet[C]':
+        """Create (and intern) a CharSet from a collection of literal symbols.
+
+        Normalization steps:
+          1. Interpret input as an iterable of atomic symbols (each element OR each character/byte of str/bytes).
+          2. Map symbols to codepoints via universe.code2int.
+          3. Deduplicate & sort to obtain a canonical tuple (ensures stable interning key).
+
+        Fast paths handle single-element inputs to avoid tuple/list allocations.
+        """
+        # Fast path: single character string
+        if isinstance(char, str) and len(char) == 1:
+            cp = universe.code2int(char)
+            return cls._build(universe, (cp,))
+        # Fast path: single byte
+        if isinstance(char, bytes) and len(char) == 1:
+            cp = universe.code2int(char)
+            return cls._build(universe, (cp,))
+
+        # Normalize input to iterable of elements
+        if isinstance(char, str):
+            iterable: Iterable[Any] = char  # iterate over characters
+        elif isinstance(char, bytes):
+            # convert each individual byte value into its single-byte representation for code2int
+            iterable = [bytes([b]) for b in char]
+        elif isinstance(char, (list, tuple)):
+            iterable = char  # type: ignore[assignment]
+        else:
+            raise TypeError(f"Expected str, bytes, or list/tuple of Enum or characters, got {type(char)}")
+
+        codepoints_set = {universe.code2int(x) for x in iterable}
+        if not codepoints_set:
+            # Preserve earlier semantics: represent empty via none()
+            return CharSet.none(universe)
+        codepoints = tuple(sorted(codepoints_set))
+        return cls._build(universe, codepoints)
+
     @classmethod
     def from_interval(cls, intv: List[Tuple[int, int]], universe: CodeUniverse) -> CharSet[C]:
         merged = tuple(cls.merge_intervals(intv))
@@ -223,7 +294,7 @@ class CharSet(Generic[C]):
     def sample(self, rnd: random.Random) -> C:
         range = rnd.choice(self.interval)
         point = rnd.randint(range[0], range[1])
-        return self.universe.code_from_int(point)
+        return self.universe.int2code(point)
 
     def overlaps(self, intv: Tuple[int, int]) -> bool:
         for start, end in self.interval:
@@ -232,11 +303,11 @@ class CharSet(Generic[C]):
         return False
 
     def matches_interval(self, cc: C) -> bool:
-        c = self.universe.code_to_int(cc)
+        c = self.universe.code2int(cc)
         return any(start <= c <= end for start, end in self.interval)
 
     def matches(self, c: C) -> bool:
-        return self.predicate(self.universe.code_to_int(c))
+        return self.predicate(self.universe.code2int(c))
         
     def __call__(self, c: C) -> bool:
         assert self.matches(c) == self.matches_interval(c)
@@ -327,9 +398,9 @@ class CharSet(Generic[C]):
         parts = []
         for start, end in self.interval:
             if start == end:
-                parts.append(f"{self.universe.code_from_int(start)!r}")
+                parts.append(f"{self.universe.int2code(start)!r}")
             else:
-                parts.append(f"{self.universe.code_from_int(start)!r}-{self.universe.code_from_int(end)!r}")
+                parts.append(f"{self.universe.int2code(start)!r}-{self.universe.int2code(end)!r}")
         return f"CharSet({', '.join(parts)}).{self.universe}"
     def __str__(self) -> str:
         return self.__repr__()
