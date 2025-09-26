@@ -145,7 +145,7 @@ def ast2svg(ast: Any) -> Optional[str]:
         return None
 
     def node_label(node):
-        from syncraft.ast import Nothing, Marked, Choice, Many, Then, Collect, Custom, Token
+        from syncraft.ast import Nothing, Marked, Choice, Many, Then, Collect, Lazy, Token
         if isinstance(node, Nothing):
             return "Nothing"
         elif isinstance(node, Marked):
@@ -158,8 +158,6 @@ def ast2svg(ast: Any) -> Optional[str]:
             return f"Then(kind={node.kind.name})"
         elif isinstance(node, Collect):
             return f"Collect({getattr(node.collector, '__name__', str(node.collector))})"
-        elif isinstance(node, Custom):
-            return f"Custom(meta={node.meta})"
         elif isinstance(node, Token):
             return f"Token({str(node)})"
         elif hasattr(node, '__class__'):
@@ -168,7 +166,7 @@ def ast2svg(ast: Any) -> Optional[str]:
             return str(node)
 
     def add_nodes_edges(dot, node, parent_id=None, node_id_gen=[0]):
-        from syncraft.ast import Nothing, Marked, Choice, Many, Then, Collect, Custom, Token
+        from syncraft.ast import Nothing, Marked, Choice, Many, Then, Collect, Lazy, Token
         node_id = f"n{node_id_gen[0]}"
         node_id_gen[0] += 1
         label = node_label(node)
@@ -191,8 +189,6 @@ def ast2svg(ast: Any) -> Optional[str]:
             add_nodes_edges(dot, node.left, node_id, node_id_gen)
             add_nodes_edges(dot, node.right, node_id, node_id_gen)
         elif isinstance(node, Collect):
-            add_nodes_edges(dot, node.value, node_id, node_id_gen)
-        elif isinstance(node, Custom):
             add_nodes_edges(dot, node.value, node_id, node_id_gen)
         # Token is a leaf
         # For other types, try to walk __dict__ if they are dataclasses

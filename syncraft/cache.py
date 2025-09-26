@@ -6,7 +6,7 @@ from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, L
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from syncraft.utils import callable_str, TablePrinter
-
+from typing import cast
 table_printer = TablePrinter()
 
 L = TypeVar('L')  # Left type for combined results
@@ -289,14 +289,13 @@ class Cache(Generic[A, Ret]):
             if a == b:
                 return 0
             # Prefer native __lt__; if not supported, attempt reverse; else treat as not less.
-            from typing import cast as _cast
-            if _cast(Any, a) < b:  # type: ignore[operator]
+            if cast(Any, a) < b:  # type: ignore[operator]
                 return -1
             return 1
         except Exception:
             # Last resort: try reverse comparison
             try:
-                if _cast(Any, b) < a:  # type: ignore[operator]
+                if cast(Any, b) < a:  # type: ignore[operator]
                     return 1
                 return None
             except Exception:
@@ -309,8 +308,7 @@ class Cache(Generic[A, Ret]):
         """
         if not isinstance(ret, Right):
             return -1
-        from typing import cast as _cast
-        nxt = self._extract_next_state(_cast(Ret, ret))
+        nxt = self._extract_next_state(cast(Ret, ret))
         if nxt is not None:
             cmp_res = self._cmp(key, nxt)
             if cmp_res is not None:
@@ -539,12 +537,10 @@ class Cache(Generic[A, Ret]):
         # Retain InProgress entry for growth (even if seed failed) so improvement attempts can re-run rule
         if isinstance(seed, Right):
             head.result = seed  # type: ignore
-            from typing import cast as _cast
-            head.seed_result = _cast(Ret, seed)  # store original base seed
+            head.seed_result = cast(Ret, seed)  # store original base seed
         else:
             # Keep prior successful result (if any) else remain None for growth attempts
-            from typing import cast as _cast
-            head.result = _cast(Optional[Ret], head.result if (head.result is not None and isinstance(head.result, Right)) else None)
+            head.result = cast(Optional[Ret], head.result if (head.result is not None and isinstance(head.result, Right)) else None)
         # Growth phase: only when all seeds complete
         if head.group_leader and not head.group.finalized and head.group.seeding_remaining == 0:
             # Early multi-head zero-consumption detection: if all members succeeded (Right) with zero consumption
@@ -705,18 +701,7 @@ class Cache(Generic[A, Ret]):
                         pass
                     # (Debug logging removed in principled refactor)
                     if self._improved(member.key, member.result, attempt):
-                        # Unwrap Choice(LEFT, Then(BOTH,...)) to raw Then for better flattening
-                        if isinstance(attempt, Right):  # type: ignore
-                            val, st = attempt.value  # type: ignore
-                            from syncraft.ast import Then, ThenKind
-                            from syncraft.algebra import Choice  # type: ignore
-                            k = getattr(val, 'kind', None)
-                            if isinstance(val, Choice) and k is not None and getattr(k, 'name', None) == 'LEFT':
-                                inner = getattr(val, 'value', None)
-                                if isinstance(inner, Then) and inner.kind == ThenKind.BOTH:
-                                    attempt = Right((inner, st))  # type: ignore
-                        from typing import cast as _cast
-                        member.result = _cast(Ret, attempt)
+                        member.result = cast(Ret, attempt)
                         self._lr_version += 1
                         # Propagate improvement to earlier heads
                         self._propagate_improvement(member)
@@ -736,8 +721,7 @@ class Cache(Generic[A, Ret]):
                         if cur is None or not isinstance(cur, Right):  # type: ignore
                             continue
                         any_success = True
-                        from typing import cast as _cast
-                        end_cur = self._end_state_of(_cast(Ret, cur))
+                        end_cur = self._end_state_of(cast(Ret, cur))
                         cmp_cur = (self._cmp(m.key, end_cur) if end_cur is not None else None)
                         if cmp_cur is not None and cmp_cur < 0:
                             all_non_positive = False
@@ -766,8 +750,7 @@ class Cache(Generic[A, Ret]):
                 if cur is None or not isinstance(cur, Right):  # type: ignore
                     continue
                 any_success_fb = True
-                from typing import cast as _cast
-                end_cur = self._end_state_of(_cast(Ret, cur))
+                end_cur = self._end_state_of(cast(Ret, cur))
                 cmp_fb = (self._cmp(m.key, end_cur) if end_cur is not None else None)
                 if cmp_fb is not None and cmp_fb < 0:
                     any_positive_fb = True
@@ -802,8 +785,7 @@ class Cache(Generic[A, Ret]):
                 if cur is None or not isinstance(cur, Right):  # type: ignore
                     continue
                 any_success = True
-                from typing import cast as _cast
-                end_sr = self._end_state_of(_cast(Ret, cur))
+                end_sr = self._end_state_of(cast(Ret, cur))
                 cmp_sr = (self._cmp(m.key, end_sr) if end_sr is not None else None)
                 if cmp_sr is not None and cmp_sr < 0:
                     all_non_positive = False
