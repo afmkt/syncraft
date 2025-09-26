@@ -568,7 +568,8 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
-        return cls.factory('token', **kwargs).describe(name=f'token({kwargs})', fixity='prefix')
+        # Record kwargs in meta.parameter so tooling can inspect token specs without executing the algebra
+        return cls.factory('token', **kwargs).describe(name=f'token({kwargs})', fixity='prefix', parameter=(kwargs,))
 
         
     @classmethod

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, List, Tuple
 from enum import Enum
 from syncraft.algebra import Error
-from syncraft.generator import generate_with, generate, validate
+from syncraft.generator import generate_with, validate
 from syncraft.parser import parse_word
 from syncraft.fa import NFA, DFA, CodeUniverse
 from syncraft.utils import set_debug
