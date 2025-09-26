@@ -12,7 +12,7 @@ from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect
 from syncraft.cache import Either, Left, Right
 from syncraft.generator import GenState, Generator
 from syncraft.cache import Cache
-from syncraft.syntax import Syntax
+from syncraft.syntax import Syntax, SyntaxSpec
 
 
 T=TypeVar('T', bound=Hashable)
@@ -47,7 +47,7 @@ class Finder(Generator[T], Generic[T]):
 
 #: A ``Syntax`` that matches any node and returns it as the result without
 #: consuming or modifying state.
-anything = Syntax(lambda cls: cls.factory('anything')).describe(name="anything", fixity='infix') 
+anything = Syntax(lambda cls: cls.factory('anything'), spec=SyntaxSpec())
 
 def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[GenState[T], Any])-> bool:
     state = GenState[Any].from_ast(ast = data, restore_pruned=True)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, Literal, List
+    Type, List
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -32,22 +32,36 @@ S = TypeVar('S', bound=Bindable)  # State type
 
 
 @dataclass(frozen=True)
-class Description:
-    name: Optional[str] = None
-    fixity: Literal['infix', 'prefix', 'postfix'] = 'infix'
-    parameter: Tuple[Any, ...] = field(default_factory=tuple)
+class SyntaxSpec:
+    pass
+@dataclass(frozen=True)
+class LazySpec(SyntaxSpec):
+    spec: SyntaxSpec
+@dataclass(frozen=True)
+class ThenSpec(SyntaxSpec, Generic[A, B]):
+    kind: ThenKind
+    left: SyntaxSpec
+    right: SyntaxSpec
 
-    def update(self, 
-               *,
-               name: Optional[str] = None,
-               fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
-               parameter: Optional[Tuple[Any, ...]] = None) -> 'Description':
-        return Description(
-            name=name if name is not None else self.name,
-            fixity=fixity if fixity is not None else self.fixity,
-            parameter=parameter if parameter is not None else self.parameter
-        )
-        
+@dataclass(frozen=True)
+class ChoiceSpec(SyntaxSpec, Generic[A, B]):
+    left: SyntaxSpec
+    right: SyntaxSpec
+
+@dataclass(frozen=True)
+class ManySpec(SyntaxSpec, Generic[A]):
+    spec: SyntaxSpec
+    at_least: int
+    at_most: Optional[int]
+
+@dataclass(frozen=True)
+class SuccessSpec(SyntaxSpec, Generic[A]):
+    value: A
+
+@dataclass(frozen=True)
+class FailSpec(SyntaxSpec):
+    error: Any
+
 
 @dataclass(frozen=True)
 class Syntax(Generic[A, S]):
@@ -55,7 +69,7 @@ class Syntax(Generic[A, S]):
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
     """
     alg_f: Callable[..., Algebra[A, S]]
-    meta: Description = field(default_factory=Description, repr=False)
+    spec: SyntaxSpec = field(repr=False)
 
     def algebra(self, 
                 name: str | MethodType | FunctionType, 
@@ -110,15 +124,6 @@ class Syntax(Generic[A, S]):
         return self.alg_f(alg, **(cfg | global_kwargs))
     
         
-    def describe(
-        self,
-        *,
-        name: Optional[str] = None,
-        fixity: Optional[Literal['infix', 'prefix', 'postfix']] = None,
-        parameter: Optional[Tuple[Syntax[Any, S] | Any, ...]] = None,
-    ) -> Syntax[A, S]:
-        return replace(self, meta=self.meta.update(name=name, fixity=fixity, parameter=parameter))
-
     def named(self, name: str) -> Syntax[A, S]:
         """Assign a name to underlying algebra node for better debugging output.
 
@@ -216,11 +221,9 @@ class Syntax(Generic[A, S]):
             Syntax producing Many of values.
         """
         return replace(self, 
-                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).many(at_least=at_least, at_most=at_most) # type: ignore
-                       ).describe(
-                           name='*', 
-                           fixity='prefix', 
-                           parameter=(self,)) 
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).many(at_least=at_least, at_most=at_most), # type: ignore
+                       spec = ManySpec(spec=self.spec, at_least=at_least, at_most=at_most)
+                       )
 
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Then[B, Then[A, C]], S]:
@@ -235,7 +238,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing nested Then with all parts.
         """
-        return (left >> self // right).describe(name='between', fixity='postfix', parameter=(self, left, right)) 
+        return left >> self // right
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
         """Parse one or more items separated by sep.
@@ -289,8 +292,7 @@ class Syntax(Generic[A, S]):
                     right=Choice(kind=ChoiceKind.LEFT, value=Many(value=tuple(v))),
                 )
 
-        ret = ret.bimap(f, i)  # type: ignore
-        return ret.describe(name='sep_by', fixity='prefix', parameter=(self, sep))
+        return ret.bimap(f, i)  # type: ignore
 
     def parens(
         self,
@@ -320,9 +322,9 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice of value or Nothing.
         """
-        fallback = (self | self.success(Nothing()))
-        ret = self.algebra('optional', fallback=fallback) # type: ignore
-        return ret.describe(name='~', fixity='prefix', parameter=(self,)) # type: ignore
+        return (self | self.success(Nothing()))
+        
+        
     
 
         
@@ -335,7 +337,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that marks downstream failures as committed.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).cut()).describe(name='cut', fixity='postfix', parameter=(self,))
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).cut())
 
     ###################################################### operator overloading #############################################
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -350,9 +352,11 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=LEFT).
         """
 
-        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_left(other(cls, **global_kwargs))) # type: ignore
-        
-        return ret.describe(name=ThenKind.LEFT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
+        return replace(self, 
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_left(other(cls, **global_kwargs)), # type: ignore
+                       spec = ThenSpec(kind=ThenKind.LEFT, left=self.spec, right=other.spec)
+                   )
+
 
     def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
 
@@ -370,8 +374,10 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=BOTH).
         """
 
-        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_both(other(cls, **global_kwargs)))  # type: ignore
-        return ret.describe(name=ThenKind.BOTH.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
+        return replace(self, 
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_both(other(cls, **global_kwargs)), # type: ignore
+                       spec=ThenSpec(kind=ThenKind.BOTH, left=self.spec, right=other.spec))  
+
 
     def __radd__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
 
@@ -389,8 +395,10 @@ class Syntax(Generic[A, S]):
             Syntax producing Then(left, right, kind=RIGHT).
         """
 
-        ret: Syntax[Then[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_right(other(cls, **global_kwargs)))  # type: ignore
-        return ret.describe(name=ThenKind.RIGHT.value, fixity='infix', parameter=(self, other)).as_(Syntax[Then[A, B], S])
+        return replace(self, 
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_right(other(cls, **global_kwargs)),  # type: ignore
+                       spec=ThenSpec(kind=ThenKind.RIGHT, left=self.spec, right=other.spec)) 
+        
 
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
 
@@ -408,8 +416,10 @@ class Syntax(Generic[A, S]):
             Syntax producing Choice.LEFT or Choice.RIGHT.
         """
 
-        ret: Syntax[Choice[A, B], S] = replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs))) # type: ignore  
-        return ret.describe(name='|', fixity='infix', parameter=(self, other))
+        return replace(self, 
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)), # type: ignore
+                       spec=ChoiceSpec(left=self.spec, right=other.spec)) 
+        
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
 
@@ -445,7 +455,7 @@ class Syntax(Generic[A, S]):
             else:
                 return v, s
 
-        return self.map_all(bind_v).describe(name='bind', fixity='infix', parameter=(self, name))
+        return self.map_all(bind_v)
 
     def to(self, f: Collector[E]) -> Syntax[Collect[A, E], S]:
         """Attach a collector to the produced value.
@@ -469,7 +479,7 @@ class Syntax(Generic[A, S]):
         def ito_f(c: Collect[A, E]) -> A:
             return c.value if isinstance(c, Collect) else c
 
-        return self.bimap(to_f, ito_f).describe(name='to', fixity='infix', parameter=(self, f))
+        return self.bimap(to_f, ito_f)
 
     def mark(self, name: str) -> Syntax[Marked[A], S]:
         """Mark the produced value with a name.
@@ -493,7 +503,7 @@ class Syntax(Generic[A, S]):
         def imark_s(m: Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m
 
-        return self.bimap(mark_s, imark_s).describe(name='mark', fixity='infix', parameter=(self, name))
+        return self.bimap(mark_s, imark_s)
     
     @classmethod
     def fail(cls, error: Any) -> Syntax[Any, Any]:
@@ -506,7 +516,7 @@ class Syntax(Generic[A, S]):
         Returns:
             A Syntax object that always fails.
         """
-        return cls(lambda alg, **global_kwargs: alg.fail(error)).describe(name='fail', fixity='prefix', parameter=(error,))
+        return cls(alg_f=lambda alg, **global_kwargs: alg.fail(error), spec=FailSpec(error=error))
 
     @classmethod
     def success(cls, value: Any) -> Syntax[Any, Any]:
@@ -519,7 +529,7 @@ class Syntax(Generic[A, S]):
         Returns:
             A Syntax object that always succeeds.
         """
-        return cls(lambda alg, **global_kwargs: alg.success(value)).describe(name='success', fixity='prefix', parameter=(value,))
+        return cls(alg_f=lambda alg, **global_kwargs: alg.success(value), spec=SuccessSpec(value=value))
 
 
     @classmethod
@@ -558,18 +568,19 @@ class Syntax(Generic[A, S]):
                     pass
                 previous_cls = acls
             return algebra
-        return cls(syntax_lazy_run).describe(name='lazy', fixity='prefix', parameter=(lambda: syntax,))
+        return cls(syntax_lazy_run, spec=LazySpec(spec=SyntaxSpec()))
 
     @classmethod
     def factory(cls, name: str, **kwargs: Any) -> Syntax[Any, Any]:
         return cls(
-            lambda acls, **global_kwargs: acls.factory(name, **(global_kwargs | kwargs))
-            ).describe(name=f'factory({name})', fixity='prefix', parameter=tuple(kwargs.values()))
+            lambda acls, **global_kwargs: acls.factory(name, **(global_kwargs | kwargs)),
+            spec=SyntaxSpec()
+            )
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
         # Record kwargs in meta.parameter so tooling can inspect token specs without executing the algebra
-        return cls.factory('token', **kwargs).describe(name=f'token({kwargs})', fixity='prefix', parameter=(kwargs,))
+        return cls.factory('token', **kwargs)
 
         
     @classmethod
@@ -583,7 +594,7 @@ class Syntax(Generic[A, S]):
         elif isinstance(value, Enum):
             return cls.token(token_type=value)
         else:
-            return cls(lambda cls, **global_kwargs: cls.success(value))
+            return cls(lambda cls, **global_kwargs: cls.success(value), spec=SuccessSpec(value=value))
 
 
 

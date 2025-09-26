@@ -458,39 +458,6 @@ class Custom(Generic[A, B], AST):
 
 #########################################################################################################################
  
-@dataclass(frozen=True)
-class SyntaxSpec:
-    id: int = field(init=False)
-    def __post_init__(self) -> None:
-        object.__setattr__(self, 'id', id(self))
-
-@dataclass(frozen=True)
-class RefSpec(SyntaxSpec, Generic[A]):
-    ref: int | A 
-    referent: str
-@dataclass(frozen=True)
-class LazySpec(SyntaxSpec, Generic[A]):
-    name: str
-    value: None | A
-@dataclass(frozen=True)
-class ThenSpec(SyntaxSpec, Generic[A, B]):
-    name: str
-    kind: ThenKind
-    left: A
-    right: B
-
-@dataclass(frozen=True)
-class ChoiceSpec(SyntaxSpec, Generic[A, B]):
-    name: str
-    left: A
-    right: B
-
-@dataclass(frozen=True)
-class ManySpec(SyntaxSpec, Generic[A]):
-    name: str
-    value: A
-    at_least: int
-    at_most: Optional[int]
 
 
 
