@@ -18,8 +18,7 @@ import re
 
 
 
-S = TypeVar('S', bound=Bindable)
-    
+S = TypeVar('S', bound=Bindable)    
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Mapped result type
 
