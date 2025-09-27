@@ -33,7 +33,7 @@ def test_validate_and_generate_with_after_bimap_resets_choice_kind():
     assert b2 is not None
 
 
-@pytest.mark.xfail(reason="Mutual LR with Choice.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
+# @pytest.mark.xfail(reason="Mutual LR with Choice.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
 def test_mutual_left_recursion_with_base_after_bimap_A():
     # Grammar: A := (A + 'b') | 'a'  and  B := (B + 'a') | 'b' would not alternate as intended.
     # Use standard mutual LR with base on each:
@@ -58,7 +58,7 @@ def test_mutual_left_recursion_with_base_after_bimap_A():
     assert b2 is not None
 
 
-@pytest.mark.xfail(reason="Mutual LR with Choice.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
+# @pytest.mark.xfail(reason="Mutual LR with Choice.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
 def test_mutual_left_recursion_with_base_after_bimap_B():
     # Same grammar, start from B and parse 'b a b': B -> A + 'b', A -> B + 'a', B -> 'b'
     A = Syntax.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]

@@ -253,8 +253,8 @@ class Lazy(Generic[A], AST):
     value: A
     def bimap(self, r: Bimap[A, C]=Bimap.identity()) -> Tuple[C, Callable[[C], Lazy[A]]]:
         """Defer to the provided mapping ``r``."""
-        v, inv = r(self.value)
-        return v, lambda c: replace(self, value=inv(c))
+        v, inv = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
+        return v, lambda b: Lazy(value=inv(b))
 
 
 @dataclass(frozen=True)
@@ -599,6 +599,7 @@ class TokenClass(Generic[T]):
 
 #: Union-like type describing the shape of AST parse results across nodes.
 ParseResult = Union[
+    Lazy['ParseResult[T]'],
     Then['ParseResult[T]', 'ParseResult[T]'], 
     Marked['ParseResult[T]'],
     Choice['ParseResult[T]', 'ParseResult[T]'],

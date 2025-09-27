@@ -1,7 +1,7 @@
 import pytest
 
 from syncraft.syntax import Syntax
-from syncraft.ast import TokenClass, Token, Then, ThenKind, Choice, ChoiceKind
+from syncraft.ast import TokenClass, Token, Then, ThenKind, Choice, ChoiceKind, Lazy
 from syncraft.generator import generate_with, generate, validate
 from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
@@ -30,7 +30,7 @@ def test_generate_direct_left_recursion_with_base_succeeds():
 def test_validate_direct_left_recursion_with_base_succeeds_single_token():
     A = Syntax.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
     # Validate a simple token AST wrapped in Choice RIGHT (matches base branch)
-    ast, bound = validate(A, Choice(kind=ChoiceKind.RIGHT, value=Token('a')))
+    ast, bound = validate(A, Lazy(value=Choice(kind=ChoiceKind.RIGHT, value=Token('a'))))
     assert not isinstance(ast, Error)
     assert bound is not None
 
@@ -51,11 +51,11 @@ def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
     #       Token('a')
     #     )
     #   )
-    inner_base = Choice(kind=ChoiceKind.RIGHT, value=Token('a'))
+    inner_base = Lazy(value=Choice(kind=ChoiceKind.RIGHT, value=Token('a')))
     inner_then = Then(kind=ThenKind.BOTH, left=inner_base, right=Token('a'))
-    middle_choice = Choice(kind=ChoiceKind.LEFT, value=inner_then)
+    middle_choice = Lazy(value=Choice(kind=ChoiceKind.LEFT, value=inner_then))
     outer_then = Then(kind=ThenKind.BOTH, left=middle_choice, right=Token('a'))
-    data = Choice(kind=ChoiceKind.LEFT, value=outer_then)
+    data = Lazy(value=Choice(kind=ChoiceKind.LEFT, value=outer_then))
     ast, bound = validate(A, data)
     assert not isinstance(ast, Error)
     assert bound is not None
@@ -81,4 +81,4 @@ def test_validate_mutual_left_recursion_without_base_raises():
     B = Syntax.lazy(lambda: A)  # type: ignore[name-defined]
     with pytest.raises(LeftRecursionError):
         # Any AST will do; grammar has no base and should be flagged
-        validate(A, Token('x'))
+        generate(A)

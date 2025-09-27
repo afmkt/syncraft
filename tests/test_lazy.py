@@ -1,5 +1,5 @@
 from __future__ import annotations
-from syncraft.ast import Nothing, Token
+from syncraft.ast import Nothing, Token, Lazy
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
@@ -79,15 +79,20 @@ def test_mutual_recursion()->None:
         from_string('a'), 
         (
             from_string('b'), 
-            from_string('a'), 
             (
-                from_string('b'), 
                 from_string('a'), 
-                from_string('c')
+                (
+                    from_string('b'), 
+                    (
+                        (
+                            from_string('a'), 
+                            from_string('c'), 
+                        )
+                    )
+                )
             )
         )
     )
-
     # print(v)
     # print(ast1)    
     # print(inv(ast1))
@@ -660,6 +665,8 @@ def test_multi_recursion()->None:
     from syncraft.algebra import Choice, ChoiceKind  # type: ignore
 
     def leaves(node):
+        if isinstance(node, Lazy):
+            return leaves(node.value)
         if isinstance(node, Then) and node.kind == ThenKind.BOTH:
             return leaves(node.left) + leaves(node.right)
         if isinstance(node, Choice):

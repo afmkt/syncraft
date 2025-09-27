@@ -5,7 +5,7 @@ from typing import (
 )
 
 from dataclasses import dataclass, replace
-from syncraft.ast import ThenKind, Then, Choice, Many, ChoiceKind, SyncraftError, CallWith
+from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError, CallWith
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 from functools import cached_property
@@ -125,7 +125,14 @@ class Algebra(Generic[A, S]):
                                                                                          Either[Any, Tuple[Any, S]]]:
             # Defer acquiring the underlying algebra until invocation time.
             alg = thunk()
-            return (yield from alg.run(input, cache))
+            result = (yield from alg.run(input, cache))
+            match result:
+                case Left(err):
+                    return Left(err)
+                case Right((value, state)):
+                    return Right((Lazy(value), state))
+                case _:
+                    raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
         # No _rule_id tagging here; Syntax.lazy is the authoritative place for stable rule identity.
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
     

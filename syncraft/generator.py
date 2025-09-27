@@ -9,11 +9,12 @@ from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
+
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 
 from syncraft.ast import (
     ParseResult, AST, Token, TokenClass, 
-    Nothing, 
+    Nothing, Lazy,
     Choice, Many, ChoiceKind,
     Then, ThenKind, SyncraftError
 )
@@ -349,6 +350,44 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 input.inject(input.ast.value))
                     return result
         return replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
+
+
+    @classmethod
+    def lazy(cls, thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]]) -> Algebra[ParseResult[T], GenState[T]]:
+        def algebra_lazy_run(input: GenState[T],
+                             cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[YieldChannelType,
+                                                                                                                        SendChannelType,
+                                                                                                                        Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
+            # Defer acquiring the underlying algebra until invocation time.
+            alg = thunk()
+            if input.pruned:
+                result = (yield from alg.run(input, cache))
+                match result:
+                    case Left(err):
+                        return Left(err)
+                    case Right((value, state)):
+                        return Right((Lazy(value), state))
+                    case _:
+                        raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
+            else:
+                current = input.ast
+                if not isinstance(current, Lazy) or isinstance(current, Nothing):
+                    return Left(Error(this=alg, 
+                                      message=f"Expect Lazy got {current}",
+                                      state=input))
+                result = (yield from alg.run(input.inject(current.value), cache))
+                match result:
+                    case Left(err):
+                        return Left(err)
+                    case Right((value, state)):
+                        return Right((Lazy(value), state))
+                    case _:
+                        raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
+
+
+        # No _rule_id tagging here; Syntax.lazy is the authoritative place for stable rule identity.
+        return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
+
 
     @classmethod
     def primitive(cls, 
