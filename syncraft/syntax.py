@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Left, Right
 from syncraft.cache import Cache, Incomplete
-from syncraft.constraint import Bindable
+from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
 from types import MethodType, FunctionType
 import keyword
@@ -36,7 +36,7 @@ class SyntaxSpec:
     pass
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec):
-    spec: SyntaxSpec
+    spec: Callable[[], SyntaxSpec]
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
@@ -54,13 +54,16 @@ class ManySpec(SyntaxSpec, Generic[A]):
     at_least: int
     at_most: Optional[int]
 
-@dataclass(frozen=True)
-class SuccessSpec(SyntaxSpec, Generic[A]):
-    value: A
+
 
 @dataclass(frozen=True)
-class FailSpec(SyntaxSpec):
-    error: Any
+class FactorySpec(SyntaxSpec):
+    name: str
+    args: Tuple[Any, ...] = field(default_factory=tuple)
+    kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
+
+
+
 
 
 @dataclass(frozen=True)
@@ -71,33 +74,33 @@ class Syntax(Generic[A, S]):
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
 
-    def algebra(self, 
-                name: str | MethodType | FunctionType, 
-                *args: Any, 
-                fallback: Optional[Syntax[A, S]] = None,
-                **kwargs: Any) -> Syntax[A, S]:
-        def algebra_run(cls: Type[Algebra[Any, S]], **global_kwargs: Any) -> Algebra[Any, S]:
-            a = self(cls, **global_kwargs)
-            if isinstance(name, str):
-                attr = getattr(a, name, None) or getattr(cls, name, None)
-                if attr is None:
-                    return a if fallback is None else fallback(cls, **global_kwargs)
-                if isinstance(attr, (staticmethod, classmethod)):
-                    attr = attr.__get__(None, cls)
-                elif isinstance(attr, FunctionType):
-                    attr = MethodType(attr, a)
-                else:
-                    return a if fallback is None else fallback(cls, **global_kwargs)
-                return cast(Algebra[Any, S], attr(*args, **kwargs))
-            elif isinstance(name, MethodType):
-                f = MethodType(name.__func__, a)
-                return cast(Algebra[Any, S], f(*args, **kwargs))
-            elif isinstance(name, FunctionType):
-                f = MethodType(name, a)
-                return cast(Algebra[Any, S], f(*args, **kwargs))
-            else:
-                return a if fallback is None else fallback(cls, **global_kwargs)
-        return replace(self, alg_f=algebra_run)
+    # def algebra(self, 
+    #             name: str | MethodType | FunctionType, 
+    #             *args: Any, 
+    #             fallback: Optional[Syntax[A, S]] = None,
+    #             **kwargs: Any) -> Syntax[A, S]:
+    #     def algebra_run(cls: Type[Algebra[Any, S]], **global_kwargs: Any) -> Algebra[Any, S]:
+    #         a = self(cls, **global_kwargs)
+    #         if isinstance(name, str):
+    #             attr = getattr(a, name, None) or getattr(cls, name, None)
+    #             if attr is None:
+    #                 return a if fallback is None else fallback(cls, **global_kwargs)
+    #             if isinstance(attr, (staticmethod, classmethod)):
+    #                 attr = attr.__get__(None, cls)
+    #             elif isinstance(attr, FunctionType):
+    #                 attr = MethodType(attr, a)
+    #             else:
+    #                 return a if fallback is None else fallback(cls, **global_kwargs)
+    #             return cast(Algebra[Any, S], attr(*args, **kwargs))
+    #         elif isinstance(name, MethodType):
+    #             f = MethodType(name.__func__, a)
+    #             return cast(Algebra[Any, S], f(*args, **kwargs))
+    #         elif isinstance(name, FunctionType):
+    #             f = MethodType(name, a)
+    #             return cast(Algebra[Any, S], f(*args, **kwargs))
+    #         else:
+    #             return a if fallback is None else fallback(cls, **global_kwargs)
+    #     return replace(self, alg_f=algebra_run)
         
 
     def as_(self, typ: Type[B]) -> B:
@@ -125,14 +128,7 @@ class Syntax(Generic[A, S]):
     
         
     def named(self, name: str) -> Syntax[A, S]:
-        """Assign a name to underlying algebra node for better debugging output.
-
-        Args:
-            name: Name to assign; must be a valid identifier.
-
-        Returns:
-            Syntax with the given name.
-        """
+        
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).named(name))
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
@@ -516,7 +512,7 @@ class Syntax(Generic[A, S]):
         Returns:
             A Syntax object that always fails.
         """
-        return cls(alg_f=lambda alg, **global_kwargs: alg.fail(error), spec=FailSpec(error=error))
+        return cls(alg_f=lambda alg, **global_kwargs: alg.fail(error), spec=FactorySpec(name='fail', args=(error,)))
 
     @classmethod
     def success(cls, value: Any) -> Syntax[Any, Any]:
@@ -529,7 +525,7 @@ class Syntax(Generic[A, S]):
         Returns:
             A Syntax object that always succeeds.
         """
-        return cls(alg_f=lambda alg, **global_kwargs: alg.success(value), spec=SuccessSpec(value=value))
+        return cls(alg_f=lambda alg, **global_kwargs: alg.success(value), spec=FactorySpec(name='success', args=(value,)))
 
 
     @classmethod
@@ -550,7 +546,11 @@ class Syntax(Generic[A, S]):
         algebra: Optional[Algebra[A, S]] = None
         syntax: Optional[Syntax[A, S]] = None
         previous_cls: Optional[Type[Algebra[Any, S]]] = None
-        
+        def spec_lazy_f()-> SyntaxSpec:
+            nonlocal syntax
+            if syntax is None:
+                syntax = thunk()
+            return syntax.spec
         def syntax_lazy_run(acls: Type[Algebra[Any, S]], **global_kwargs) -> Algebra[A, S]:
             nonlocal algebra, syntax, previous_cls
             if syntax is None:
@@ -568,18 +568,22 @@ class Syntax(Generic[A, S]):
                     pass
                 previous_cls = acls
             return algebra
-        return cls(syntax_lazy_run, spec=LazySpec(spec=SyntaxSpec()))
+        return cls(syntax_lazy_run, spec=LazySpec(spec=spec_lazy_f))
+
 
     @classmethod
     def factory(cls, name: str, **kwargs: Any) -> Syntax[Any, Any]:
-        return cls(
-            lambda acls, **global_kwargs: acls.factory(name, **(global_kwargs | kwargs)),
-            spec=SyntaxSpec()
-            )
+        def factory_run(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
+            method = getattr(acls, name, None)
+            if method is None or not callable(method):
+                raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
+            result = CallWith(method, **(global_kwargs | kwargs))()
+            return cast(Algebra[Any, Any], result)
+        return cls(factory_run, spec=FactorySpec(name=name, args=(), kwargs=FrozenDict(kwargs)))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
-        # Record kwargs in meta.parameter so tooling can inspect token specs without executing the algebra
+
         return cls.factory('token', **kwargs)
 
         
@@ -594,7 +598,7 @@ class Syntax(Generic[A, S]):
         elif isinstance(value, Enum):
             return cls.token(token_type=value)
         else:
-            return cls(lambda cls, **global_kwargs: cls.success(value), spec=SuccessSpec(value=value))
+            return cls.success(value)
 
 
 
@@ -604,12 +608,7 @@ def run(*,
     alg: Type[Algebra[A, S]], 
     cache: Optional[Cache[S, Either[Any, Tuple[A, S]]]] = None,
     **kwargs: Any) -> Tuple[Any, None | S]:
-    """
-    Run the syntax over the given algebra, and return the result and bind.
 
-    Args:
-        *args, **kwargs: the arguments passed to alg.state to construct the state object of the algebra.
-    """
     parser = syntax(alg, **kwargs)
     input = CallWith(alg.state, **kwargs)()
     if input:

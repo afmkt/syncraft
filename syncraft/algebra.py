@@ -159,16 +159,6 @@ class Algebra(Generic[A, S]):
             return (yield from cache.return_value(Right((value, input)), input, name=cls.__name__ + '.success'))
         return cls(success_run, _name=cls.__name__ + '.success')
     
-    @classmethod
-    def factory(cls,
-                name: str, 
-                *args: Any, 
-                **kwargs: Any) -> Algebra[A, S]:
-        method = getattr(cls, name, None)
-        if method is None or not callable(method):
-            raise SyncraftError(f"Method {name} is not defined in {cls.__name__}", offender=method, expect='callable')
-        result = CallWith(method, *args, **kwargs)()
-        return cast(Algebra[A, S], result)
     
     def cut(self) -> Algebra[A, S]:
         def commit_error(e: Any) -> Error:
