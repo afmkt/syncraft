@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List
+    Type, List, Dict, Set, Iterator
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -10,7 +10,6 @@ from syncraft.algebra import Algebra, Error, Either, Left, Right
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
-from types import MethodType, FunctionType
 import keyword
 from enum import Enum
 import re
@@ -26,33 +25,110 @@ B = TypeVar('B')  # Result type for mapping
 C = TypeVar('C')  # Result type for else branch
 D = TypeVar('D')  # Result type for else branch
 S = TypeVar('S', bound=Bindable)  # State type
-
-
-
-
-
 @dataclass(frozen=True)
 class SyntaxSpec:
-    pass
+    def _children(
+        self,
+        *,
+        lazy_cache: Optional[Dict[int, "SyntaxSpec"]] = None,
+    ) -> Tuple["SyntaxSpec", ...]:
+        return ()
+
+    def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, "SyntaxSpec"]]:
+        lazy_cache: Dict[int, SyntaxSpec] = {}
+        visited: Set[int] = set()
+        stack: List[Tuple[int, SyntaxSpec]] = [(0, self)]
+
+        while stack:
+            depth, node = stack.pop()
+            if max_depth is not None and depth > max_depth:
+                continue
+
+            node_id = id(node)
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+
+            yield depth, node
+
+            for child in reversed(node._children(lazy_cache=lazy_cache)):
+                stack.append((depth + 1, child))
+
+    def build_graph(
+        self,
+        *,
+        max_depth: Optional[int] = None,
+    ) -> List[Tuple["SyntaxSpec", "SyntaxSpec"]]:
+        lazy_cache: Dict[int, SyntaxSpec] = {}
+        edges: List[Tuple[SyntaxSpec, SyntaxSpec]] = []
+        seen: Set[Tuple[int, int]] = set()
+
+        for _depth, node in self.walk(max_depth=max_depth):
+            for child in node._children(lazy_cache=lazy_cache):
+                key = (id(node), id(child))
+                if key in seen:
+                    continue
+                seen.add(key)
+                edges.append((node, child))
+
+        return edges
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec):
     spec: Callable[[], SyntaxSpec]
+
+    def _children(
+        self,
+        *,
+        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
+    ) -> Tuple[SyntaxSpec, ...]:
+        if lazy_cache is None:
+            lazy_cache = {}
+        key = id(self)
+        if key in lazy_cache:
+            return (lazy_cache[key],)
+        try:
+            target = self.spec()
+        except RecursionError:
+            return ()
+        lazy_cache[key] = target
+        return (target,)
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
     right: SyntaxSpec
 
+    def _children(
+        self,
+        *,
+        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
+    ) -> Tuple[SyntaxSpec, ...]:
+        return (self.left, self.right)
+
 @dataclass(frozen=True)
 class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
+
+    def _children(
+        self,
+        *,
+        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
+    ) -> Tuple[SyntaxSpec, ...]:
+        return (self.left, self.right)
 
 @dataclass(frozen=True)
 class ManySpec(SyntaxSpec, Generic[A]):
     spec: SyntaxSpec
     at_least: int
     at_most: Optional[int]
+
+    def _children(
+        self,
+        *,
+        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
+    ) -> Tuple[SyntaxSpec, ...]:
+        return (self.spec,)
 
 
 
@@ -141,6 +217,16 @@ class Syntax(Generic[A, S]):
             Syntax yielding B with the same resulting state.
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f)) # type: ignore
+
+    def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
+        return self.spec.walk(max_depth=max_depth)
+
+    def build_graph(
+        self,
+        *,
+        max_depth: Optional[int] = None,
+    ) -> List[Tuple[SyntaxSpec, SyntaxSpec]]:
+        return self.spec.build_graph(max_depth=max_depth)
 
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
