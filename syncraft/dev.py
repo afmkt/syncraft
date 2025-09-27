@@ -3,7 +3,6 @@ import builtins
 import io
 from typing import Tuple, Any, Set, Optional, List, Dict, Mapping, Iterator, Union
 from syncraft.syntax import (
-    Syntax,
     SyntaxSpec,
     LazySpec,
     ThenSpec,
@@ -49,7 +48,7 @@ def rich_error(err: Error)->None:
 
 
 def syntax2svg(
-    syntax: Syntax[Any, Any],
+    syntax: SyntaxSpec,
     *,
     max_depth: Optional[int] = None,
 ) -> Optional[str]:
