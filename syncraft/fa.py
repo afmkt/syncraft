@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable, Dict
+    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable, Dict, Sequence
 )
 
 from dataclasses import dataclass, field, replace
@@ -51,6 +51,62 @@ class DFA(Generic[C]):
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
     nfa2dfa: FrozenDict[frozenset[FAState], FAState]= field(default_factory=FrozenDict) 
 
+    def to_dict(self) -> dict:
+        # Serialize DFA to a dict for JSON
+        return {
+            'init': self.init.id,
+            'accept': {s.id: list(tags) for s, tags in self.accept.items()},
+            'transitions': {
+                str(s.id): [
+                    {'interval': cs.interval, 'target': t.id}
+                    for cs, t in trans.items()
+                ]
+                for s, trans in self.transitions.items()
+            },
+            'universe': self.universe.to_dict()
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict, enum_classes: Optional[dict] = None) -> 'DFA':
+        # Reconstruct DFA from dict
+        universe = CodeUniverse.from_dict(d['universe'], enum_classes=enum_classes)
+        id2state = {}
+        def get_state(i):
+            if i not in id2state:
+                id2state[i] = FAState(id=i)
+            return id2state[i]
+        # Accept
+        accept = {get_state(int(sid)): frozenset(tags) for sid, tags in d['accept'].items()}
+        # Transitions
+        transitions = {}
+        for sid, lst in d['transitions'].items():
+            s = get_state(int(sid))
+            trans = {}
+            for item in lst:
+                cs: CharSet[C] = CharSet.from_interval(item['interval'], universe)
+                t = get_state(item['target'])
+                trans[cs] = t
+            transitions[s] = trans
+        return cls(
+            universe=universe,
+            init=get_state(int(d['init'])),
+            accept=FrozenDict(accept),
+            transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()}),
+            nfa2dfa=FrozenDict()
+        )
+
+    def save(self, filename: str) -> None:
+        import json
+        with open(filename, 'w') as f:
+            json.dump(self.to_dict(), f)
+
+    @classmethod
+    def load(cls, filename: str) -> 'DFA':
+        import json
+        with open(filename, 'r') as f:
+            d = json.load(f)
+        return cls.from_dict(d)
+    
     @property
     def minimize(self) -> DFA[C]:
         """Return the (language) minimal DFA using Hopcroft's algorithm.
@@ -469,6 +525,10 @@ class DFA(Generic[C]):
         )
     
     @property
+    def dfa(self) -> DFA[C]:
+        return self
+
+    @property
     def star(self) -> DFA[C]:
         return self.nfa.star.dfa
     @property
@@ -561,6 +621,10 @@ class NFA(Generic[C]):
     def dfa(self) -> DFA[C]:
         return DFA.from_nfa(self)
 
+    @property
+    def nfa(self) -> NFA[C]:
+        return self
+
     def clone(self) -> NFA[C]:
         state_map: dict[FAState, FAState] = {}
         def get_clone(s: FAState) -> FAState:
@@ -624,7 +688,7 @@ class NFA(Generic[C]):
 
     @classmethod
     def from_charset(cls, 
-                  char: str | bytes | list[Enum] | list[C], 
+                  char: str | bytes | Sequence[Enum] | Sequence[C], 
                   universe: CodeUniverse, 
                   negation:bool = False,  
                   tag: Optional[str|Enum] = None) -> NFA[Any]:
@@ -635,6 +699,38 @@ class NFA(Generic[C]):
             raise CodepointError(f"Character {char!r} is not valid in the specified universe {universe}", offender=char, universe=universe)
         return cls._from_charset(charset, tag=tag)
 
+    @classmethod
+    def from_string(cls, 
+                    s: str | bytes | Sequence[Enum] | Sequence[C], 
+                    universe: CodeUniverse, 
+                    tag: Optional[str|Enum] = None) -> NFA[Any]:
+        nfa = None
+        if isinstance(s, str):
+            for ch in list(s):
+                p = cls.from_charset(ch, universe=universe)
+                nfa = p if nfa is None else nfa.then(p)
+            assert nfa is not None, "from_string produced no NFA"
+            if tag:
+                nfa = nfa.tagged(tag)
+            return nfa
+        elif isinstance(s, bytes):
+            for b in s:
+                p = cls.from_charset(bytes([b]), universe=universe)
+                nfa = p if nfa is None else nfa.then(p)
+            assert nfa is not None, "from_string produced no NFA"
+            if tag:
+                nfa = nfa.tagged(tag)
+            return nfa
+        elif isinstance(s, Sequence):
+            for e in s:
+                p = cls.from_charset([e], universe=universe) # type: ignore
+                nfa = p if nfa is None else nfa.then(p)
+            assert nfa is not None, "from_string produced no NFA"
+            if tag:
+                nfa = nfa.tagged(tag)
+            return nfa
+        else:
+            raise SyncraftError(f"Cannot create NFA from {s!r}", offender=s, expect="str, bytes or Sequence[Enum|C]")
 
     def then(self, other: NFA[C]) -> NFA[C]:
         if self.universe != other.universe:
@@ -788,7 +884,7 @@ class Runner(Protocol[C, Automata]):
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[str|Enum]: ...    
     def finalize(self, pos: int = 0) -> RunnerResult[C, Automata]: ...
-    def gen(self, rnd:random.Random, pos:int = 0) -> None | Tuple[List[C] | List[Enum] | str | bytes, frozenset[str | Enum]]:
+    def gen(self, rnd:random.Random, pos:int = 0) -> None | Tuple[Sequence[C] | Sequence[Enum] | str | bytes, frozenset[str | Enum]]:
         def gen_one(r: Runner[C, Automata], possible_steps:frozenset[CharSet[C]]) -> Optional[Tuple[C, Runner[C, Automata]]]:
             nonlocal pos
             if possible_steps:
@@ -825,7 +921,7 @@ class Runner(Protocol[C, Automata]):
         return None
         
     @classmethod
-    def generate(cls, a: Automata, pos: int = 0) -> None | Tuple[List[C] | List[Enum] | str | bytes, frozenset[str | Enum]]:
+    def generate(cls, a: Automata, pos: int = 0) -> None | Tuple[Sequence[C] | Sequence[Enum] | str | bytes, frozenset[str | Enum]]:
         return cls.create(a).gen(rnd=random.Random(), pos=pos)
 
 

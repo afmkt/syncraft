@@ -5,7 +5,7 @@ from typing import (
 )
 
 from dataclasses import dataclass, replace
-from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError, CallWith
+from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 from functools import cached_property

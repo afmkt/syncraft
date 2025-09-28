@@ -203,3 +203,46 @@ def test_codeuniverse_enum_nonint():
     assert u.code2int(StrEnum.ALPHA) == 0
     assert u.code2int(StrEnum.BETA) == 1
     assert u.interval == ((0, 1),)
+
+
+def test_codeuniverse_to_dict_and_from_dict_ascii():
+    u = CodeUniverse.ascii()
+    d = u.to_dict()
+    assert d == {'type': 'ASCII'}
+    u2 = CodeUniverse.from_dict(d)
+    assert u2.value == u.value and u2.space is str
+
+def test_codeuniverse_to_dict_and_from_dict_unicode():
+    u = CodeUniverse.unicode()
+    d = u.to_dict()
+    assert d == {'type': 'UNICODE'}
+    u2 = CodeUniverse.from_dict(d)
+    assert u2.value == u.value and u2.space is str
+
+def test_codeuniverse_to_dict_and_from_dict_byte():
+    u = CodeUniverse.byte()
+    d = u.to_dict()
+    assert d == {'type': 'BYTE'}
+    u2 = CodeUniverse.from_dict(d)
+    assert u2.value == u.value and u2.space is bytes
+
+def test_codeuniverse_to_dict_and_from_dict_enum():
+    class Fruit(enum.Enum):
+        APPLE = 1
+        BANANA = 2
+    u = CodeUniverse.enum(Fruit)
+    d = u.to_dict()
+    assert d['type'] == 'ENUM'
+    assert d['enum_class'] == 'Fruit'
+    assert set(d['members']) == {'APPLE', 'BANANA'}
+    u2 = CodeUniverse.from_dict(d, enum_classes={'Fruit': Fruit})
+    assert u2.value == u.value and u2.space is Fruit
+
+def test_codeuniverse_to_dict_and_from_dict_set():
+    u = CodeUniverse.set(frozenset({'A', 'B', 'C'}))
+    d = u.to_dict()
+    assert d['type'] == 'SET'
+    assert set(d['members']) == {'A', 'B', 'C'}
+    u2 = CodeUniverse.from_dict(d)
+    assert u2.value == (0, 2)
+    assert u2.space == frozenset({'A', 'B', 'C'})

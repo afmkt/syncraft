@@ -10,7 +10,7 @@ from syncraft.algebra import (
 )
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
-
+from syncraft.lexer import LexBuilder
 from syncraft.syntax import Syntax
 
 from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
@@ -99,20 +99,13 @@ class ParserState(Bindable, Generic[T]):
         return replace(self, index=min(self.index + 1, len(self.input)))
             
     
-    @classmethod
-    def from_tokens(cls, tokens: Tuple[T, ...]) -> ParserState[T]:
-        return cls(input=tokens, index=0, final=True, base=0)
-
-
-
-
     
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
     
     @classmethod
     def state(cls, tokens: List[T]) -> ParserState[T]: # type: ignore
-        return ParserState.from_tokens(tuple(tokens))  
+        return ParserState(input=tuple(tokens), index=0, final=True, base=0)
 
     @classmethod
     def primitive(cls, 
@@ -160,6 +153,11 @@ class Parser(Algebra[T, ParserState[T]]):
         pred = token_class.predicate(**kwargs)
         return cls.primitive(predicate=pred)
 
+    @classmethod
+    def lex(cls, pattern: LexBuilder) -> Algebra[T, ParserState[T]]:
+        if pattern.suggested_tag is None:
+            raise SyncraftError("Pattern must have a suggested_tag to be used in Parser.re", offender=pattern, expect="suggested_tag")
+        return cls.token(token_class=TokenClass(pattern.suggested_tag))
 
 
 def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:

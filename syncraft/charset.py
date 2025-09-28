@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar, Any, Iterable
+    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar, Any, Iterable, Sequence, Optional
 )
 
 from syncraft.constraint import FrozenDict
@@ -24,11 +24,64 @@ C = TypeVar('C', bound=str | int | Enum | Any)
 
 @dataclass(frozen=True)
 class CodeUniverse(Generic[C]):
+    def to_dict(self) -> dict:
+        if self.value == self.ASCII and self.space is str:
+            return {'type': 'ASCII'}
+        elif self.value == self.UNICODE and self.space is str:
+            return {'type': 'UNICODE'}
+        elif self.value == self.BYTE and self.space is bytes:
+            return {'type': 'BYTE'}
+        elif isinstance(self.space, type) and issubclass(self.space, Enum):
+            return {
+                'type': 'ENUM',
+                'enum_class': self.space.__name__,
+                'members': [e.name for e in self.space]
+            }
+        elif isinstance(self.space, frozenset):
+            # Only allow str or int in sets
+            members = []
+            for m in self.space:
+                if isinstance(m, (str, int)):
+                    members.append(m)
+                else:
+                    raise ValueError(f"SET universes must only contain str or int, got {type(m)}: {m}")
+            return {
+                'type': 'SET',
+                'members': members
+            }
+        # If we reach here, the universe type is unsupported/illegal.
+        raise ValueError(f"Unsupported CodeUniverse type: value={self.value}, space={self.space}")
+
+    @classmethod
+    def from_dict(cls, d: dict, enum_classes: 'Optional[dict]' = None) -> 'CodeUniverse':
+        t = d['type']
+        if t == 'ASCII':
+            return cls.ascii()
+        elif t == 'UNICODE':
+            return cls.unicode()
+        elif t == 'BYTE':
+            return cls.byte()
+        elif t == 'ENUM':
+            if enum_classes is None or d['enum_class'] not in enum_classes:
+                raise ValueError(f"Enum class {d['enum_class']} not provided in enum_classes dict")
+            enum_type = enum_classes[d['enum_class']]
+            return cls.enum(enum_type)
+        elif t == 'SET':
+            members = set()
+            for m in d['members']:
+                if isinstance(m, (str, int)):
+                    members.add(m)
+                else:
+                    raise ValueError(f"SET universes must only contain str or int, got {type(m)}: {m}")
+            return cls.set(frozenset(members))
+        # No 'CUSTOM' case: all valid universes are handled above.
+        else:
+            raise ValueError(f"Unknown CodeUniverse type: {t}")
     ASCII: ClassVar[Tuple[int, int]] = (0, 0x7F)
     UNICODE: ClassVar[Tuple[int, int]] = (0, 0x10FFFF)
     BYTE: ClassVar[Tuple[int, int]] = (0, 0xFF)
     value: Tuple[int, int]
-    space: Type[C] | frozenset[C]
+    space: Type[C] | frozenset[str | int]
     int2c: FrozenDict[int, C] = field(default_factory=FrozenDict, repr=False)
     c2int: FrozenDict[C, int] = field(default_factory=FrozenDict, repr=False)
     @cached_property
@@ -110,7 +163,7 @@ class CodeUniverse(Generic[C]):
         return cls(value=(0, len(members)-1), space=enum_type, int2c=int2c, c2int=c2int) # type: ignore
 
     @classmethod
-    def set(cls, space: frozenset[C]) -> CodeUniverse[C]:
+    def set(cls, space: frozenset[str | int]) -> CodeUniverse[C]:
         if not space:
             raise SyncraftError("Cannot create CodeUniverse from empty set", offender=space, expect="non-empty set")
         int2c: FrozenDict[int, C] = FrozenDict({i: c for i, c in enumerate(space)})
@@ -226,7 +279,7 @@ class CharSet(Generic[C]):
         return merged
 
     @classmethod
-    def create(cls, char: str | bytes | List[Enum] | List[C], universe: CodeUniverse) -> 'CharSet[C]':
+    def create(cls, char: str | bytes | Sequence[Enum] | Sequence[C], universe: CodeUniverse) -> 'CharSet[C]':
         """Create (and intern) a CharSet from a collection of literal symbols.
 
         Normalization steps:
@@ -246,15 +299,10 @@ class CharSet(Generic[C]):
             return cls._build(universe, (cp,))
 
         # Normalize input to iterable of elements
-        if isinstance(char, str):
+        if isinstance(char, (str, bytearray, bytes, list, tuple)):
             iterable: Iterable[Any] = char  # iterate over characters
-        elif isinstance(char, bytes):
-            # convert each individual byte value into its single-byte representation for code2int
-            iterable = [bytes([b]) for b in char]
-        elif isinstance(char, (list, tuple)):
-            iterable = char  # type: ignore[assignment]
         else:
-            raise TypeError(f"Expected str, bytes, or list/tuple of Enum or characters, got {type(char)}")
+            raise SyncraftError(f"Expected str, bytes, or list/tuple of Enum or characters, got {type(char)}", offender=char, expect="str, bytes, or list/tuple of Enum or characters")
 
         codepoints_set = {universe.code2int(x) for x in iterable}
         if not codepoints_set:
