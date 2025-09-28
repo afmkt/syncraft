@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .charset import CodeUniverse
 from .fa import DFA, NFA, FAState
@@ -123,10 +123,8 @@ class LexBuilder:
         return replace(self, suggested_tag=value)
 
 
-@dataclass(frozen=True)
-class LexRule:
-    pattern: LexBuilder
-    tag: Optional[Tag] = None
+
+
 
 
 @dataclass(frozen=True)
@@ -137,15 +135,11 @@ class Lexer:
     """
     universe: CodeUniverse
     policy: LexPolicy = field(default_factory=LexPolicy)
-    rules: Tuple[LexRule, ...] = field(default_factory=tuple)
+    rules: Tuple[LexBuilder, ...] = field(default_factory=tuple)
 
-    def add(self, *rules: LexRule) -> "Lexer":
+    def add(self, *rules: LexBuilder) -> "Lexer":
         return replace(self, rules=self.rules + tuple(rules))
 
-    # Convenience to add from builder directly
-    def add_builder(self, *builders: LexBuilder) -> "Lexer":
-        rs: List[LexRule] = [LexRule(pattern=b, tag=b.suggested_tag) for b in builders]
-        return self.add(*rs)
 
     def build(self) -> "Matcher":
         """Compile the current rules into a shared DFA-based Matcher.
@@ -163,9 +157,9 @@ class Lexer:
         # Build NFA per rule (limited to the subset we can do cheaply now: literal/concat/union/quantifiers)
         combined: Optional[NFA[Any]] = None  # type: ignore[name-defined]
         for idx, rule in enumerate(self.rules):
-            nfa = _compile_builder_to_nfa(rule.pattern, self.universe)
-            if rule.tag is not None:
-                nfa = nfa.tagged(rule.tag)
+            nfa = _compile_builder_to_nfa(rule, self.universe)
+            if rule.suggested_tag is not None:
+                nfa = nfa.tagged(rule.suggested_tag)
             else:
                 # Fallback: assign a stable synthetic tag using declaration order
                 synth_tag: Tag = f"RULE#{idx}"
@@ -173,9 +167,8 @@ class Lexer:
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
-        dfa = combined.dfa
         # Note: minimization and advanced ops (intersect/diff) will be planned later.
-        return Matcher(universe=self.universe, dfa=dfa, policy=self.policy)
+        return Matcher(universe=self.universe, dfa=combined.dfa, policy=self.policy)
 
 
 @dataclass(frozen=True)
@@ -413,7 +406,6 @@ __all__ = [
     "Matcher",
     "LexPolicy",
     "ModeAction",
-    "LexRule",
     "MatchResult",
     "Tag",
     "collect_lexers",
@@ -435,7 +427,7 @@ def collect_lexers(
     - Syntax.token(text=..., token_type=..., case_sensitive=...):
         • If 'text' is str/bytes/Pattern[str], convert concrete literals to LexBuilder.literal; for Pattern keep for future regex->FA.
         • If 'token_type' is provided, use it as the tag; otherwise None and a synthetic order tag will be assigned during build.
-    - We do not execute algebra; we only leverage Syntax.meta (name/fixity/parameter) recursively to find nested Syntax children.
+    - We do not execute algebra; we traverse the Syntax spec tree to find nested Syntax children.
 
     This returns a Lexer with all rules aggregated. Call .build() to obtain a Matcher.
     """
@@ -444,56 +436,31 @@ def collect_lexers(
     # Determine universe default: favor ASCII for str, BYTE for bytes; fallback to ASCII
     uni = universe or CodeUniverse.ascii()
 
-    rules: list[LexRule] = []
-    visited: set[int] = set()
+    rules: list[LexBuilder] = []
 
-    def visit(node: _syntax.Syntax[Any, Any]):
-        nid = id(node.alg_f)
-        if nid in visited:
-            return
-        visited.add(nid)
-
-        # Extract builders from well-known factories by looking at meta
-        meta = node.meta
-        # token nodes capture kwargs in parameter tuple as a single dict (see Syntax.token)
-        if isinstance(meta.parameter, tuple) and meta.name and meta.name.startswith('token('):
-            if meta.parameter and isinstance(meta.parameter[0], dict):
-                kwargs = meta.parameter[0]
+    for _depth, spec in root.walk():
+        if isinstance(spec, _syntax.FactorySpec):
+            if spec.name == 'token':
+                kwargs = dict(spec.kwargs)
                 lb = _kwargs_to_builder(kwargs)
                 if lb is not None:
-                    tag = kwargs.get('token_type', None)
-                    rules.append(LexRule(pattern=lb, tag=tag))
-        elif meta.name == 'success' and meta.parameter and isinstance(meta.parameter[0], (str, bytes)):
-            # Bare success of literal value is unusual, but treat as literal
-            lit = meta.parameter[0]
-            lb = LexBuilder.literal(lit)
-            rules.append(LexRule(pattern=lb))
-
-        # Recurse into parameter children that are Syntax
-        if isinstance(meta.parameter, tuple):
-            for p in meta.parameter:
-                if isinstance(p, _syntax.Syntax):
-                    visit(p)
-                elif callable(p) and getattr(node, 'meta', None) and meta.name == 'lazy':
-                    # meta.parameter holds a lambda returning the resolved syntax; try to resolve if bound (best-effort)
-                    try:
-                        resolved = p()
-                        if isinstance(resolved, _syntax.Syntax):
-                            visit(resolved)
-                    except Exception:
-                        pass
-
-    visit(root)
+                    tag = kwargs.get('token_type')
+                    rules.append(lb.tag(tag) if tag is not None else lb)
+            elif spec.name == 'success' and spec.args:
+                lit_candidate = spec.args[0]
+                if isinstance(lit_candidate, (str, bytes)):
+                    lb = LexBuilder.literal(lit_candidate)
+                    rules.append(lb)
 
     # Build declaration order into policy for deterministic tie-breaking
-    order = tuple(r.tag for r in rules if r.tag is not None)
+    order = tuple(r.suggested_tag for r in rules if r.suggested_tag is not None)
     pol = replace(pol, declaration_order=order)
 
     lex = Lexer(universe=uni, policy=pol).add(*rules)
     return lex
 
 
-def _kwargs_to_builder(kwargs: Dict[str, Any]) -> Optional[LexBuilder]:
+def _kwargs_to_builder(kwargs: Mapping[str, Any]) -> Optional[LexBuilder]:
     """Translate Syntax.token kwargs to a LexBuilder when possible.
 
     Supported forms:
