@@ -1,7 +1,7 @@
 from __future__ import annotations
 import builtins
 import io
-from typing import Tuple, Any, Set, Optional, List, Dict, Mapping, Iterator, Union
+from typing import Tuple, Any, Set, Optional, List, Dict, Mapping
 from syncraft.syntax import (
     SyntaxSpec,
     LazySpec,
@@ -10,9 +10,8 @@ from syncraft.syntax import (
     ManySpec,
     FactorySpec,
 )
-from syncraft.ast import ThenKind, Nothing
-from syncraft.algebra import  Left, Right, Error, Either, Algebra
-from syncraft.parser import ParserState, Token
+from syncraft.ast import ThenKind
+from syncraft.algebra import Error
 
 
 
@@ -67,10 +66,216 @@ def syntax2svg(
             from railroad import ZeroOrMore  # type: ignore
         except ImportError:  # pragma: no cover - best effort rendering
             ZeroOrMore = None  # type: ignore
+
+        try:  # NonTerminal is optional depending on version
+            from railroad import NonTerminal  # type: ignore
+        except ImportError:  # pragma: no cover - best effort rendering
+            NonTerminal = None  # type: ignore
     except ImportError:
         return None
 
-    return None
+    nodes_with_depth: List[Tuple[int, SyntaxSpec]] = list(syntax.walk(max_depth=max_depth))
+    if not nodes_with_depth:
+        return None
+
+    nodes: List[SyntaxSpec] = [node for _depth, node in nodes_with_depth]
+
+    from collections import defaultdict
+
+    children_map: Dict[SyntaxSpec, List[SyntaxSpec]] = defaultdict(list)
+    for parent, child in syntax.build_graph(max_depth=max_depth):
+        children_map[parent].append(child)
+
+    # Tarjan's algorithm to detect strongly connected components
+    index_counter = [0]
+    indices: Dict[SyntaxSpec, int] = {}
+    lowlinks: Dict[SyntaxSpec, int] = {}
+    stack: List[SyntaxSpec] = []
+    on_stack: Set[SyntaxSpec] = set()
+    components: List[Tuple[SyntaxSpec, ...]] = []
+    component_of: Dict[SyntaxSpec, int] = {}
+
+    def strongconnect(node: SyntaxSpec) -> None:
+        idx = index_counter[0]
+        index_counter[0] += 1
+        indices[node] = idx
+        lowlinks[node] = idx
+        stack.append(node)
+        on_stack.add(node)
+
+        for child in children_map.get(node, []):
+            if child not in indices:
+                strongconnect(child)
+                lowlinks[node] = min(lowlinks[node], lowlinks[child])
+            elif child in on_stack:
+                lowlinks[node] = min(lowlinks[node], indices[child])
+
+        if lowlinks[node] == indices[node]:
+            component: List[SyntaxSpec] = []
+            while True:
+                member = stack.pop()
+                on_stack.remove(member)
+                component.append(member)
+                component_of[member] = len(components)
+                if member is node:
+                    break
+            components.append(tuple(component))
+
+    for node in nodes:
+        if node not in indices:
+            strongconnect(node)
+
+    # Cache of constructed diagram items per SyntaxSpec
+    diagram_cache: Dict[SyntaxSpec, Any] = {}
+    placeholder_cache: Dict[SyntaxSpec, Any] = {}
+
+    def shorten(value: Any, *, limit: int = 40) -> str:
+        import re
+        from enum import Enum
+
+        if isinstance(value, Enum):
+            rep = f"{value.__class__.__name__}.{value.name}"
+        elif isinstance(value, (str, bytes)):
+            rep = repr(value)
+        elif hasattr(value, "pattern") and hasattr(value, "flags"):
+            rep = f"/{getattr(value, 'pattern', '')}/"
+        else:
+            rep = repr(value)
+        rep = rep.replace("\n", "\\n")
+        rep = re.sub(r"\s+", " ", rep)
+        if len(rep) > limit:
+            rep = rep[: limit - 1] + "…"
+        return rep
+
+    def spec_label(node: SyntaxSpec) -> str:
+        if isinstance(node, FactorySpec):
+            return node.name
+        if isinstance(node, ThenSpec):
+            return f"Then({node.kind.name.lower()})"
+        if isinstance(node, ChoiceSpec):
+            return "Choice"
+        if isinstance(node, ManySpec):
+            upper = "∞" if node.at_most is None else str(node.at_most)
+            return f"Many[{node.at_least},{upper}]"
+        if isinstance(node, LazySpec):
+            return "Lazy"
+        return type(node).__name__
+
+    def placeholder(node: SyntaxSpec) -> Any:
+        if node not in placeholder_cache:
+            label = spec_label(node)
+            if NonTerminal is not None:
+                placeholder_cache[node] = NonTerminal(label)
+            else:
+                placeholder_cache[node] = Comment(f"↺ {label}")
+        return placeholder_cache[node]
+
+    def build_factory(spec: FactorySpec) -> Any:
+        kwargs = dict(spec.kwargs)
+        args = list(spec.args)
+        if spec.name == "token":
+            text = kwargs.get("text")
+            token_type = kwargs.get("token_type")
+            pieces: List[str] = []
+            if text is not None:
+                pieces.append(shorten(text))
+            if token_type is not None:
+                pieces.append(f"<{shorten(token_type)}>")
+            label = " ".join(pieces) if pieces else "token"
+            return Terminal(label)
+        if spec.name == "success":
+            return Comment(f"ε ⇒ {shorten(args[0])}" if args else "ε ⇒ value")
+        if spec.name == "fail":
+            return Comment(f"fail {shorten(args[0]) if args else ''}")
+
+        label_parts: List[str] = []
+        if args:
+            label_parts.extend(shorten(arg) for arg in args)
+        if kwargs:
+            label_parts.extend(f"{key}={shorten(value)}" for key, value in sorted(kwargs.items()))
+        label = spec.name if not label_parts else f"{spec.name}({', '.join(label_parts)})"
+        if NonTerminal is not None:
+            return NonTerminal(label)
+        return Terminal(label)
+
+    def many_diagram(spec: ManySpec, inner: Any) -> Any:
+        at_least, at_most = spec.at_least, spec.at_most
+        if at_least == 0 and at_most == 1:
+            return RROptional(inner)
+        if at_least == 0 and at_most is None:
+            if ZeroOrMore is not None:
+                return ZeroOrMore(inner)
+            return Sequence(Comment("repeat 0+"), inner)
+        if at_least == 1 and at_most is None:
+            return OneOrMore(inner)
+        if at_least == at_most:
+            return Sequence(Comment(f"repeat exactly {at_least}"), inner)
+        upper = "∞" if at_most is None else str(at_most)
+        return Sequence(Comment(f"repeat {at_least}..{upper}"), inner)
+
+    # Process components in the order produced by Tarjan (leaf-most first)
+    for comp in components:
+        comp_nodes = list(comp)
+        comp_idx = component_of[comp_nodes[0]]
+        # Determine which children stay inside the component (for recursion placeholders)
+        for node in comp_nodes:
+            child_items: List[Any] = []
+            for child in children_map.get(node, []):
+                if component_of.get(child) == comp_idx:
+                    child_items.append(placeholder(child))
+                else:
+                    child_items.append(diagram_cache.get(child, placeholder(child)))
+
+            if isinstance(node, LazySpec):
+                diagram_cache[node] = child_items[0] if child_items else Comment("lazy …")
+                continue
+
+            if isinstance(node, ThenSpec):
+                parts = child_items[:2]
+                while len(parts) < 2:
+                    parts.append(Comment("…"))
+                if node.kind is not ThenKind.BOTH:
+                    parts = parts + [Comment(f"keep {node.kind.name.lower()}")]
+                diagram_cache[node] = Sequence(*parts)
+                continue
+
+            if isinstance(node, ChoiceSpec):
+                options = child_items[:2] if len(child_items) >= 2 else child_items
+                diagram_cache[node] = Choice(0, *options) if len(options) > 1 else (options[0] if options else Comment("choice"))
+                continue
+
+            if isinstance(node, ManySpec):
+                inner = child_items[0] if child_items else Comment("…")
+                diagram_cache[node] = many_diagram(node, inner)
+                continue
+
+            if isinstance(node, FactorySpec):
+                diagram_cache[node] = build_factory(node)
+                continue
+
+            # Fallback for unknown spec types
+            diagram_cache[node] = Comment(spec_label(node))
+
+    root_item = diagram_cache.get(syntax, placeholder(syntax))
+    if root_item is None:
+        return None
+
+    try:
+        diagram = Diagram(root_item)
+        write_svg_string = getattr(diagram, "writeSvgString", None)
+        if callable(write_svg_string):
+            svg_result = write_svg_string()
+            if isinstance(svg_result, str):
+                return svg_result
+            if svg_result is not None:
+                return str(svg_result)
+        buffer = io.StringIO()
+        diagram.writeSvg(buffer.write)  # type: ignore[arg-type]
+        return buffer.getvalue()
+    except TypeError:
+        buffer = io.StringIO()
+        diagram.writeSvg(buffer.write)  # type: ignore[arg-type]
+        return buffer.getvalue()
 
 def ast2svg(ast: Any) -> Optional[str]:
     """

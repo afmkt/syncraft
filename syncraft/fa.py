@@ -20,14 +20,19 @@ import random
 
 C = TypeVar('C', bound=str | int | Enum | Any)
 
+FAStateBuilder = Callable[[], 'FAState']
 @dataclass(frozen=True)
 class FAState:
     _counter: ClassVar[int] = 0  # shared across all states
     id: int = field(default_factory=lambda: FAState._next_id())
 
     @classmethod
-    def from_int(cls, id: int) -> FAState:
-        return cls(id=id)
+    def builder(cls, init: int = 0) -> FAStateBuilder:
+        def build() -> FAState:
+            nonlocal init
+            init += 1
+            return cls(id=init)
+        return build
 
     @classmethod
     def _next_id(cls) -> int:
@@ -64,6 +69,7 @@ class DFA(Generic[C]):
             return self
 
         universe = self.universe
+        fabuilder = FAState.builder()
 
         # Collect all states explicitly referenced.
         states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys())
@@ -107,7 +113,7 @@ class DFA(Generic[C]):
                 if tgt is None:
                     # Missing piece -> implicit dead sink
                     if sink is None:
-                        sink = FAState()
+                        sink = fabuilder()
                     tgt = sink
                     real_mask.append(False)
                 else:
@@ -180,7 +186,7 @@ class DFA(Generic[C]):
         block_rep: Dict[FAState, FAState] = {}
         new_accept: Dict[FAState, frozenset[str | Enum]] = {}
         for block in P:
-            rep = FAState()
+            rep = fabuilder()
             for s in block:
                 block_rep[s] = rep
             # Union tags if any state accepting
@@ -257,39 +263,39 @@ class DFA(Generic[C]):
             return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
 
 
-    @staticmethod
-    def _complete_transitions(universe: CodeUniverse,
-                            transitions: dict[FAState, dict[CharSet[C], FAState]],
-                            accept: dict[FAState, frozenset]) -> tuple[dict[FAState, dict[CharSet[C], FAState]], dict[FAState, frozenset], FAState]:
-        # copy inputs shallow
-        trans_copy: Dict[FAState, Dict[CharSet[C], FAState]] = {s: dict(m) for s, m in transitions.items()}
+    # @staticmethod
+    # def _complete_transitions(universe: CodeUniverse,
+    #                         transitions: dict[FAState, dict[CharSet[C], FAState]],
+    #                         accept: dict[FAState, frozenset]) -> tuple[dict[FAState, dict[CharSet[C], FAState]], dict[FAState, frozenset], FAState]:
+    #     # copy inputs shallow
+    #     trans_copy: Dict[FAState, Dict[CharSet[C], FAState]] = {s: dict(m) for s, m in transitions.items()}
 
-        # create sink state
-        sink = FAState()
+    #     # create sink state
+    #     sink = FAState()
 
-        # ensure sink exists in map to be consistent
-        trans_copy.setdefault(sink, {})
+    #     # ensure sink exists in map to be consistent
+    #     trans_copy.setdefault(sink, {})
 
-        # For each state, compute covered charset and add missing piece mapped to sink
-        for s, mapping in list(trans_copy.items()):
-            # union all key charsets into 'covered'
-            covered: CharSet[C] = CharSet.none(universe)
-            for cs in mapping.keys():
-                covered = covered | cs
-            missing = (-covered)
-            if missing.interval:  # any uncovered codepoints
-                # If the state's mapping already has a CharSet that equals missing, merge would have caught it
-                mapping[missing] = sink
-                trans_copy[s] = mapping
+    #     # For each state, compute covered charset and add missing piece mapped to sink
+    #     for s, mapping in list(trans_copy.items()):
+    #         # union all key charsets into 'covered'
+    #         covered: CharSet[C] = CharSet.none(universe)
+    #         for cs in mapping.keys():
+    #             covered = covered | cs
+    #         missing = (-covered)
+    #         if missing.interval:  # any uncovered codepoints
+    #             # If the state's mapping already has a CharSet that equals missing, merge would have caught it
+    #             mapping[missing] = sink
+    #             trans_copy[s] = mapping
 
-        # ensure sink loops to itself on all chars
-        trans_copy[sink] = {CharSet.any(universe): sink}
+    #     # ensure sink loops to itself on all chars
+    #     trans_copy[sink] = {CharSet.any(universe): sink}
 
-        # Optionally: merge adjacent pieces in each state's mapping (keeps mapping compact)
-        for s, mapping in list(trans_copy.items()):
-            trans_copy[s] = DFA.merge_adjacent_transitions(universe, mapping)
+    #     # Optionally: merge adjacent pieces in each state's mapping (keeps mapping compact)
+    #     for s, mapping in list(trans_copy.items()):
+    #         trans_copy[s] = DFA.merge_adjacent_transitions(universe, mapping)
 
-        return trans_copy, accept, sink
+    #     return trans_copy, accept, sink
 
 
 
