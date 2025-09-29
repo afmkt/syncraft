@@ -51,6 +51,13 @@ class DFA(Generic[C]):
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
     nfa2dfa: FrozenDict[frozenset[FAState], FAState]= field(default_factory=FrozenDict) 
 
+    def all_tags(self) -> frozenset[Tag]:
+        seen: set[Tag] = set()
+        for tags in self.dfa.accept.values():
+            seen.update(tags)
+        return frozenset(seen)
+
+
     def to_dict(self) -> dict:
         # Serialize DFA to a dict for JSON
         return {
@@ -613,10 +620,17 @@ class DFA(Generic[C]):
 class NFA(Generic[C]):
     universe: CodeUniverse
     init: FAState
-    accept: FrozenDict[FAState, frozenset[str | Enum]] = field(default_factory=FrozenDict)
+    accept: FrozenDict[FAState, frozenset[Tag]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = field(default_factory=FrozenDict)
     epsilon: FrozenDict[FAState, frozenset[FAState]] = field(default_factory=FrozenDict)
 
+
+    def all_tags(self) -> frozenset[Tag]:
+        seen: set[Tag] = set()
+        for tags in self.accept.values():
+            seen.update(tags)
+        return frozenset(seen)
+    
     @property
     def dfa(self) -> DFA[C]:
         return DFA.from_nfa(self)
@@ -877,7 +891,7 @@ class Runner(Protocol[C, Automata]):
             return self.fa.nfa
     @classmethod
     def create(cls, a: Automata) -> Self: ...
-    def step(self, symbol: C, pos: int) -> RunnerResult[C, Automata]: ...
+    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, Automata]: ...
     def is_accepted(self) -> bool: ...
     def is_valid(self) -> bool: ...
     @cached_property
@@ -944,7 +958,7 @@ class NFARunner(Runner[C, NFA[C]]):
             start_states = nfa.closure(advanced)
         return cls(current=start_states, fa=nfa)
     
-    def step(self, symbol: C, pos: int) -> RunnerResult[C, NFA[C]]:
+    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, NFA[C]]:
         ss: str|bytes|list[Enum]|list[C]
         if isinstance(symbol, str):
             ss = symbol
@@ -1067,7 +1081,7 @@ class DFARunner(Runner[C, DFA[C]]):
     def _is_newline(self, symbol: C) -> bool:
         return False
 
-    def step(self, symbol: C, pos: int) -> RunnerResult[C, DFA[C]]:
+    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, DFA[C]]:
         ss: str|bytes|list[Enum]|list[C]
         if isinstance(symbol, str):
             ss = symbol

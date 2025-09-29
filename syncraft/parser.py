@@ -157,7 +157,7 @@ class Parser(Algebra[T, ParserState[T]]):
     def lex(cls, pattern: FABuilder) -> Algebra[T, ParserState[T]]:
         if pattern.tag is None:
             raise SyncraftError("Pattern must have a suggested_tag to be used in Parser.re", offender=pattern, expect="suggested_tag")
-        return cls.token(token_class=TokenClass(pattern.tag))
+        return cls.token(token_class=TokenClass.simple(), text=pattern.text, token_type=pattern.tag)
 
 
 def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
