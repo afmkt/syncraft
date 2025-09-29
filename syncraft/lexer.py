@@ -1,16 +1,4 @@
-"""
-Internal scaffolding for DFA-based lexeme terminals without a token stream.
-
-This module defines three main concepts:
-- Lexer (centralized): holds CodeUniverse and non-local lexical policies (priority, skip/trim, modes).
-- LexBuilder (distributed): a small DSL to build lexeme patterns; later aggregated by the Lexer.
-- Matcher: the shared, DFA-based matcher built from a set of LexBuilder rules; used by terminals at runtime.
-
-Nothing here is user-facing yet; these are contracts and placeholders for integration.
-"""
-
 from __future__ import annotations
-
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple, Union, TypeVar, Generic, Callable
@@ -27,128 +15,6 @@ C = TypeVar('C', bound=str | int | Enum | Any)
 # Types
 Tag = Union[str, Enum]
 
-
-
-
-
-class _NodeKind(str, Enum):
-    LITERAL = "LITERAL"
-    ONEOF = "ONEOF"
-    CONCAT = "CONCAT"
-    UNION = "UNION"
-    INTERSECT = "INTERSECT"  # DFA-only
-    DIFF = "DIFF"            # DFA-only (A - B)
-    COMPLEMENT = "COMPLEMENT"  # DFA-only (universe - A)
-    STAR = "STAR"
-    PLUS = "PLUS"
-    OPTIONAL = "OPTIONAL"
-    MANY = "MANY"
-
-FA = TypeVar('FA', bound=Union[NFA, DFA])
-@dataclass(frozen=True)
-class LexBuilder(Generic[C]):
-    kind: _NodeKind
-    children: Tuple["LexBuilder[C]", ...] = field(default_factory=tuple)
-    text: Optional[Union[str, bytes, Sequence[C]]] = None
-    at_least: int = 1
-    at_most: Optional[int] = None
-    suggested_tag: Optional[Tag] = None
-
-    # ---- Factory entry points ----
-    @classmethod
-    def literal(cls, text: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> "LexBuilder[C]":
-        return cls(kind=_NodeKind.LITERAL, text=text, suggested_tag=tag)
-
-    # Alias for convenience
-    @classmethod
-    def lit(cls, text: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> "LexBuilder[C]":
-        return cls.literal(text, tag=tag)
-
-    @classmethod
-    def oneof(cls, chars: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> "LexBuilder[C]":
-        return cls(kind=_NodeKind.ONEOF, text=chars, suggested_tag=tag)
-    
-    # ---- DSL operators ----
-    def __add__(self, other: "LexBuilder[C]") -> "LexBuilder[C]":
-        return LexBuilder(kind=_NodeKind.CONCAT, children=(self, other))
-
-    def __or__(self, other: "LexBuilder[C]") -> "LexBuilder[C]":
-        return LexBuilder(kind=_NodeKind.UNION, children=(self, other))
-
-    def __and__(self, other: "LexBuilder[C]") -> "LexBuilder[C]":
-        return LexBuilder(kind=_NodeKind.INTERSECT, children=(self, other))
-
-    def __sub__(self, other: "LexBuilder[C]") -> "LexBuilder[C]":
-        return LexBuilder(kind=_NodeKind.DIFF, children=(self, other))
-
-    def __invert__(self) -> "LexBuilder[C]":  # optional (~)
-        return LexBuilder(kind=_NodeKind.OPTIONAL, children=(self,))
-
-    def __neg__(self) -> "LexBuilder[C]":  # complement (-)
-        return LexBuilder(kind=_NodeKind.COMPLEMENT, children=(self,))
-
-    @property
-    def star(self) -> "LexBuilder[C]":
-        return LexBuilder(kind=_NodeKind.STAR, children=(self,))
-
-    @property
-    def plus(self) -> "LexBuilder[C]":
-        # desugar plus -> concat(self, self.star)
-        return (self + self.star)
-
-    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> "LexBuilder[C]":
-        return LexBuilder(kind=_NodeKind.MANY, children=(self,), at_least=at_least, at_most=at_most)
-
-    def tag(self, value: Tag) -> "LexBuilder[C]":
-        return replace(self, suggested_tag=value)
-
-    def compile(self, universe: CodeUniverse[C]) -> NFA[C] | DFA[C]: # type: ignore
-        match self.kind:
-            case _NodeKind.UNION:
-                left = self.children[0].compile(universe).nfa
-                right = self.children[1].compile(universe).nfa
-                return left.union(right)
-            case _NodeKind.CONCAT:
-                left = self.children[0].compile(universe).nfa
-                right = self.children[1].compile(universe).nfa
-                return left.then(right)
-            case _NodeKind.LITERAL:
-                if self.text is None:
-                    raise SyncraftError("Literal LexBuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
-                return NFA.from_string(self.text, universe=universe)
-            case _NodeKind.ONEOF:
-                if self.text is None:
-                    raise SyncraftError("OneOf LexBuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
-                return NFA.from_charset(self.text, universe=universe)
-            case _NodeKind.STAR:
-                inner = self.children[0].compile(universe).nfa
-                return inner.star
-            case _NodeKind.OPTIONAL:
-                inner = self.children[0].compile(universe).nfa
-                return inner.optional
-            case _NodeKind.MANY:
-                inner = self.children[0].compile(universe).nfa
-                return inner.many(at_least=self.at_least, at_most=self.at_most)
-            case _NodeKind.PLUS:
-                inner = self.children[0].compile(universe).nfa
-                return inner.star
-            case _NodeKind.COMPLEMENT:
-                # Require DFA planning for these operations
-                inner1 = self.children[0].compile(universe).dfa
-                return inner1.complement
-            case _NodeKind.INTERSECT:
-                # Require DFA planning for these operations
-                left1 = self.children[0].compile(universe).dfa
-                right1 = self.children[1].compile(universe).dfa
-                return left1.intersection(right1)
-            case _NodeKind.DIFF:
-                # Require DFA planning for these operations
-                left1 = self.children[0].compile(universe).dfa
-                right1 = self.children[1].compile(universe).dfa
-                return left1.difference(right1)
-            case _:
-                raise NotImplementedError(f"Unhandled LexBuilder kind: {self.kind}")
-
                 
 
 @dataclass(frozen=True)
@@ -161,25 +27,13 @@ class ModeAction:
 
 @dataclass(frozen=True)
 class LexPolicy:
-    """Centralized lexical policy shared by all FA terminals.
-
-    - priority_by_tag: higher number wins when multiple tags accept the same longest span
-    - left_trim/right_trim: tags to consume silently before/after a terminal match
-    - rule_actions: mode transitions keyed by tag
-    - declaration_order: stable ordering for tie-breaks after priority
-    """
     priority_by_tag: Dict[Tag, int] = field(default_factory=dict)
-    left_trim: FrozenSet[Tag] = field(default_factory=frozenset)
-    right_trim: FrozenSet[Tag] = field(default_factory=frozenset)
+    skip: frozenset[Tag] = field(default_factory=frozenset)    
     rule_actions: Dict[Tag, ModeAction] = field(default_factory=dict)
     declaration_order: Tuple[Tag, ...] = field(default_factory=tuple)
 
 @dataclass(frozen=True)
 class Lexer(Generic[C]):
-    """Centralized holder of universe and non-local lexical policies.
-
-    A Lexer aggregates distributed rules (LexBuilder) and compiles them into a shared DFA-based Matcher.
-    """
     universe: CodeUniverse[C]
     policy: LexPolicy = field(default_factory=LexPolicy)
     rules: Tuple[LexBuilder[C], ...] = field(default_factory=tuple)
@@ -188,25 +42,17 @@ class Lexer(Generic[C]):
         return replace(self, rules=self.rules + tuple(rules))
 
 
-    def build(self) -> "Matcher[C]":
-        """Compile the current rules into a shared DFA-based Matcher.
-
-        Outline:
-          - Convert each LexBuilder to an NFA (Thompson-like) where possible
-          - Union all NFAs, tagging accept states with rule tag (if provided)
-          - Determinize to a single DFA
-          - Optionally minimize (policy-driven threshold; not implemented here)
-        """
+    def build(self, ) -> "Matcher[C]":
         if not self.rules:
             # Empty matcher that always fails
-            return Matcher(universe=self.universe, dfa=DFA(self.universe, init=FAState()), policy=self.policy)
+            return Matcher(dfa=DFA(self.universe, init=FAState()), policy=self.policy)
 
         # Build NFA per rule (limited to the subset we can do cheaply now: literal/concat/union/quantifiers)
         combined: Optional[NFA[C]] = None  # type: ignore[name-defined]
         for idx, rule in enumerate(self.rules):
             nfa = rule.compile(self.universe).nfa
-            if rule.suggested_tag is not None:
-                nfa = nfa.tagged(rule.suggested_tag)
+            if rule.tag is not None:
+                nfa = nfa.tagged(rule.tag)
             else:
                 # Fallback: assign a stable synthetic tag using declaration order
                 synth_tag: Tag = f"RULE#{idx}"
@@ -215,7 +61,7 @@ class Lexer(Generic[C]):
 
         assert combined is not None
         # Note: minimization and advanced ops (intersect/diff) will be planned later.
-        return Matcher(universe=self.universe, dfa=combined.dfa.minimize, policy=self.policy)
+        return Matcher(dfa=combined.dfa.minimize, policy=self.policy)
 
 
 @dataclass(frozen=True)
@@ -227,12 +73,6 @@ class MatchResult:
 
 @dataclass(frozen=True)
 class Matcher(Generic[C]):
-    """Shared DFA-based matcher.
-
-    This is the single, centralized matcher that all FA-terminal nodes consult at runtime.
-    It owns the DFA and the policy; terminals provide the input text/index and optional allowed tag set.
-    """
-    universe: CodeUniverse[C]
     dfa: DFA[C]
     policy: LexPolicy = field(default_factory=LexPolicy)
 
@@ -241,9 +81,8 @@ class Matcher(Generic[C]):
         text: Union[str, bytes, Sequence[C]],
         index: int,
         *,
-        allowed_tags: Optional[FrozenSet[Tag]] = None,
-        left_trim: bool = True,
-        right_trim: bool = False,
+        allowed_tags: Optional[FrozenSet[Tag]] = None
+
     ) -> Optional[MatchResult]:
         """Find the longest match starting at index respecting allowed tags and policy.
 
@@ -259,8 +98,8 @@ class Matcher(Generic[C]):
         allowed: FrozenSet[Tag] = allowed_tags if allowed_tags is not None else all_tags
 
         # Left trim loop (consume zero or more skip tokens)
-        if left_trim and self.policy.left_trim:
-            trim_allowed = allowed & self.policy.left_trim
+        if self.policy.skip:
+            trim_allowed = allowed & self.policy.skip
             while trim_allowed:
                 m = self._longest(text, index, trim_allowed)
                 if m is None:
@@ -271,7 +110,7 @@ class Matcher(Generic[C]):
                 index = end_pos
                 # Apply mode actions here in future (policy.rule_actions.get(chosen_tag))
                 # Recompute trim_allowed in case modes/actions change visibility; keep simple for now
-                trim_allowed = allowed & self.policy.left_trim
+                trim_allowed = allowed & self.policy.skip
 
         # Main match with allowed tags
         main = self._longest(text, index, allowed)
@@ -284,22 +123,6 @@ class Matcher(Generic[C]):
         value = _slice_value(text, index, end_pos)
         result = MatchResult(end_index=end_pos, value=value, tag=chosen_tag)
 
-        # Right trim (optional)
-        if right_trim and self.policy.right_trim:
-            trim_allowed = allowed & self.policy.right_trim
-            pos = end_pos
-            while trim_allowed:
-                m = self._longest(text, pos, trim_allowed)
-                if m is None:
-                    break
-                new_end, t2 = m
-                if new_end <= pos:
-                    break
-                pos = new_end
-                # Apply actions later if needed
-                trim_allowed = allowed & self.policy.right_trim
-            # Extend consumed range but keep the value from main match only
-            result = replace(result, end_index=pos)
 
         return result
 
@@ -357,12 +180,7 @@ class Matcher(Generic[C]):
 
 
 def _iter_symbols(text: Union[str, bytes, Sequence[C]], start: int):
-    """Yield (symbol, width) from text[start:].
 
-    - For str: symbol is a one-character string, width=1.
-    - For bytes: symbol is an int (0..255), width=1.
-    - For Sequence[C]: symbol is the int value, width=1.
-    """
     if isinstance(text, str):
         for i in range(start, len(text)):
             yield text[i], 1
@@ -450,7 +268,7 @@ def collect_lexers(
                     rules.append(lb)
 
     # Build declaration order into policy for deterministic tie-breaking
-    order = tuple(r.suggested_tag for r in rules if r.suggested_tag is not None)
+    order = tuple(r.tag for r in rules if r.tag is not None)
     pol = replace(pol, declaration_order=order)
 
     lex = Lexer(universe=uni, policy=pol).add(*rules)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable, Dict, Sequence
+    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable, Dict, Sequence, Union
 )
 
 from dataclasses import dataclass, field, replace
@@ -1132,6 +1132,125 @@ class DFARunner(Runner[C, DFA[C]]):
 
 
 
+Tag = Union[str, Enum]
+
+class _NodeKind(str, Enum):
+    LITERAL = "LITERAL"
+    ONEOF = "ONEOF"
+    CONCAT = "CONCAT"
+    UNION = "UNION"
+    INTERSECT = "INTERSECT"  # DFA-only
+    DIFF = "DIFF"            # DFA-only (A - B)
+    COMPLEMENT = "COMPLEMENT"  # DFA-only (universe - A)
+    STAR = "STAR"
+    PLUS = "PLUS"
+    OPTIONAL = "OPTIONAL"
+    MANY = "MANY"
+
+FA = TypeVar('FA', bound=Union[NFA, DFA])
+@dataclass(frozen=True)
+class FABuilder(Generic[C]):
+    kind: _NodeKind
+    children: Tuple[FABuilder[C], ...] = field(default_factory=tuple)
+    text: Optional[Union[str, bytes, Sequence[C]]] = None
+    at_least: int = 1
+    at_most: Optional[int] = None
+    tag: Optional[Tag] = None
+
+    # ---- Factory entry points ----
+    @classmethod
+    def literal(cls, text: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> "FABuilder[C]":
+        return cls(kind=_NodeKind.LITERAL, text=text, tag=tag)
+
+    # Alias for convenience
+    @classmethod
+    def lit(cls, text: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> FABuilder[C]:
+        return cls.literal(text, tag=tag)
+
+    @classmethod
+    def oneof(cls, chars: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> FABuilder[C]:
+        return cls(kind=_NodeKind.ONEOF, text=chars, tag=tag)
+    
+    # ---- DSL operators ----
+    def __add__(self, other: FABuilder[C]) -> FABuilder[C]:
+        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other))
+
+    def __or__(self, other: FABuilder[C]) -> FABuilder[C]:
+        return FABuilder(kind=_NodeKind.UNION, children=(self, other))
+
+    def __and__(self, other: FABuilder[C]) -> FABuilder[C]:
+        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other))
+
+    def __sub__(self, other: FABuilder[C]) -> FABuilder[C]:
+        return FABuilder(kind=_NodeKind.DIFF, children=(self, other))
+
+    def __invert__(self) -> FABuilder[C]:  # optional (~)
+        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,))
+
+    def __neg__(self) -> FABuilder[C]:  # complement (-)
+        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,))
+
+    @property
+    def star(self) -> FABuilder[C]:
+        return FABuilder(kind=_NodeKind.STAR, children=(self,))
+
+    @property
+    def plus(self) -> FABuilder[C]:
+        # desugar plus -> concat(self, self.star)
+        return (self + self.star)
+
+    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> FABuilder[C]:
+        return FABuilder(kind=_NodeKind.MANY, children=(self,), at_least=at_least, at_most=at_most)
+
+    def tagged(self, value: Tag) -> FABuilder[C]:
+        return replace(self, tag=value)
+
+    def compile(self, universe: CodeUniverse[C]) -> NFA[C] | DFA[C]: 
+        match self.kind:
+            case _NodeKind.UNION:
+                left = self.children[0].compile(universe).nfa
+                right = self.children[1].compile(universe).nfa
+                return left.union(right)
+            case _NodeKind.CONCAT:
+                left = self.children[0].compile(universe).nfa
+                right = self.children[1].compile(universe).nfa
+                return left.then(right)
+            case _NodeKind.LITERAL:
+                if self.text is None:
+                    raise SyncraftError("Literal FABuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
+                return NFA.from_string(self.text, universe=universe)
+            case _NodeKind.ONEOF:
+                if self.text is None:
+                    raise SyncraftError("OneOf FABuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
+                return NFA.from_charset(self.text, universe=universe)
+            case _NodeKind.STAR:
+                inner = self.children[0].compile(universe).nfa
+                return inner.star
+            case _NodeKind.OPTIONAL:
+                inner = self.children[0].compile(universe).nfa
+                return inner.optional
+            case _NodeKind.MANY:
+                inner = self.children[0].compile(universe).nfa
+                return inner.many(at_least=self.at_least, at_most=self.at_most)
+            case _NodeKind.PLUS:
+                inner = self.children[0].compile(universe).nfa
+                return inner.star
+            case _NodeKind.COMPLEMENT:
+                # Require DFA planning for these operations
+                inner1 = self.children[0].compile(universe).dfa
+                return inner1.complement
+            case _NodeKind.INTERSECT:
+                # Require DFA planning for these operations
+                left1 = self.children[0].compile(universe).dfa
+                right1 = self.children[1].compile(universe).dfa
+                return left1.intersection(right1)
+            case _NodeKind.DIFF:
+                # Require DFA planning for these operations
+                left1 = self.children[0].compile(universe).dfa
+                right1 = self.children[1].compile(universe).dfa
+                return left1.difference(right1)
+            case _:
+                raise NotImplementedError(f"Unhandled FABuilder kind: {self.kind}")
             
     
     

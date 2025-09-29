@@ -10,7 +10,7 @@ from syncraft.algebra import (
 )
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
-from syncraft.lexer import LexBuilder
+from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
 
 from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
@@ -154,10 +154,10 @@ class Parser(Algebra[T, ParserState[T]]):
         return cls.primitive(predicate=pred)
 
     @classmethod
-    def lex(cls, pattern: LexBuilder) -> Algebra[T, ParserState[T]]:
-        if pattern.suggested_tag is None:
+    def lex(cls, pattern: FABuilder) -> Algebra[T, ParserState[T]]:
+        if pattern.tag is None:
             raise SyncraftError("Pattern must have a suggested_tag to be used in Parser.re", offender=pattern, expect="suggested_tag")
-        return cls.token(token_class=TokenClass(pattern.suggested_tag))
+        return cls.token(token_class=TokenClass(pattern.tag))
 
 
 def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:

@@ -23,7 +23,7 @@ from syncraft.ast import (
     ThenKind,
     TokenClass,
 )
-from syncraft.lexer import LexBuilder
+from syncraft.fa import FABuilder
 from syncraft.parser import parse_word
 
 
@@ -80,9 +80,9 @@ def _rehydrate(
     return syntax
 
 
-def _collect_terminal_builders(spec: SyntaxSpec) -> Set[LexBuilder]:
+def _collect_terminal_builders(spec: SyntaxSpec) -> Set[FABuilder]:
     visited: Set[SyntaxSpec] = set()
-    builders: Set[LexBuilder] = set()
+    builders: Set[FABuilder] = set()
 
     def visit(node: SyntaxSpec) -> None:
         if node in visited:
@@ -105,7 +105,7 @@ def _collect_terminal_builders(spec: SyntaxSpec) -> Set[LexBuilder]:
                 text = kwargs.get("text")
                 tag = kwargs.get("token_type")
                 if isinstance(text, (str, bytes)):
-                    builders.add(LexBuilder.literal(text, tag=tag))
+                    builders.add(FABuilder.literal(text, tag=tag))
         else:  # pragma: no cover - defensive guard
             raise AssertionError(f"Unexpected spec node: {node!r}")
 
@@ -185,7 +185,7 @@ def test_spec_preserves_terminal_data_for_lexers() -> None:
     grammar = (literal("a") + identifier) | literal("b")
 
     builders = _collect_terminal_builders(grammar.spec)
-    seen = {(builder.text, builder.suggested_tag) for builder in builders}
+    seen = {(builder.text, builder.tag) for builder in builders}
 
     assert seen == {("a", None), ("id", "IDENT"), ("b", None)}
 
