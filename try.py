@@ -11,13 +11,17 @@ from rich import print
 def tok(text: str):
     return Syntax.token(token_class=TokenClass.simple(), text=text, case_sensitive=True)
 
-def test()->None:
-    RA = Syntax.lazy(lambda: A + tok("a")).named("A")
-    A = Syntax.lazy(lambda: B + tok("a")).named("A")
-    B = Syntax.lazy(lambda: A + tok("b")).named("B")
-    print(RA.spec.spec())
+def test_spec_preserves_terminal_data_for_lexers() -> None:
+    TestSyntax = Syntax.config(token_class=TokenClass.simple())
+    literal = TestSyntax.literal
+    identifier = TestSyntax.token(text="id", token_type="IDENT")
+
+    grammar = (literal("a") + identifier) | literal("b")
+
+    builders = grammar.fabuilder()
+    seen = {(builder.text, builder.tag) for builder in builders}
+
+    assert seen == {("a", None), ("id", "IDENT"), ("b", None)}
 
 if __name__ == "__main__":
-    
-    
-    test()
+    test_spec_preserves_terminal_data_for_lexers()

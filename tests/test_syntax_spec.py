@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Set
+from typing import List
 
 from syncraft.syntax import (
     Syntax,
@@ -8,8 +8,7 @@ from syncraft.syntax import (
     LazySpec,
     ThenSpec,
     ChoiceSpec,
-    ManySpec,
-    FactorySpec,
+
 )
 from syncraft.ast import (
     Token,
@@ -20,97 +19,15 @@ from syncraft.ast import (
     Collect,
     Nothing,
     Lazy,
-    ThenKind,
+    
     TokenClass,
 )
-from syncraft.fa import FABuilder
+
 from syncraft.parser import parse_word
 
 
-def _rehydrate(
-    cls: type[Syntax],
-    spec: SyntaxSpec,
-    cache: Dict[SyntaxSpec, Syntax] | None = None,
-) -> Syntax:
-    """Rebuild a ``Syntax`` node from its spec tree."""
-
-    if cache is None:
-        cache = {}
-    if spec in cache:
-        return cache[spec]
-
-    if isinstance(spec, LazySpec):
-        syntax = cls.lazy(lambda: _rehydrate(cls, spec.spec(), cache))
-    elif isinstance(spec, ThenSpec):
-        left = _rehydrate(cls, spec.left, cache)
-        right = _rehydrate(cls, spec.right, cache)
-        if spec.kind == ThenKind.BOTH:
-            syntax = left + right
-        elif spec.kind == ThenKind.LEFT:
-            syntax = left // right
-        elif spec.kind == ThenKind.RIGHT:
-            syntax = left >> right
-        else:  # pragma: no cover - defensive guard
-            raise AssertionError(f"Unsupported ThenKind: {spec.kind!r}")
-    elif isinstance(spec, ChoiceSpec):
-        syntax = _rehydrate(cls, spec.left, cache) | _rehydrate(cls, spec.right, cache)
-    elif isinstance(spec, ManySpec):
-        inner = _rehydrate(cls, spec.spec, cache)
-        syntax = inner.many(at_least=spec.at_least, at_most=spec.at_most)
-    elif isinstance(spec, FactorySpec):
-        kwargs = dict(spec.kwargs)
-        if spec.name == "success":
-            (value,) = spec.args
-            syntax = cls.success(value)
-        elif spec.name == "fail":
-            (error,) = spec.args
-            syntax = cls.fail(error)
-        elif spec.name == "token":
-            syntax = cls.token(**kwargs)
-        else:
-            if spec.args:
-                raise AssertionError(
-                    f"FactorySpec '{spec.name}' currently only supports kwargs, got args={spec.args!r}"
-                )
-            syntax = cls.factory(spec.name, **kwargs)
-    else:  # pragma: no cover - defensive guard
-        raise AssertionError(f"Unsupported SyntaxSpec node: {spec!r}")
-
-    cache[spec] = syntax
-    return syntax
 
 
-def _collect_terminal_builders(spec: SyntaxSpec) -> Set[FABuilder]:
-    visited: Set[SyntaxSpec] = set()
-    builders: Set[FABuilder] = set()
-
-    def visit(node: SyntaxSpec) -> None:
-        if node in visited:
-            return
-        visited.add(node)
-
-        if isinstance(node, LazySpec):
-            visit(node.spec())
-        elif isinstance(node, ThenSpec):
-            visit(node.left)
-            visit(node.right)
-        elif isinstance(node, ChoiceSpec):
-            visit(node.left)
-            visit(node.right)
-        elif isinstance(node, ManySpec):
-            visit(node.spec)
-        elif isinstance(node, FactorySpec):
-            if node.name == "token":
-                kwargs = dict(node.kwargs)
-                text = kwargs.get("text")
-                tag = kwargs.get("token_type")
-                if isinstance(text, (str, bytes)):
-                    builders.add(FABuilder.literal(text, tag=tag))
-        else:  # pragma: no cover - defensive guard
-            raise AssertionError(f"Unexpected spec node: {node!r}")
-
-    visit(spec)
-    return builders
 
 
 def _flatten_choices(spec: SyntaxSpec) -> List[SyntaxSpec]:
@@ -168,13 +85,7 @@ def _flatten_token_text(node: object) -> List[str]:
     return []
 
 
-def _or_all(nodes: Iterable[Syntax]) -> Syntax:
-    iterator = iter(nodes)
-    first = next(iterator)
-    result = first
-    for node in iterator:
-        result = result | node
-    return result
+
 
 
 def test_spec_preserves_terminal_data_for_lexers() -> None:
@@ -184,7 +95,7 @@ def test_spec_preserves_terminal_data_for_lexers() -> None:
 
     grammar = (literal("a") + identifier) | literal("b")
 
-    builders = _collect_terminal_builders(grammar.spec)
+    builders = grammar.fabuilder()
     seen = {(builder.text, builder.tag) for builder in builders}
 
     assert seen == {("a", None), ("id", "IDENT"), ("b", None)}
@@ -208,13 +119,13 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     assert recursive_alts, "Expected at least one left-recursive alternative"
     assert base_alts, "Expected at least one non-left-recursive alternative"
 
-    base_nodes = [_rehydrate(TestSyntax, alt) for alt in base_alts]
-    base_syntax = base_nodes[0] if len(base_nodes) == 1 else _or_all(base_nodes)
+    base_nodes = [TestSyntax.from_spec(alt) for alt in base_alts]
+    base_syntax = base_nodes[0] if len(base_nodes) == 1 else TestSyntax.choice(*base_nodes)
 
     suffix_nodes = [
-        _rehydrate(TestSyntax, _strip_left_recursion(alt, root_spec)) for alt in recursive_alts
+        TestSyntax.from_spec(_strip_left_recursion(alt, root_spec)) for alt in recursive_alts
     ]
-    suffix_choice = suffix_nodes[0] if len(suffix_nodes) == 1 else _or_all(suffix_nodes)
+    suffix_choice = suffix_nodes[0] if len(suffix_nodes) == 1 else TestSyntax.choice(*suffix_nodes)
 
     transformed = base_syntax + suffix_choice.many().optional()
 

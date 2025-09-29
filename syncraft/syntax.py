@@ -13,6 +13,7 @@ from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothi
 import keyword
 from enum import Enum
 import re
+from syncraft.fa import FABuilder, NFA, DFA
 
 
 def valid_name(name: str) -> bool:
@@ -135,7 +136,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
 @dataclass(frozen=True)
 class FactorySpec(SyntaxSpec):
     name: str
-    args: Tuple[Any, ...] = field(default_factory=tuple)
+
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
 
 
@@ -564,16 +565,7 @@ class Syntax(Generic[A, S]):
         return self.bimap(to_f, ito_f)
 
     def mark(self, name: str) -> Syntax[Marked[A], S]:
-        """Mark the produced value with a name.
 
-        Useful for later bind operations.
-
-        Args:
-            name: Identifier to attach to the value.
-
-        Returns:
-            Syntax producing Marked(name, value).
-        """
         assert valid_name(name), f"Invalid mark name: {name}"
 
         def mark_s(value: A) -> Marked[A]:
@@ -589,36 +581,16 @@ class Syntax(Generic[A, S]):
     
     @classmethod
     def fail(cls, error: Any) -> Syntax[Any, Any]:
-        """
-        Creates a syntax node that always fails with the given error.
-
-        Args:
-            error: The error to raise or propagate.
-
-        Returns:
-            A Syntax object that always fails.
-        """
-        return cls(alg_f=lambda alg, **global_kwargs: alg.fail(error), spec=FactorySpec(name='fail', args=(error,)))
+        return cls.factory('fail', error=error)
 
     @classmethod
     def success(cls, value: Any) -> Syntax[Any, Any]:
-        """
-        Creates a syntax node that always succeeds with the given value.
-
-        Args:
-            value: The value to return on success.
-
-        Returns:
-            A Syntax object that always succeeds.
-        """
-        return cls(alg_f=lambda alg, **global_kwargs: alg.success(value), spec=FactorySpec(name='success', args=(value,)))
+        return cls.factory('success', value=value)
 
 
     @classmethod
     def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-        """
-        A shorthand for writing a chain of syntax combined with '|'.
-        """
+
         return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else cls.success(Nothing())
 
     @classmethod
@@ -665,7 +637,7 @@ class Syntax(Generic[A, S]):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
-        return cls(factory_run, spec=FactorySpec(name=name, args=(), kwargs=FrozenDict(kwargs)))
+        return cls(factory_run, spec=FactorySpec(name=name, kwargs=FrozenDict(kwargs)))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
@@ -679,7 +651,7 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def lift(cls, value: Any)-> Syntax[Any, Any]:
-        if isinstance(value, (str, re.Pattern)):
+        if isinstance(value, str):
             return cls.literal(value)
         elif isinstance(value, Enum):
             return cls.token(token_type=value)
@@ -687,7 +659,62 @@ class Syntax(Generic[A, S]):
             return cls.success(value)
 
 
+    @classmethod
+    def from_spec(cls, spec: SyntaxSpec)->Syntax[Any, Any]:
+        def _rehydrate(
+            cls: type[Syntax],
+            spec: SyntaxSpec,
+            cache: Dict[SyntaxSpec, Syntax] | None = None,
+        ) -> Syntax:
+            """Rebuild a ``Syntax`` node from its spec tree."""
 
+            if cache is None:
+                cache = {}
+            if spec in cache:
+                return cache[spec]
+
+            if isinstance(spec, LazySpec):
+                syntax = cls.lazy(lambda: _rehydrate(cls, spec.spec(), cache))
+            elif isinstance(spec, ThenSpec):
+                left = _rehydrate(cls, spec.left, cache)
+                right = _rehydrate(cls, spec.right, cache)
+                if spec.kind == ThenKind.BOTH:
+                    syntax = left + right
+                elif spec.kind == ThenKind.LEFT:
+                    syntax = left // right
+                elif spec.kind == ThenKind.RIGHT:
+                    syntax = left >> right
+                else:  # pragma: no cover - defensive guard
+                    raise AssertionError(f"Unsupported ThenKind: {spec.kind!r}")
+            elif isinstance(spec, ChoiceSpec):
+                syntax = _rehydrate(cls, spec.left, cache) | _rehydrate(cls, spec.right, cache)
+            elif isinstance(spec, ManySpec):
+                inner = _rehydrate(cls, spec.spec, cache)
+                syntax = inner.many(at_least=spec.at_least, at_most=spec.at_most)
+            elif isinstance(spec, FactorySpec):
+                syntax = cls.factory(spec.name, **spec.kwargs)
+            else:  # pragma: no cover - defensive guard
+                raise AssertionError(f"Unsupported SyntaxSpec node: {spec!r}")
+            cache[spec] = syntax
+            return syntax
+
+        return _rehydrate(cls, spec)
+
+
+
+    def fabuilder(self) -> Set[FABuilder[Any]]:
+
+        builders: Set[FABuilder] = set()
+        for _, node in self.spec.walk():
+            if isinstance(node, FactorySpec):
+                if node.name == "token":
+                    text = node.kwargs.get("text")
+                    tag = node.kwargs.get("token_type")
+                    if isinstance(text, (str, bytes)):
+                        builders.add(FABuilder.literal(text, tag=tag))
+
+        return builders
+        
 
 def run(*,
     syntax: Syntax[A, S], 

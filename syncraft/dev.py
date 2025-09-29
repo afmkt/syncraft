@@ -172,7 +172,6 @@ def syntax2svg(
 
     def build_factory(spec: FactorySpec) -> Any:
         kwargs = dict(spec.kwargs)
-        args = list(spec.args)
         if spec.name == "token":
             text = kwargs.get("text")
             token_type = kwargs.get("token_type")
@@ -184,13 +183,11 @@ def syntax2svg(
             label = " ".join(pieces) if pieces else "token"
             return Terminal(label)
         if spec.name == "success":
-            return Comment(f"ε ⇒ {shorten(args[0])}" if args else "ε ⇒ value")
+            return Comment(f"ε ⇒ {shorten(kwargs.get('value'))}" if kwargs else "ε ⇒ value")
         if spec.name == "fail":
-            return Comment(f"fail {shorten(args[0]) if args else ''}")
+            return Comment(f"fail {shorten(kwargs.get('error'))}" if kwargs else "")
 
         label_parts: List[str] = []
-        if args:
-            label_parts.extend(shorten(arg) for arg in args)
         if kwargs:
             label_parts.extend(f"{key}={shorten(value)}" for key, value in sorted(kwargs.items()))
         label = spec.name if not label_parts else f"{spec.name}({', '.join(label_parts)})"

@@ -1158,6 +1158,7 @@ class FABuilder(Generic[C]):
     tag: Optional[Tag] = None
 
     # ---- Factory entry points ----
+
     @classmethod
     def literal(cls, text: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> "FABuilder[C]":
         return cls(kind=_NodeKind.LITERAL, text=text, tag=tag)
