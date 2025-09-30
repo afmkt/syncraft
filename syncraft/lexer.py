@@ -99,7 +99,7 @@ class Mode(Generic[C]):
         assert combined is not None
         dfa = combined.dfa.minimize
         return cls(dfa=dfa, 
-                   rdfa=dfa.reverse(), 
+                   rdfa=dfa.reverse, 
                    skip=skip, 
                    priority=priority)
 
