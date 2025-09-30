@@ -414,7 +414,7 @@ class DFA(Generic[C]):
         work_list = deque([start_pair])
 
         transitions: dict[FAState, dict[CharSet[C], FAState]] = {}
-        accept: dict[FAState, frozenset[str | Enum]] = {}
+        accept: dict[FAState, frozenset[Tag]] = {}
 
         while work_list:
             s1, s2 = work_list.popleft()
@@ -480,7 +480,7 @@ class DFA(Generic[C]):
         frozen_transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({
             s: FrozenDict(t) for s, t in transitions.items()
         })
-        frozen_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict(accept)
+        frozen_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict(accept)
 
         return DFA(
             universe=self.universe,
@@ -685,7 +685,7 @@ class NFA(Generic[C]):
     
 
     @classmethod
-    def _from_charset(cls, c: CharSet[C], tag: Optional[str|Enum] = None) -> NFA[C]:
+    def _from_charset(cls, c: CharSet[C], tag: Optional[Tag] = None) -> NFA[C]:
         assert c.interval != tuple(), "charset cannot be empty"
         current: FAState = FAState()
         accept: FAState = FAState()
@@ -697,15 +697,13 @@ class NFA(Generic[C]):
                        current: FrozenDict({c: frozenset({accept})})
                    }),
                    epsilon=FrozenDict())
-
-    # (anchor helpers removed for reconsideration)
-
+    
     @classmethod
     def from_charset(cls, 
                   char: str | bytes | Sequence[Enum] | Sequence[C], 
                   universe: CodeUniverse, 
                   negation:bool = False,  
-                  tag: Optional[str|Enum] = None) -> NFA[Any]:
+                  tag: Optional[Tag] = None) -> NFA[Any]:
         charset: CharSet[C] = CharSet.create(char, universe=universe)
         if negation:
             charset = -charset
@@ -717,7 +715,7 @@ class NFA(Generic[C]):
     def from_string(cls, 
                     s: str | bytes | Sequence[Enum] | Sequence[C], 
                     universe: CodeUniverse, 
-                    tag: Optional[str|Enum] = None) -> NFA[Any]:
+                    tag: Optional[Tag] = None) -> NFA[Any]:
         nfa = None
         if isinstance(s, str):
             for ch in list(s):
@@ -786,10 +784,12 @@ class NFA(Generic[C]):
         new_transitions = {**self.transitions}
         for k, v in other.transitions.items():
             new_transitions[k] = new_transitions.get(k, FrozenDict()) | v
+        
+
         return replace(self,
                        universe=self.universe,
                        init=new_current, 
-                       accept=self.accept | other.accept, 
+                       accept=FrozenDict({k: self.accept.get(k, frozenset()) | other.accept.get(k, frozenset()) for k in (self.accept | other.accept).keys()}), 
                        transitions=FrozenDict(new_transitions), 
                        epsilon=FrozenDict(eps))    
     def __or__(self, other: NFA[C]) -> NFA[C]:
@@ -854,26 +854,23 @@ Automata = TypeVar('Automata', bound=NFA | DFA)
 
 @dataclass(frozen=True)
 class RunnerResult(Generic[C, Automata]):
-    runner: Runner[C, Automata]
-    accepted: bool
-    final: bool
-    position: int
-    tags: Tuple[str | Enum, ...] = field(default_factory=tuple)
+    runner: Runner[C, Automata]    
+    accepted: Optional[Tuple[int, frozenset[FAState] | FAState, Tuple[Tag, ...]]] = None
 
 
 @dataclass(frozen=True)
 class Runner(Protocol[C, Automata]):
     fa: Automata
-    post_processing: Callable[[tuple[str|Enum, ...]], tuple[str|Enum, ...]] = lambda t: tuple(sorted(dict.fromkeys(t), key=str))
+    accepted: Tuple[Tuple[int, frozenset[FAState] | FAState, frozenset[Tag]], ...] = field(default_factory=tuple)
+    post_processing: Callable[[frozenset[Tag]], tuple[Tag, ...]] = lambda t: tuple(sorted(dict.fromkeys(t), key=str))
     
-    def priority(self, d: dict[str|Enum, int])->Runner[C, Automata]:
-        def f(t: tuple[str|Enum, ...])->tuple[str|Enum, ...]:
+    def priority(self, d: dict[Tag, int])->Runner[C, Automata]:
+        def f(t: frozenset[Tag])->tuple[Tag, ...]:
             return tuple(sorted(self.post_processing(t), key=lambda x: d.get(x, -1), reverse=True))
         return replace(self, post_processing = f)
     
-    def skip(self, *tag: str | Enum)->Runner[C, Automata]:
-        ignore: frozenset[str|Enum] = frozenset(tag)
-        def f(t: tuple[str|Enum, ...])->tuple[str|Enum, ...]:
+    def skip(self, ignore: frozenset[Tag])->Runner[C, Automata]:
+        def f(t: frozenset[Tag])->tuple[Tag, ...]:
             return tuple(filter(lambda x: x not in ignore,  self.post_processing(t)))
         return replace(self, post_processing = f)
         
@@ -896,8 +893,8 @@ class Runner(Protocol[C, Automata]):
     def is_valid(self) -> bool: ...
     @cached_property
     def resumable(self) -> frozenset[CharSet[C]]: ...
-    def tags(self) -> frozenset[str|Enum]: ...    
-    def finalize(self, pos: int = 0) -> RunnerResult[C, Automata]: ...
+    def tags(self) -> frozenset[Tag]: ...    
+    def finalize(self) -> RunnerResult[C, Automata]: ...
     def gen(self, rnd:random.Random, pos:int = 0) -> None | Tuple[Sequence[C] | Sequence[Enum] | str | bytes, frozenset[str | Enum]]:
         def gen_one(r: Runner[C, Automata], possible_steps:frozenset[CharSet[C]]) -> Optional[Tuple[C, Runner[C, Automata]]]:
             nonlocal pos
@@ -944,14 +941,11 @@ class NFARunner(Runner[C, NFA[C]]):
     current: frozenset[FAState] = field(default_factory=frozenset)
     @classmethod
     def create(cls, nfa: NFA[C]) -> NFARunner[C]:
-        # Initialize at epsilon-closure of init, then virtually consume one START anchor if present
         start_states = nfa.closure({nfa.init})
-        # Try to advance via START once (canonical: interval == ((-1,-1),))
         advanced: set[FAState] = set()
         for s in start_states:
             entry = nfa.transitions.get(s, {})
             for cs, tgts in entry.items():
-                # canonical START detection: exact (-1,-1)
                 if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
                     advanced.update(tgts)
         if advanced:
@@ -980,16 +974,12 @@ class NFARunner(Runner[C, NFA[C]]):
 
         if not next_states:
             return RunnerResult(
-                runner=replace(self, current=frozenset()),
-                accepted=False,
-                final=True,
-                position=pos,
-                tags=self.post_processing(tuple())
+                runner=replace(self, current=frozenset(), accepted=tuple()),
+                accepted=(self.accepted[-1][0], self.accepted[-1][1], self.post_processing(self.accepted[-1][2])) if self.accepted else None,
             )                        
         else:
             new_current = self.fa.closure(next_states)
             new_runner = replace(self, current=frozenset(new_current))
-            # final should consider only non-anchor transitions
             has_future_non_anchor = False
             for s2 in new_current:
                 for cs2 in new_runner.fa.transitions.get(s2, {}).keys():
@@ -998,12 +988,17 @@ class NFARunner(Runner[C, NFA[C]]):
                         break
                 if has_future_non_anchor:
                     break
+            if new_runner.is_accepted():
+                new_accepted = new_runner.accepted + ((pos, new_current, new_runner.tags()),)
+                new_runner = replace(new_runner, accepted=new_accepted)
+                if not has_future_non_anchor:
+                    return RunnerResult(
+                        runner=replace(new_runner, accepted=()),
+                        accepted=(pos, new_current, new_runner.post_processing(new_runner.tags())),
+                    )
             return RunnerResult(
                 runner=new_runner,
-                accepted=new_runner.is_accepted(),
-                final=not has_future_non_anchor,
-                position=pos,
-                tags=new_runner.post_processing(tuple(new_runner.tags()))
+                accepted=None,
             )
     
     def is_accepted(self) -> bool:
@@ -1017,7 +1012,6 @@ class NFARunner(Runner[C, NFA[C]]):
         result: Set[CharSet[C]] = set()
         for s in self.current:
             result.update(self.nfa.transitions.get(s, {}).keys())
-        # Canonical anchor detection: any interval with negative codepoints
         filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
         return frozenset(filtered)
 
@@ -1027,11 +1021,7 @@ class NFARunner(Runner[C, NFA[C]]):
             tags.update(self.nfa.accept.get(s, frozenset()))
         return frozenset(tags)
     
-    def finalize(self, pos: int = 0) -> RunnerResult[C, NFA[C]]:
-        """Virtually consume one END anchor (if present) and return final acceptance status.
-        This does not modify the underlying FA, only advances the runner for end-of-input.
-        """
-        # Attempt a single END transition from any current state
+    def finalize(self) -> RunnerResult[C, NFA[C]]:
         next_states: set[FAState] = set()
         for s in self.current:
             entry = self.fa.transitions.get(s, {})
@@ -1041,15 +1031,20 @@ class NFARunner(Runner[C, NFA[C]]):
         if next_states:
             new_current = self.fa.closure(next_states)
         else:
-            new_current = frozenset(self.current)
+            new_current = self.current
+        
         new_runner = replace(self, current=new_current)
+        if new_runner.is_accepted():
+            pos = new_runner.accepted[-1][0] if new_runner.accepted else 0
+            new_accepted = new_runner.accepted + ((pos, new_current, new_runner.tags()),)
+            new_runner = replace(new_runner, accepted=new_accepted)
         return RunnerResult(
-            runner=new_runner,
-            accepted=new_runner.is_accepted(),
-            final=True,
-            position=pos,
-            tags=new_runner.post_processing(tuple(new_runner.tags()))
-        )
+                runner=replace(new_runner, accepted = ()),
+                accepted=(new_runner.accepted[-1][0], 
+                        new_runner.accepted[-1][1], 
+                        new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
+            )                        
+
     
 
 @dataclass(frozen=True)
@@ -1075,12 +1070,7 @@ class DFARunner(Runner[C, DFA[C]]):
             if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval):
                 return True
         return False
-
-    def _advance_end_once(self, state: Optional[FAState]) -> Optional[FAState]:
-        return state
-    def _is_newline(self, symbol: C) -> bool:
-        return False
-
+    
     def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, DFA[C]]:
         ss: str|bytes|list[Enum]|list[C]
         if isinstance(symbol, str):
@@ -1102,13 +1092,28 @@ class DFARunner(Runner[C, DFA[C]]):
                     break
         new_runner = replace(self, current=next_state)
         has_future = self._has_future_non_anchor(next_state)
-        return RunnerResult(
-            runner=new_runner,
-            position=pos,
-            accepted=new_runner.is_accepted(),
-            final=not has_future,
-            tags=new_runner.post_processing(tuple(new_runner.tags())),
-        )
+        if next_state is None:
+            return RunnerResult(
+                runner=replace(new_runner, accepted=tuple()),
+                accepted=(new_runner.accepted[-1][0], 
+                          new_runner.accepted[-1][1], 
+                          new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
+            )
+        else:
+            if new_runner.is_accepted() and next_state is not None:
+                new_accepted = new_runner.accepted + ((pos, next_state, new_runner.tags()),)
+                new_runner = replace(new_runner, accepted=new_accepted)
+                if not has_future:
+                    return RunnerResult(
+                        runner=replace(new_runner, accepted=()),
+                        accepted=(new_runner.accepted[-1][0], 
+                                new_runner.accepted[-1][1], 
+                                new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
+                    )
+            return RunnerResult(
+                runner=new_runner,
+                accepted=None,
+            )
     
 
     def is_accepted(self) -> bool:
@@ -1123,11 +1128,10 @@ class DFARunner(Runner[C, DFA[C]]):
         filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
         return frozenset(filtered)
 
-    def tags(self) -> frozenset[str|Enum]:
+    def tags(self) -> frozenset[Tag]:
         return self.dfa.accept.get(self.current, frozenset())
 
-    def finalize(self, pos: int = 0) -> RunnerResult[C, DFA[C]]:
-        """Virtually consume one END anchor if present and report final status."""
+    def finalize(self) -> RunnerResult[C, DFA[C]]:
         cur = self.current
         if cur is not None:
             entry = self.fa.transitions.get(cur, {})
@@ -1136,13 +1140,18 @@ class DFARunner(Runner[C, DFA[C]]):
                     cur = tgt
                     break
         new_runner = replace(self, current=cur)
+        if new_runner.is_accepted():
+            assert cur is not None, 'Accepted state can not be None for DFA.'
+            pos = new_runner.accepted[-1][0] if new_runner.accepted else 0
+            new_accepted = new_runner.accepted + ((pos, cur, new_runner.tags()),)
+            new_runner = replace(new_runner, accepted=new_accepted)
         return RunnerResult(
-            runner=new_runner,
-            position=pos,
-            accepted=new_runner.is_accepted(),
-            final=True,
-            tags=new_runner.post_processing(tuple(new_runner.tags())),
-        )
+                runner=replace(new_runner, accepted = ()),
+                accepted=(new_runner.accepted[-1][0], 
+                        new_runner.accepted[-1][1], 
+                        new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
+            )                        
+
 
 
 
