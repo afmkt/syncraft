@@ -4,8 +4,9 @@ from enum import Enum
 from typing import Any, Dict, FrozenSet, Optional, Sequence, Tuple, Union, TypeVar, Generic
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder
-
+from syncraft.constraint import FrozenDict
 from syncraft.ast import SyncraftError
+from collections import deque
 
 
 C = TypeVar('C', bound=str | int | Enum | Any)
@@ -25,42 +26,47 @@ class ModeAction:
     set: Optional[str] = None
 
 
-@dataclass(frozen=True)
-class LexPolicy:
-    priority_by_tag: Dict[Tag, int] = field(default_factory=dict)
-    skip: frozenset[Tag] = field(default_factory=frozenset)    
-    rule_actions: Dict[Tag, ModeAction] = field(default_factory=dict)
-    declaration_order: Tuple[Tag, ...] = field(default_factory=tuple)
-
-    def choose_tag(self, candidates: FrozenSet[Tag]) -> Tag:
-        if not candidates:
-            raise ValueError("empty candidate set")
-        pri = self.priority_by_tag
-        order_index: Dict[Tag, int] = {t: i for i, t in enumerate(self.declaration_order)}
-        def key(t: Tag) -> Tuple[int, int, str]:
-            # higher priority first => sort by negative
-            return (-pri.get(t, 0), order_index.get(t, 1_000_000_000), str(t))
-        return sorted(candidates, key=key)[0]
-
-
-@dataclass(frozen=True)
+@dataclass
 class Lexer(Generic[C]):
     universe: CodeUniverse[C]
-    policy: LexPolicy = field(default_factory=LexPolicy)
+    _current_mode: Mode[C] = field(init=False)
+    rule_actions: Dict[Tag, ModeAction] = field(default_factory=dict)
+    modes: Dict[str | None, Mode[C]] = field(default_factory=dict)
+    stack: deque[Mode[C]] = field(default_factory=deque)
+    inputs: deque[C] = field(default_factory=deque)
 
-    def build(self, *rules: FABuilder[C]) -> "Matcher[C]":
-        if not rules:
-            raise SyncraftError("Cannot build a Matcher with no rules", offender=rules, expect="at least one rule")
 
-        combined: Optional[NFA[C]] = None 
-        for rule in rules:
-            nfa = rule.compile(self.universe).nfa
-            nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
-            combined = nfa if combined is None else combined.union(nfa)
+    @property
+    def current_mode(self) -> Mode[C]:
+        if self._current_mode is None:
+            if self.stack:
+                self._current_mode = self.stack[-1]
+            else:
+                self._current_mode = self.modes[None]
+        return self._current_mode
+        
+    def pop_mode(self) -> Mode[C]:
+        self.stack.pop()
+        if self.stack:
+            self._current_mode = self.stack[-1]
+        else:
+            self._current_mode = self.modes[None]
+        return self._current_mode
 
-        assert combined is not None
+    def push_mode(self, mode_name: str | None = None) -> Mode[C]:
+        if mode_name not in self.modes:
+            raise SyncraftError(f"Cannot push unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
+        self.stack.append(self.modes[mode_name])
+        self._current_mode = self.stack[-1]
+        return self._current_mode
+    
+    def set_mode(self, mode_name: str | None = None) -> Mode[C]:
+        if mode_name not in self.modes:
+            raise SyncraftError(f"Cannot set unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
+        self._current_mode = self.modes[mode_name]
+        return self._current_mode
 
-        return Matcher(dfa=combined.dfa.minimize, policy=self.policy)
+    
 
 @dataclass(frozen=True)
 class MatchResult:
@@ -68,24 +74,38 @@ class MatchResult:
     value: Any
     tag: Optional[Tag] = None
 
-
-@dataclass(frozen=True)
-class Matcher(Generic[C]):
+    accepted: Optional[Tuple[int, Tuple[Tag, ...]]] = None
+@dataclass
+class Mode(Generic[C]):
     dfa: DFA[C]
-    policy: LexPolicy
+    skip: frozenset[Tag] = field(default_factory=frozenset)
+    priority: Dict[Tag, int] = field(default_factory=dict)
 
-    def match(
-        self,
-        text: Union[str, bytes, Sequence[C]],
-        index: int,
-        *,
-        allowed_tags: Optional[FrozenSet[Tag]] = None
-    ) -> Optional[MatchResult]:
+    @classmethod
+    def from_builder(cls, 
+                     universe: CodeUniverse[C], 
+                     skip: frozenset[Tag], 
+                     priority: Dict[Tag, int], 
+                     *rules: FABuilder[C]) -> "Mode[C]":
+        if not rules:
+            raise SyncraftError("Cannot build a Mode with no rules", offender=rules, expect="at least one rule")
+
+        combined: Optional[NFA[C]] = None 
+        for rule in rules:
+            nfa = rule.compile(universe).nfa
+            nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
+            combined = nfa if combined is None else combined.union(nfa)
+
+        assert combined is not None
+
+        return cls(dfa=combined.dfa.minimize, skip=skip, priority=priority)
+
+
+    def match(self, text: Union[str, bytes, Sequence[C]], index: int) -> Optional[MatchResult]:
         if index < 0 or index > len(text):
             return None
 
-        allowed: FrozenSet[Tag] = allowed_tags if allowed_tags is not None else self.dfa.all_tags()
-        runner = self.dfa.runner().priority(self.policy.priority_by_tag).skip(self.policy.skip)
+        runner = self.dfa.runner().priority(self.priority).skip(self.skip)
         pos = index
         last_accept_pos = None
         last_accept_tags: FrozenSet[Tag] = frozenset()
@@ -96,7 +116,7 @@ class Matcher(Generic[C]):
             runner = rr.runner
             if not runner.is_valid():
                 break
-            tags_here = runner.tags() & allowed
+            tags_here = runner.tags()
             if tags_here:
                 last_accept_pos = pos + 1
                 last_accept_tags = tags_here
@@ -104,7 +124,7 @@ class Matcher(Generic[C]):
 
         if last_accept_pos is None:
             return None
-        chosen_tag = self.policy.choose_tag(last_accept_tags)
+        chosen_tag = next(iter(last_accept_tags))
         if last_accept_pos <= index:
             return None
         if isinstance(text, str):
@@ -119,8 +139,7 @@ class Matcher(Generic[C]):
 
 __all__ = [
     "Lexer",
-    "Matcher",
-    "LexPolicy",
+    "Mode",
     "ModeAction",
     "MatchResult",
 ]

@@ -24,6 +24,14 @@ C = TypeVar('C', bound=str | int | Enum | Any)
 
 @dataclass(frozen=True)
 class CodeUniverse(Generic[C]):
+    ASCII: ClassVar[Tuple[int, int]] = (0, 0x7F)
+    UNICODE: ClassVar[Tuple[int, int]] = (0, 0x10FFFF)
+    BYTE: ClassVar[Tuple[int, int]] = (0, 0xFF)
+    value: Tuple[int, int]
+    space: Type[C] | frozenset[str | int]
+    int2c: FrozenDict[int, C] = field(default_factory=FrozenDict, repr=False)
+    c2int: FrozenDict[C, int] = field(default_factory=FrozenDict, repr=False)
+
     def to_dict(self) -> dict:
         if self.value == self.ASCII and self.space is str:
             return {'type': 'ASCII'}
@@ -77,13 +85,7 @@ class CodeUniverse(Generic[C]):
         # No 'CUSTOM' case: all valid universes are handled above.
         else:
             raise ValueError(f"Unknown CodeUniverse type: {t}")
-    ASCII: ClassVar[Tuple[int, int]] = (0, 0x7F)
-    UNICODE: ClassVar[Tuple[int, int]] = (0, 0x10FFFF)
-    BYTE: ClassVar[Tuple[int, int]] = (0, 0xFF)
-    value: Tuple[int, int]
-    space: Type[C] | frozenset[str | int]
-    int2c: FrozenDict[int, C] = field(default_factory=FrozenDict, repr=False)
-    c2int: FrozenDict[C, int] = field(default_factory=FrozenDict, repr=False)
+
     @cached_property
     def interval(self) -> Tuple[Tuple[int, int],...]:
         return (self.value,)
@@ -104,6 +106,32 @@ class CodeUniverse(Generic[C]):
     def __repr__(self) -> str:
         return self.__str__()
     
+    def concat(self, cs: Sequence[C]) -> str | bytes | List[C]:
+        space = self.space
+        if len(cs) == 0:
+            if space is str:
+                return ''
+            elif space is bytes:
+                return b''
+            else:
+                return []
+        else:
+            if space is str:
+                return ''.join(cs)  # type: ignore
+            elif space is bytes:
+                first = cs[0]
+                if isinstance(first, int):
+                    return bytes(list(cs))  # type: ignore
+                elif isinstance(first, (bytes, bytearray, memoryview)):
+                    return b''.join(cs)  # type: ignore
+                else:
+                    raise CodepointError(
+                        f"Expected bytes or int for byte universe, got {type(first)}", 
+                        offender=first, 
+                        expect="bytes or int")
+            else:
+                return list(cs)  # type: ignore                
+
     def code2int(self, c: C) -> int:
         if isinstance(c, str):
             if len(c) != 1:

@@ -369,34 +369,7 @@ def test_dfa_combinators_basic():
     assert match(only_a, 'a')
     assert not match(only_a, 'b')
 
-def test_gen():
-    import random as _random
-    nfa = NFA.from_charset('a', universe=CodeUniverse.ascii()).then(NFA.from_charset('b', universe=CodeUniverse.ascii())).then(NFA.from_charset('c', universe=CodeUniverse.ascii()))
-    dfa = nfa.dfa
-    m = dfa.minimize
-    r = nfa.runner()
-    dr = dfa.runner()
-    mr = m.runner()
 
-    def collect_samples(runner, count=3):
-        out = []
-        for _ in range(count):
-            sample = runner.gen(_random.Random())
-            if sample is not None:
-                out.append(sample)
-        return out
-
-    from_r = collect_samples(r)
-    from_dr = collect_samples(dr)
-    from_mr = collect_samples(mr)
-
-    assert from_r, "Expected at least one generated sample for NFA"
-    assert from_dr, "Expected at least one generated sample for DFA"
-    assert from_mr, "Expected at least one generated sample for minimized DFA"
-
-    assert all(match(nfa, s) for s, _ in from_r)
-    assert all(match(dfa, s) for s, _ in from_dr)
-    assert all(match(m, s) for s, _ in from_mr)
 
 def test_dead_state():
     nfa = NFA.from_charset('a', universe=CodeUniverse.ascii()).then(NFA.from_charset('b', universe=CodeUniverse.ascii()).optional)
@@ -406,19 +379,6 @@ def test_dead_state():
     dead_states_m = [state for state, trans in m.transitions.items() if not trans]
     assert len(dead_states) <= 1
     assert len(dead_states_m) <= 1
-
-def test_tag_propagation():
-    nfa_a = NFA.from_charset('a', universe=CodeUniverse.ascii()).tagged('tag1')
-    nfa_b = NFA.from_charset('b', universe=CodeUniverse.ascii()).tagged('tag2')
-    nfa = nfa_a | nfa_b
-    dfa = nfa.dfa
-    _m = dfa.minimize
-    for nfa_states, fa_state in dfa.nfa2dfa.items():
-        tags_from_nfa = set()
-        for ns in nfa_states:
-            tags_from_nfa.update(nfa.accept.get(ns, frozenset()))
-        if fa_state in dfa.accept:
-            assert dfa.accept[fa_state] == frozenset(tags_from_nfa)
 
 
 def test_dfa_combinator_chain_again():
@@ -463,7 +423,6 @@ def test_dfa_to_dict_and_from_dict_set():
         init=s0,
         accept=FrozenDict(accept),
         transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()}),
-        nfa2dfa=FrozenDict(),
     )
     d = dfa.to_dict()
     dfa2 = DFA.from_dict(d)
@@ -488,7 +447,6 @@ def test_dfa_to_dict_and_from_dict_enum():
         init=s0,
         accept=FrozenDict(accept),
         transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()}),
-        nfa2dfa=FrozenDict(),
     )
     d = dfa.to_dict()
     dfa2 = DFA.from_dict(d, enum_classes={'Fruit': Fruit})

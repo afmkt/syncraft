@@ -661,18 +661,14 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax[Any, Any]:
+        c: Dict[SyntaxSpec, Syntax] = {}
         def _rehydrate(
             cls: type[Syntax],
             spec: SyntaxSpec,
-            cache: Dict[SyntaxSpec, Syntax] | None = None,
+            cache: Dict[SyntaxSpec, Syntax]
         ) -> Syntax:
-            """Rebuild a ``Syntax`` node from its spec tree."""
-
-            if cache is None:
-                cache = {}
             if spec in cache:
                 return cache[spec]
-
             if isinstance(spec, LazySpec):
                 syntax = cls.lazy(lambda: _rehydrate(cls, spec.spec(), cache))
             elif isinstance(spec, ThenSpec):
@@ -698,7 +694,7 @@ class Syntax(Generic[A, S]):
             cache[spec] = syntax
             return syntax
 
-        return _rehydrate(cls, spec)
+        return _rehydrate(cls, spec, c)
 
 
 

@@ -50,7 +50,6 @@ def _build_dfa():
         init=S,
         accept=FrozenDict(accept),
         transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()}),
-        nfa2dfa=FrozenDict(),
     )
 
 

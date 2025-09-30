@@ -43,20 +43,53 @@ class FAState:
     def __repr__(self) -> str:
         return f"s{self.id}"        
     
+
+
+@dataclass(frozen=True)
+class ReverseDFA(Generic[C]):
+    universe: CodeUniverse
+    final: FAState
+    accept: FrozenDict[Tag, frozenset[FAState]] = field(default_factory=FrozenDict)    
+    transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
+    def gen(self, tag: Tag, rnd: random.Random)-> str | bytes | Sequence[C]:
+        current_states = self.accept.get(tag, frozenset())
+        if not current_states:
+            raise SyncraftError(f"Tag '{tag}' not accepted by this DFA", offender=tag, expect=f"one of {list(self.accept.keys())}")
+        current = rnd.choice(list(current_states))
+        result: List[C] = []
+        while current != self.final:
+            if current not in self.transitions:
+                break
+            char_set: CharSet[C]
+            next_state: FAState 
+            char_set, next_state = random.choice(list(self.transitions[current].items()))
+            result.append(char_set.sample(rnd))
+            current = next_state
+        return self.universe.concat(result[::-1])
+
 @dataclass(frozen=True)
 class DFA(Generic[C]):
     universe: CodeUniverse
     init: FAState
-    accept: FrozenDict[FAState, frozenset[str | Enum]] = field(default_factory=FrozenDict)
+    accept: FrozenDict[FAState, frozenset[Tag]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
-    nfa2dfa: FrozenDict[frozenset[FAState], FAState]= field(default_factory=FrozenDict) 
 
-    def all_tags(self) -> frozenset[Tag]:
-        seen: set[Tag] = set()
-        for tags in self.dfa.accept.values():
-            seen.update(tags)
-        return frozenset(seen)
+    def reverse(self) -> ReverseDFA[C]:
+        # Build reverse transitions
+        acc_map: Dict[Tag, Set[FAState]] = defaultdict(set)
+        for s, tags in self.accept.items():
+            for t in tags:
+                acc_map[t].add(s)
 
+        trans: Dict[FAState, Dict[CharSet[C], FAState]] = defaultdict(dict)  
+        for s, mapping in self.transitions.items():
+            for cs, tgt in mapping.items():
+                trans[tgt][cs] = s
+        return ReverseDFA(
+            universe=self.universe,
+            final=self.init,
+            accept=FrozenDict({t: frozenset(ss) for t, ss in acc_map.items()}),
+            transitions=FrozenDict({s: FrozenDict(m) for s,m in trans.items()}))
 
     def to_dict(self) -> dict:
         # Serialize DFA to a dict for JSON
@@ -98,8 +131,7 @@ class DFA(Generic[C]):
             universe=universe,
             init=get_state(int(d['init'])),
             accept=FrozenDict(accept),
-            transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()}),
-            nfa2dfa=FrozenDict()
+            transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()})            
         )
 
     def save(self, filename: str) -> None:
@@ -312,8 +344,7 @@ class DFA(Generic[C]):
             universe=universe,
             init=new_init,
             accept=FrozenDict(new_accept),
-            transitions=FrozenDict({s: FrozenDict(m) for s, m in new_transitions.items()}),
-            nfa2dfa=FrozenDict()
+            transitions=FrozenDict({s: FrozenDict(m) for s, m in new_transitions.items()})
         )
     
 
@@ -390,8 +421,7 @@ class DFA(Generic[C]):
             universe=universe,
             init=self.init,
             accept=frozen_accept,
-            transitions=frozen_trans,
-            nfa2dfa=self.nfa2dfa
+            transitions=frozen_trans
         )
     
     def __neg__(self) -> DFA[C]:
@@ -486,8 +516,7 @@ class DFA(Generic[C]):
             universe=self.universe,
             init=state_map[start_pair],
             accept=frozen_accept,
-            transitions=frozen_transitions,
-            nfa2dfa=FrozenDict()
+            transitions=frozen_transitions            
         )
 
 
@@ -609,8 +638,7 @@ class DFA(Generic[C]):
                    universe=nfa.universe,
                    init=dfa_states[start],
                    accept=FrozenDict(accept),
-                   transitions=transitions,
-                   nfa2dfa=FrozenDict(dfa_states)
+                   transitions=transitions
                )
 
     def runner(self) -> DFARunner[C]:
@@ -625,12 +653,7 @@ class NFA(Generic[C]):
     epsilon: FrozenDict[FAState, frozenset[FAState]] = field(default_factory=FrozenDict)
 
 
-    def all_tags(self) -> frozenset[Tag]:
-        seen: set[Tag] = set()
-        for tags in self.accept.values():
-            seen.update(tags)
-        return frozenset(seen)
-    
+
     @property
     def dfa(self) -> DFA[C]:
         return DFA.from_nfa(self)
@@ -895,45 +918,7 @@ class Runner(Protocol[C, Automata]):
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[Tag]: ...    
     def finalize(self) -> RunnerResult[C, Automata]: ...
-    def gen(self, rnd:random.Random, pos:int = 0) -> None | Tuple[Sequence[C] | Sequence[Enum] | str | bytes, frozenset[str | Enum]]:
-        def gen_one(r: Runner[C, Automata], possible_steps:frozenset[CharSet[C]]) -> Optional[Tuple[C, Runner[C, Automata]]]:
-            nonlocal pos
-            if possible_steps:
-                ccls = rnd.choice(list(possible_steps))
-                c = ccls.sample(rnd)
-                result = r.step(c, pos)
-                pos += 1
-                return c, result.runner
-            else:
-                return None
-        runner = self
-        txt: List[Any]= []
-        possible_steps = runner.resumable
-        while possible_steps:
-            match gen_one(runner, possible_steps):
-                case None:
-                    break
-                case (c, r):
-                    txt.append(c)
-                    runner = r
-            if runner.is_accepted():
-                if len(txt) > 0:
-                    break
-                if rnd.random() < 0.5:
-                    break
-            possible_steps = runner.resumable
-        if txt:
-            if isinstance(txt[0], str):
-                return (''.join(txt), runner.tags())                        
-            elif isinstance(txt[0], int):
-                return (bytes(txt), runner.tags())
-            else:
-                return (txt, runner.tags())
-        return None
         
-    @classmethod
-    def generate(cls, a: Automata, pos: int = 0) -> None | Tuple[Sequence[C] | Sequence[Enum] | str | bytes, frozenset[str | Enum]]:
-        return cls.create(a).gen(rnd=random.Random(), pos=pos)
 
 
 @dataclass(frozen=True)
