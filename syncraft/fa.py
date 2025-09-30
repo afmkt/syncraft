@@ -51,7 +51,8 @@ class ReverseDFA(Generic[C]):
     final: FAState
     accept: FrozenDict[Tag, frozenset[FAState]] = field(default_factory=FrozenDict)    
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
-    def gen(self, tag: Tag, rnd: random.Random)-> str | bytes | Sequence[C]:
+
+    def gen(self, tag: Tag, rnd: random.Random) -> str | bytes | List[C]:
         current_states = self.accept.get(tag, frozenset())
         if not current_states:
             raise SyncraftError(f"Tag '{tag}' not accepted by this DFA", offender=tag, expect=f"one of {list(self.accept.keys())}")
@@ -74,6 +75,7 @@ class DFA(Generic[C]):
     accept: FrozenDict[FAState, frozenset[Tag]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
 
+    @property
     def reverse(self) -> ReverseDFA[C]:
         # Build reverse transitions
         acc_map: Dict[Tag, Set[FAState]] = defaultdict(set)

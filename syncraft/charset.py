@@ -327,7 +327,7 @@ class CharSet(Generic[C]):
             return cls._build(universe, (cp,))
 
         # Normalize input to iterable of elements
-        if isinstance(char, (str, bytearray, bytes, list, tuple)):
+        if isinstance(char, (str, bytearray, memoryview, bytes, list, tuple)):
             iterable: Iterable[Any] = char  # iterate over characters
         else:
             raise SyncraftError(f"Expected str, bytes, or list/tuple of Enum or characters, got {type(char)}", offender=char, expect="str, bytes, or list/tuple of Enum or characters")

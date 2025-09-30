@@ -3,11 +3,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, FrozenSet, Optional, Sequence, Tuple, Union, TypeVar, Generic
 from syncraft.charset import CodeUniverse
-from syncraft.fa import DFA, NFA, FABuilder
-from syncraft.constraint import FrozenDict
+from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA
 from syncraft.ast import SyncraftError
 from collections import deque
-
+import random
 
 C = TypeVar('C', bound=str | int | Enum | Any)
 
@@ -66,11 +65,11 @@ class Lexer(Generic[C]):
         self._current_mode = self.modes[mode_name]
         return self._current_mode
 
-    
+
 
 @dataclass(frozen=True)
 class MatchResult:
-    end_index: int
+    pos: int
     value: Any
     tag: Optional[Tag] = None
 
@@ -78,6 +77,7 @@ class MatchResult:
 @dataclass
 class Mode(Generic[C]):
     dfa: DFA[C]
+    rdfa: ReverseDFA[C]
     skip: frozenset[Tag] = field(default_factory=frozenset)
     priority: Dict[Tag, int] = field(default_factory=dict)
 
@@ -97,9 +97,14 @@ class Mode(Generic[C]):
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
+        dfa = combined.dfa.minimize
+        return cls(dfa=dfa, 
+                   rdfa=dfa.reverse(), 
+                   skip=skip, 
+                   priority=priority)
 
-        return cls(dfa=combined.dfa.minimize, skip=skip, priority=priority)
-
+    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | list[C]:
+        return self.rdfa.gen(tag, rng)
 
     def match(self, text: Union[str, bytes, Sequence[C]], index: int) -> Optional[MatchResult]:
         if index < 0 or index > len(text):
@@ -130,11 +135,11 @@ class Mode(Generic[C]):
         if isinstance(text, str):
             value: Any = text[index:last_accept_pos]
 
-        elif isinstance(text, (bytes, bytearray)):
+        elif isinstance(text, (bytes, bytearray, memoryview)):
             value = bytes(text[index:last_accept_pos])
         else:
             value = list(text[index:last_accept_pos])
-        return MatchResult(end_index=last_accept_pos, value=value, tag=chosen_tag)
+        return MatchResult(pos=last_accept_pos, value=value, tag=chosen_tag)
 
 
 __all__ = [
