@@ -656,6 +656,34 @@ class NFA(Generic[C]):
 
 
 
+    def start(self) -> NFA[C]:
+        # New synthetic start state with a START-labeled edge into original init
+        new_start = FAState()
+        # Build transitions with the same FrozenDict shape
+        trans: dict[FAState, dict[CharSet[C], frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
+        trans[new_start] = {CharSet.start(self.universe): frozenset({self.init})}
+        frozen_trans: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = FrozenDict({s: FrozenDict(m) for s, m in trans.items()})
+        return replace(self, init=new_start, transitions=frozen_trans)
+
+
+    def end(self) -> NFA[C]:
+        # Create a new accept state reachable via END from all previous accepts
+        new_accept = FAState()
+        trans: dict[FAState, dict[CharSet[C], frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
+        # Add END edge from each old accept to new_accept
+        for acc in self.accept.keys():
+            mapping = trans.get(acc, {})
+            mapping[CharSet.end(self.universe)] = frozenset({new_accept})
+            trans[acc] = mapping
+        # Only the new_accept carries tags (union of all old tags)
+        tags = set()
+        for t in self.accept.values():
+            tags.update(t)
+        accept_fd: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({new_accept: frozenset(tags)})
+        frozen_trans: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = FrozenDict({s: FrozenDict(m) for s, m in trans.items()})
+        return replace(self, accept=accept_fd, transitions=frozen_trans)
+
+
     @property
     def dfa(self) -> DFA[C]:
         return DFA.from_nfa(self)
