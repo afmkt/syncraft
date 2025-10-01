@@ -48,7 +48,7 @@ def test_start_anchor_simple():
     uni = CodeUniverse.ascii()
     base = NFA.from_charset('a', uni)
     anchored = make_start_anchored(base)
-    r = anchored.runner()
+    r = anchored.runner().start().runner
     # At beginning, consuming 'a' should accept
     res = r.step('a', 0)
     assert res.accepted
@@ -91,7 +91,8 @@ def test_both_anchors_empty():
     # Now anchor at both ends
     start_anchored = make_start_anchored(empty)
     both = make_end_anchored(start_anchored)
-    r = both.runner()
+    r = both.runner().start().runner
+
     # Without consuming anything, finalize should accept (consumes END)
     fin = r.finalize()
     assert fin.accepted

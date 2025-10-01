@@ -888,17 +888,7 @@ class Runner(Protocol[C, Automata]):
     fa: Automata
     accepted: Tuple[Tuple[int, frozenset[FAState] | FAState, frozenset[Tag]], ...] = field(default_factory=tuple)
     post_processing: Callable[[frozenset[Tag]], tuple[Tag, ...]] = lambda t: tuple(sorted(dict.fromkeys(t), key=str))
-    
-    def priority(self, d: dict[Tag, int])->Runner[C, Automata]:
-        def f(t: frozenset[Tag])->tuple[Tag, ...]:
-            return tuple(sorted(self.post_processing(t), key=lambda x: d.get(x, -1), reverse=True))
-        return replace(self, post_processing = f)
-    
-    def skip(self, ignore: frozenset[Tag])->Runner[C, Automata]:
-        def f(t: frozenset[Tag])->tuple[Tag, ...]:
-            return tuple(filter(lambda x: x not in ignore,  self.post_processing(t)))
-        return replace(self, post_processing = f)
-        
+            
     @property
     def dfa(self) -> DFA[C]:
         if isinstance(self.fa, DFA):
@@ -911,15 +901,30 @@ class Runner(Protocol[C, Automata]):
             return self.fa
         else:
             return self.fa.nfa
+
+    def priority(self, d: dict[Tag, int])->Runner[C, Automata]:
+        def f(t: frozenset[Tag])->tuple[Tag, ...]:
+            return tuple(sorted(self.post_processing(t), key=lambda x: d.get(x, -1), reverse=True))
+        return replace(self, post_processing = f)
+    
+    def skip(self, ignore: frozenset[Tag])->Runner[C, Automata]:
+        def f(t: frozenset[Tag])->tuple[Tag, ...]:
+            return tuple(filter(lambda x: x not in ignore,  self.post_processing(t)))
+        return replace(self, post_processing = f)
+
     @classmethod
     def create(cls, a: Automata) -> Self: ...
+    def finalize(self) -> RunnerResult[C, Automata]: ...
+    def start(self) -> RunnerResult[C, Automata]: ...
     def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, Automata]: ...
+    def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, Automata]: ...
     def is_accepted(self) -> bool: ...
     def is_valid(self) -> bool: ...
     @cached_property
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[Tag]: ...    
-    def finalize(self) -> RunnerResult[C, Automata]: ...
+    def reset(self) -> Runner[C, Automata]:
+        return self.create(self.fa)
         
 
 
@@ -928,45 +933,21 @@ class NFARunner(Runner[C, NFA[C]]):
     current: frozenset[FAState] = field(default_factory=frozenset)
     @classmethod
     def create(cls, nfa: NFA[C]) -> NFARunner[C]:
-        start_states = nfa.closure({nfa.init})
-        advanced: set[FAState] = set()
-        for s in start_states:
-            entry = nfa.transitions.get(s, {})
-            for cs, tgts in entry.items():
-                if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
-                    advanced.update(tgts)
-        if advanced:
-            start_states = nfa.closure(advanced)
-        return cls(current=start_states, fa=nfa)
-    
-    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, NFA[C]]:
-        ss: str|bytes|list[Enum]|list[C]
-        if isinstance(symbol, str):
-            ss = symbol
-        elif isinstance(symbol, int):
-            ss = bytes([symbol])
-        else:   
-            ss = [symbol]
-        assert len(ss) == 1, "symbol must be a single character"
-        next_states = set()
-        for s in self.current:
-            entry: FrozenDict[CharSet[C], frozenset[FAState]] = self.fa.transitions.get(s, {})
-            k: CharSet[C] = CharSet.create(ss, universe=self.fa.universe)
-            if k in entry:
-                next_states.update(entry[k])
-            else:
-                for char_class, targets in entry.items():
-                    if isinstance(char_class, CharSet) and char_class(symbol):
-                        next_states.update(targets)
+        return cls(current=nfa.closure({nfa.init}), fa=nfa)
 
-        if not next_states:
+    def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, NFA[C]]: 
+
+        if not next_state:
             return RunnerResult(
                 runner=replace(self, current=frozenset(), accepted=tuple()),
-                accepted=(self.accepted[-1][0], self.accepted[-1][1], self.post_processing(self.accepted[-1][2])) if self.accepted else None,
+                accepted=(self.accepted[-1][0], 
+                          self.accepted[-1][1], 
+                          self.post_processing(self.accepted[-1][2])) if self.accepted else None,
             )                        
         else:
-            new_current = self.fa.closure(next_states)
-            new_runner = replace(self, current=frozenset(new_current))
+            assert isinstance(next_state, frozenset)  # type checker hint
+            new_current = self.fa.closure(next_state)
+            new_runner = replace(self, current=new_current)
             has_future_non_anchor = False
             for s2 in new_current:
                 for cs2 in new_runner.fa.transitions.get(s2, {}).keys():
@@ -987,6 +968,41 @@ class NFARunner(Runner[C, NFA[C]]):
                 runner=new_runner,
                 accepted=None,
             )
+
+
+    def start(self) -> RunnerResult[C, NFA[C]]:
+        start_states = self.current
+        advanced: set[FAState] = set()
+        for s in start_states:
+            entry = self.fa.transitions.get(s, {})
+            for cs, tgts in entry.items():
+                if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
+                    advanced.update(tgts)
+        if advanced:
+            start_states = self.fa.closure(advanced)
+        return self.advance_state(start_states, pos=0)
+
+    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, NFA[C]]:
+        ss: str|bytes|list[Enum]|list[C]
+        if isinstance(symbol, str):
+            ss = symbol
+        elif isinstance(symbol, int):
+            ss = bytes([symbol])
+        else:   
+            ss = [symbol]
+        assert len(ss) == 1, "symbol must be a single character"
+        next_states = set()
+        for s in self.current:
+            entry: FrozenDict[CharSet[C], frozenset[FAState]] = self.fa.transitions.get(s, {})
+            k: CharSet[C] = CharSet.create(ss, universe=self.fa.universe)
+            if k in entry:
+                next_states.update(entry[k])
+            else:
+                for char_class, targets in entry.items():
+                    if isinstance(char_class, CharSet) and char_class(symbol):
+                        next_states.update(targets)
+
+        return self.advance_state(frozenset(next_states), pos=pos)
     
     def is_accepted(self) -> bool:
         return any(st in self.nfa.accept for st in self.current)
@@ -1019,18 +1035,7 @@ class NFARunner(Runner[C, NFA[C]]):
             new_current = self.fa.closure(next_states)
         else:
             new_current = self.current
-        
-        new_runner = replace(self, current=new_current)
-        if new_runner.is_accepted():
-            pos = new_runner.accepted[-1][0] if new_runner.accepted else 0
-            new_accepted = new_runner.accepted + ((pos, new_current, new_runner.tags()),)
-            new_runner = replace(new_runner, accepted=new_accepted)
-        return RunnerResult(
-                runner=replace(new_runner, accepted = ()),
-                accepted=(new_runner.accepted[-1][0], 
-                        new_runner.accepted[-1][1], 
-                        new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
-            )                        
+        return self.advance_state(new_current, pos=self.accepted[-1][0] if self.accepted else 0)
 
     
 
@@ -1040,14 +1045,16 @@ class DFARunner(Runner[C, DFA[C]]):
 
     @classmethod
     def create(cls, dfa: DFA[C]) -> DFARunner[C]:
-        # Initialize at DFA init, then virtually consume one START anchor if present
-        cur = dfa.init
-        entry = dfa.transitions.get(cur, {})
+        return cls(current=dfa.init, fa=dfa)
+
+    def start(self) -> RunnerResult[C, DFA[C]]:
+        start_state = self.current
+        entry = self.fa.transitions.get(start_state, {})
         for cs, tgt in entry.items():
             if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
-                cur = tgt
+                start_state = tgt
                 break
-        return cls(current=cur, fa=dfa)
+        return self.advance_state(start_state, pos=0)
 
     def _has_future_non_anchor(self, state: Optional[FAState]) -> bool:
         if state is None:
@@ -1058,25 +1065,8 @@ class DFARunner(Runner[C, DFA[C]]):
                 return True
         return False
     
-    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, DFA[C]]:
-        ss: str|bytes|list[Enum]|list[C]
-        if isinstance(symbol, str):
-            ss = symbol
-        elif isinstance(symbol, int):
-            ss = bytes([symbol])
-        else:   
-            ss = [symbol]
-        assert len(ss) == 1, "symbol must be a single character"
-        next_state: Optional[FAState] = None
-        entry: FrozenDict[CharSet[C], FAState] = self.fa.transitions.get(self.current, {})
-        k: CharSet[C] = CharSet.create(ss, universe=self.fa.universe)
-        if k in entry:
-            next_state = entry[k]
-        else:
-            for char_class, targets in entry.items():
-                if isinstance(char_class, CharSet) and char_class(symbol):
-                    next_state = targets
-                    break
+    def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, DFA[C]]:
+        assert not isinstance(next_state, frozenset), "DFA cannot have multiple current states"
         new_runner = replace(self, current=next_state)
         has_future = self._has_future_non_anchor(next_state)
         if next_state is None:
@@ -1101,6 +1091,28 @@ class DFARunner(Runner[C, DFA[C]]):
                 runner=new_runner,
                 accepted=None,
             )
+
+
+    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, DFA[C]]:
+        ss: str|bytes|list[Enum]|list[C]
+        if isinstance(symbol, str):
+            ss = symbol
+        elif isinstance(symbol, int):
+            ss = bytes([symbol])
+        else:   
+            ss = [symbol]
+        assert len(ss) == 1, "symbol must be a single character"
+        next_state: Optional[FAState] = None
+        entry: FrozenDict[CharSet[C], FAState] = self.fa.transitions.get(self.current, {})
+        k: CharSet[C] = CharSet.create(ss, universe=self.fa.universe)
+        if k in entry:
+            next_state = entry[k]
+        else:
+            for char_class, targets in entry.items():
+                if isinstance(char_class, CharSet) and char_class(symbol):
+                    next_state = targets
+                    break
+        return self.advance_state(next_state, pos)
     
 
     def is_accepted(self) -> bool:
@@ -1126,19 +1138,9 @@ class DFARunner(Runner[C, DFA[C]]):
                 if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
                     cur = tgt
                     break
-        new_runner = replace(self, current=cur)
-        if new_runner.is_accepted():
-            assert cur is not None, 'Accepted state can not be None for DFA.'
-            pos = new_runner.accepted[-1][0] if new_runner.accepted else 0
-            new_accepted = new_runner.accepted + ((pos, cur, new_runner.tags()),)
-            new_runner = replace(new_runner, accepted=new_accepted)
-        return RunnerResult(
-                runner=replace(new_runner, accepted = ()),
-                accepted=(new_runner.accepted[-1][0], 
-                        new_runner.accepted[-1][1], 
-                        new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
-            )                        
-
+        
+        return self.advance_state(cur, pos=self.accepted[-1][0] if self.accepted else 0)
+        
 
 
 
