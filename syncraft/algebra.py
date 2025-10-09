@@ -298,17 +298,34 @@ class Algebra(Generic[A, S]):
                         cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType, 
                                                                                 Either[Any, Tuple[Choice[A, B], S]]]:
-            left = yield from self.run(input, cache)
+            def enter(input: S) -> S:
+                if hasattr(input, 'choice_depth'):
+                    sd = getattr(input, 'choice_depth')
+                    return replace(input, choice_depth=sd + 1) # type: ignore
+                else:
+                    return input
+            def leave(input: S) -> S:
+                if hasattr(input, 'choice_depth'):
+                    sd = getattr(input, 'choice_depth')
+                    if sd > 1:
+                        return replace(input, choice_depth=sd - 1) # type: ignore
+                    else:
+                        new_safe_base = getattr(input, 'base', 0) + getattr(input, 'index', 0)
+                        current_safe_base = getattr(input, 'safe_base', 0)
+                        return replace(input, choice_depth=0, safe_base=max(new_safe_base, current_safe_base)) # type: ignore
+                return input
+            inp = enter(input)
+            left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
-                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), state))
+                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), leave(state)))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
                         return Left(replace(err, committed=False))
-                    other_result = yield from other.run(input, cache)
+                    other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
-                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state))
+                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), leave(other_state)))
                         case Left(other_err):
                             return Left(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))

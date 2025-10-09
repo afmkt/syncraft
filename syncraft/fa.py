@@ -357,44 +357,7 @@ class DFA(Generic[C]):
             return replace(self, accept=FrozenDict({a: (tags | frozenset({tag})) for a, tags in self.accept.items()}))
         else:
             return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
-
-
-    # @staticmethod
-    # def _complete_transitions(universe: CodeUniverse,
-    #                         transitions: dict[FAState, dict[CharSet[C], FAState]],
-    #                         accept: dict[FAState, frozenset]) -> tuple[dict[FAState, dict[CharSet[C], FAState]], dict[FAState, frozenset], FAState]:
-    #     # copy inputs shallow
-    #     trans_copy: Dict[FAState, Dict[CharSet[C], FAState]] = {s: dict(m) for s, m in transitions.items()}
-
-    #     # create sink state
-    #     sink = FAState()
-
-    #     # ensure sink exists in map to be consistent
-    #     trans_copy.setdefault(sink, {})
-
-    #     # For each state, compute covered charset and add missing piece mapped to sink
-    #     for s, mapping in list(trans_copy.items()):
-    #         # union all key charsets into 'covered'
-    #         covered: CharSet[C] = CharSet.none(universe)
-    #         for cs in mapping.keys():
-    #             covered = covered | cs
-    #         missing = (-covered)
-    #         if missing.interval:  # any uncovered codepoints
-    #             # If the state's mapping already has a CharSet that equals missing, merge would have caught it
-    #             mapping[missing] = sink
-    #             trans_copy[s] = mapping
-
-    #     # ensure sink loops to itself on all chars
-    #     trans_copy[sink] = {CharSet.any(universe): sink}
-
-    #     # Optionally: merge adjacent pieces in each state's mapping (keeps mapping compact)
-    #     for s, mapping in list(trans_copy.items()):
-    #         trans_copy[s] = DFA.merge_adjacent_transitions(universe, mapping)
-
-    #     return trans_copy, accept, sink
-
-
-
+        
     @property
     def complement(self) -> DFA[C]:
         universe = self.universe
@@ -902,6 +865,8 @@ class NFA(Generic[C]):
                 nfa = nfa.then(self.optional)
         return nfa
     
+
+
 Automata = TypeVar('Automata', bound=NFA | DFA)
 
 
@@ -1154,6 +1119,7 @@ class DFARunner(Runner[C, DFA[C]]):
         keys = self.dfa.transitions.get(self.current, {}).keys()
         filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
         return frozenset(filtered)
+
 
     def tags(self) -> frozenset[Tag]:
         return self.dfa.accept.get(self.current, frozenset())

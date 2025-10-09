@@ -180,6 +180,7 @@ class InProgress(Generic[A, Ret]):
     """
     f: Callable[[A, "Cache[A, Ret]"], Generator[Any, Any, Ret]]
     key: A
+    cache_key: int | None = None
     result: Optional[Ret] = None
     growing: bool = False
     improved: bool = False
@@ -198,7 +199,7 @@ class InProgress(Generic[A, Ret]):
 
 @dataclass
 class Cache(Generic[A, Ret]):
-    cache: dict[Callable[..., Any], Dict[A, Ret | InProgress[A, Ret]]] = field(default_factory=dict)
+    cache: dict[Callable[..., Any], Dict[int, Ret | InProgress[A, Ret]]] = field(default_factory=dict)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     _lr_stack: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)  # active in-progress chain
     _canonical: Dict[Callable[..., Any], Callable[..., Any]] = field(default_factory=dict, init=False, repr=False)
@@ -213,6 +214,14 @@ class Cache(Generic[A, Ret]):
     # - position_key: map a state to a hashable "start position" key (for grouping).
     # next_state is always Right.value[1] on success; distance always falls back to ordering.
     position_key: Optional[Callable[[A], Hashable]] = None
+    key_transform: Optional[Callable[[A], int]] = None
+    _key_ids: Dict[Hashable, int] = field(default_factory=dict, init=False, repr=False)
+    _next_key_id: int = field(default=0, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.position_key is None and self.key_transform is not None:
+            # Allow callers to share the same transform for start-key grouping when compatible.
+            self.position_key = cast(Callable[[A], Hashable], self.key_transform)
     
 
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
@@ -245,6 +254,47 @@ class Cache(Generic[A, Ret]):
         assert self.cache is other.cache, "There should be only one global cache"
         return self
 
+    def gc(self, min_position: int) -> int:
+        """Remove cached entries whose position key is less than ``min_position``.
+
+        Returns the number of entries evicted. Raises ``RuntimeError`` if invoked
+        while a parse is actively using the cache (``_lr_stack`` non-empty), since
+        removal during growth can corrupt the left-recursion bookkeeping.
+        """
+        if min_position < 0:
+            min_position = 0
+        if self._lr_stack:
+            return 0
+        removed = 0
+        for f, bucket in list(self.cache.items()):
+            victims = [k for k in bucket if k < min_position]
+            for k in victims:
+                bucket.pop(k, None)
+                removed += 1
+            if not bucket:
+                del self.cache[f]
+
+        # Prune auxiliary structures that track InProgress nodes.
+        for start_key, heads in list(self._heads_by_start.items()):
+            filtered = [ip for ip in heads if (ip.cache_key is None or ip.cache_key >= min_position)]
+            if filtered:
+                self._heads_by_start[start_key] = filtered
+            else:
+                del self._heads_by_start[start_key]
+
+        if self._agenda:
+            self._agenda = [ip for ip in self._agenda if (ip.cache_key is None or ip.cache_key >= min_position)]
+
+        if self._key_ids:
+            for original, assigned in list(self._key_ids.items()):
+                if assigned < min_position:
+                    del self._key_ids[original]
+
+        if self._next_key_id < min_position:
+            self._next_key_id = min_position
+
+        return removed
+
     def return_value(self, v: Ret, s: A, name: str) -> Generator[Any, Any, Ret]:
         def return_value_f(_: A, cache: Cache[A, Ret]) -> Generator[Any, Any, Ret]:
             yield from ()
@@ -272,6 +322,32 @@ class Cache(Generic[A, Ret]):
             return s  # type: ignore[return-value]
         except Exception:
             return id(s)
+
+    def _cache_key(self, key: A) -> int:
+        if self.key_transform is not None:
+            value = self.key_transform(key)
+            if not isinstance(value, int):
+                raise TypeError("key_transform must return an int")
+            return value
+        # Auto-detect ParserState-like structures (has integer base/index attributes)
+        base = getattr(key, "base", None)
+        index = getattr(key, "index", None)
+        if isinstance(base, int) and isinstance(index, int):
+            return base + index
+        if isinstance(key, int):
+            return key
+        # Fallback: assign a stable id for hashable keys; otherwise use object id
+        try:
+            hk = cast(Hashable, key)
+            existing = self._key_ids.get(hk)
+            if existing is not None:
+                return existing
+            assigned = self._next_key_id
+            self._key_ids[hk] = assigned
+            self._next_key_id += 1
+            return assigned
+        except TypeError:
+            return id(key)
 
     def _extract_next_state(self, ret: Ret) -> Optional[A]:
         if isinstance(ret, Right):
@@ -378,7 +454,8 @@ class Cache(Generic[A, Ret]):
         f = self._canonicalize(f)
         # Step 2: fetch or initialize entry
         cache_bucket = self.cache.setdefault(f, {})
-        existing = cache_bucket.get(key)
+        cache_key = self._cache_key(key)
+        existing = cache_bucket.get(cache_key)
         if existing is not None and not isinstance(existing, InProgress):
             return existing
         if isinstance(existing, InProgress):
@@ -397,10 +474,10 @@ class Cache(Generic[A, Ret]):
                 return attempt
             return (yield from self._handle_reentry(existing, key))
         # Step 3: seed new head
-        head = InProgress(f=f, key=key)
+        head = InProgress(f=f, key=key, cache_key=cache_key)
         if f not in self._canonical:
             self._canonical[f] = f
-        cache_bucket[key] = head
+        cache_bucket[cache_key] = head
         self._lr_stack.append(head)
         # Register head for potential cross-position revisits (agenda scheduling)
         start_key = self._start_key(key)
@@ -410,7 +487,7 @@ class Cache(Generic[A, Ret]):
             # at the same starting position (e.g., Expr vs Term), ensure both are seeded so they will be grouped.
             seed = yield from f(key, self)
         except Exception as e:
-            cache_bucket.pop(key, None)
+            cache_bucket.pop(cache_key, None)
             self._lr_stack.pop()
             raise e
         # Step 4: finalize or prepare for growth
@@ -524,7 +601,8 @@ class Cache(Generic[A, Ret]):
         # If truly no left recursion (no head detected in its group (or no group) and this frame not head)
         if not head.head and not group_has_left_recursion:
             # Finalize immediately: replace cache entry with seed result
-            self.cache[head.f][head.key] = seed
+            final_key = head.cache_key if head.cache_key is not None else self._cache_key(head.key)
+            self.cache[head.f][final_key] = seed
             self._lr_stack.pop()
             return seed
         # Ensure group exists

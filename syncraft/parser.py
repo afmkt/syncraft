@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import (
-    Optional, List, Any, Tuple, TypeVar,Hashable,
+    Optional, List, Any, Tuple, TypeVar,Hashable, Sequence,
     Generic, Generator, Callable
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
@@ -26,10 +26,19 @@ def underline(text: str) -> str:
 @dataclass(frozen=True)
 class ParserState(Bindable, Generic[T]):
 
-    input: Tuple[T, ...] = field(default_factory=tuple)
+    input: Tuple[T, ...] | str | bytes = field(default_factory=tuple, compare=False, hash=False)
     index: int = 0
     base: int = 0
+
     final: bool = False  
+    safe_base: int = 0
+    choice_depth: int = 0
+
+    def __post_init__(self):
+        if isinstance(self.input, list):
+            object.__setattr__(self, 'input', tuple(self.input))
+        elif not isinstance(self.input, (tuple, str, bytes)):
+            raise SyncraftError("Input must be a sequence type", offender=self.input, expect="tuple, str, or bytes")
 
     def __repr__(self) -> str:
         indicator = '.'
@@ -45,17 +54,37 @@ class ParserState(Bindable, Generic[T]):
     def __str__(self) -> str:
         return self.__repr__()
 
+    def _slice_to_display(self, start: int, end: int) -> list[str]:
+        segment = self.input[start:end]
+        if isinstance(self.input, str):
+            return [underline(str(ch)) for ch in segment]
+        elif isinstance(self.input, bytes):
+            # Decode printable ASCII bytes, otherwise use hex
+            result = []
+            for b in segment:
+                if isinstance(b, int) and 32 <= b < 127:
+                    result.append(underline(chr(b)))
+                elif isinstance(b, int):
+                    result.append(f"\\x{b:02x}")
+                else:
+                    result.append(str(b))
+            return result
+        else:
+            # Generic token list
+            return [underline(str(token)) for token in segment]
 
-    def before(self, length: Optional[int] = 3)->List[str]:
+
+    def before(self, length: Optional[int] = 3) -> list[str]:
         length = min(self.index, length) if length is not None else self.index
-        ret = [underline(str(token)) for token in self.input[self.index - length:self.index]]
+        ret = self._slice_to_display(self.index - length, self.index)
         if self.index - length > 0:
             ret = ["..."] + ret
         return ret
-    
-    def after(self, length: Optional[int] = 3)->List[str]:
-        length = min(length, len(self.input) - self.index) if length is not None else len(self.input) - self.index
-        ret = [underline(str(token)) for token in self.input[self.index:self.index + length]]
+
+    def after(self, length: Optional[int] = 3) -> list[str]:
+        remaining = len(self.input) - self.index
+        length = min(length, remaining) if length is not None else remaining
+        ret = self._slice_to_display(self.index, self.index + length)
         if self.index + length < len(self.input):
             ret = ret + ["..."]
         return ret
@@ -70,23 +99,47 @@ class ParserState(Bindable, Generic[T]):
             return NotImplemented
         return (self.base, self.index) < (other.base, other.index)
 
-    def __add__(self, other: ParserState[T]) -> ParserState[T]:
-        if not isinstance(other, ParserState):
-            raise SyncraftError("Can only concatenate ParserState with another ParserState", offender=self, expect="ParserState")
+    def gc(self)-> ParserState[T]:
+        if self.safe_base > self.base:
+            drop = min(self.safe_base - self.base, len(self.input))
+            return replace(
+                self,
+                input=self.input[drop:],
+                base=self.safe_base,
+                index=max(0, self.index - drop),
+            )
+        return self
+
+    def extend(self, more: str | bytes | Tuple[T], *, final: bool = False) -> "ParserState[T]":
         if self.final:
             raise SyncraftError("Cannot concatenate to a final ParserState", offender=self, expect="not final")
-        if self.base + len(self.input) != other.base:
-            raise SyncraftError("Cannot concatenate ParserState with non-matching base", offender=self, expect=f"base {self.base} + len(input) {len(self.input)} == other.base {other.base}")
-        return replace(self, 
-                       input=self.input[self.index:] + other.input, 
-                       final=other.final, 
-                       base=self.base + self.index, 
-                       index=0)
+        if self.safe_base > self.base:
+            drop = self.safe_base - self.base
+            # We cannot drop more than we have buffered
+            drop = min(drop, len(self.input))
+            new_input = self.input[drop:] + more # type: ignore
+            new_base = self.safe_base
+            new_index = max(0, self.index - drop)
+        else:
+            new_input = self.input + more # type: ignore
+            new_base = self.base
+            new_index = self.index
+
+        # ---- Step 2: Return new ParserState ----
+        return replace(
+            self,
+            input=new_input,
+            base=new_base,
+            index=new_index,
+            final=self.final or final,
+        )
+
+        
     
     def current(self)->T:
         if self.index >= len(self.input):
             raise SyncraftError("Attempted to access token beyond end of stream", offender=self, expect="index < len(input)")
-        return self.input[self.index]
+        return self.input[self.index] # type: ignore
     
 
     def pending(self) -> bool:
