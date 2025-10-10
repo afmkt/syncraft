@@ -59,10 +59,12 @@ class Lexer(Generic[C]):
     def push_mode(self, mode_name: str | None = None) -> Mode[C]:
         if mode_name not in self.modes:
             raise SyncraftError(f"Cannot push unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
-        if self.modes.get(mode_name) is self.current_mode:
-            return self.current_mode
-        self._stack.append(self.modes[mode_name])
-        return self.current_mode
+        target_mode = self.modes[mode_name]
+        current = self._stack[-1] if self._stack else None
+        if current is target_mode:
+            return target_mode
+        self._stack.append(target_mode)
+        return target_mode
             
 
     @staticmethod

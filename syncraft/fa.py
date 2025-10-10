@@ -919,7 +919,8 @@ class Runner(Protocol[C, Automata]):
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[Tag]: ...    
     def reset(self) -> Runner[C, Automata]:
-        return self.create(self.fa)
+        ret = self.create(self.fa)
+        return replace(ret, post_processing=self.post_processing)
         
 
 
