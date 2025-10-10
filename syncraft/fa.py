@@ -875,15 +875,14 @@ class RunnerResult(Generic[C, Automata]):
     runner: Runner[C, Automata]
     error: bool
     final: bool
-    accepted: Optional[Tuple[int, Tuple[Tag, ...]]] = None
+    accepted: Optional[Tuple[int, frozenset[Tag]]] = None
 
 
 @dataclass(frozen=True)
 class Runner(Protocol[C, Automata]):
     fa: Automata
     accepted: Tuple[Tuple[int, frozenset[FAState] | FAState, frozenset[Tag]], ...] = field(default_factory=tuple)
-    post_processing: Callable[[frozenset[Tag]], tuple[Tag, ...]] = lambda t: tuple(sorted(dict.fromkeys(t), key=str))
-            
+
     @property
     def dfa(self) -> DFA[C]:
         if isinstance(self.fa, DFA):
@@ -897,15 +896,7 @@ class Runner(Protocol[C, Automata]):
         else:
             return self.fa.nfa
 
-    def priority(self, d: dict[Tag, int])->Runner[C, Automata]:
-        def f(t: frozenset[Tag])->tuple[Tag, ...]:
-            return tuple(sorted(self.post_processing(t), key=lambda x: d.get(x, -1), reverse=True))
-        return replace(self, post_processing = f)
-    
-    def skip(self, ignore: frozenset[Tag])->Runner[C, Automata]:
-        def f(t: frozenset[Tag])->tuple[Tag, ...]:
-            return tuple(filter(lambda x: x not in ignore,  self.post_processing(t)))
-        return replace(self, post_processing = f)
+
 
     @classmethod
     def create(cls, a: Automata) -> Self: ...
@@ -919,8 +910,8 @@ class Runner(Protocol[C, Automata]):
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[Tag]: ...    
     def reset(self) -> Runner[C, Automata]:
-        ret = self.create(self.fa)
-        return replace(ret, post_processing=self.post_processing)
+        return self.create(self.fa)
+        
         
 
 
@@ -940,7 +931,7 @@ class NFARunner(Runner[C, NFA[C]]):
                     error=False,
                     final=True,
                     accepted=(self.accepted[-1][0], 
-                              self.post_processing(self.accepted[-1][2])),
+                              self.accepted[-1][2]),
                 )
             else:
                 return RunnerResult(
@@ -965,11 +956,12 @@ class NFARunner(Runner[C, NFA[C]]):
                 new_accepted = new_runner.accepted + ((pos, new_current, new_runner.tags()),)
                 new_runner = replace(new_runner, accepted=new_accepted)
                 if not has_future_non_anchor:
+                    tags = new_runner.tags()
                     return RunnerResult(
                         runner=replace(new_runner, accepted=()),
                         error=False,
                         final=True,
-                        accepted=(pos, new_runner.post_processing(new_runner.tags())),
+                        accepted=(pos, tags),
                     )
             return RunnerResult(
                 runner=new_runner,
@@ -1085,7 +1077,7 @@ class DFARunner(Runner[C, DFA[C]]):
                     error=False,
                     final=True,
                     accepted=(new_runner.accepted[-1][0], 
-                              new_runner.post_processing(new_runner.accepted[-1][2])),
+                              new_runner.accepted[-1][2]),
                 )
             else:
                 return RunnerResult(
@@ -1104,7 +1096,7 @@ class DFARunner(Runner[C, DFA[C]]):
                         error=False,
                         final=True,
                         accepted=(new_runner.accepted[-1][0], 
-                                  new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
+                                  new_runner.accepted[-1][2]) if new_runner.accepted else None,
                     )
             return RunnerResult(
                 runner=new_runner,

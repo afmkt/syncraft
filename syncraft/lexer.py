@@ -22,6 +22,19 @@ Tag = Union[str, Enum]
 class Mode(Generic[C]):
     runner: Runner[C, DFA[C]]
     rdfa: ReverseDFA[C]
+    priority: Dict[Tag, int] = field(default_factory=dict)
+    skip: frozenset[Tag] = field(default_factory=frozenset)
+
+    def select_tag(self, tags: frozenset[Tag]) -> Optional[Tag]:
+        if not tags:
+            return None
+        ordered = sorted(tags, key=str)
+        filtered = [tag for tag in ordered if tag not in self.skip]
+        if not filtered:
+            return None
+        if self.priority:
+            filtered.sort(key=lambda tag: (-self.priority.get(tag, -1), str(tag)))
+        return filtered[0]
 
 
 
@@ -38,6 +51,9 @@ class Lexer(Generic[C]):
     modes: Dict[str | None, Mode[C]] 
     actions: Dict[Tag, ModeAction]
     _stack: deque[Mode[C]] = field(default_factory=deque)
+    
+    def _reset_runner(self, mode: Mode[C]) -> None:
+        mode.runner = mode.runner.reset()
     
     
     @property
@@ -64,6 +80,7 @@ class Lexer(Generic[C]):
         if current is target_mode:
             return target_mode
         self._stack.append(target_mode)
+        self._reset_runner(target_mode)
         return target_mode
             
 
@@ -86,8 +103,8 @@ class Lexer(Generic[C]):
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
-        dfa = combined.dfa.minimize
-        return Mode(runner=dfa.runner().priority(priority).skip(frozenset(skip)), rdfa=dfa.reverse)
+        dfa = combined.dfa
+        return Mode(runner=dfa.runner(), rdfa=dfa.reverse, priority=dict(priority), skip=frozenset(skip))
 
     @classmethod
     def from_builders(cls, universe: CodeUniverse[C], *rules: FABuilder[C], default_mode: str | None = None) -> "Lexer[C]":
@@ -154,7 +171,10 @@ class Lexer(Generic[C]):
             return Left(f"Lexing reached final state at index {index} without acceptance")
         elif rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
-            tag = next(iter(accepted_tags))
+            tag = mode.select_tag(accepted_tags)
+            if tag is None:
+                self._reset_runner(mode)
+                return Right(None)
             act = self.actions.get(tag)
             if act is not None:
                 match act:
