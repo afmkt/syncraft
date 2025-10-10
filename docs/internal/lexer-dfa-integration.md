@@ -10,7 +10,7 @@ This document records the intended integration of regular-language execution (NF
   - picks the longest match among an allowed tag set (if provided),
   - resolves ties via centralized priority,
   - consumes input and produces exactly one AST value (map/bimap-able),
-  - applies centralized mode transitions and trimming rules.
+  - applies centralized mode transitions.
 - Central policy (skip/priority/modes) is defined once and consulted by all FA terminals.
 
 ## Implementation status (as of 2025-09-26)
@@ -19,14 +19,13 @@ This section summarizes what is already implemented in the codebase and what is 
 
 Implemented:
 - Module `syncraft/lexer.py` containing the core pieces:
-  - `LexPolicy` with fields: `priority_by_tag`, `left_trim`, `right_trim`, `rule_actions`, and `declaration_order`.
+  - `LexPolicy` with fields: `priority_by_tag`, `rule_actions`, and `declaration_order`.
   - `LexBuilder` DSL for lexeme IR: literal, concat(+), union(|), optional(~), star, plus, many. Intersection(&)/difference(-) are captured in the IR but not compiled yet.
   - `Lexer` which aggregates `LexRule`s and compiles a combined NFA → DFA → `Matcher`. Each rule can carry an explicit tag; otherwise a synthetic tag is assigned based on declaration order.
   - `Matcher.match(...)` longest-match engine over the shared DFA:
-    - Supports optional left/right trim via `LexPolicy` sets.
     - Respects an `allowed_tags` filter provided by the terminal call-site.
     - Tag selection tie-break: higher `priority_by_tag`, then `declaration_order`, then lexicographic tag name.
-    - Guards against zero-length consumption in trims and main match.
+    - Guards against zero-length consumption in the main match.
     - Returns `MatchResult(end_index, value, tag)`; value is the matched slice (str/bytes).
 - Build path (current): `_compile_builder_to_nfa` supports LITERAL/CONCAT/UNION/STAR/OPTIONAL/MANY (PLUS desugars). It unions all NFAs, determinizes once to a single DFA, and wraps into a `Matcher`.
 - Syntax harvesting: `collect_lexers(root: Syntax, *, universe?, policy?) -> Lexer` walks the `Syntax` graph and extracts lexeme specs:
@@ -38,7 +37,7 @@ Not yet implemented (planned):
 - Regex pattern (`re.Pattern`) support in the collector and regex→FA compilation.
 - Case-insensitive matching transform for `token(case_sensitive=False)`.
 - Intersection (&) and difference (-) planning in the builder compiler (requires DFA planning step). These IR nodes currently raise `NotImplementedError` during NFA compilation.
-- Mode stack application (push/pop/set) during match; placeholders exist in `LexPolicy` and trim loops to insert this.
+- Mode stack application (push/pop/set) during match; placeholders exist in `LexPolicy` to insert this.
 - A dedicated `Syntax.lex(...)` terminal wired to use the shared `Matcher` and pass `allowed_tags`.
 - Optional DFA minimization threshold and per-mode DFA partitioning.
 
@@ -78,7 +77,6 @@ Terminal integration is pending; for now you can manually probe `matcher.match` 
 - FA terminal: A grammar node that invokes the shared DFA at the parser's current input position and returns one AST value.
 - Centralized policy ("LexPolicy") governs:
   - priority: `tag -> int` (descending priority wins)
-  - skip trimming: left/right sets of tags that should be consumed silently
   - lexical modes: current mode (stack) and per-tag actions (`push`, `pop`, `set`)
   - optional tag-to-value mapping for default conversions
 - Distributed authoring, centralized compilation: Lexemes may be declared inline, but are aggregated into the shared DFA. Each terminal can constrain its allowed tag set for that call site.
@@ -88,7 +86,7 @@ Terminal integration is pending; for now you can manually probe `matcher.match` 
 Inputs:
 - Parser state: underlying character/byte sequence, current index, and mode stack.
 - Shared DFA (selected per mode/universe).
-- LexPolicy (priority, trimming, actions).
+- LexPolicy (priority and actions).
 - Optional `allowed_tags: frozenset[str|Enum]` to restrict what this terminal accepts (if omitted, means any active tag in the current mode).
 
 Outputs:
@@ -96,8 +94,7 @@ Outputs:
 - On failure: normal terminal failure at the same index.
 
 Algorithm:
-1. Left trim (centralized, optional): while the shared DFA matches a longest span whose chosen tag is in `left_trim ∩ active_mode ∩ (allowed_tags if provided)`, consume it, apply its mode action, and continue. No AST nodes are produced for trims (they are skipped).
-2. Match phase:
+1. Match phase:
    - Run the DFA from the current index over the input.
    - Track `last_accept_pos` and `last_accept_tags = {tags at that pos} ∩ allowed_set`.
    - Stop on dead transition or end-of-input. If no accept for the allowed set: fail.
@@ -105,8 +102,6 @@ Algorithm:
    - Ensure matched length > 0 (anchors are zero-width internally and must not cause zero-length user-level matches).
    - Apply mode action (if any) for the chosen tag.
    - Compute the value (default: substring) and return success advancing index.
-3. Right trim (optional): same as left trim but applied after the main match if configured.
-
 Notes:
 - Longest-match is scoped to the terminal's allowed tags in the current mode, not globally across grammar alternatives.
 - Anchors `^`/`$` use sentinel `CharSet.START_CP`/`CharSet.END_CP` and are handled inside the DFA; they do not contribute to `resumable` and should never create zero-length user matches.
@@ -121,8 +116,6 @@ Notes:
 Suggested shape (conceptual):
 
 - `priority_by_tag: dict[str|Enum, int]`
-- `left_trim: frozenset[str|Enum]`
-- `right_trim: frozenset[str|Enum]`
 - `value_by_tag: dict[str|Enum, Callable[[str|bytes], Any]]` (optional, defaults to identity)
 - `modes: dict[str, DFA]` and/or a single DFA with mode-partitioned accepts
 - `rule_actions: dict[str|Enum, dict]` such as `{tag: {"push": "STRING"}}`, `{tag: {"pop": True}}`, or `{tag: {"set": "DEFAULT"}}`
@@ -139,7 +132,7 @@ Policy lives in the parser state to avoid repeating attributes on every FA usage
   - Optionally run `DFA.minimize` when state count exceeds a threshold.
 
 - Runtime:
-  - Parser invokes terminals; terminals call the shared DFA with `(index, allowed_tags, mode)`; trimming and mode actions are applied per policy.
+  - Parser invokes terminals; terminals call the shared DFA with `(index, allowed_tags, mode)`; mode actions are applied per policy.
   - Cache/memoize `(index, allowed_mask, mode) -> (success/failure, end_index, tag, value_fingerprint)` for packrat behavior.
 
 ## Mapping and Round-Trip
@@ -156,7 +149,7 @@ Policy lives in the parser state to avoid repeating attributes on every FA usage
 
 ## Edge Cases
 
-- Zero-length patterns (other than anchors) are disallowed to prevent infinite trim/match loops.
+- Zero-length patterns (other than anchors) are disallowed to prevent infinite match loops.
 - If multiple tags accept the same longest span: resolve with `priority_by_tag`, then `declaration_order`, then lexicographical tag name.
 - Mixed universes (bytes vs unicode) are disallowed at DFA build time (`MixedUniverseError`).
 - End-of-input: `$` matches only at physical end; terminals should not force finalize except at EOF.
@@ -165,8 +158,6 @@ Policy lives in the parser state to avoid repeating attributes on every FA usage
 
 ```python
 # Given: text, index, mode, policy, shared_dfa, allowed_tags (or None)
-
-index = left_trim(text, index, mode, policy, shared_dfa, allowed_tags)
 
 pos = index
 state = shared_dfa.init_for_mode(mode)
@@ -196,11 +187,8 @@ else:
     apply_mode_action(chosen, policy)
     value = map_value(chosen, matched, policy)
     index = last_accept_pos
-    index = right_trim(text, index, mode, policy, shared_dfa, allowed_tags)
     succeed(value, index)
 ```
-
-`left_trim`/`right_trim` repeatedly invoke the same loop but constrain accepted tags to the trim sets.
 
 ## Integration Points (existing code)
 
