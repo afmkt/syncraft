@@ -872,8 +872,10 @@ Automata = TypeVar('Automata', bound=NFA | DFA)
 
 @dataclass(frozen=True)
 class RunnerResult(Generic[C, Automata]):
-    runner: Runner[C, Automata]    
-    accepted: Optional[Tuple[int, frozenset[FAState] | FAState, Tuple[Tag, ...]]] = None
+    runner: Runner[C, Automata]
+    error: bool
+    final: bool
+    accepted: Optional[Tuple[int, Tuple[Tag, ...]]] = None
 
 
 @dataclass(frozen=True)
@@ -931,12 +933,21 @@ class NFARunner(Runner[C, NFA[C]]):
     def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, NFA[C]]: 
 
         if not next_state:
-            return RunnerResult(
-                runner=replace(self, current=frozenset(), accepted=tuple()),
-                accepted=(self.accepted[-1][0], 
-                          self.accepted[-1][1], 
-                          self.post_processing(self.accepted[-1][2])) if self.accepted else None,
-            )                        
+            if self.accepted:
+                return RunnerResult(
+                    runner=replace(self, current=frozenset(), accepted=tuple()),
+                    error=False,
+                    final=True,
+                    accepted=(self.accepted[-1][0], 
+                              self.post_processing(self.accepted[-1][2])),
+                )
+            else:
+                return RunnerResult(
+                    runner=replace(self, current=frozenset(), accepted=tuple()),
+                    error=True,
+                    final=True,
+                    accepted=None,
+                )                        
         else:
             assert isinstance(next_state, frozenset)  # type checker hint
             new_current = self.fa.closure(next_state)
@@ -955,10 +966,14 @@ class NFARunner(Runner[C, NFA[C]]):
                 if not has_future_non_anchor:
                     return RunnerResult(
                         runner=replace(new_runner, accepted=()),
-                        accepted=(pos, new_current, new_runner.post_processing(new_runner.tags())),
+                        error=False,
+                        final=True,
+                        accepted=(pos, new_runner.post_processing(new_runner.tags())),
                     )
             return RunnerResult(
                 runner=new_runner,
+                error=False,
+                final=False,
                 accepted=None,
             )
 
@@ -1063,12 +1078,21 @@ class DFARunner(Runner[C, DFA[C]]):
         new_runner = replace(self, current=next_state)
         has_future = self._has_future_non_anchor(next_state)
         if next_state is None:
-            return RunnerResult(
-                runner=replace(new_runner, accepted=tuple()),
-                accepted=(new_runner.accepted[-1][0], 
-                          new_runner.accepted[-1][1], 
-                          new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
-            )
+            if new_runner.accepted:
+                return RunnerResult(
+                    runner=replace(new_runner, current=None, accepted=tuple()),
+                    error=False,
+                    final=True,
+                    accepted=(new_runner.accepted[-1][0], 
+                              new_runner.post_processing(new_runner.accepted[-1][2])),
+                )
+            else:
+                return RunnerResult(
+                    runner=replace(new_runner, current=None, accepted=tuple()),
+                    error=True,
+                    final=True,
+                    accepted=None,
+                )
         else:
             if new_runner.is_accepted() and next_state is not None:
                 new_accepted = new_runner.accepted + ((pos, next_state, new_runner.tags()),)
@@ -1076,12 +1100,15 @@ class DFARunner(Runner[C, DFA[C]]):
                 if not has_future:
                     return RunnerResult(
                         runner=replace(new_runner, accepted=()),
+                        error=False,
+                        final=True,
                         accepted=(new_runner.accepted[-1][0], 
-                                new_runner.accepted[-1][1], 
-                                new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
+                                  new_runner.post_processing(new_runner.accepted[-1][2])) if new_runner.accepted else None,
                     )
             return RunnerResult(
                 runner=new_runner,
+                error=False,
+                final=False,
                 accepted=None,
             )
 
@@ -1154,6 +1181,19 @@ class _NodeKind(str, Enum):
     MANY = "MANY"
 
 FA = TypeVar('FA', bound=Union[NFA, DFA])
+
+
+class ModeActionEnum(Enum):
+    POP = "POP"
+    PUSH = "PUSH"
+    BELONG = "BELONG"
+
+@dataclass(frozen=True)
+class ModeAction:
+    action: ModeActionEnum
+    mode: str
+    belong: str | None = None  # only used for PUSH action
+
 @dataclass(frozen=True)
 class FABuilder(Generic[C]):
     kind: _NodeKind
@@ -1161,23 +1201,44 @@ class FABuilder(Generic[C]):
     text: Optional[Union[str, bytes, Sequence[C]]] = None
     at_least: int = 1
     at_most: Optional[int] = None
+    skip: bool = False  # if true, do not include this in the final automaton (used for whitespace, comments, etc)
+    priority: int = 0  # higher number means higher priority
     tag: Optional[Tag] = None
+    action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
 
     # ---- Factory entry points ----
 
     @classmethod
-    def literal(cls, text: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> "FABuilder[C]":
-        return cls(kind=_NodeKind.LITERAL, text=text, tag=tag)
+    def literal(cls, 
+                text: Union[str, bytes, Sequence[C]], 
+                *, 
+                skip: bool = False, 
+                priority: int = 0,
+                tag: Optional[Tag] = None, 
+                action: Optional[ModeAction] = None) -> "FABuilder[C]":
+        return cls(kind=_NodeKind.LITERAL, text=text, tag=tag, action=action, skip=skip, priority=priority)
 
     # Alias for convenience
     @classmethod
-    def lit(cls, text: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> FABuilder[C]:
-        return cls.literal(text, tag=tag)
+    def lit(cls, 
+            text: Union[str, bytes, Sequence[C]], 
+            *, 
+            skip: bool = False, 
+            priority: int = 0,
+            tag: Optional[Tag] = None, 
+            action: Optional[ModeAction] = None) -> FABuilder[C]:
+        return cls.literal(text, tag=tag, action=action, skip=skip, priority=priority)
 
     @classmethod
-    def oneof(cls, chars: Union[str, bytes, Sequence[C]], *, tag: Optional[Tag] = None) -> FABuilder[C]:
-        return cls(kind=_NodeKind.ONEOF, text=chars, tag=tag)
-    
+    def oneof(cls, 
+              chars: Union[str, bytes, Sequence[C]], 
+              *, 
+              skip: bool = False, 
+              priority: int = 0,
+              tag: Optional[Tag] = None, 
+              action: Optional[ModeAction] = None) -> FABuilder[C]:
+        return cls(kind=_NodeKind.ONEOF, text=chars, tag=tag, action=action, skip=skip, priority=priority)
+
     # ---- DSL operators ----
     def __add__(self, other: FABuilder[C]) -> FABuilder[C]:
         return FABuilder(kind=_NodeKind.CONCAT, children=(self, other))
@@ -1211,6 +1272,15 @@ class FABuilder(Generic[C]):
 
     def tagged(self, value: Tag) -> FABuilder[C]:
         return replace(self, tag=value)
+    
+    def act(self, action: ModeAction | None = None) -> FABuilder[C]:
+        return replace(self, action=action)
+
+    def skipped(self, skip: bool = True) -> FABuilder[C]:
+        return replace(self, skip=skip)
+    
+    def prioritized(self, priority: int) -> FABuilder[C]:
+        return replace(self, priority=priority)
 
     def compile(self, universe: CodeUniverse[C]) -> NFA[C] | DFA[C]: 
         match self.kind:

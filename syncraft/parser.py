@@ -34,6 +34,9 @@ class ParserState(Bindable, Generic[T]):
     safe_base: int = 0
     choice_depth: int = 0
 
+    def __hash__(self) -> int:
+        return self.base + self.index
+
     def __post_init__(self):
         if isinstance(self.input, list):
             object.__setattr__(self, 'input', tuple(self.input))

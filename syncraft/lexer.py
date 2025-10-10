@@ -1,16 +1,18 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, FrozenSet, Optional, Sequence, Tuple, Union, TypeVar, Generic, List, Callable, Protocol, Type, cast
+from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic
 from syncraft.charset import CodeUniverse
-from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner
+from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError
-from collections import deque
+from syncraft.cache import Either, Left, Right
+from collections import deque, defaultdict
+
 import random
 
 C = TypeVar('C', bound=str | int | Enum | Any)
 
-Slice = TypeVar('Slice', bound=str | bytes | list[Any])
+
 
 
 Tag = Union[str, Enum]
@@ -21,111 +23,154 @@ class Mode(Generic[C]):
     runner: Runner[C, DFA[C]]
     rdfa: ReverseDFA[C]
 
-    @classmethod
-    def from_builder(cls, 
-                     universe: CodeUniverse[C], 
-                     skip: frozenset[Tag], 
-                     priority: Dict[Tag, int], 
-                     *rules: FABuilder[C]) -> "Mode[C]":
+
+
+@dataclass(frozen=True)
+class LexerResult(Generic[C]):
+    tag: Tag
+    start: int
+    end: int
+    mode: str | None
+
+@dataclass
+class Lexer(Generic[C]):
+    universe: CodeUniverse[C]
+    modes: Dict[str | None, Mode[C]] 
+    actions: Dict[Tag, ModeAction]
+    _stack: deque[Mode[C]] = field(default_factory=deque)
+    
+    
+    @property
+    def current_mode(self) -> Mode[C]:
+        if not self._stack:
+            return self.push_mode(None)
+        return self._stack[-1]
+        
+    def pop_mode(self, mode_name: str | None = None) -> Mode[C]:
+        if not self._stack:
+            raise SyncraftError("Cannot pop mode from empty stack", offender=self._stack, expect="non-empty stack")
+        if mode_name not in self.modes:
+            raise SyncraftError(f"Cannot pop unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
+        if self._stack[-1] is not self.modes.get(mode_name):
+            raise SyncraftError(f"Cannot pop mode '{mode_name}' because it is not the current mode", offender=mode_name, expect=f"current mode '{self._stack[-1]}'")
+        self._stack.pop()
+        return self.current_mode
+
+    def push_mode(self, mode_name: str | None = None) -> Mode[C]:
+        if mode_name not in self.modes:
+            raise SyncraftError(f"Cannot push unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
+        if self.modes.get(mode_name) is self.current_mode:
+            return self.current_mode
+        self._stack.append(self.modes[mode_name])
+        return self.current_mode
+            
+
+    @staticmethod
+    def one_mode(universe: CodeUniverse[C], *rules: FABuilder[C]) -> "Mode[C]":
         if not rules:
             raise SyncraftError("Cannot build a Mode with no rules", offender=rules, expect="at least one rule")
-
+        skip: Set[Tag] = set()
+        priority: Dict[Tag, int] = {}
         combined: Optional[NFA[C]] = None 
         for rule in rules:
+            if rule.skip:
+                assert rule.tag is not None, "Skip rules must have a tag"
+                skip.add(rule.tag)
+            if rule.priority != 0:
+                assert rule.tag is not None, "Priority rules must have a tag"
+                priority[rule.tag] = rule.priority
             nfa = rule.compile(universe).nfa
             nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
         dfa = combined.dfa.minimize
-        return cls(runner=dfa.runner().priority(priority).skip(skip), 
-                   rdfa=dfa.reverse)
+        return Mode(runner=dfa.runner().priority(priority).skip(frozenset(skip)), rdfa=dfa.reverse)
 
-@dataclass
-class Lexer(Generic[C]):
-    universe: CodeUniverse[C]
-    _current_mode: Mode[C] = field(init=False)
-    _stack: deque[Mode[C]] = field(default_factory=deque)
-    modes: Dict[str | None, Mode[C]] = field(default_factory=dict)
-    
-    @property
-    def current_mode(self) -> Mode[C]:
-        if self._current_mode is None:
-            if self._stack:
-                self._current_mode = self._stack[-1]
-            else:
-                self._current_mode = self.modes[None]
-        return self._current_mode
-        
-    def pop_mode(self) -> Mode[C]:
-        self._stack.pop()
-        if self._stack:
-            self._current_mode = self._stack[-1]
-        else:
-            self._current_mode = self.modes[None]
-        return self._current_mode
+    @classmethod
+    def from_builders(cls, universe: CodeUniverse[C], *rules: FABuilder[C], default_mode: str | None = None) -> "Lexer[C]":
+        modes: Dict[str | None, Set[FABuilder[C]]] = defaultdict(set)
+        actions: Dict[Tag, ModeAction] = {}
+        for rule in rules:
+            match rule.action:
+                case None:
+                    modes[None].add(rule)
+                case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name, belong=belong_name):
+                    assert mode_name is not None, "PUSH actions must have a mode"
+                    if belong_name is not None:
+                        modes[belong_name].add(rule)
+                    else:
+                        for mode, fas in modes.items():
+                            if mode != mode_name:
+                                fas.add(rule)
+                    assert rule.tag is not None, "PUSH actions must have a tag"
+                    actions[rule.tag] = rule.action
+                case ModeAction(action=ModeActionEnum.BELONG, mode=mode_name, belong=belong_name):
+                    assert mode_name is not None, "BELONG actions must have a mode"
+                    assert belong_name is None, "BELONG actions cannot have a belong"
+                    modes[mode_name].add(rule)
+                case ModeAction(action=ModeActionEnum.POP, mode=mode_name, belong=belong_name):
+                    assert mode_name is not None, "POP actions must have a mode"
+                    assert belong_name is None, "POP actions cannot have a belong"
+                    assert rule.tag is not None, "POP actions must have a tag"
+                    actions[rule.tag] = rule.action
+                    modes[mode_name].add(rule)
 
-    def push_mode(self, mode_name: str | None = None) -> Mode[C]:
-        if mode_name not in self.modes:
-            raise SyncraftError(f"Cannot push unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
-        self._stack.append(self.modes[mode_name])
-        self._current_mode = self._stack[-1]
-        return self._current_mode
-    
-    def set_mode(self, mode_name: str | None = None) -> Mode[C]:
-        if mode_name not in self.modes:
-            raise SyncraftError(f"Cannot set unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
-        self._current_mode = self.modes[mode_name]
-        return self._current_mode
         
+
+        lexer_modes: Dict[str | None, Mode[C]] = {}
+        for mname, mode_rules in modes.items():
+            lexer_modes[mname] = cls.one_mode(universe, *mode_rules)
+
+        lexer = cls(universe=universe, modes=lexer_modes, actions=actions)
+        lexer.push_mode(default_mode)
+        return lexer
+
     def gen(self, tag: Tag, rng: random.Random) -> str | bytes | list[C]:
-        return self.current_mode.rdfa.gen(tag, rng)
+        ret = self.current_mode.rdfa.gen(tag, rng)
+        act = self.actions.get(tag)
+        if act is not None:
+            match act:
+                case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name):
+                    self.push_mode(mode_name)
+                case ModeAction(action=ModeActionEnum.POP, mode=mode_name):
+                    self.pop_mode(mode_name)
+                case _:
+                    raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
+        return ret
+
+
+    def match(self, char: C, index: int) -> Either[Any, None | LexerResult[C]]:
+        mode = self.current_mode
+        rr = mode.runner.step(char, index)
+        mode.runner = rr.runner
+        if rr.error:
+            mode.runner = mode.runner.reset()
+            return Left(f"Lexing error at index {index} on char {char}")
+        elif rr.final and rr.accepted is None:
+            mode.runner = mode.runner.reset()
+            return Left(f"Lexing reached final state at index {index} without acceptance")
+        elif rr.final and rr.accepted is not None:
+            accepted_pos, accepted_tags = rr.accepted
+            tag = next(iter(accepted_tags))
+            act = self.actions.get(tag)
+            if act is not None:
+                match act:
+                    case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name):
+                        self.push_mode(mode_name)
+                    case ModeAction(action=ModeActionEnum.POP, mode=mode_name):
+                        self.pop_mode(mode_name)
+                    case _:
+                        raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
+            mode.runner = mode.runner.reset()
+            return Right(LexerResult(tag=tag, 
+                               start=index - (accepted_pos - 1), 
+                               end=accepted_pos, 
+                               mode=None if not self._stack else next((k for k, v in self.modes.items() if v is self._stack[-1]), None)))
+        return Right(None)
+
+
+
     
-    def match(self) -> None:
-        runner = self.current_mode.runner
-        pos = self.inputs.index
-        text = self.inputs.text
-        last_accept_pos = None
-        last_accept_tags : Tuple[Tag, ...] = ()
-
-        if pos < 0 or pos >= len(text):
-            raise SyncraftError("Index out of bounds", offender=pos, expect=f"0 <= index < {len(text)}")
-        else:
-            while pos < len(text):
-                sym = text[pos]
-                rr = runner.step(sym, pos)
-                pos += 1
-                runner = rr.runner
-                if rr.accepted:
-                    last_accept_pos = rr.accepted[0]
-                    last_accept_tags = rr.accepted[2]
-                    break
-                elif not runner.is_valid():
-                    break
-        self.current_mode.runner = runner
-        if last_accept_pos is None:
-            return pos
-        chosen_tag = next(iter(last_accept_tags))
-        if isinstance(text, str):
-            value: Any = text[:last_accept_pos]
-        elif isinstance(text, (bytes, bytearray, memoryview)):
-            value = bytes(text[:last_accept_pos])
-        else:
-            value = list(text[:last_accept_pos])
-
-
-
-
-    
-
-
-__all__ = [
-    "Lexer",
-    "Mode",
-
-]
-
-
-
 
 

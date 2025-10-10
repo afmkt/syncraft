@@ -128,6 +128,38 @@ A = TypeVar('A')
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 
+class _KeyIdRegistry:
+    """
+    Tracks stable integer ids for non-numeric start keys so cache 
+    lookups and GC remain deterministic without cluttering ``Cache``.
+
+    """
+
+    __slots__ = ("_ids", "_next")
+
+    def __init__(self) -> None:
+        self._ids: Dict[Hashable, int] = {}
+        self._next: int = 0
+
+    def assign(self, key: Hashable) -> int:
+        existing = self._ids.get(key)
+        if existing is not None:
+            return existing
+        assigned = self._next
+        self._ids[key] = assigned
+        self._next += 1
+        return assigned
+
+    def prune(self, min_position: int) -> None:
+        if not self._ids:
+            if self._next < min_position:
+                self._next = min_position
+            return
+        for original, assigned in list(self._ids.items()):
+            if assigned < min_position:
+                del self._ids[original]
+        if self._next < min_position:
+            self._next = min_position
 
 
 @dataclass
@@ -210,19 +242,8 @@ class Cache(Generic[A, Ret]):
     # Heads grouped by a hashable start key (caller-provided mapping or the state itself)
     _heads_by_start: Dict[Hashable, List[InProgress[A, Ret]]] = field(default_factory=dict, init=False, repr=False)
 
-    # Optional decoupling hook (caller may provide):
-    # - position_key: map a state to a hashable "start position" key (for grouping).
     # next_state is always Right.value[1] on success; distance always falls back to ordering.
-    position_key: Optional[Callable[[A], Hashable]] = None
-    key_transform: Optional[Callable[[A], int]] = None
-    _key_ids: Dict[Hashable, int] = field(default_factory=dict, init=False, repr=False)
-    _next_key_id: int = field(default=0, init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        if self.position_key is None and self.key_transform is not None:
-            # Allow callers to share the same transform for start-key grouping when compatible.
-            self.position_key = cast(Callable[[A], Hashable], self.key_transform)
-    
+    _key_registry: _KeyIdRegistry = field(default_factory=_KeyIdRegistry, init=False, repr=False)
 
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
@@ -285,13 +306,7 @@ class Cache(Generic[A, Ret]):
         if self._agenda:
             self._agenda = [ip for ip in self._agenda if (ip.cache_key is None or ip.cache_key >= min_position)]
 
-        if self._key_ids:
-            for original, assigned in list(self._key_ids.items()):
-                if assigned < min_position:
-                    del self._key_ids[original]
-
-        if self._next_key_id < min_position:
-            self._next_key_id = min_position
+        self._key_registry.prune(min_position)
 
         return removed
 
@@ -312,42 +327,24 @@ class Cache(Generic[A, Ret]):
     # -------- Generic position helpers (no structural assumptions about state) --------
     def _start_key(self, s: A) -> Hashable:
         # Prefer caller-provided mapping; else try using the state itself; if unhashable, use id(s)
-        if self.position_key is not None:
-            try:
-                return self.position_key(s)  # type: ignore[call-arg]
-            except Exception:
-                pass
         try:
             hash(s)  # type: ignore[arg-type]
-            return s  # type: ignore[return-value]
+            return cast(Hashable, s)
         except Exception:
             return id(s)
 
     def _cache_key(self, key: A) -> int:
-        if self.key_transform is not None:
-            value = self.key_transform(key)
-            if not isinstance(value, int):
-                raise TypeError("key_transform must return an int")
-            return value
-        # Auto-detect ParserState-like structures (has integer base/index attributes)
-        base = getattr(key, "base", None)
-        index = getattr(key, "index", None)
+        start_key = self._start_key(key)
+        if isinstance(start_key, int):
+            return start_key
+        base = getattr(start_key, "base", None)
+        index = getattr(start_key, "index", None)
         if isinstance(base, int) and isinstance(index, int):
-            return base + index
-        if isinstance(key, int):
-            return key
-        # Fallback: assign a stable id for hashable keys; otherwise use object id
-        try:
-            hk = cast(Hashable, key)
-            existing = self._key_ids.get(hk)
-            if existing is not None:
-                return existing
-            assigned = self._next_key_id
-            self._key_ids[hk] = assigned
-            self._next_key_id += 1
-            return assigned
-        except TypeError:
-            return id(key)
+            # ParserState implements __hash__ to reflect absolute input position.
+            position = hash(start_key)
+            return position if position >= 0 else base + index
+        # Fallback: assign a stable id for hashable, non-integer keys; unhashable keys already became ints via _start_key.
+        return self._key_registry.assign(start_key)
 
     def _extract_next_state(self, ret: Ret) -> Optional[A]:
         if isinstance(ret, Right):
@@ -391,20 +388,18 @@ class Cache(Generic[A, Ret]):
                 return 1 if cmp_res < 0 else (0 if cmp_res == 0 else -1)
         return -1
 
-    def _end_state_of(self, ret: Ret) -> Optional[A]:
-        return self._extract_next_state(ret)
 
     def _improved(self, key: A, old: Optional[Ret], new: Ret) -> bool:
         # Improvement = strictly further end state via ordering (fallback to measure if provided)
         if not self._is_success(new):
             return False
-        new_end = self._end_state_of(new)
+        new_end = self._extract_next_state(new)
         if new_end is None:
             return False
         if old is None or not self._is_success(old):
             cmp0 = self._cmp(key, new_end)
             return cmp0 is not None and cmp0 < 0
-        old_end = self._end_state_of(old)
+        old_end = self._extract_next_state(old)
         if old_end is None:
             return True
         cmp1 = self._cmp(old_end, new_end)
@@ -684,7 +679,7 @@ class Cache(Generic[A, Ret]):
             best = member.result
             member.probing = True
             self._enter_lr_growth()
-            seed_end = self._end_state_of(best) if best is not None else None
+            seed_end = self._extract_next_state(best) if best is not None else None
             while True:
                 iterations += 1
                 if iterations > self.max_growth_iterations:
@@ -715,7 +710,7 @@ class Cache(Generic[A, Ret]):
                     self._propagate_improvement(member)
                     continue
                 # Early collapse: if no improvement and best end did not move past seed end, stop.
-                best_end = self._end_state_of(best) if best is not None else None
+                best_end = self._extract_next_state(best) if best is not None else None
                 if seed_end is not None and (best_end is None or self._cmp(best_end, seed_end) == 0):
                     # Detect unproductive (no-progress) nullable left recursion: zero progress overall.
                     cmp_seed = self._cmp(member.key, seed_end)
@@ -799,7 +794,7 @@ class Cache(Generic[A, Ret]):
                         if cur is None or not isinstance(cur, Right):  # type: ignore
                             continue
                         any_success = True
-                        end_cur = self._end_state_of(cast(Ret, cur))
+                        end_cur = self._extract_next_state(cast(Ret, cur))
                         cmp_cur = (self._cmp(m.key, end_cur) if end_cur is not None else None)
                         if cmp_cur is not None and cmp_cur < 0:
                             all_non_positive = False
@@ -828,7 +823,7 @@ class Cache(Generic[A, Ret]):
                 if cur is None or not isinstance(cur, Right):  # type: ignore
                     continue
                 any_success_fb = True
-                end_cur = self._end_state_of(cast(Ret, cur))
+                end_cur = self._extract_next_state(cast(Ret, cur))
                 cmp_fb = (self._cmp(m.key, end_cur) if end_cur is not None else None)
                 if cmp_fb is not None and cmp_fb < 0:
                     any_positive_fb = True
@@ -863,7 +858,7 @@ class Cache(Generic[A, Ret]):
                 if cur is None or not isinstance(cur, Right):  # type: ignore
                     continue
                 any_success = True
-                end_sr = self._end_state_of(cast(Ret, cur))
+                end_sr = self._extract_next_state(cast(Ret, cur))
                 cmp_sr = (self._cmp(m.key, end_sr) if end_sr is not None else None)
                 if cmp_sr is not None and cmp_sr < 0:
                     all_non_positive = False

@@ -383,9 +383,6 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         return Right((Lazy(value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
-
-
-        # No _rule_id tagging here; Syntax.lazy is the authoritative place for stable rule identity.
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
 
 

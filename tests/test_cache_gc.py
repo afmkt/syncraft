@@ -46,15 +46,15 @@ def test_gc_prunes_auxiliary_structures() -> None:
 
 def test_gc_updates_key_mappings_and_counter() -> None:
     cache: Cache[int, Right] = Cache()
-    cache._key_ids = {"a": 1, "b": 10}
-    cache._next_key_id = 2
+    cache._key_registry._ids = {"a": 1, "b": 10}
+    cache._key_registry._next = 2
 
     removed = cache.gc(5)
 
     assert removed == 0
-    assert "a" not in cache._key_ids
-    assert cache._key_ids["b"] == 10
-    assert cache._next_key_id == 5
+    assert "a" not in cache._key_registry._ids
+    assert cache._key_registry._ids["b"] == 10
+    assert cache._key_registry._next == 5
 
 
 def test_gc_raises_when_active_left_recursion() -> None:

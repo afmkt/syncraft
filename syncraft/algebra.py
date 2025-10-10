@@ -133,7 +133,6 @@ class Algebra(Generic[A, S]):
                     return Right((Lazy(value), state))
                 case _:
                     raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
-        # No _rule_id tagging here; Syntax.lazy is the authoritative place for stable rule identity.
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
     
     @classmethod
@@ -331,7 +330,6 @@ class Algebra(Generic[A, S]):
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
         alg = replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
-        # Deliberately do NOT propagate _rule_id from children; wrappers should not masquerade as heads.
         from typing import cast as _cast
         return _cast(Algebra[Choice[A, B], S], alg)
         
