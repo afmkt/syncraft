@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
-from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect
+from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect, Lazy, Nothing
 from syncraft.cache import Either, Left, Right
 from syncraft.generator import GenState, Generator
 from syncraft.cache import Cache
@@ -49,34 +49,50 @@ class Finder(Generator[T], Generic[T]):
 #: consuming or modifying state.
 anything = Syntax.factory('anything')
 
-def _matches(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[GenState[T], Any])-> bool:
-    state = GenState[Any].from_ast(ast = data, restore_pruned=True)
-    result = alg.run(state, cache)
-    return isinstance(result, Right)
+def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any])-> bool:
+
+    state = GenState.from_ast(ast=data, seed=0, restore_pruned=True)
+    from syncraft.syntax import run
+    ast, _ = run(syntax=s, 
+                 alg=Finder, 
+                 state=state, 
+                 cache=cache)
+    match ast:
+        case Left(_):
+            return False
+        case _:
+            return True
 
 
-def _find(alg: Algebra[Any, GenState[Any]], data: ParseResult[Any], cache: Cache[GenState[T], Any]) -> PyGenerator[ParseResult[Any], None, None]:
-    if not isinstance(data, (Marked, Collect)):
-        if _matches(alg, data, cache):
-            yield data
+def _find(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any]) -> PyGenerator[ParseResult[Any], None, None]:
+    if _matches(s, data, cache):
+        yield data
     match data:
+        case Marked(value=value):
+            yield from _find(s, value, cache)
+        case Collect(value=value):
+            yield from _find(s, value, cache)
         case Then(left=left, right=right):
             if left is not None:
-                yield from _find(alg, left, cache)
+                yield from _find(s, left, cache)
             if right is not None:
-                yield from _find(alg, right, cache)
+                yield from _find(s, right, cache)
         case Many(value = value):
             for e in value:
-                yield from _find(alg, e, cache)
+                yield from _find(s, e, cache)
         case Marked(value=value):
-            yield from _find(alg, value, cache)
+            yield from _find(s, value, cache)
         case Choice(value=value):
             if value is not None:
-                yield from _find(alg, value, cache)
+                yield from _find(s, value, cache)
         case Collect(value=value):
-            yield from _find(alg, value, cache)
+            yield from _find(s, value, cache)
+        case Lazy(value=value):
+            yield from _find(s, value, cache)
         case _:
             pass
+
+
 
 
 def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
@@ -92,11 +108,10 @@ def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
     Returns:
         bool: ``True`` if the syntax succeeds on ``data``, ``False`` otherwise.
     """
-    gen = syntax(Finder)
     if isinstance(data, (Marked, Collect)):
-        return _matches(gen, data.value, Cache())
+        return _matches(syntax, data.value, Cache())
     else:
-        return _matches(gen, data, Cache())
+        return _matches(syntax, data, Cache())
 
 
 def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
@@ -115,8 +130,7 @@ def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> PyGenerator[ParseR
         ParseResult[Any]: Each node that satisfies ``syntax`` (pre‑order: the
         current node is tested before visiting its children).
     """
-    gen = syntax(Finder)
-    yield from _find(gen, data, Cache())
+    yield from _find(syntax, data, Cache())
 
 
 

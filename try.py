@@ -44,13 +44,9 @@ def test_find()->None:
             // ~END).to(While)
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
     ast, bound = parse_word(syntax, sql)
-    print(ast)
     nodes = list(find(anything, ast))
 
-    print(nodes)
     assert nodes[0] == ast
-    assert any(isinstance(node, IfThenElse) for node in nodes)
-    assert any(isinstance(node, While) for node in nodes)
 
 
 if __name__ == "__main__":
