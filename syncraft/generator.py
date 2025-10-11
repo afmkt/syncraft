@@ -436,10 +436,10 @@ def generate_with(
     Returns:
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
-    from syncraft.syntax import run
+    from syncraft.syntax import run_state
     state = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
 
-    v, s = run(syntax=syntax, 
+    v, s = run_state(syntax=syntax, 
                alg=Generator, 
                state=state)
     if s is not None:
@@ -463,8 +463,8 @@ def validate(
         A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
     """
     state = GenState.from_ast(ast=data, seed=0, restore_pruned=True)
-    from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Generator, state=state)
+    from syncraft.syntax import run_state
+    v, s = run_state(syntax=syntax, alg=Generator, state=state)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -482,8 +482,8 @@ def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     state = GenState.from_ast(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
-    from syncraft.syntax import run
-    v, s = run(syntax=syntax, 
+    from syncraft.syntax import run_state
+    v, s = run_state(syntax=syntax, 
                alg=Generator, 
                state=state)
     if s is not None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
-    Optional, List, Any, Tuple, TypeVar,Hashable, Sequence,
-    Generic, Generator, Callable
+    Optional, List, Any, Tuple, TypeVar,Hashable,
+    Generic, Generator, Callable, Type
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
@@ -12,11 +12,13 @@ from dataclasses import dataclass, field, replace
 from functools import total_ordering
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
+from syncraft.input import Input, StreamCursor
 
 from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
 from syncraft.constraint import Bindable
 
 T = TypeVar('T', bound=Hashable)  
+A = TypeVar('A')
 
 
 def underline(text: str) -> str:
@@ -221,10 +223,49 @@ def parse(syntax: Syntax[Any, Any],
           tokens: List[Token],
           *,
           cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    from syncraft.syntax import run
+    from syncraft.syntax import run_state
     state = ParserState(input=tuple(tokens), index=0, final=True, base=0)
-    v, s = run(syntax=syntax, alg=Parser, state=state, cache=cache)
+    v, s = run_state(syntax=syntax, alg=Parser, state=state, cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:
         return v, None
+
+
+def run(*,
+        syntax: Syntax[A, ParserState[T]],
+        alg: Type[Algebra[A, ParserState[T]]],
+        source: Input[T],
+        chunk_size: Optional[int] = None,
+        cache: Optional[Cache[ParserState[T], Either[Any, Tuple[A, ParserState[T]]]]] = None,
+        ) -> Tuple[Any, None | ParserState[T]]:
+    parser = syntax(alg)
+    gen_cache = cache or Cache()
+    cursor = StreamCursor(source, chunk_size=chunk_size)
+    buffer, final = cursor.initial_buffer()
+    state = ParserState(input=buffer, index=0, base=0, final=final)
+    parser_gen = parser.run(state, cache=gen_cache)
+
+    try:
+        result = next(parser_gen)
+        while True:
+            if isinstance(result, Incomplete):
+                pending_state = result.state
+
+                if pending_state.final:
+                    result = parser_gen.send(pending_state)
+                    continue
+
+                chunk, final = cursor.next_chunk()
+                pending_state = pending_state.extend(chunk, final=final)
+                result = parser_gen.send(pending_state)
+            else:
+                raise AssertionError("Unexpected yield from algebra: expected Incomplete")  # pragma: no cover
+    except StopIteration as e:
+        result = e.value
+        if isinstance(result, Right):
+            return result.value[0], result.value[1]
+        if isinstance(result, Left):
+            return result.value, None
+        return Error(this=result, message="Algebra returned data that is not Left or Right"), None
+

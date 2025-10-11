@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import Generic, Iterator, Optional, TypeVar, Sequence, AsyncIterator, Union, Literal, cast
+from typing import Generic, Iterator, Optional, TypeVar, Sequence, AsyncIterator, Union, Literal, cast, Tuple
 import io
 import asyncio
 import codecs
 from pathlib import Path
+from syncraft.ast import SyncraftError
 
 
 
@@ -219,3 +220,73 @@ class AsyncTextStream(Input[str]):
     @property
     def eof(self) -> bool:
         return self.reader.at_eof() and not self.buffer
+
+
+class StreamCursor(Generic[T]):
+    """Iterates over an ``Input`` in normalized, non-empty chunks.
+
+    Guarantees that every chunk yielded before EOF has content and that
+    callers receive consistent container types (str, bytes, or tuple[T,...]).
+    """
+
+    def __init__(self, source: Input[T], *, chunk_size: Optional[int] = None) -> None:
+        self.source = source
+        self.chunk_size = chunk_size
+        if isinstance(source, StringInput):
+            self._empty: str | bytes | Tuple[T, ...] = ""
+        elif isinstance(source, BytesInput):
+            self._empty = b""
+        else:
+            self._empty = tuple()
+
+    def initial_buffer(self) -> tuple[str | bytes | Tuple[T, ...], bool]:
+        if self.source.eof:
+            return self._empty, True
+        chunk = self._read()
+        normalized = self._normalize(chunk)
+        return normalized, self.source.eof
+
+    def next_chunk(self) -> tuple[str | bytes | Tuple[T, ...], bool]:
+        chunk = self._read()
+        normalized = self._normalize(chunk)
+        return normalized, self.source.eof
+
+    def empty_like(self) -> str | bytes | Tuple[T, ...]:
+        return self._empty
+
+    def _read(self) -> Sequence[T] | str | bytes:
+        try:
+            if self.chunk_size is None:
+                return self.source.read()
+            return self.source.read(self.chunk_size)
+        except EOFError:
+            return self._empty
+
+    def _normalize(self, chunk: Sequence[T] | str | bytes) -> str | bytes | Tuple[T, ...]:
+        if isinstance(chunk, str):
+            if not chunk and not self.source.eof:
+                raise SyncraftError(
+                    "Input provided an empty chunk before EOF; unable to progress",
+                    offender=self.source,
+                    expect="non-empty chunk",
+                )
+            self._empty = ""
+            return chunk
+        if isinstance(chunk, bytes):
+            if not chunk and not self.source.eof:
+                raise SyncraftError(
+                    "Input provided an empty chunk before EOF; unable to progress",
+                    offender=self.source,
+                    expect="non-empty chunk",
+                )
+            self._empty = b""
+            return chunk
+        seq = tuple(cast(Sequence[T], chunk))
+        if not seq and not self.source.eof:
+            raise SyncraftError(
+                "Input provided an empty chunk before EOF; unable to progress",
+                offender=self.source,
+                expect="non-empty chunk",
+            )
+        self._empty = tuple()
+        return cast(Tuple[T, ...], seq)

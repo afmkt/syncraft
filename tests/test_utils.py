@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Iterable
 from syncraft.ast import Token
-from syncraft.syntax import run
+from syncraft.syntax import run_state
 from syncraft.parser import Parser, word_lexer
 import re
 
@@ -37,7 +37,7 @@ __all__ = ['iter_tokens', 'token_multiset']
 
 def parse_with_state(syntax, sql: str):
     tokens = word_lexer(sql)
-    v, state = run(syntax=syntax, alg=Parser, tokens=tokens)
+    v, state = run_state(syntax=syntax, alg=Parser, tokens=tokens)
     return v, state
 
 __all__.append('parse_with_state')

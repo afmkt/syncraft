@@ -712,7 +712,7 @@ class Syntax(Generic[A, S]):
         return builders
         
 
-def run(*,
+def run_state(*,
     syntax: Syntax[A, S], 
     alg: Type[Algebra[A, S]], 
     state: S,
@@ -724,10 +724,30 @@ def run(*,
             gen_cache = cache or Cache()
             gen = parser.run(state, cache=gen_cache)
             result = next(gen)
-            while True:
-                if isinstance(result, Incomplete):
-                    old_state = result.state
-                    result = gen.send(old_state)
+            if isinstance(result, Incomplete):
+                try:
+                    gen.close()
+                except Exception:
+                    pass
+                return (
+                    Error(
+                        this=parser,
+                        message="Algebra requested additional input but no source was provided",
+                        state=result.state,
+                    ),
+                    None,
+                )
+            try:
+                gen.close()
+            except Exception:
+                pass
+            return (
+                Error(
+                    this=parser,
+                    message="Algebra yielded an unexpected value before completion",
+                ),
+                None,
+            )
         except StopIteration as e:
             result = e.value                
             if isinstance(result, Right):

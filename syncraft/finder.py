@@ -52,8 +52,8 @@ anything = Syntax.factory('anything')
 def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any])-> bool:
 
     state = GenState.from_ast(ast=data, seed=0, restore_pruned=True)
-    from syncraft.syntax import run
-    ast, _ = run(syntax=s, 
+    from syncraft.syntax import run_state
+    ast, _ = run_state(syntax=s, 
                  alg=Finder, 
                  state=state, 
                  cache=cache)
