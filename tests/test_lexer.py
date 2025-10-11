@@ -6,7 +6,8 @@ from syncraft.cache import Left, Right
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder, ModeAction, ModeActionEnum
 from syncraft.lexer import Lexer, LexerResult
-
+import pytest
+from syncraft.ast import SyncraftError
 
 def _lexer_with_parentheses() -> Lexer[str]:
     universe: CodeUniverse[str] = CodeUniverse.ascii()
@@ -60,3 +61,58 @@ def test_skip_rules_should_suppress_tokens() -> None:
 
     tokens = _collect_tokens(lexer, "a b")
     assert [tok.tag for tok in tokens] == ["A", "B"]
+
+
+
+def _lexer_with_skip() -> Lexer[str]:
+    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    letter: FABuilder[str] = FABuilder.lit("a").tagged("A")
+    skip_ws: FABuilder[str] = FABuilder.lit(" ").tagged("WS").skipped()
+    return Lexer.from_builders(universe, letter, skip_ws)
+
+
+def _lexer_with_modes() -> Lexer[str]:
+    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    base: FABuilder[str] = FABuilder.lit("a").tagged("IDENT")
+    open_paren: FABuilder[str] = FABuilder.lit("(").tagged("OPEN").act(
+        ModeAction(ModeActionEnum.PUSH, mode="paren")
+    )
+    close_paren: FABuilder[str] = FABuilder.lit(")").tagged("CLOSE").act(
+        ModeAction(ModeActionEnum.POP, mode="paren")
+    )
+    inner: FABuilder[str] = FABuilder.lit("b").tagged("INNER").act(
+        ModeAction(ModeActionEnum.BELONG, mode="paren")
+    )
+    return Lexer.from_builders(universe, base, open_paren, close_paren, inner)
+
+
+def test_skip_rules_return_none_when_selected() -> None:
+    lexer = _lexer_with_skip()
+    results: list[LexerResult[str]] = []
+    for idx, ch in enumerate(" a a"):
+        out = lexer.match(ch, idx)
+        assert not isinstance(out, Left), f"Lexing produced error at {idx}: {out}"
+        if isinstance(out, Right) and out.value is not None:
+            results.append(out.value)
+
+    tags = [token.tag for token in results]
+    assert tags == ["A", "A"]
+
+
+def test_mode_actions_update_stack_in_generation() -> None:
+    lexer = _lexer_with_modes()
+    rng = random.Random(0)
+
+    assert lexer.gen("OPEN", rng) == "("
+    assert lexer.current_mode is lexer.modes["paren"]
+
+    assert lexer.gen("INNER", rng) == "b"
+
+    assert lexer.gen("CLOSE", rng) == ")"
+    assert lexer.current_mode is lexer.modes[None]
+
+
+def test_pop_mode_requires_known_mode() -> None:
+    lexer = _lexer_with_skip()
+    with pytest.raises(SyncraftError):
+        lexer.pop_mode("missing")

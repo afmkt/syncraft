@@ -715,19 +715,19 @@ class Syntax(Generic[A, S]):
 def run(*,
     syntax: Syntax[A, S], 
     alg: Type[Algebra[A, S]], 
-    input: S,
+    state: S,
     cache: Optional[Cache[S, Either[Any, Tuple[A, S]]]] = None,
-    **kwargs: Any) -> Tuple[Any, None | S]:
-    parser = syntax(alg, **kwargs)
-    if input:
+    ) -> Tuple[Any, None | S]:
+    parser = syntax(alg)
+    if state:
         try:
             gen_cache = cache or Cache()
-            gen = parser.run(input, cache=gen_cache)
+            gen = parser.run(state, cache=gen_cache)
             result = next(gen)
             while True:
                 if isinstance(result, Incomplete):
-                    old_input = result.state
-                    result = gen.send(old_input)
+                    old_state = result.state
+                    result = gen.send(old_state)
         except StopIteration as e:
             result = e.value                
             if isinstance(result, Right):

@@ -222,8 +222,8 @@ def parse(syntax: Syntax[Any, Any],
           *,
           cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     from syncraft.syntax import run
-    input = ParserState(input=tuple(tokens), index=0, final=True, base=0)
-    v, s = run(syntax=syntax, alg=Parser, input=input, cache=cache)
+    state = ParserState(input=tuple(tokens), index=0, final=True, base=0)
+    v, s = run(syntax=syntax, alg=Parser, state=state, cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:
