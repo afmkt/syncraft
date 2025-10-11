@@ -116,3 +116,16 @@ def test_pop_mode_requires_known_mode() -> None:
     lexer = _lexer_with_skip()
     with pytest.raises(SyncraftError):
         lexer.pop_mode("missing")
+
+
+def test_match_reports_correct_span_boundaries() -> None:
+    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    rule: FABuilder[str] = FABuilder.lit("ab").tagged("AB")
+    lexer = Lexer.from_builders(universe, rule)
+
+    tokens = _collect_tokens(lexer, "ab")
+    assert len(tokens) == 1
+    token = tokens[0]
+
+    assert token.start == 0
+    assert token.end == 2

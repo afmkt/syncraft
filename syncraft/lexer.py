@@ -24,6 +24,7 @@ class Mode(Generic[C]):
     rdfa: ReverseDFA[C]
     priority: Dict[Tag, int] = field(default_factory=dict)
     skip: frozenset[Tag] = field(default_factory=frozenset)
+    start_index: Optional[int] = None
 
     def select_tag(self, tags: frozenset[Tag]) -> Optional[Tag]:
         if not tags:
@@ -54,6 +55,7 @@ class Lexer(Generic[C]):
     
     def _reset_runner(self, mode: Mode[C]) -> None:
         mode.runner = mode.runner.reset()
+        mode.start_index = None
     
     
     @property
@@ -164,6 +166,8 @@ class Lexer(Generic[C]):
 
     def match(self, char: C, index: int) -> Either[Any, None | LexerResult[C]]:
         mode = self.current_mode
+        if mode.start_index is None:
+            mode.start_index = index
         rr = mode.runner.step(char, index)
         mode.runner = rr.runner
         if rr.error:
@@ -188,10 +192,19 @@ class Lexer(Generic[C]):
                     case _:
                         raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
             mode.runner = mode.runner.reset()
-            return Right(LexerResult(tag=tag, 
-                               start=index - (accepted_pos - 1), 
-                               end=accepted_pos, 
-                               mode=None if not self._stack else next((k for k, v in self.modes.items() if v is self._stack[-1]), None)))
+            start = mode.start_index if mode.start_index is not None else accepted_pos
+            end = accepted_pos + 1
+            mode.start_index = None
+            return Right(
+                LexerResult(
+                    tag=tag,
+                    start=start,
+                    end=end,
+                    mode=None
+                    if not self._stack
+                    else next((k for k, v in self.modes.items() if v is self._stack[-1]), None),
+                )
+            )
         return Right(None)
 
 
