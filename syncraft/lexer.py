@@ -107,7 +107,10 @@ class Lexer(Generic[C]):
         return Mode(runner=dfa.runner(), rdfa=dfa.reverse, priority=dict(priority), skip=frozenset(skip))
 
     @classmethod
-    def from_builders(cls, universe: CodeUniverse[C], *rules: FABuilder[C], default_mode: str | None = None) -> "Lexer[C]":
+    def from_builders(cls, 
+                      universe: CodeUniverse[C], 
+                      *rules: FABuilder[C],
+                      default_mode: str | None = None) -> "Lexer[C]":
         modes: Dict[str | None, Set[FABuilder[C]]] = defaultdict(set)
         actions: Dict[Tag, ModeAction] = {}
         for rule in rules:

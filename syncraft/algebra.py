@@ -62,9 +62,7 @@ class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S, Either[Any, Tuple[A, S]]]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
     _name: str | Callable[[], str]
-    @classmethod
-    def state(cls, **kwargs:Any)->Optional[S]: 
-        return None
+    
         
     def named(self, name: str) -> Algebra[A, S]:
         return replace(self, _name=name)

@@ -158,10 +158,6 @@ class ParserState(Bindable, Generic[T]):
     
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
-    
-    @classmethod
-    def state(cls, tokens: List[T]) -> ParserState[T]: # type: ignore
-        return ParserState(input=tuple(tokens), index=0, final=True, base=0)
 
     @classmethod
     def primitive(cls, 
@@ -226,7 +222,8 @@ def parse(syntax: Syntax[Any, Any],
           *,
           cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, alg=Parser, tokens=tokens, cache=cache)
+    input = ParserState(input=tuple(tokens), index=0, final=True, base=0)
+    v, s = run(syntax=syntax, alg=Parser, input=input, cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:

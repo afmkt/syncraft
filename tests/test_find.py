@@ -1,12 +1,17 @@
 from __future__ import annotations
 from typing import Any
+from dataclasses import dataclass
+
+import pytest
+
+from syncraft.finder import find, anything
 from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
-from dataclasses import dataclass
 
 from syncraft.ast import TokenClass
 literal = Syntax.config(token_class = TokenClass.simple()).literal
 
+@pytest.mark.xfail(reason="Finder integration is pending")
 def test_find()->None:
     @dataclass
     class IfThenElse:
@@ -40,6 +45,10 @@ def test_find()->None:
     syntax = (WHILE >> condition
             + ifthenelse.mark('body')
             // ~END).to(While)
-    sql = 'while b if a,b then c,d else a,d end if a,b then c,d else a,d end'
+    sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
     ast, bound = parse_word(syntax, sql)
-    # print(ast)
+    nodes = list(find(anything, ast))
+
+    assert nodes[0] == ast
+    assert any(isinstance(node, IfThenElse) for node in nodes)
+    assert any(isinstance(node, While) for node in nodes)

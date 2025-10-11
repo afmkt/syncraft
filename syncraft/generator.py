@@ -155,21 +155,7 @@ class GenState(Bindable, Generic[T]):
 
 
 @dataclass(frozen=True)
-class Generator(Algebra[ParseResult[T], GenState[T]]):  
-    
-    @classmethod
-    def state(cls, ast: Optional[ParseResult[T]] = None, seed: int = 0, restore_pruned: bool = False)->GenState[T]: # type: ignore
-        """Create an initial ``GenState`` for generation or checking.
-
-        Args:
-            ast: Optional root AST to validate/generate against.
-            seed: Seed for deterministic random generation.
-            restore_pruned: Allow traversing pruned branches.
-
-        Returns:
-            GenState[T]: The constructed initial state.
-        """
-        return GenState.from_ast(ast=ast, seed=seed, restore_pruned=restore_pruned)
+class Generator(Algebra[ParseResult[T], GenState[T]]):      
 
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
         """Sequence a dependent generator using the left child value.
@@ -451,11 +437,11 @@ def generate_with(
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     from syncraft.syntax import run
+    input = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
+
     v, s = run(syntax=syntax, 
                alg=Generator, 
-               ast=data, 
-               seed=seed, 
-               restore_pruned=restore_pruned)
+               input=input)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -476,12 +462,9 @@ def validate(
     Returns:
         A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
     """
+    input = GenState.from_ast(ast=data, seed=0, restore_pruned=True)
     from syncraft.syntax import run
-    v, s = run(syntax=syntax, 
-               alg=Generator, 
-               ast=data, 
-               seed=0, 
-               restore_pruned=True)
+    v, s = run(syntax=syntax, alg=Generator, input=input)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -498,12 +481,11 @@ def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     Returns:
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
+    input = GenState.from_ast(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
     from syncraft.syntax import run
     v, s = run(syntax=syntax, 
                alg=Generator, 
-               ast=None, 
-               seed=random.randint(0, 2**32 - 1), 
-               restore_pruned=False)
+               input=input)
     if s is not None:
         return v, s.binding.bound()
     else:

@@ -715,11 +715,10 @@ class Syntax(Generic[A, S]):
 def run(*,
     syntax: Syntax[A, S], 
     alg: Type[Algebra[A, S]], 
+    input: S,
     cache: Optional[Cache[S, Either[Any, Tuple[A, S]]]] = None,
     **kwargs: Any) -> Tuple[Any, None | S]:
-
     parser = syntax(alg, **kwargs)
-    input = CallWith(alg.state, **kwargs)()
     if input:
         try:
             gen_cache = cache or Cache()

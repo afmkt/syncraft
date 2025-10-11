@@ -36,6 +36,7 @@ uv sync --group dev
 
 TODO
 - [ ]  Merge DFA/NFA into CFG parsing pipeline. Make lex node in Algebra, take FA builder.
+- [ ]  Finder is not working
 - [ ]  Visualization (railroad diagrams + AST).
 - [ ]  Interactive dev (Jupyter).
 - [ ]  Semantic layer (datalog + unification).
