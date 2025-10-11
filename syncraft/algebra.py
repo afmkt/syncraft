@@ -103,7 +103,7 @@ class Algebra(Generic[A, S]):
                                                                    Either[Any, Tuple[A, S]]]:
         try:
             
-            result = (yield from cache.gen(self.run_f, input))
+            result = (yield from cache.exec(self.run_f, input))
 
             return result
         except LeftRecursionError as e:

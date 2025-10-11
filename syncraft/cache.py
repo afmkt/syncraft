@@ -315,7 +315,7 @@ class Cache(Generic[A, Ret]):
             yield from ()
             return v
         return_value_f.__name__ = name
-        return (yield from self.gen(return_value_f, s))
+        return (yield from self.exec(return_value_f, s))
     
 
 
@@ -442,7 +442,7 @@ class Cache(Generic[A, Ret]):
     def _exit_lr_growth(self):
         self._lr_growth_depth -= 1
 
-    def gen(self,
+    def exec(self,
             f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]],
             key: A) -> Generator[Any, Any, Ret]:
         # Step 1: canonicalize function identity
