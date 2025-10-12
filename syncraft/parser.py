@@ -122,7 +122,7 @@ class ParserState(Bindable, Generic[T]):
             )
         return self
 
-    def extend(self, more: str | bytes | Tuple[T], *, final: bool = False) -> "ParserState[T]":
+    def extend(self, more: str | bytes | Tuple[T, ...], *, final: bool = False) -> "ParserState[T]":
         if self.final:
             raise SyncraftError("Cannot concatenate to a final ParserState", offender=self, expect="not final")
         if self.safe_base > self.base:
@@ -288,11 +288,10 @@ def run(*,
         result = next(parser_gen)
         while True:
             if isinstance(result, Incomplete):
-                pending_state = result.state
+                pending_state: ParserState[T] = result.state
 
                 if pending_state.final:
-                    result = parser_gen.send(pending_state)
-                    continue
+                    raise SyncraftError("Parser requested more input but input is final", offender=pending_state, expect="not final")
 
                 chunk, final = cursor.next_chunk()
                 pending_state = pending_state.extend(chunk, final=final)
