@@ -452,7 +452,7 @@ class Collect(Generic[A, E], AST):
     
 
 
-Char = TypeVar('Char', str, bytes, Hashable)
+Char = TypeVar('Char', bound=Hashable)
 @dataclass(frozen=True)
 class Token(AST, Generic[Char]):
     text: str | bytes | Tuple[Char, ...]
