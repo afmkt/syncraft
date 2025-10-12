@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple
 from syncraft.charset import CodeUniverse
@@ -28,6 +28,9 @@ class Mode(Generic[C]):
     skip: frozenset[Tag] = field(default_factory=frozenset)
     start_index: Optional[int] = None
 
+    def reset(self) -> Mode[C]:
+        return replace(self, runner=self.runner.reset(), start_index=None)
+    
     def select_tag(self, tags: frozenset[Tag]) -> Optional[Tag]:
         if not tags:
             return None
@@ -43,7 +46,7 @@ class Mode(Generic[C]):
 
 @dataclass(frozen=True)
 class LexerResult(Generic[C]):
-    tag: Tag
+    tag: Tag | None
     start: int
     end: int
     
@@ -58,6 +61,14 @@ class Lexer(Generic[C]):
         mode.runner = mode.runner.reset()
         mode.start_index = None
     
+    def reset(self) -> Lexer[C]:
+        ret = Lexer(
+            universe=self.universe,
+            modes={name: mode.reset() for name, mode in self.modes.items()},
+            actions=self.actions,
+            _stack=deque())
+        ret.push_mode(None)
+        return ret
     
     @property
     def current_mode(self) -> Mode[C]:
@@ -151,7 +162,7 @@ class Lexer(Generic[C]):
         lexer.push_mode(default_mode)
         return lexer
 
-    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | list[C]:
+    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...]:
         ret = self.current_mode.rdfa.gen(tag, rng)
         act = self.actions.get(tag)
         if act is not None:
@@ -164,6 +175,23 @@ class Lexer(Generic[C]):
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
         return ret
 
+    def varify(self, tag: Tag | None, txt: str | bytes | Tuple[C, ...]) -> bool:
+        lexer = self.reset()
+        for index, char in enumerate(txt):
+            match lexer.match(char, index): # type: ignore
+                case Left(_):
+                    return False
+                case Right(None):
+                    continue
+                case Right(LexerResult(tag=t, start=s, end=e)):
+                    if t != tag:
+                        return False
+                    if s != 0 or e != len(txt) - 1:
+                        return False
+                    if index != len(txt) - 1:
+                        return False
+                    return True
+        return False
 
     def match(self, char: C, index: int) -> Either[Any, None | LexerResult[C]]:
         mode = self.current_mode

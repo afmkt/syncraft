@@ -33,7 +33,7 @@ def test_star_plus_optional_many():
     optional = ~a
     many = a.many(at_least=2, at_most=5)
     assert star.kind.name == "STAR"
-    assert plus.kind.name == "CONCAT"  # plus desugars to concat
+    assert plus.kind.name == "CONCAT"  
     assert optional.kind.name == "OPTIONAL"
     assert many.kind.name == "MANY"
     assert many.at_least == 2

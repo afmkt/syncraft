@@ -64,7 +64,7 @@ def _grammar_is_left_recursive(spec: SyntaxSpec) -> bool:
 
 def _flatten_token_text(node: object) -> List[str]:
     if isinstance(node, Token):
-        return [node.text]
+        return [str(node.text)]
     if isinstance(node, Then):
         return _flatten_token_text(node.left) + _flatten_token_text(node.right)
     if isinstance(node, Choice):
@@ -98,7 +98,7 @@ def test_spec_preserves_terminal_data_for_lexers() -> None:
     builders = grammar.fabuilder()
     seen = {(builder.text, builder.tag) for builder in builders}
 
-    assert seen == {("a", None), ("id", "IDENT"), ("b", None)}
+    assert seen == {("a", 'a'), ("id", "IDENT"), ("b", 'b')}
 
 
 def test_spec_can_drive_left_recursion_elimination() -> None:

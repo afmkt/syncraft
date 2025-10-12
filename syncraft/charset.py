@@ -106,7 +106,7 @@ class CodeUniverse(Generic[C]):
     def __repr__(self) -> str:
         return self.__str__()
     
-    def concat(self, cs: Sequence[C]) -> str | bytes | List[C]:
+    def concat(self, cs: Sequence[C]) -> str | bytes | Tuple[C, ...]:
         space = self.space
         if len(cs) == 0:
             if space is str:
@@ -114,7 +114,7 @@ class CodeUniverse(Generic[C]):
             elif space is bytes:
                 return b''
             else:
-                return []
+                return ()
         else:
             if space is str:
                 return ''.join(cs)  # type: ignore
@@ -130,7 +130,7 @@ class CodeUniverse(Generic[C]):
                         offender=first, 
                         expect="bytes or int")
             else:
-                return list(cs)  # type: ignore                
+                return tuple(cs)  
 
     def code2int(self, c: C) -> int:
         if isinstance(c, str):

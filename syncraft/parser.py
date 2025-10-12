@@ -3,7 +3,7 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable, Type
 )
-from syncraft.lexer import Lexer, CacheWithLexer, LexerResult
+from syncraft.lexer import CacheWithLexer, LexerResult
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
@@ -216,7 +216,7 @@ class Parser(Algebra[T, ParserState[T]]):
     def lex(cls, pattern: FABuilder) -> Algebra[T, ParserState[T]]:
         name = str(pattern)
         def lex_run(state: ParserState[T], 
-                    cache:Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
+                    cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
@@ -234,24 +234,18 @@ class Parser(Algebra[T, ParserState[T]]):
                     state = tmp
                 else:
                     match lexer.match(state.current(), state.abs_index()):
-                        case Left(err):
-                            return (yield from cache.return_value(Left(err), state, name='LEX'))
+                        case Left(err_msg):
+                            err = Error(message=err_msg, this=lex_run, state=state)            
+                            return (yield from cache.return_value(Left(err), state, name=name))
                         case Right(None):
-                            pass
+                            state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end)):
-                            pass
+                            token = Token(text=state.slice(start, end), token_type=tag)
+                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name))
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
 
-        captured: Algebra[T, ParserState[T]] = cls(lex_run, _name=name)
-        def error_fn(err: Any) -> Error:
-            if isinstance(err, ParserState):
-                return Error(message=f"Cannot match token expect {name}, got '{err.current() if not err.ended() or err.pending() else 'EOF'}'", this=captured, state=err)            
-            else:
-                return Error(message="Cannot match token at unknown state", this=captured)
-        # assign the updated parser(with description) to bound variable so the Error.this could be set correctly
-        captured = captured.map_error(error_fn)
-        return captured        
+        return cls(lex_run, _name=name)
 
 
 def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Cache[Any, Any]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:

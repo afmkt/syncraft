@@ -52,7 +52,7 @@ class ReverseDFA(Generic[C]):
     accept: FrozenDict[Tag, frozenset[FAState]] = field(default_factory=FrozenDict)    
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
 
-    def gen(self, tag: Tag, rnd: random.Random) -> str | bytes | List[C]:
+    def gen(self, tag: Tag, rnd: random.Random) -> str | bytes | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
         if not current_states:
             raise SyncraftError(f"Tag '{tag}' not accepted by this DFA", offender=tag, expect=f"one of {list(self.accept.keys())}")
@@ -1189,6 +1189,7 @@ class ModeAction:
 
 @dataclass(frozen=True)
 class FABuilder(Generic[C]):
+    tag: Tag
     kind: _NodeKind
     children: Tuple[FABuilder[C], ...] = field(default_factory=tuple)
     text: Optional[Union[str, bytes, Sequence[C]]] = None
@@ -1196,7 +1197,6 @@ class FABuilder(Generic[C]):
     at_most: Optional[int] = None
     skip: bool = False  # if true, do not include this in the final automaton (used for whitespace, comments, etc)
     priority: int = 0  # higher number means higher priority
-    tag: Optional[Tag] = None
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
 
     # ---- Factory entry points ----
@@ -1231,20 +1231,20 @@ class FABuilder(Generic[C]):
     def literal(cls, 
                 text: Union[str, bytes, Sequence[C]], 
                 *, 
+                tag: Optional[Tag] = None,
                 skip: bool = False, 
                 priority: int = 0,
-                tag: Optional[Tag] = None, 
                 action: Optional[ModeAction] = None) -> "FABuilder[C]":
-        return cls(kind=_NodeKind.LITERAL, text=text, tag=tag, action=action, skip=skip, priority=priority)
+        return cls(kind=_NodeKind.LITERAL, text=text, tag=tag or str(text), action=action, skip=skip, priority=priority)
 
     # Alias for convenience
     @classmethod
     def lit(cls, 
             text: Union[str, bytes, Sequence[C]], 
             *, 
+            tag: Optional[Tag] = None,
             skip: bool = False, 
             priority: int = 0,
-            tag: Optional[Tag] = None, 
             action: Optional[ModeAction] = None) -> FABuilder[C]:
         return cls.literal(text, tag=tag, action=action, skip=skip, priority=priority)
 
@@ -1252,42 +1252,44 @@ class FABuilder(Generic[C]):
     def oneof(cls, 
               chars: Union[str, bytes, Sequence[C]], 
               *, 
+              tag: Optional[Tag] = None,
               skip: bool = False, 
               priority: int = 0,
-              tag: Optional[Tag] = None, 
               action: Optional[ModeAction] = None) -> FABuilder[C]:
-        return cls(kind=_NodeKind.ONEOF, text=chars, tag=tag, action=action, skip=skip, priority=priority)
+        return cls(kind=_NodeKind.ONEOF, text=chars, tag=tag or f"[{str(chars)}]", action=action, skip=skip, priority=priority)
 
     # ---- DSL operators ----
     def __add__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other))
+        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other), tag=f"{hash(self)}{id(self)}+{hash(other)}{id(other)}")
 
     def __or__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.UNION, children=(self, other))
+        return FABuilder(kind=_NodeKind.UNION, children=(self, other), tag=f"{hash(self)}{id(self)}|{hash(other)}{id(other)}")
 
     def __and__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other))
+        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other), tag=f"{hash(self)}{id(self)}&{hash(other)}{id(other)}")
 
     def __sub__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.DIFF, children=(self, other))
+        return FABuilder(kind=_NodeKind.DIFF, children=(self, other), tag=f"{hash(self)}{id(self)}-{hash(other)}{id(other)}")
 
     def __invert__(self) -> FABuilder[C]:  # optional (~)
-        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,))
+        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,), tag=f"{hash(self)}{id(self)}.optional")
 
     def __neg__(self) -> FABuilder[C]:  # complement (-)
-        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,))
+        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,), tag=f"{hash(self)}{id(self)}.complement")
 
     @property
     def star(self) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.STAR, children=(self,))
+        return FABuilder(kind=_NodeKind.STAR, children=(self,), tag=f"{hash(self)}{id(self)}.star")
 
     @property
     def plus(self) -> FABuilder[C]:
-        # desugar plus -> concat(self, self.star)
         return (self + self.star)
 
-    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.MANY, children=(self,), at_least=at_least, at_most=at_most)
+    def many(self, 
+             *, 
+             at_least: int = 1, 
+             at_most: Optional[int] = None) -> FABuilder[C]:
+        return FABuilder(kind=_NodeKind.MANY, children=(self,), at_least=at_least, at_most=at_most, tag=f"{hash(self)}{id(self)}{at_least}{at_most}.many")
 
     def tagged(self, value: Tag) -> FABuilder[C]:
         return replace(self, tag=value)

@@ -10,6 +10,7 @@ from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
 from syncraft.lexer import CacheWithLexer
+from syncraft.fa import FABuilder
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
@@ -413,6 +414,36 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             generator=gen)
         
         
+    @classmethod
+    def lex(cls, pattern: FABuilder) -> Algebra[T, GenState[T]]:
+        name = str(pattern)
+        def lex_run(input: GenState[T], 
+                    cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
+                              YieldChannelType, 
+                              SendChannelType, 
+                              Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
+            if not isinstance(cache, CacheWithLexer):
+                raise SyncraftError("Cache must be CacheWithLexer to use lex", offender=cache, expect="CacheWithLexer")
+            lexer = cache.lexer
+            if lexer is None:
+                raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
+
+            if input.pruned:
+                input = input.fork(tag=pattern.tag)
+                txt = lexer.gen(pattern.tag, input.rng())
+                tkn = Token(text=txt, token_type=pattern.tag)
+                return (yield from cache.return_value(Right((tkn, input)), input, name=name))
+            else:
+                current = input.ast
+                if not isinstance(current, Token) or not lexer.varify(current.token_type, current.text): 
+                    return (yield from cache.return_value( 
+                        Left(Error(None, 
+                                  message=f"Expected a token, but got {current}.", 
+                                  state=input)), input, name=name))
+                else:
+                    return (yield from cache.return_value(Right((current, input)), input, name=name)) # type: ignore
+
+        return cls(lex_run, _name=name) # type: ignore
 
 
 

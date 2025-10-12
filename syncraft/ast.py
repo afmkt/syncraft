@@ -452,16 +452,29 @@ class Collect(Generic[A, E], AST):
     
 
 
-
+Char = TypeVar('Char', str, bytes, Hashable)
 @dataclass(frozen=True)
-class Token(AST):
-    text: str
+class Token(AST, Generic[Char]):
+    text: str | bytes | Tuple[Char, ...]
     token_type: Optional[Union[str, Enum]] = None
     def __str__(self) -> str:
-        if self.token_type is None:
-            return f"t.{self.text.strip()}"
+        if isinstance(self.text, str):
+            if self.token_type is None:
+                return f"t.{self.text.strip()}"
+            else:
+                return f"t.({self.text.strip()}, {self.token_type})"
+        elif isinstance(self.text, bytes):
+            if self.token_type is None:
+                return f"t.{self.text.decode(errors='replace').strip()}"
+            else:
+                return f"t.({self.text.decode(errors='replace').strip()}, {self.token_type})"
+        elif isinstance(self.text, tuple):
+            if self.token_type is None:
+                return f"t.({''.join(str(c) for c in self.text).strip()})"
+            else:
+                return f"t.({''.join(str(c) for c in self.text).strip()}, {self.token_type})"
         else:
-            return f"t.({self.text.strip()}, {self.token_type})"
+            raise SyncraftError("Unsupported type for Token text", offender=self.text, expect="str, bytes, or tuple")
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -610,6 +623,7 @@ ParseResult = Union[
     Many['ParseResult[T]'],
     Collect['ParseResult[T]', Any],
     Nothing,
+    Token[T],
     T,
 ]
 

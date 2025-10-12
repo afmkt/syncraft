@@ -96,18 +96,6 @@ def _find(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any]) -
 
 
 def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
-    """Check whether a syntax matches a specific node.
-
-    Runs the given ``syntax`` (compiled with ``Finder``) against ``data`` only;
-    it does not traverse the tree. ``Marked`` and ``Collect`` node are treated as transparent.
-
-    Args:
-        syntax: The ``Syntax`` to run.
-        data: The AST node (``ParseResult``) to test.
-
-    Returns:
-        bool: ``True`` if the syntax succeeds on ``data``, ``False`` otherwise.
-    """
     if isinstance(data, (Marked, Collect)):
         return _matches(syntax, data.value, Cache())
     else:
@@ -115,21 +103,6 @@ def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
 
 
 def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
-    """Yield all subtrees that match a syntax.
-
-    Performs a depth‑first traversal of ``data`` and yields each node where the
-    provided ``syntax`` (compiled with ``Finder``) succeeds. Wrapper nodes like
-    ``Marked`` and ``Collect`` are treated as transparent for matching and are
-    not yielded themselves.
-
-    Args:
-        syntax: The ``Syntax`` predicate to apply at each node.
-        data: The root ``ParseResult`` to search.
-
-    Yields:
-        ParseResult[Any]: Each node that satisfies ``syntax`` (pre‑order: the
-        current node is tested before visiting its children).
-    """
     yield from _find(syntax, data, Cache())
 
 
