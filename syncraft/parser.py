@@ -3,7 +3,8 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable, Type
 )
-from syncraft.lexer import CacheWithLexer, LexerResult
+from syncraft.charset import CodeUniverse
+from syncraft.lexer import Lexer, CacheWithLexer, LexerResult
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
@@ -274,11 +275,18 @@ def run(*,
         syntax: Syntax[A, ParserState[T]],
         alg: Type[Algebra[A, ParserState[T]]],
         source: Input[T],
-        chunk_size: Optional[int] = None,
-        cache: Optional[Cache[ParserState[T], Either[Any, Tuple[A, ParserState[T]]]]] = None,
+        chunk_size: int = 4096,
+        universe: CodeUniverse[Any], 
+        cache: Optional[CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[A, ParserState[T]]]]] = None,
         ) -> Tuple[Any, None | ParserState[T]]:
-    parser = syntax(alg)
+    
     gen_cache = cache or CacheWithLexer()
+    assert isinstance(gen_cache, CacheWithLexer), "Cache must be CacheWithLexer or None"
+    
+    gen_cache.lexer = Lexer.from_builders(universe, *syntax.fabuilder())
+
+    parser = syntax(alg)
+    
     cursor = StreamCursor(source, chunk_size=chunk_size)
     buffer, final = cursor.initial_buffer()
     state = ParserState(input=buffer, index=0, base=0, final=final)

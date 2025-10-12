@@ -4,7 +4,7 @@ from syncraft.ast import TokenClass
 from syncraft.input import Input
 from syncraft.parser import Parser, run as parser_run, word_lexer
 from syncraft.syntax import Syntax
-
+from syncraft.charset import CodeUniverse
 
 def test_run_with_input_stream_handles_incomplete() -> None:
     literal = Syntax.config(token_class=TokenClass.simple()).literal
@@ -17,6 +17,7 @@ def test_run_with_input_stream_handles_incomplete() -> None:
         alg=Parser,
         source=source,
         chunk_size=1,
+        universe=CodeUniverse.ascii()
     )
 
     assert state is not None
@@ -35,7 +36,7 @@ def test_run_with_input_reads_all_when_unbounded() -> None:
         syntax=syntax,
         alg=Parser,
         source=source,
-        chunk_size=None,
+        universe=CodeUniverse.ascii()
     )
 
     assert state is not None
