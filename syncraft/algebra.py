@@ -82,9 +82,7 @@ class Algebra(Generic[A, S]):
     def __str__(self) -> str:
         return self.__repr__()
 
-    @cached_property
-    def hashable(self)->Hashable:
-        return frozenset({'name': self.name, 'run_f': self.run_f})
+
 
 
     def __call__(self, 
@@ -100,10 +98,11 @@ class Algebra(Generic[A, S]):
                                                                    SendChannelType, 
                                                                    Either[Any, Tuple[A, S]]]:
         try:
-            
-            result = (yield from cache.exec(self.run_f, input))
+            if cache is None:
+                return (yield from self.run_f(input, cache))
+            else:
+                return (yield from cache.exec(self.run_f, input))
 
-            return result
         except LeftRecursionError as e:
             if e.offender is self.run_f  or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")

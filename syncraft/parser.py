@@ -3,6 +3,7 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable, Type
 )
+from syncraft.lexer import Lexer, CacheWithLexer
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
@@ -209,12 +210,41 @@ class Parser(Algebra[T, ParserState[T]]):
 
     @classmethod
     def lex(cls, pattern: FABuilder) -> Algebra[T, ParserState[T]]:
-        if pattern.tag is None:
-            raise SyncraftError("Pattern must have a suggested_tag to be used in Parser.re", offender=pattern, expect="suggested_tag")
-        return cls.token(token_class=TokenClass.simple(), text=pattern.text, token_type=pattern.tag)
+        name = pattern.__name__ if pattern is not None else "." 
+        def lex_run(state: ParserState[T], 
+                    cache:Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
+                              YieldChannelType, 
+                              SendChannelType, 
+                              Either[Any, Tuple[T, ParserState[T]]]]:
+            lexer = cache.additiional_kwargs.get('lexer')
+            if lexer is None:
+                raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
+            while True:
+                if state.ended():
+                    return (yield from cache.return_value(Left(state), state, name='EOF'))
+                elif state.pending():
+                    tmp = yield Incomplete(state)
+                    assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
+                    state = tmp
+                else:
+                    token = state.current()
+                    assert callable(predicate), "Predicate must be callable"
+                    if token is None or not predicate(token):
+                        return (yield from cache.return_value(Left(state), state, name=predicate.__name__))
+                    else:
+                        return (yield from cache.return_value(Right((token, state.advance())), state, name=predicate.__name__))
+        captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
+        def error_fn(err: Any) -> Error:
+            if isinstance(err, ParserState):
+                return Error(message=f"Cannot match token expect {name}, got '{err.current() if not err.ended() or err.pending() else 'EOF'}'", this=captured, state=err)            
+            else:
+                return Error(message="Cannot match token at unknown state", this=captured)
+        # assign the updated parser(with description) to bound variable so the Error.this could be set correctly
+        captured = captured.map_error(error_fn)
+        return captured        
 
 
-def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Cache[Any, Any]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     tokens = word_lexer(sql)
     return parse(syntax, tokens, cache=cache)
 
@@ -222,7 +252,8 @@ def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Optional[Cache[Any,
 def parse(syntax: Syntax[Any, Any], 
           tokens: List[Token],
           *,
-          cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+          cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]
+          ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     from syncraft.syntax import run_state
     state = ParserState(input=tuple(tokens), index=0, final=True, base=0)
     v, s = run_state(syntax=syntax, alg=Parser, state=state, cache=cache)
@@ -240,7 +271,7 @@ def run(*,
         cache: Optional[Cache[ParserState[T], Either[Any, Tuple[A, ParserState[T]]]]] = None,
         ) -> Tuple[Any, None | ParserState[T]]:
     parser = syntax(alg)
-    gen_cache = cache or Cache()
+    gen_cache = cache or CacheWithLexer()
     cursor = StreamCursor(source, chunk_size=chunk_size)
     buffer, final = cursor.initial_buffer()
     state = ParserState(input=buffer, index=0, base=0, final=final)

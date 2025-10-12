@@ -10,8 +10,8 @@ def test_syntax_run_returns_error_on_incomplete() -> None:
     literal = Syntax.config(token_class=TokenClass.simple()).literal
     syntax = literal("if")
     state: ParserState[str] = ParserState(input=tuple(), index=0, base=0, final=False)
-
-    value, next_state = run_state(syntax=syntax, alg=Parser, state=state)
+    from syncraft.lexer import CacheWithLexer
+    value, next_state = run_state(syntax=syntax, alg=Parser, state=state, cache=CacheWithLexer())
 
     assert isinstance(value, Error)
     assert next_state is None

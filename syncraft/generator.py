@@ -9,8 +9,8 @@ from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
-
-from syncraft.cache import Cache, Either, Left, Right, Incomplete
+from syncraft.lexer import CacheWithLexer
+from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
     ParseResult, AST, Token, TokenClass, 
@@ -20,9 +20,7 @@ from syncraft.ast import (
 )
 from syncraft.constraint import FrozenDict
 from syncraft.syntax import Syntax
-from enum import Enum
 import random
-import re
 
 from syncraft.constraint import Bindable
 
@@ -439,9 +437,7 @@ def generate_with(
     from syncraft.syntax import run_state
     state = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
 
-    v, s = run_state(syntax=syntax, 
-               alg=Generator, 
-               state=state)
+    v, s = run_state(syntax=syntax, alg=Generator, state=state, cache=CacheWithLexer())
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -464,7 +460,7 @@ def validate(
     """
     state = GenState.from_ast(ast=data, seed=0, restore_pruned=True)
     from syncraft.syntax import run_state
-    v, s = run_state(syntax=syntax, alg=Generator, state=state)
+    v, s = run_state(syntax=syntax, alg=Generator, state=state, cache=CacheWithLexer())
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -483,9 +479,7 @@ def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     """
     state = GenState.from_ast(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
     from syncraft.syntax import run_state
-    v, s = run_state(syntax=syntax, 
-               alg=Generator, 
-               state=state)
+    v, s = run_state(syntax=syntax, alg=Generator, state=state, cache=CacheWithLexer())
     if s is not None:
         return v, s.binding.bound()
     else:

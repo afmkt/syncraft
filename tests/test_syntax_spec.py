@@ -128,9 +128,10 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     suffix_choice = suffix_nodes[0] if len(suffix_nodes) == 1 else TestSyntax.choice(*suffix_nodes)
 
     transformed = base_syntax + suffix_choice.many().optional()
+    from syncraft.lexer import CacheWithLexer
 
-    original_ast, _ = parse_word(Expr, "n + n + n")
-    transformed_ast, _ = parse_word(transformed, "n + n + n")
+    original_ast, _ = parse_word(Expr, "n + n + n", cache=CacheWithLexer())
+    transformed_ast, _ = parse_word(transformed, "n + n + n", cache=CacheWithLexer())
 
     assert _flatten_token_text(original_ast) == ["n", "+", "n", "+", "n"]
     assert _flatten_token_text(transformed_ast) == ["n", "+", "n", "+", "n"]

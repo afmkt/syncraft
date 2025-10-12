@@ -248,7 +248,8 @@ class Cache(Generic[A, Ret]):
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
 
-
+    def _call_rule(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], key: A) -> Generator[Any, Any, Ret]:
+        return f(key, self)
 
     def flat_cache(self)->List[Tuple[str, str, Any, Any]]:
         parts:List[Tuple[str, str, Any, Any]] = [('name', 'id', 'position', 'value')]
@@ -462,7 +463,7 @@ class Cache(Generic[A, Ret]):
                 existing.probing = True
                 self._lr_stack.append(existing)
                 try:
-                    attempt = yield from f(key, self)
+                    attempt = yield from self._call_rule(f, key)
                 finally:
                     self._lr_stack.pop()
                     existing.probing = False
@@ -480,7 +481,7 @@ class Cache(Generic[A, Ret]):
         try:
             # Opportunistic co-seeding: if this rule is an Expr-like head referencing another lazy head
             # at the same starting position (e.g., Expr vs Term), ensure both are seeded so they will be grouped.
-            seed = yield from f(key, self)
+            seed = yield from self._call_rule(f, key)
         except Exception as e:
             cache_bucket.pop(cache_key, None)
             self._lr_stack.pop()
@@ -698,7 +699,7 @@ class Cache(Generic[A, Ret]):
                     )
                 self._force = member
                 try:
-                    attempt = yield from member.f(member.key, self)
+                    attempt = yield from self._call_rule(member.f, member.key)
                 finally:
                     self._force = None
                 # Process cross-position agenda before evaluating improvement
@@ -762,7 +763,7 @@ class Cache(Generic[A, Ret]):
                     # Force recomputation of this member's rule body (even if cached InProgress exists)
                     self._force = member
                     try:
-                        attempt = yield from member.f(member.key, self)
+                        attempt = yield from self._call_rule(member.f, member.key)
                     finally:
                         self._force = None
                     # DEBUG: log attempt consumption for multi-head detection troubleshooting
@@ -919,7 +920,7 @@ class Cache(Generic[A, Ret]):
                 continue
             old = head.result
             self._force = head
-            attempt = yield from head.f(head.key, self)
+            attempt = yield from self._call_rule(head.f, head.key)
             self._force = None
             if self._improved(head.key, old, attempt):
                 head.result = attempt
@@ -952,7 +953,7 @@ class Cache(Generic[A, Ret]):
                         continue
                     old = head.result
                     self._force = head
-                    attempt = yield from head.f(head.key, self)
+                    attempt = yield from self._call_rule(head.f, head.key)
                     self._force = None
                     if self._improved(head.key, old, attempt):
                         head.result = attempt

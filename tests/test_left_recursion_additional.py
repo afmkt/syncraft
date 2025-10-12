@@ -5,6 +5,7 @@ from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
 from syncraft.ast import TokenClass
 from syncraft.parser import parse_word
+from syncraft.lexer import CacheWithLexer
 
 # Reuse the pattern from existing tests: specialize Syntax with a TokenClass
 literal = Syntax.config(token_class=TokenClass.simple()).literal
@@ -17,12 +18,12 @@ token = Syntax.config(token_class=TokenClass.simple()).token
 def test_nullable_left_recursion_no_progress_error():
     S = Syntax.lazy(lambda: S | literal(""))
     try:
-        parse_word(S, "")
+        parse_word(S, "", cache=CacheWithLexer())
     except LeftRecursionError as e:
         assert e.reason == 'no-progress'
         return
     # Transitional behavior: accepted nullable recursion; ensure no tokens actually required.
-    v, _ = parse_word(S, "")
+    v, _ = parse_word(S, "", cache=CacheWithLexer())
     ast, _ = v.bimap()
     assert ast is not None
 
@@ -30,7 +31,7 @@ def test_nullable_left_recursion_no_progress_error():
 def test_deterministic_choice_prefers_first_branch():
     """PEG determinism: ( 'a' | 'a' 'b') on input 'a' must choose the first branch only."""
     A = (literal('a') | (literal('a') >> literal('b')))
-    v, s = parse_word(A, 'a')
+    v, s = parse_word(A, 'a', cache=CacheWithLexer())
     ast, _ = v.bimap()
     # Expect just single terminal 't.a' (following existing Then/terminal string forms from collapse tests)
     assert str(ast) == 't.a'
@@ -60,7 +61,7 @@ def test_mutual_recursion_productivity_consumption():
     """
     A = Syntax.lazy(lambda: (B >> token(text='x')) | token(text='a'))
     B = Syntax.lazy(lambda: (A >> token(text='y')) | token(text='b'))
-    v, s = parse_word(A, 'a y b x')
+    v, s = parse_word(A, 'a y b x', cache=CacheWithLexer())
     ast, end_state = v.bimap()
     # Ensure at least 'a' retained
     assert 'a' in str(ast)
@@ -76,7 +77,7 @@ def test_global_fixpoint_propagation_precedence_chain():
     Factor = Syntax.lazy(lambda: (literal('(') >> Expr >> literal(')')) | literal('n'))  # type: ignore  # noqa: F821
     Term = Syntax.lazy(lambda: (Term + literal('*') + Factor) | Factor)
     Expr = Syntax.lazy(lambda: (Expr + literal('-') + Term) | Term)
-    v, s = parse_word(Expr, 'n - n * n - n')
+    v, s = parse_word(Expr, 'n - n * n - n', cache=CacheWithLexer())
     ast, end_state = v.bimap()
     # Ensure multiple 'n' tokens included
     assert str(ast).count('n') >= 4
@@ -96,7 +97,7 @@ def test_mutual_nullable_left_recursion_no_progress_error():
     A = Syntax.lazy(lambda: (B >> literal('x')) | epsilon)  # type: ignore  # noqa: F821
     B = Syntax.lazy(lambda: (A >> literal('y')) | epsilon)  # type: ignore  # noqa: F821
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, "")
+        parse_word(A, "", cache=CacheWithLexer())
     err = exc.value
     assert err.reason == 'no-progress'
     # group_size may be >=2 depending on deduping semantics; assert at least 2 for multi-head

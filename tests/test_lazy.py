@@ -4,6 +4,8 @@ from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
+from syncraft.lexer import CacheWithLexer
+
 import re
 import pytest
 from syncraft.ast import TokenClass
@@ -18,7 +20,7 @@ def from_string(string: str) -> Token:
 
 def test_simple_recursion()->None:
     A = Syntax.lazy(lambda: literal('a') + ~A | literal('a'))
-    v, s = parse_word(A, 'a a a')
+    v, s = parse_word(A, 'a a a', cache=CacheWithLexer())
     # print(v)
     ast1, inv = v.bimap()
     # print(ast1)
@@ -48,7 +50,7 @@ def test_direct_recursion_equivalence()->None:
     Validates parsing structure, inversion, and round-trip generation for Expr1 grammar.
     """
     Expr1 = Syntax.lazy(lambda: literal('a') + ~Expr1)
-    v, s = parse_word(Expr1, 'a a a')
+    v, s = parse_word(Expr1, 'a a a', cache=CacheWithLexer())
     ast, inv = v.bimap()
     expected = (
         from_string('a'), 
@@ -70,7 +72,7 @@ def test_direct_recursion_equivalence()->None:
 def test_mutual_recursion()->None:
     A = Syntax.lazy(lambda: literal('a') + B)
     B = Syntax.lazy(lambda: (literal('b') + A) | (literal('c')))
-    v, s = parse_word(A, 'a b a b a c')
+    v, s = parse_word(A, 'a b a b a c', cache=CacheWithLexer())
     # print('--' * 20, "test_mutual_recursion", '--' * 20)
     # print(v)
     ast1, inv = v.bimap()
@@ -113,7 +115,7 @@ def test_recursion() -> None:
     p_code = 'a a b b'
     LL = parens() | L
     
-    v, s = parse_word(LL, p_code)
+    v, s = parse_word(LL, p_code, cache=CacheWithLexer())
     ast1, inv = v.bimap()
     assert ast1 == (
             from_string('a'), 
@@ -146,7 +148,7 @@ def test_left_recursion_variants()->None:
     # Variant 1: arithmetic chain
     Term = literal('n')
     Expr = Syntax.lazy(lambda: Expr + literal('+') + Term | Term)
-    v1, _ = parse_word(Expr, 'n + n + n')
+    v1, _ = parse_word(Expr, 'n + n + n', cache=CacheWithLexer())
     ast1, _ = v1.bimap()
     counts1 = token_multiset(ast1)
     assert counts1.get('n', 0) == 3
@@ -154,7 +156,7 @@ def test_left_recursion_variants()->None:
     # Variant 2: nested right growth
     a_tok = literal('a').map(lambda x: x.text).named('a')
     Expr1 = Syntax.lazy(lambda: (Expr1 + a_tok) | a_tok).named('Expr1')
-    v2, _ = parse_word(Expr1, 'a a a a')
+    v2, _ = parse_word(Expr1, 'a a a a', cache=CacheWithLexer())
     ast2, _ = v2.bimap()
     assert ast2 == ((('a', 'a'), 'a'), 'a')
 
@@ -166,7 +168,7 @@ def test_indirect_left_recursion()->None:
     A = Syntax.lazy(lambda: (B >> PLUS >> A) | B)
     B = Syntax.lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
     # Now succeeds (partial parse); ensure at least first two numbers captured
-    v, s = parse_word(A, '1 + 2 * 3')
+    v, s = parse_word(A, '1 + 2 * 3', cache=CacheWithLexer())
     ast, _ = v.bimap()
     counts = token_multiset(ast)
     # Current partial recovery yields only last NUMBER; ensure at least one digit captured
@@ -215,7 +217,7 @@ def test_indirect_left_recursion_2()->None:
     # v, s = parse_word(Expr, '1 + (2 * 3)')
     # v, s = parse_word(Expr, '((1 + 2) * 3) + 4 * 5 + 6')
 
-    v1, s1 = parse_word(Expr, '1 + 2 * 3')
+    v1, s1 = parse_word(Expr, '1 + 2 * 3', cache=CacheWithLexer())
     a1, _ = v1.bimap()
     # Updated semantics: left-recursive growth now preserves full infix structure.
     # Expect canonical precedence: (1, '+', (2, '*', 3))
@@ -237,7 +239,7 @@ def test_indirect_left_recursion_2()->None:
     # (Further sample loop removed due to current recursion depth behavior in repeated instantiations.)
 
     # Representative value check (parsing '42' should yield the int 42 under current collapsing semantics)
-    v_42, _ = parse_word(Expr, '42')
+    v_42, _ = parse_word(Expr, '42', cache=CacheWithLexer())
     a_42, _ = v_42.bimap()
     # Single number still normalizes to its integer value
     single_norm = norm(a_42)
@@ -260,7 +262,7 @@ def test_indirect_left_recursion_structured_plus()->None:
     Expr = Syntax.lazy(lambda: (Expr + PLUS + Term) | Term)  # type: ignore[name-defined]
     Term = Syntax.lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = Syntax.lazy(lambda: NUMBER)
-    v,_ = parse_word(Expr,'1 + 2 * 3')
+    v,_ = parse_word(Expr,'1 + 2 * 3', cache=CacheWithLexer())
     ast,_ = v.bimap()
     # Basic structural checks
     assert isinstance(ast, tuple) and len(ast) == 3
@@ -303,7 +305,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     Expr = Syntax.lazy(lambda: (Expr + PLUS + Term) | Term)  # type: ignore[name-defined]
     Term = Syntax.lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = Syntax.lazy(lambda: NUMBER)  # type: ignore[name-defined]
-    v_raw, _ = parse_word(Expr, '1 + 2 * 3')
+    v_raw, _ = parse_word(Expr, '1 + 2 * 3', cache=CacheWithLexer())
     raw, _ = v_raw.bimap()
     # Raw structural assertions
     assert isinstance(raw, tuple) and len(raw) == 3
@@ -320,7 +322,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     ExprM = Syntax.lazy(lambda: (ExprM + PLUS + TermM) | TermM)  # type: ignore[name-defined]
     TermM = Syntax.lazy(lambda: (TermM + STAR + FactorM) | FactorM)  # type: ignore[name-defined]
     FactorM = Syntax.lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
-    v_mapped, _ = parse_word(ExprM, '1 + 2 * 3')
+    v_mapped, _ = parse_word(ExprM, '1 + 2 * 3', cache=CacheWithLexer())
     mapped, _ = v_mapped.bimap()
     assert isinstance(mapped, tuple) and len(mapped) == 3
     l_val, plus_tok2, right_term_m = mapped
@@ -381,7 +383,7 @@ def test_non_recursive_map_preserves_shape()->None:
     NUM = literal(re.compile(r'\d+'))
     PLUS = literal('+')
     Pair = NUM + PLUS + NUM
-    v,_ = parse_word(Pair, '12 + 34')
+    v,_ = parse_word(Pair, '12 + 34', cache=CacheWithLexer())
     ast,_ = v.bimap()
     assert isinstance(ast, tuple) and len(ast) == 3
     left_tok, plus_tok, right_tok = ast
@@ -392,7 +394,7 @@ def test_non_recursive_map_preserves_shape()->None:
     # Mapped version
     NUM_M = NUM.map(lambda t: int(t.text))
     PairM = NUM_M + PLUS + NUM_M
-    v2,_ = parse_word(PairM, '12 + 34')
+    v2,_ = parse_word(PairM, '12 + 34', cache=CacheWithLexer())
     ast2,_ = v2.bimap()
     assert isinstance(ast2, tuple) and len(ast2) == 3
     l2, plus2, r2 = ast2
@@ -420,7 +422,7 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         NUM = literal(re.compile(r'\d+'))
         PLUS = literal('+')
         Expr = Syntax.lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
-        v,_ = parse_word(Expr, '1 + 2 + 3')
+        v,_ = parse_word(Expr, '1 + 2 + 3', cache=CacheWithLexer())
         raw,_ = v.bimap()
         # Raw structure assertions
         assert isinstance(raw, tuple) and len(raw) == 3
@@ -431,7 +433,7 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         # Mapped version
         NUM_M = NUM.map(lambda t: int(t.text))
         ExprM = Syntax.lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
-        v2,_ = parse_word(ExprM, '1 + 2 + 3')
+        v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=CacheWithLexer())
         mapped,_ = v2.bimap()
         assert isinstance(mapped, tuple) and len(mapped) == 3
         left_nested, mid_op, right_leaf = mapped
@@ -474,7 +476,7 @@ def test_indirect_left_recursion_3()->None:
     Item = Syntax.lazy(lambda: A | B)
     List = Syntax.lazy(lambda: (List >> token(text=',') >> Item) | Item)
     # Now succeeds but current semantics retain only last item; ensure at least 'a' present
-    v, s = parse_word(List, 'a , b , a')
+    v, s = parse_word(List, 'a , b , a', cache=CacheWithLexer())
     ast, _ = v.bimap()
     counts = token_multiset(ast)
     # Current semantics retains only final item
@@ -516,7 +518,7 @@ def test_indirect_left_recursion_4()->None:
     A = Syntax.lazy(lambda: (B >> token(text='x')) | token(text='a'))
     B = Syntax.lazy(lambda: (A >> token(text='y')) | token(text='b'))
     # Now succeeds but collapses to first terminal; ensure 'a' present
-    v, s = parse_word(A, 'a y b x')
+    v, s = parse_word(A, 'a y b x', cache=CacheWithLexer())
     ast, _ = v.bimap()
     counts = token_multiset(ast)
     assert counts.get('a', 0) >= 1
@@ -553,7 +555,7 @@ def test_indirect_left_recursion_5()->None:
     Name = token(text=re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*'))
     Chain = Syntax.lazy(lambda: (Chain >> token(text='->') >> Name) | Name)
     # Now succeeds but retains last element only; ensure 'c' present
-    v, s = parse_word(Chain, 'a -> b -> c')
+    v, s = parse_word(Chain, 'a -> b -> c', cache=CacheWithLexer())
     ast, _ = v.bimap()
     counts = token_multiset(ast)
     assert counts.get('c', 0) >= 1
@@ -562,7 +564,7 @@ def test_indirect_left_recursion_5()->None:
 def test_direct_left_recursion_collapse()->None:
     """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
     S = Syntax.lazy(lambda: (S >> S) | literal('a'))
-    v, _ = parse_word(S, 'a a a a')
+    v, _ = parse_word(S, 'a a a a', cache=CacheWithLexer())
     ast, _ = v.bimap()
     assert str(ast) == 't.a'
 
@@ -580,7 +582,7 @@ def test_multi_head_indirect_cycle_fixed_point()->None:
     """
     A = Syntax.lazy(lambda: (B >> token(text='x')) | token(text='a'))
     B = Syntax.lazy(lambda: (A >> token(text='y')) | token(text='b'))
-    v, s = parse_word(A, 'a y b x')
+    v, s = parse_word(A, 'a y b x', cache=CacheWithLexer())
     ast, _ = v.bimap()
     # Ensure at least starting 'a' present (basic success signal)
     assert 'a' in str(ast)
@@ -599,7 +601,7 @@ def test_multi_head_identity_in_error()->None:
     # Direct invocation of run to inject our custom cache if needed would require deeper plumbing;
     # Instead we rely on current default path and just assert success (no error). This test placeholder
     # is retained for when public API allows passing cache instance.
-    v, s = parse_word(Expr, 'n + n + n')
+    v, s = parse_word(Expr, 'n + n + n', cache=CacheWithLexer())
     ast, _ = v.bimap()
     assert str(ast).count('n') >= 3
 
@@ -607,7 +609,7 @@ def test_multi_head_identity_in_error()->None:
 def test_direct_left_recursion_unproductive_now_productive()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
     S = Syntax.lazy(lambda: (S >> S) | literal('a'))
-    v, _ = parse_word(S, 'a a a a a')
+    v, _ = parse_word(S, 'a a a a a', cache=CacheWithLexer())
     ast, _ = v.bimap()
     assert str(ast) == 't.a'
 
@@ -617,7 +619,7 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
 def test_direct_left_recursion_growth_still_collapses()->None:
     """Additional confirmation of S → S S | 'a' collapse behavior (single terminal)."""
     S = Syntax.lazy(lambda: (S >> S) | literal('a'))
-    v, _ = parse_word(S, 'a a a')
+    v, _ = parse_word(S, 'a a a', cache=CacheWithLexer())
     ast, _ = v.bimap()
     assert str(ast) == 't.a'
 
@@ -629,7 +631,7 @@ def test_indirect_multi_head_cycle_parses_successfully():
     """
     A = Syntax.lazy(lambda: (B >> token(text='x')) | token(text='a'))
     B = Syntax.lazy(lambda: (A >> token(text='y')) | token(text='b'))
-    v, s = parse_word(A, 'a y a y b x')
+    v, s = parse_word(A, 'a y a y b x', cache=CacheWithLexer())
     ast, _ = v.bimap()
     assert any(t in str(ast) for t in ['a', 'b'])
 
@@ -641,7 +643,7 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
     """
     T = Syntax.lazy(lambda: (T >> token(text='+') >> token(text='a')) | token(text='a'))
     input_text = 'a ' + ' + a' * 120
-    v, s = parse_word(T, input_text)
+    v, s = parse_word(T, input_text, cache=CacheWithLexer())
     ast, _ = v.bimap()
     assert str(ast) == 't.a'
 
@@ -658,7 +660,7 @@ def test_multi_recursion()->None:
     B = Syntax.lazy(lambda: (C + y) | b).named('B')
     C = Syntax.lazy(lambda: (A + z) | c).named('C')
 
-    v, s = parse_word(A, 'a z y x')
+    v, s = parse_word(A, 'a z y x', cache=CacheWithLexer())
     print(v)
     # We care about the raw AST shape (pre-bimap). Extract leaves manually.
     from syncraft.ast import Then, ThenKind
@@ -694,7 +696,7 @@ def test_mutual_unproductive_cycle_no_progress():
     A = Syntax.lazy(lambda: B)
     B = Syntax.lazy(lambda: A)
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, '')
+        parse_word(A, '', cache=CacheWithLexer())
     assert exc.value.reason == 'no-progress'
 
 
@@ -711,7 +713,7 @@ def test_mutual_unproductive_cycle_no_progress_3():
     B = Syntax.lazy(lambda: C)  
     C = Syntax.lazy(lambda: A)  
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, '')
+        parse_word(A, '', cache=CacheWithLexer())
     assert exc.value.reason == 'no-progress'
 
 

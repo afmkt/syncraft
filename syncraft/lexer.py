@@ -1,16 +1,18 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic
+from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError
-from syncraft.cache import Either, Left, Right
+from syncraft.cache import Either, Left, Right, Cache
 from collections import deque, defaultdict
 
 import random
 
 C = TypeVar('C', bound=str | int | Enum | Any)
+A = TypeVar('A')
+Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 
 
@@ -209,6 +211,9 @@ class Lexer(Generic[C]):
 
 
 
-    
 
 
+
+@dataclass
+class CacheWithLexer(Cache[A, Ret], Generic[C, A, Ret]):
+    lexer: Optional[Lexer[C]] = None

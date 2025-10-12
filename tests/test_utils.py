@@ -1,8 +1,7 @@
 from __future__ import annotations
 from typing import Any, Iterable
 from syncraft.ast import Token
-from syncraft.syntax import run_state
-from syncraft.parser import Parser, word_lexer
+from syncraft.parser import parse_word
 import re
 
 # Utility to extract all token texts from a (possibly nested) AST structure produced by parse_word.
@@ -36,8 +35,7 @@ __all__ = ['iter_tokens', 'token_multiset']
 
 
 def parse_with_state(syntax, sql: str):
-    tokens = word_lexer(sql)
-    v, state = run_state(syntax=syntax, alg=Parser, tokens=tokens)
-    return v, state
+    from syncraft.lexer import CacheWithLexer
+    return parse_word(syntax, sql, cache=CacheWithLexer())
 
 __all__.append('parse_with_state')

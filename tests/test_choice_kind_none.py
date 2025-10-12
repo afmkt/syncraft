@@ -4,6 +4,7 @@ from syncraft.ast import TokenClass
 from syncraft.parser import parse_word
 from syncraft.generator import validate, generate_with
 from syncraft.algebra import Error
+from syncraft.lexer import CacheWithLexer
 
 
 def tok(text: str):
@@ -15,7 +16,7 @@ def test_validate_and_generate_with_after_bimap_resets_choice_kind():
     A = Syntax.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
 
     # Parse concrete input "a a a"
-    ast, _ = parse_word(A, 'a a a')
+    ast, _ = parse_word(A, 'a a a', cache=CacheWithLexer())
     assert not isinstance(ast, Error)
 
     # Apply bimap then reconstruct the AST. Choice.bimap resets kind to None.
@@ -43,7 +44,7 @@ def test_mutual_left_recursion_with_base_after_bimap_A():
     B = Syntax.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
 
     # Parse a sequence that fits A: 'a b a' via A -> B + 'a', B -> A + 'b', A -> 'a'
-    ast, _ = parse_word(A, 'a b a')
+    ast, _ = parse_word(A, 'a b a', cache=CacheWithLexer())
     assert not isinstance(ast, Error)
 
     x, invf = ast.bimap()
@@ -64,7 +65,7 @@ def test_mutual_left_recursion_with_base_after_bimap_B():
     A = Syntax.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
     B = Syntax.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
 
-    ast, _ = parse_word(B, 'b a b')
+    ast, _ = parse_word(B, 'b a b', cache=CacheWithLexer())
     assert not isinstance(ast, Error)
 
     x, invf = ast.bimap()

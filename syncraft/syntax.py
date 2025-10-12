@@ -716,13 +716,12 @@ def run_state(*,
     syntax: Syntax[A, S], 
     alg: Type[Algebra[A, S]], 
     state: S,
-    cache: Optional[Cache[S, Either[Any, Tuple[A, S]]]] = None,
+    cache: Cache[S, Either[Any, Tuple[A, S]]],
     ) -> Tuple[Any, None | S]:
     parser = syntax(alg)
     if state:
         try:
-            gen_cache = cache or Cache()
-            gen = parser.run(state, cache=gen_cache)
+            gen = parser.run(state, cache=cache)
             result = next(gen)
             if isinstance(result, Incomplete):
                 try:
