@@ -703,11 +703,10 @@ class Syntax(Generic[A, S]):
         builders: Set[FABuilder] = set()
         for _, node in self.spec.walk():
             if isinstance(node, FactorySpec):
-                if node.name == "token":
-                    text = node.kwargs.get("text")
-                    tag = node.kwargs.get("token_type")
-                    if isinstance(text, (str, bytes)):
-                        builders.add(FABuilder.literal(text, tag=tag))
+                text = node.kwargs.get("text")
+                tag = node.kwargs.get("token_type")
+                if isinstance(text, (str, bytes)):
+                    builders.add(FABuilder.literal(text, tag=tag))
 
         return builders
         

@@ -251,6 +251,31 @@ class Cache(Generic[A, Ret]):
     def _call_rule(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], key: A) -> Generator[Any, Any, Ret]:
         return f(key, self)
 
+    def _lexer_checkpoint(self) -> Tuple[Any, Any]:
+        owner: Any = None
+        snapshot: Any = None
+        lexer = getattr(self, "lexer", None)
+        clone = getattr(lexer, "clone", None)
+        if callable(clone):
+            owner = self
+            snapshot = clone()
+        return owner, snapshot
+
+    def _lexer_restore(self, owner: Any, snapshot: Any) -> None:
+        if owner is not None and snapshot is not None:
+            setattr(owner, "lexer", snapshot)
+
+    def _run_rule(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], key: A) -> Generator[Any, Any, Ret]:
+        owner, snapshot = self._lexer_checkpoint()
+        try:
+            result = yield from self._call_rule(f, key)
+        except Exception:
+            self._lexer_restore(owner, snapshot)
+            raise
+        if owner is not None and snapshot is not None and isinstance(result, Left):
+            self._lexer_restore(owner, snapshot)
+        return result
+
     def flat_cache(self)->List[Tuple[str, str, Any, Any]]:
         parts:List[Tuple[str, str, Any, Any]] = [('name', 'id', 'position', 'value')]
         if len(self.cache) > 0:
@@ -463,7 +488,7 @@ class Cache(Generic[A, Ret]):
                 existing.probing = True
                 self._lr_stack.append(existing)
                 try:
-                    attempt = yield from self._call_rule(f, key)
+                    attempt = yield from self._run_rule(f, key)
                 finally:
                     self._lr_stack.pop()
                     existing.probing = False
@@ -481,7 +506,7 @@ class Cache(Generic[A, Ret]):
         try:
             # Opportunistic co-seeding: if this rule is an Expr-like head referencing another lazy head
             # at the same starting position (e.g., Expr vs Term), ensure both are seeded so they will be grouped.
-            seed = yield from self._call_rule(f, key)
+            seed = yield from self._run_rule(f, key)
         except Exception as e:
             cache_bucket.pop(cache_key, None)
             self._lr_stack.pop()
@@ -699,7 +724,7 @@ class Cache(Generic[A, Ret]):
                     )
                 self._force = member
                 try:
-                    attempt = yield from self._call_rule(member.f, member.key)
+                    attempt = yield from self._run_rule(member.f, member.key)
                 finally:
                     self._force = None
                 # Process cross-position agenda before evaluating improvement
@@ -763,7 +788,7 @@ class Cache(Generic[A, Ret]):
                     # Force recomputation of this member's rule body (even if cached InProgress exists)
                     self._force = member
                     try:
-                        attempt = yield from self._call_rule(member.f, member.key)
+                        attempt = yield from self._run_rule(member.f, member.key)
                     finally:
                         self._force = None
                     # DEBUG: log attempt consumption for multi-head detection troubleshooting
@@ -920,7 +945,7 @@ class Cache(Generic[A, Ret]):
                 continue
             old = head.result
             self._force = head
-            attempt = yield from self._call_rule(head.f, head.key)
+            attempt = yield from self._run_rule(head.f, head.key)
             self._force = None
             if self._improved(head.key, old, attempt):
                 head.result = attempt
@@ -953,7 +978,7 @@ class Cache(Generic[A, Ret]):
                         continue
                     old = head.result
                     self._force = head
-                    attempt = yield from self._call_rule(head.f, head.key)
+                    attempt = yield from self._run_rule(head.f, head.key)
                     self._force = None
                     if self._improved(head.key, old, attempt):
                         head.result = attempt

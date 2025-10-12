@@ -226,9 +226,10 @@ class Parser(Algebra[T, ParserState[T]]):
                               Either[Any, Tuple[T, ParserState[T]]]]:
             if not isinstance(cache, CacheWithLexer):
                 raise SyncraftError("Cache must be CacheWithLexer to use lex", offender=cache, expect="CacheWithLexer")
-            lexer = cache.lexer
-            if lexer is None:
+
+            if cache.lexer is None:
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
+            lexer = cache.lexer
             while True:
                 if state.ended():
                     return (yield from cache.return_value(Left(state), state, name='EOF'))

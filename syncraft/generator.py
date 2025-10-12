@@ -303,6 +303,14 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             case Left(error):
                                 return Left(error)
                     case None:
+                        cache_with_lexer: Optional[CacheWithLexer[Any, GenState[T], Either[Any, Tuple[Any, GenState[T]]]]] = None
+                        lexer_snapshot = None
+                        if isinstance(cache, CacheWithLexer):
+                            cache_with_lexer = cache
+                            current_lexer = cache.lexer
+                            if current_lexer is not None:
+                                lexer_snapshot = current_lexer.clone()
+
                         self_result = yield from self.run(left, cache)
                         match self_result:
                             case Right((value, next_input)):
@@ -310,7 +318,12 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             case Left(error):
                                 if isinstance(error, Error):
                                     if error.committed:
+                                        if cache_with_lexer is not None and lexer_snapshot is not None:
+                                            cache_with_lexer.lexer = lexer_snapshot
                                         return Left(replace(error, committed=False))
+                                if cache_with_lexer is not None and lexer_snapshot is not None:
+                                    cache_with_lexer.lexer = lexer_snapshot
+                                    lexer_snapshot = None
                                 other_result = yield from other.run(right, cache)
                                 match other_result:
                                     case Right((value, next_input)):
@@ -435,7 +448,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 return (yield from cache.return_value(Right((tkn, input)), input, name=name))
             else:
                 current = input.ast
-                if not isinstance(current, Token) or not lexer.varify(current.token_type, current.text): 
+                if (not isinstance(current, Token) 
+                    or not lexer.varify(current.token_type, current.text)): 
                     return (yield from cache.return_value( 
                         Left(Error(None, 
                                   message=f"Expected a token, but got {current}.", 

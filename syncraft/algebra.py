@@ -1,14 +1,14 @@
 from __future__ import annotations
 from typing import (
-    Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, 
-    Type, Hashable, Generator, Union
+    Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast,
+    Type, Generator, Union
 )
 
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
+from syncraft.lexer import CacheWithLexer
 from syncraft.constraint import Bindable
-from functools import cached_property
 import re
 
 
@@ -311,13 +311,26 @@ class Algebra(Generic[A, S]):
                         return replace(input, choice_depth=0, safe_base=max(new_safe_base, current_safe_base)) # type: ignore
                 return input
             inp = enter(input)
+            lexer_snapshot = None
+            cache_with_lexer: Optional[CacheWithLexer[Any, S, Either[Any, Tuple[A, S]]]] = None
+            if isinstance(cache, CacheWithLexer):
+                cache_with_lexer = cache
+                current_lexer = cache.lexer
+                if current_lexer is not None:
+                    lexer_snapshot = current_lexer.clone()
+
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
                     return Right((Choice(kind=ChoiceKind.LEFT, value=value), leave(state)))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
+                        if cache_with_lexer is not None and lexer_snapshot is not None:
+                            cache_with_lexer.lexer = lexer_snapshot
                         return Left(replace(err, committed=False))
+                    if cache_with_lexer is not None and lexer_snapshot is not None:
+                        cache_with_lexer.lexer = lexer_snapshot
+                        lexer_snapshot = None
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):

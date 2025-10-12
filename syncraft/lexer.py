@@ -69,6 +69,31 @@ class Lexer(Generic[C]):
             _stack=deque())
         ret.push_mode(None)
         return ret
+
+    def clone(self) -> "Lexer[C]":
+        """Return a deep-ish copy preserving runner state for backtracking."""
+        mode_copies: Dict[str | None, Mode[C]] = {}
+        for name, mode in self.modes.items():
+            mode_copies[name] = replace(
+                mode,
+                runner=mode.runner,
+                priority=dict(mode.priority),
+                skip=frozenset(mode.skip),
+                start_index=mode.start_index,
+            )
+
+        cloned = Lexer(
+            universe=self.universe,
+            modes=mode_copies,
+            actions=dict(self.actions),
+            _stack=deque(),
+        )
+
+        mode_lookup = {id(mode): name for name, mode in self.modes.items()}
+        cloned._stack = deque(
+            mode_copies[mode_lookup[id(mode)]] for mode in self._stack
+        )
+        return cloned
     
     @property
     def current_mode(self) -> Mode[C]:
@@ -176,7 +201,7 @@ class Lexer(Generic[C]):
         return ret
 
     def varify(self, tag: Tag | None, txt: str | bytes | Tuple[C, ...]) -> bool:
-        lexer = self.reset()
+        lexer = self
         for index, char in enumerate(txt):
             match lexer.match(char, index): # type: ignore
                 case Left(_):
