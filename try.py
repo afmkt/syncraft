@@ -1,53 +1,35 @@
 from __future__ import annotations
 from typing import Any
 from dataclasses import dataclass
+from rich import print
+import pytest
 
 from syncraft.finder import find, anything
 from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
-from rich import print
+
 from syncraft.ast import TokenClass
+from syncraft.lexer import CacheWithLexer
+import syncraft.generator as gen
 literal = Syntax.config(token_class = TokenClass.simple()).literal
 
-def test_find()->None:
-    @dataclass
-    class IfThenElse:
-        condition: Any
-        then: Any
-        otherwise: Any
-
-    @dataclass
-    class While:
-        condition:Any
-        body:Any
-
-    WHILE = literal("while")
-    IF = literal("if")
-    ELSE = literal("else")
-    THEN = literal("then")
-    END = literal("end")
-    A = literal('a')
-    B = literal('b')
-    C = literal('c')
-    D = literal('d')
-    M = literal(',')
-    var = A | B | C | D
-    condition = var.sep_by(M).mark('condition') 
-    ifthenelse = (IF >> condition
-              // THEN 
-              + var.sep_by(M).mark('then') 
-              // ELSE 
-              + var.sep_by(M).mark('otherwise') 
-              // END).to(IfThenElse).many()
-    syntax = (WHILE >> condition
-            + ifthenelse.mark('body')
-            // ~END).to(While)
-    sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
-    ast, bound = parse_word(syntax, sql)
-    nodes = list(find(anything, ast))
-
-    assert nodes[0] == ast
+# @pytest.mark.xfail(reason="Finder integration is pending")
+def test1_simple_then() -> None:
+    A, B, C = literal("a"), literal("b"), literal("c")
+    syntax = A // B // C
+    sql = "a b c"
+    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
+    print("---" * 40)
+    print(ast)
+    generated, bound = gen.generate_with(syntax, ast)
+    print("---" * 40)
+    print(generated)
+    assert ast == generated
+    value, bmap = generated.bimap()
+    # print(value)
+    u, v = gen.generate_with(syntax, bmap(value))
+    assert u == generated
 
 
 if __name__ == "__main__":
-    test_find()
+    test1_simple_then()

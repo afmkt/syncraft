@@ -46,8 +46,7 @@ class LexerResult(Generic[C]):
     tag: Tag
     start: int
     end: int
-    mode: str | None
-
+    
 @dataclass
 class Lexer(Generic[C]):
     universe: CodeUniverse[C]
@@ -201,10 +200,7 @@ class Lexer(Generic[C]):
                 LexerResult(
                     tag=tag,
                     start=start,
-                    end=end,
-                    mode=None
-                    if not self._stack
-                    else next((k for k, v in self.modes.items() if v is self._stack[-1]), None),
+                    end=end
                 )
             )
         return Right(None)

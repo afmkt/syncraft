@@ -1200,6 +1200,32 @@ class FABuilder(Generic[C]):
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
 
     # ---- Factory entry points ----
+    def __str__(self) -> str:
+        match self.kind:
+            case _NodeKind.LITERAL:
+                return f"'{self.text!r}'"
+            case _NodeKind.ONEOF:
+                return f"[{self.text!r}]"
+            case _NodeKind.STAR:
+                return f"({self.children[0]})*"
+            case _NodeKind.OPTIONAL:
+                return f"({self.children[0]})?"
+            case _NodeKind.COMPLEMENT:
+                return f"-({self.children[0]})"
+            case _NodeKind.MANY:
+                at_most_str = f", at_most={self.at_most}" if self.at_most is not None else ""
+                return f"({self.children[0]}){{at_least={self.at_least}{at_most_str}}}"
+            case _NodeKind.CONCAT:
+                return f"({self.children[0]} + {self.children[1]})"
+            case _NodeKind.UNION:
+                return f"({self.children[0]} | {self.children[1]})"
+            case _NodeKind.INTERSECT:
+                return f"({self.children[0]} & {self.children[1]})"
+            case _NodeKind.DIFF:
+                return f"({self.children[0]} - {self.children[1]})"
+            case _:
+                return f"FABuilder({self.kind})"
+
 
     @classmethod
     def literal(cls, 

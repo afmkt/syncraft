@@ -14,7 +14,7 @@ literal = Syntax.config(token_class = TokenClass.simple()).literal
 token = Syntax.config(token_class = TokenClass.simple()).token
 
 def from_string(string: str) -> Token:
-    return Token( text=string)
+    return Token(text=string)
 
 
 

@@ -3,7 +3,7 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable, Type
 )
-from syncraft.lexer import Lexer, CacheWithLexer
+from syncraft.lexer import Lexer, CacheWithLexer, LexerResult
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
@@ -36,6 +36,9 @@ class ParserState(Bindable, Generic[T]):
     final: bool = False  
     safe_base: int = 0
     choice_depth: int = 0
+
+    def slice(self, start: int, end: int) -> Tuple[T, ...] | str | bytes:
+        return self.input[start:end]  # type: ignore
 
     def __hash__(self) -> int:
         return self.base + self.index
@@ -140,7 +143,8 @@ class ParserState(Bindable, Generic[T]):
             final=self.final or final,
         )
 
-        
+    def abs_index(self) -> int:
+        return self.base + self.index    
     
     def current(self)->T:
         if self.index >= len(self.input):
@@ -210,13 +214,15 @@ class Parser(Algebra[T, ParserState[T]]):
 
     @classmethod
     def lex(cls, pattern: FABuilder) -> Algebra[T, ParserState[T]]:
-        name = pattern.__name__ if pattern is not None else "." 
+        name = str(pattern)
         def lex_run(state: ParserState[T], 
                     cache:Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
-            lexer = cache.additiional_kwargs.get('lexer')
+            if not isinstance(cache, CacheWithLexer):
+                raise SyncraftError("Cache must be CacheWithLexer to use lex", offender=cache, expect="CacheWithLexer")
+            lexer = cache.lexer
             if lexer is None:
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
             while True:
@@ -227,13 +233,17 @@ class Parser(Algebra[T, ParserState[T]]):
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
                     state = tmp
                 else:
-                    token = state.current()
-                    assert callable(predicate), "Predicate must be callable"
-                    if token is None or not predicate(token):
-                        return (yield from cache.return_value(Left(state), state, name=predicate.__name__))
-                    else:
-                        return (yield from cache.return_value(Right((token, state.advance())), state, name=predicate.__name__))
-        captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
+                    match lexer.match(state.current(), state.abs_index()):
+                        case Left(err):
+                            return (yield from cache.return_value(Left(err), state, name='LEX'))
+                        case Right(None):
+                            pass
+                        case Right(LexerResult(tag=tag, start=start, end=end)):
+                            pass
+                        case _:
+                            raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
+
+        captured: Algebra[T, ParserState[T]] = cls(lex_run, _name=name)
         def error_fn(err: Any) -> Error:
             if isinstance(err, ParserState):
                 return Error(message=f"Cannot match token expect {name}, got '{err.current() if not err.ended() or err.pending() else 'EOF'}'", this=captured, state=err)            

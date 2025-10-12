@@ -456,9 +456,13 @@ class Collect(Generic[A, E], AST):
 @dataclass(frozen=True)
 class Token(AST):
     text: str
+    token_type: Optional[Union[str, Enum]] = None
     def __str__(self) -> str:
-        return f"t.{self.text.strip()}"
-    
+        if self.token_type is None:
+            return f"t.{self.text.strip()}"
+        else:
+            return f"t.({self.text.strip()}, {self.token_type})"
+
     def __repr__(self) -> str:
         return self.__str__()
     
