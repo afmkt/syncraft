@@ -38,7 +38,10 @@ class ParserState(Bindable, Generic[T]):
     choice_depth: int = 0
 
     def slice(self, start: int, end: int) -> Tuple[T, ...] | str | bytes:
-        return self.input[start:end]  # type: ignore
+        start_rel = start - self.base
+        end_rel = end - self.base
+        assert start_rel >= 0 and end_rel <= len(self.input), f"Lexed span no longer buffered {start_rel}:{end_rel}"
+        return self.input[start_rel:end_rel]
 
     def __hash__(self) -> int:
         return self.base + self.index
