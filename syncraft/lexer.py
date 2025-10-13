@@ -1,7 +1,7 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, asdict
 from enum import Enum
-from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable, Mapping
+from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable, Mapping, Hashable, Type
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError, Token, TokenClass
@@ -13,7 +13,6 @@ import random
 C = TypeVar('C', bound=str | int | Enum | Any)
 A = TypeVar('A')
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
-ExtT = TypeVar('ExtT')
 
 
 
@@ -66,6 +65,11 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...] | Token: ...
 
+    @classmethod
+    def tag(cls, *args:Any, **kwargs: Any) -> Tag: ...
+
+    @classmethod
+    def from_syntax(cls, syntax: Any) -> "LexerProtocol[C]": ...
 
 @dataclass
 class Lexer(LexerProtocol[C], Generic[C]):
@@ -73,7 +77,10 @@ class Lexer(LexerProtocol[C], Generic[C]):
     modes: Dict[str | None, Mode[C]] 
     actions: Dict[Tag, ModeAction]
     _stack: deque[Mode[C]] = field(default_factory=deque)
-    
+    @classmethod
+    def tag(cls, fabuilder: FABuilder) -> Tag:
+        return fabuilder.tag
+
     def _reset_runner(self, mode: Mode[C]) -> None:
         mode.runner = mode.runner.reset()
         mode.start_index = None
@@ -307,16 +314,29 @@ class CacheWithLexer(Cache[A, Ret], Generic[C, A, Ret]):
     lexer: Optional[LexerProtocol[C]] = None
 
 
+ExtT = TypeVar('ExtT', bound=Token)
 @dataclass(frozen=True)
 class ExtRule(Generic[ExtT]):
     predicate: Callable[[ExtT], bool]
-    adapter: Callable[[ExtT], Any]
-    generator: Optional[Callable[[random.Random], Any]] = None
+    generator: Callable[[random.Random], Any]
+
+
+T = TypeVar('T', bound=Hashable)
 
 
 @dataclass
 class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
+    token_class: TokenClass[ExtT]
     rules: Dict[Tag, ExtRule[ExtT]] = field(default_factory=dict)
+    @classmethod
+    def tag(cls, token_type: Tag, text: str) -> Tag:
+        return token_type if token_type is not None else text
+
+
+    @classmethod
+    def create(cls, token_class: Callable[..., Any] = Token, case_sensitive: bool = False, strict: bool=False)-> ExtLexer[ExtT]:
+        return ExtLexer(TokenClass(TokenConstructor=token_class, case_sensitive=case_sensitive, strict=strict))
+
 
     def reset(self) -> "ExtLexer[ExtT]":
         return replace(self, rules=dict(self.rules))
@@ -326,31 +346,21 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
 
     def register(
         self,
-        tag: Tag,
-        *,
-        predicate: Optional[Callable[[Any], bool]] = None,
-        adapter: Optional[Callable[[Any], Any]] = None,
-        generator: Optional[Callable[[random.Random], Any]] = None,
+        **kwargs: Any,
     ) -> None:
+        tag = self.tag(**kwargs)
         existing = self.rules.get(tag)
-        pred = predicate or (existing.predicate if existing else (lambda value: True))
-        adapt = adapter or (existing.adapter if existing else (lambda value: value))
-        gen = generator if generator is not None else (existing.generator if existing else None)
-        self.rules[tag] = ExtRule(pred, adapt, gen)
+        pred = self.token_class.predicate(**kwargs) if existing is None else existing.predicate
+        gen = self.token_class.generator(**kwargs) if existing is None else existing.generator
+        self.rules[tag] = ExtRule(pred, gen)
 
     def match(self, item: ExtT, index: int) -> Either[Any, None | LexerResult[ExtT]]:
-        for tag, rule in self.rules.items():
-            try:
-                value = rule.adapter(item)
-            except Exception as exc:  # pragma: no cover - adapter supplied by user
-                return Left(f"External lexer failed to adapt token at index {index}: {exc}")
-            try:
-                matches = rule.predicate(value)
-            except Exception as exc:  # pragma: no cover - predicate error
-                return Left(f"External lexer predicate failed at index {index}: {exc}")
-            if matches:
-                return Right(LexerResult(tag=tag, start=index, end=index + 1, value=value))
+        tag = self.tag(**asdict(item))
+        if tag in self.rules:
+            if self.rules[tag].predicate(item):
+                return Right(LexerResult(tag=tag, start=index, end=index + 1, value=item))
         return Left(f"External lexer has no rule for token at index {index}: {item!r}")
+        
 
     def varify(self, tag: Tag | None, value: Any) -> bool:
         if tag is None:
@@ -374,28 +384,7 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
         return rule.generator(rng)
 
 
-def register_ext_rule(
-    cache: CacheWithLexer[Any, Any, Any],
-    *,
-    tag: Tag,
-    predicate: Optional[Callable[[Any], bool]] = None,
-    adapter: Optional[Callable[[Any], Any]] = None,
-    generator: Optional[Callable[[random.Random], Any]] = None,
-) -> ExtLexer[Any]:
-    if cache.lexer is None:
-        cache.lexer = ExtLexer()
-    elif not isinstance(cache.lexer, ExtLexer):
-        raise SyncraftError(
-            "CacheWithLexer already holds a scannerless lexer; cannot attach external token rules",
-            offender=cache.lexer,
-            expect="ExtLexer",
-        )
-    ext = cache.lexer
-    ext.register(tag, predicate=predicate, adapter=adapter, generator=generator)
-    return ext
 
 
-def token_rule_tag(token_class: TokenClass[Any], kwargs: Mapping[str, Any]) -> str:
-    constructor = getattr(token_class.TokenConstructor, "__name__", repr(token_class.TokenConstructor))
-    description = token_class.describe(**dict(kwargs))
-    return f"{constructor}{description}"
+
+

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
-    List, Generator as PyGenerator, cast
+    List, Generator as PyGenerator, cast, Type
 )
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
-from syncraft.lexer import CacheWithLexer, ExtLexer, register_ext_rule, token_rule_tag
+from syncraft.lexer import CacheWithLexer, ExtLexer, LexerProtocol
 from syncraft.fa import FABuilder
 from syncraft.cache import Cache, Either, Left, Right
 
@@ -398,7 +398,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             if input.pruned:
                 assert callable(generator), "In pruned mode, a generator function must be provided."
-                return (yield from cache.return_value(Right((generator(), input)), input, name=generator.__name__))
+                return (yield from cache.return_value(Right((generator(input.rng()), input)), input, name=generator.__name__))
             else:
                 current = input.ast
                 assert callable(predicate), "In non-pruned mode, a predicate function must be provided."
@@ -432,8 +432,11 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
         
     @classmethod
-    def lex(cls, pattern: FABuilder) -> Algebra[T, GenState[T]]:
-        name = str(pattern)
+    def lex(cls,
+            *,
+            lexer_class: Type[LexerProtocol],
+            **kwargs: Any) -> Algebra[T, GenState[T]]:
+        tag = lexer_class.tag(**kwargs)
         def lex_run(input: GenState[T], 
                     cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
                               YieldChannelType, 
@@ -442,41 +445,39 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             if not isinstance(cache, CacheWithLexer):
                 raise SyncraftError("Cache must be CacheWithLexer to use lex", offender=cache, expect="CacheWithLexer")
             lexer = cache.lexer
-            if lexer is None:
+            if not isinstance(lexer, LexerProtocol):
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
-
             if input.pruned:
-                input = input.fork(tag=pattern.tag)
-                generated = lexer.gen(pattern.tag, input.rng())
+                input = input.fork(tag=tag)
+                generated = lexer.gen(tag, input.rng())
                 if isinstance(generated, (str, bytes, tuple)):
-                    result_value = Token(text=generated, token_type=pattern.tag)
+                    result_value = Token(text=generated, token_type=tag)
                 else:
                     result_value = generated
                 parsed_value = cast(ParseResult[T], result_value)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tag)))
             else:
                 current = input.ast
-                expected_tag = pattern.tag
                 if isinstance(lexer, ExtLexer):
-                    is_valid = lexer.varify(expected_tag, current)
+                    is_valid = lexer.varify(tag, current)
                 else:
-                    is_valid = isinstance(current, Token) and lexer.varify(expected_tag, current)
+                    is_valid = isinstance(current, Token) and lexer.varify(tag, current)
                 if not is_valid:
                     return (yield from cache.return_value(
                         Left(
                             Error(
                                 None,
-                                message=f"Expected token tag {expected_tag}, but got {current}.",
+                                message=f"Expected token tag {tag}, but got {current}.",
                                 state=input,
                             )
                         ),
                         input,
-                        name=name,
+                        name=str(tag),
                     ))
                 parsed_value = cast(ParseResult[T], current)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tag)))
 
-        return cls(lex_run, _name=name) # type: ignore
+        return cls(lex_run, _name=str(tag)) # type: ignore
 
 
 

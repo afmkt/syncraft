@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List, Dict, Set, Iterator
+    Type, List, Dict, Set, Iterator, Hashable
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -667,19 +667,20 @@ class Syntax(Generic[A, S]):
 
         return _rehydrate(cls, spec, c)
 
-    def leaf(self, filter: Callable[[str, Any], bool]) -> Set[Tuple[str, Any]]:
-        leaves: Set[Tuple[str, Any]] = set()
+    def leaf(self, visitor: Callable[[str, Any], Any]) -> Set[Any]:
+        leaves: Set[Any] = set()
         for _, node in self.spec.walk():
             if isinstance(node, FactorySpec):
                 for key, value in node.kwargs.items():
-                    if filter(key, value):
-                        leaves.add((key, value))
+                    data = visitor(key, value)
+                    if data is not None:
+                        leaves.add(data)
         return leaves
 
     def fabuilder(self ) -> Set[FABuilder[Any]]:
-        return {v for _, v in self.leaf(lambda k, v: isinstance(v, FABuilder))}
+        return {v for _, v in self.leaf(lambda k, v: (k, v) if isinstance(v, FABuilder) else None)}
         
-    
+
 
 def run_state(*,
     syntax: Syntax[A, S], 

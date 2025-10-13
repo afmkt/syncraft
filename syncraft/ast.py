@@ -9,6 +9,7 @@ from typing import (
 )
 
 from syncraft.utils import CallWith
+import random
 import rstr
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
@@ -510,6 +511,15 @@ class TokenClass(Generic[T]):
             parts.append(str(x))
         return "(" + ", ".join(parts) + ")"
 
+    def config_fields(self) -> List[str]:
+        return [f.name for f in fields(self) if f.metadata.get("is_config", False)]
+        
+    
+    def data_fields(self) -> List[str]:
+        c = CallWith(self.TokenConstructor)
+        return list(c.missing_keyword_params)
+
+
     def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         config_dict = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
         config = {k: v for k, v in kwargs.items() if k in config_dict}
@@ -545,9 +555,9 @@ class TokenClass(Generic[T]):
         pred.__name__ = f"P{self.describe(**kwargs)}"
         return pred
 
-    def generator(self, **kwargs: Any) -> Callable[[], T]:
+    def generator(self, **kwargs: Any) -> Callable[[random.Random], T]:
         config, kwargs = self.extract_config(kwargs)
-        def gen() -> T:
+        def gen(rnd: random.Random) -> T:
             data = {}
             for k, v in kwargs.items():
                 if isinstance(v, re.Pattern):
