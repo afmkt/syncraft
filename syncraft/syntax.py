@@ -150,36 +150,7 @@ class Syntax(Generic[A, S]):
     """
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
-
-    # def algebra(self, 
-    #             name: str | MethodType | FunctionType, 
-    #             *args: Any, 
-    #             fallback: Optional[Syntax[A, S]] = None,
-    #             **kwargs: Any) -> Syntax[A, S]:
-    #     def algebra_run(cls: Type[Algebra[Any, S]], **global_kwargs: Any) -> Algebra[Any, S]:
-    #         a = self(cls, **global_kwargs)
-    #         if isinstance(name, str):
-    #             attr = getattr(a, name, None) or getattr(cls, name, None)
-    #             if attr is None:
-    #                 return a if fallback is None else fallback(cls, **global_kwargs)
-    #             if isinstance(attr, (staticmethod, classmethod)):
-    #                 attr = attr.__get__(None, cls)
-    #             elif isinstance(attr, FunctionType):
-    #                 attr = MethodType(attr, a)
-    #             else:
-    #                 return a if fallback is None else fallback(cls, **global_kwargs)
-    #             return cast(Algebra[Any, S], attr(*args, **kwargs))
-    #         elif isinstance(name, MethodType):
-    #             f = MethodType(name.__func__, a)
-    #             return cast(Algebra[Any, S], f(*args, **kwargs))
-    #         elif isinstance(name, FunctionType):
-    #             f = MethodType(name, a)
-    #             return cast(Algebra[Any, S], f(*args, **kwargs))
-    #         else:
-    #             return a if fallback is None else fallback(cls, **global_kwargs)
-    #     return replace(self, alg_f=algebra_run)
-        
-
+    
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
 
