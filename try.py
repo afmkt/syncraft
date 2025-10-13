@@ -18,7 +18,9 @@ def test_spec_preserves_terminal_data_for_lexers() -> None:
     grammar = (literal("a") + identifier) | literal("b")
 
     builders = grammar.fabuilder()
+    
     seen = {(builder.text, builder.tag) for builder in builders}
+    print(seen)
     assert seen == {("a", 'a'), ("id", "IDENT"), ("b", 'b')}
 
 

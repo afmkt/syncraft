@@ -215,7 +215,7 @@ class Parser(Algebra[T, ParserState[T]]):
         return captured        
 
     @classmethod
-    def primitive_token(
+    def token(
         cls,
         *,
         token_class: TokenClass,
@@ -229,51 +229,6 @@ class Parser(Algebra[T, ParserState[T]]):
             )
         predicate = token_class.predicate(**kwargs)
         return cls.primitive(predicate=predicate)
-
-    @classmethod
-    def lex_token(
-        cls,
-        *,
-        token_class: TokenClass,
-        **kwargs: Any,
-    ) -> Algebra[T, ParserState[T]]:
-        if token_class is None:
-            raise SyncraftError(
-                "TokenClass not configured for Parser",
-                offender=cls,
-                expect=TokenClass,
-            )
-        predicate = token_class.predicate(**kwargs)
-
-        tag = token_rule_tag(token_class, kwargs)
-        pattern: FABuilder[Any] = FABuilder.literal("", tag=tag)
-        lex_algebra = cls.lex(pattern)
-
-        def token_run(
-            state: ParserState[T],
-            cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]],
-        ):
-            
-            if isinstance(cache, CacheWithLexer):
-                if cache.lexer is None or isinstance(cache.lexer, ExtLexer):
-                    register_ext_rule(
-                        cache,
-                        tag=tag,
-                        predicate=predicate,
-                        adapter=lambda x: x,  
-                    )
-            return (yield from lex_algebra.run(state, cache))
-
-        return cls(token_run, _name=predicate.__name__)
-
-    @classmethod
-    def token(
-        cls,
-        *,
-        token_class: TokenClass,
-        **kwargs: Any,
-    ) -> Algebra[T, ParserState[T]]:
-        return cls.lex_token(token_class=token_class, **kwargs)
 
     @classmethod
     def lex(cls, 

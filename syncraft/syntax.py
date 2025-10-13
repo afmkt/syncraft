@@ -679,6 +679,7 @@ class Syntax(Generic[A, S]):
     def fabuilder(self ) -> Set[FABuilder[Any]]:
         return {v for _, v in self.leaf(lambda k, v: isinstance(v, FABuilder))}
         
+    
 
 def run_state(*,
     syntax: Syntax[A, S], 

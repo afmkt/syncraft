@@ -414,7 +414,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     @classmethod
-    def primitive_token(
+    def token(
         cls,
         *,
         token_class: TokenClass,
@@ -430,79 +430,6 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         base_generator = token_class.generator(**kwargs)
         return cls.primitive(predicate=predicate, generator=base_generator)
 
-    @classmethod
-    def lex_token(
-        cls,
-        *,
-        token_class: TokenClass,
-        **kwargs: Any,
-    ) -> Algebra[ParseResult[T], GenState[T]]:
-        if token_class is None:
-            raise SyncraftError(
-                "TokenClass not configured for Generator",
-                offender=cls,
-                expect=TokenClass,
-            )
-        predicate = token_class.predicate(**kwargs)
-        base_generator = token_class.generator(**kwargs)
-
-        primitive = cls.primitive(
-            predicate=predicate,
-            generator=base_generator,
-        )
-
-        tag = token_rule_tag(token_class, kwargs)
-        pattern: FABuilder[Any] = FABuilder.literal("", tag=tag)
-        lex_algebra = cls.lex(pattern)
-
-        def identity_adapter(value: Any) -> Any:
-            return value
-
-        def ext_generator(rng: random.Random) -> Any:
-            return base_generator()
-
-        def token_run(
-            input: GenState[T],
-            cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]],
-        ):
-            use_lex = False
-            if isinstance(cache, CacheWithLexer):
-                try:
-                    if cache.lexer is None or isinstance(cache.lexer, ExtLexer):
-                        register_ext_rule(
-                            cache,
-                            tag=tag,
-                            predicate=predicate,
-                            adapter=identity_adapter,
-                            generator=ext_generator,
-                        )
-                        use_lex = True
-                except SyncraftError:
-                    use_lex = False
-            if use_lex:
-                lex_result = yield from lex_algebra.run(input, cache)
-                return cast(Either[Any, Tuple[ParseResult[T], GenState[T]]], lex_result)
-            primitive_gen = cast(
-                PyGenerator[
-                    YieldChannelType,
-                    SendChannelType,
-                    Either[Any, Tuple[ParseResult[T], GenState[T]]],
-                ],
-                primitive.run(input, cache),
-            )
-            return (yield from primitive_gen)
-
-        return cls(token_run, _name=predicate.__name__)
-
-    @classmethod
-    def token(
-        cls,
-        *,
-        token_class: TokenClass,
-        **kwargs: Any,
-    ) -> Algebra[ParseResult[T], GenState[T]]:
-        return cls.lex_token(token_class=token_class, **kwargs)
-        
         
     @classmethod
     def lex(cls, pattern: FABuilder) -> Algebra[T, GenState[T]]:
