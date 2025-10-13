@@ -1,10 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable
+from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable, Mapping
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
-from syncraft.ast import SyncraftError, Token
+from syncraft.ast import SyncraftError, Token, TokenClass
 from syncraft.cache import Either, Left, Right, Cache
 from collections import deque, defaultdict
 
@@ -307,50 +307,95 @@ class CacheWithLexer(Cache[A, Ret], Generic[C, A, Ret]):
     lexer: Optional[LexerProtocol[C]] = None
 
 
+@dataclass(frozen=True)
+class ExtRule(Generic[ExtT]):
+    predicate: Callable[[ExtT], bool]
+    adapter: Callable[[ExtT], Any]
+    generator: Optional[Callable[[random.Random], Any]] = None
+
+
 @dataclass
 class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
-    adapter: Callable[[ExtT], Token]
-    verifier: Optional[Callable[[Tag | None, Token], bool]] = None
-    generator: Optional[Callable[[Tag, random.Random], Token | str | bytes | Tuple[ExtT, ...]]] = None
+    rules: Dict[Tag, ExtRule[ExtT]] = field(default_factory=dict)
 
     def reset(self) -> "ExtLexer[ExtT]":
-        return replace(self)
+        return replace(self, rules=dict(self.rules))
 
     def clone(self) -> "ExtLexer[ExtT]":
-        return replace(self)
+        return replace(self, rules=dict(self.rules))
+
+    def register(
+        self,
+        tag: Tag,
+        *,
+        predicate: Optional[Callable[[Any], bool]] = None,
+        adapter: Optional[Callable[[Any], Any]] = None,
+        generator: Optional[Callable[[random.Random], Any]] = None,
+    ) -> None:
+        existing = self.rules.get(tag)
+        pred = predicate or (existing.predicate if existing else (lambda value: True))
+        adapt = adapter or (existing.adapter if existing else (lambda value: value))
+        gen = generator if generator is not None else (existing.generator if existing else None)
+        self.rules[tag] = ExtRule(pred, adapt, gen)
 
     def match(self, item: ExtT, index: int) -> Either[Any, None | LexerResult[ExtT]]:
-        try:
-            token = self.adapter(item)
-        except Exception as exc:  # pragma: no cover - adapter supplied by user
-            return Left(f"External lexer failed to adapt token at index {index}: {exc}")
-
-        if self.verifier is not None and not self.verifier(token.token_type, token):
-            return Left(f"External lexer rejected token at index {index}: {token}")
-
-        return Right(LexerResult(tag=token.token_type, start=index, end=index + 1, value=token))
+        for tag, rule in self.rules.items():
+            try:
+                value = rule.adapter(item)
+            except Exception as exc:  # pragma: no cover - adapter supplied by user
+                return Left(f"External lexer failed to adapt token at index {index}: {exc}")
+            try:
+                matches = rule.predicate(value)
+            except Exception as exc:  # pragma: no cover - predicate error
+                return Left(f"External lexer predicate failed at index {index}: {exc}")
+            if matches:
+                return Right(LexerResult(tag=tag, start=index, end=index + 1, value=value))
+        return Left(f"External lexer has no rule for token at index {index}: {item!r}")
 
     def varify(self, tag: Tag | None, value: Any) -> bool:
-        token: Token
-        if isinstance(value, Token):
-            token = value
-        else:
-            try:
-                token = self.adapter(value)
-            except Exception:  # pragma: no cover - adapter failure treated as mismatch
-                return False
-
-        if tag is not None and token.token_type != tag:
+        if tag is None:
             return False
-        if self.verifier is None:
-            return True
-        return self.verifier(tag, token)
+        rule = self.rules.get(tag)
+        if rule is None:
+            return False
+        try:
+            return rule.predicate(value)
+        except Exception:
+            return False
 
-    def gen(self, tag: Tag, rng: random.Random) -> Token | str | bytes | Tuple[ExtT, ...]:
-        if self.generator is None:
+    def gen(self, tag: Tag, rng: random.Random) -> Any:
+        rule = self.rules.get(tag)
+        if rule is None or rule.generator is None:
             raise SyncraftError(
-                "External lexer cannot generate tokens without a generator callback",
+                f"External lexer cannot generate tokens for tag '{tag}'",
                 offender=self,
                 expect="generator callable",
             )
-        return self.generator(tag, rng)
+        return rule.generator(rng)
+
+
+def register_ext_rule(
+    cache: CacheWithLexer[Any, Any, Any],
+    *,
+    tag: Tag,
+    predicate: Optional[Callable[[Any], bool]] = None,
+    adapter: Optional[Callable[[Any], Any]] = None,
+    generator: Optional[Callable[[random.Random], Any]] = None,
+) -> ExtLexer[Any]:
+    if cache.lexer is None:
+        cache.lexer = ExtLexer()
+    elif not isinstance(cache.lexer, ExtLexer):
+        raise SyncraftError(
+            "CacheWithLexer already holds a scannerless lexer; cannot attach external token rules",
+            offender=cache.lexer,
+            expect="ExtLexer",
+        )
+    ext = cache.lexer
+    ext.register(tag, predicate=predicate, adapter=adapter, generator=generator)
+    return ext
+
+
+def token_rule_tag(token_class: TokenClass[Any], kwargs: Mapping[str, Any]) -> str:
+    constructor = getattr(token_class.TokenConstructor, "__name__", repr(token_class.TokenConstructor))
+    description = token_class.describe(**dict(kwargs))
+    return f"{constructor}{description}"

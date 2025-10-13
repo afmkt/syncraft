@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, Tuple, Optional,  Callable, Generic, Hashable,
-    List, Generator as PyGenerator
+    Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
+    List, Generator as PyGenerator, cast
 )
 from functools import cached_property
 from dataclasses import dataclass, replace
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
-from syncraft.lexer import CacheWithLexer
+from syncraft.lexer import CacheWithLexer, ExtLexer, register_ext_rule, token_rule_tag
 from syncraft.fa import FABuilder
 from syncraft.cache import Cache, Either, Left, Right
 
@@ -414,17 +414,94 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     @classmethod
-    def token(cls, 
-              *, 
-              token_class:TokenClass,               
-              **kwargs: Any)-> Algebra[ParseResult[T], GenState[T]]: 
+    def primitive_token(
+        cls,
+        *,
+        token_class: TokenClass,
+        **kwargs: Any,
+    ) -> Algebra[ParseResult[T], GenState[T]]:
         if token_class is None:
-            raise SyncraftError("TokenClass not configured for Generator", offender=cls, expect=TokenClass)
-        gen = token_class.generator(**kwargs)  
-        pred = token_class.predicate(**kwargs)
-        return cls.primitive(
-            predicate=pred,
-            generator=gen)
+            raise SyncraftError(
+                "TokenClass not configured for Generator",
+                offender=cls,
+                expect=TokenClass,
+            )
+        predicate = token_class.predicate(**kwargs)
+        base_generator = token_class.generator(**kwargs)
+        return cls.primitive(predicate=predicate, generator=base_generator)
+
+    @classmethod
+    def lex_token(
+        cls,
+        *,
+        token_class: TokenClass,
+        **kwargs: Any,
+    ) -> Algebra[ParseResult[T], GenState[T]]:
+        if token_class is None:
+            raise SyncraftError(
+                "TokenClass not configured for Generator",
+                offender=cls,
+                expect=TokenClass,
+            )
+        predicate = token_class.predicate(**kwargs)
+        base_generator = token_class.generator(**kwargs)
+
+        primitive = cls.primitive(
+            predicate=predicate,
+            generator=base_generator,
+        )
+
+        tag = token_rule_tag(token_class, kwargs)
+        pattern: FABuilder[Any] = FABuilder.literal("", tag=tag)
+        lex_algebra = cls.lex(pattern)
+
+        def identity_adapter(value: Any) -> Any:
+            return value
+
+        def ext_generator(rng: random.Random) -> Any:
+            return base_generator()
+
+        def token_run(
+            input: GenState[T],
+            cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]],
+        ):
+            use_lex = False
+            if isinstance(cache, CacheWithLexer):
+                try:
+                    if cache.lexer is None or isinstance(cache.lexer, ExtLexer):
+                        register_ext_rule(
+                            cache,
+                            tag=tag,
+                            predicate=predicate,
+                            adapter=identity_adapter,
+                            generator=ext_generator,
+                        )
+                        use_lex = True
+                except SyncraftError:
+                    use_lex = False
+            if use_lex:
+                lex_result = yield from lex_algebra.run(input, cache)
+                return cast(Either[Any, Tuple[ParseResult[T], GenState[T]]], lex_result)
+            primitive_gen = cast(
+                PyGenerator[
+                    YieldChannelType,
+                    SendChannelType,
+                    Either[Any, Tuple[ParseResult[T], GenState[T]]],
+                ],
+                primitive.run(input, cache),
+            )
+            return (yield from primitive_gen)
+
+        return cls(token_run, _name=predicate.__name__)
+
+    @classmethod
+    def token(
+        cls,
+        *,
+        token_class: TokenClass,
+        **kwargs: Any,
+    ) -> Algebra[ParseResult[T], GenState[T]]:
+        return cls.lex_token(token_class=token_class, **kwargs)
         
         
     @classmethod
@@ -443,22 +520,34 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
             if input.pruned:
                 input = input.fork(tag=pattern.tag)
-                txt = lexer.gen(pattern.tag, input.rng())
-                if isinstance(txt, Token):
-                    tkn = txt
+                generated = lexer.gen(pattern.tag, input.rng())
+                if isinstance(generated, (str, bytes, tuple)):
+                    result_value = Token(text=generated, token_type=pattern.tag)
                 else:
-                    tkn = Token(text=txt, token_type=pattern.tag)
-                return (yield from cache.return_value(Right((tkn, input)), input, name=name))
+                    result_value = generated
+                parsed_value = cast(ParseResult[T], result_value)
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
             else:
                 current = input.ast
-                if (not isinstance(current, Token) 
-                    or not lexer.varify(current.token_type, current)): 
-                    return (yield from cache.return_value( 
-                        Left(Error(None, 
-                                  message=f"Expected a token, but got {current}.", 
-                                  state=input)), input, name=name))
+                expected_tag = pattern.tag
+                if isinstance(lexer, ExtLexer):
+                    is_valid = lexer.varify(expected_tag, current)
                 else:
-                    return (yield from cache.return_value(Right((current, input)), input, name=name)) # type: ignore
+                    is_valid = isinstance(current, Token) and lexer.varify(expected_tag, current)
+                if not is_valid:
+                    return (yield from cache.return_value(
+                        Left(
+                            Error(
+                                None,
+                                message=f"Expected token tag {expected_tag}, but got {current}.",
+                                state=input,
+                            )
+                        ),
+                        input,
+                        name=name,
+                    ))
+                parsed_value = cast(ParseResult[T], current)
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
 
         return cls(lex_run, _name=name) # type: ignore
 

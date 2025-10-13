@@ -696,19 +696,17 @@ class Syntax(Generic[A, S]):
 
         return _rehydrate(cls, spec, c)
 
-
-
-    def fabuilder(self) -> Set[FABuilder[Any]]:
-
-        builders: Set[FABuilder] = set()
+    def leaf(self, filter: Callable[[str, Any], bool]) -> Set[Tuple[str, Any]]:
+        leaves: Set[Tuple[str, Any]] = set()
         for _, node in self.spec.walk():
             if isinstance(node, FactorySpec):
-                text = node.kwargs.get("text")
-                tag = node.kwargs.get("token_type")
-                if isinstance(text, (str, bytes)):
-                    builders.add(FABuilder.literal(text, tag=tag))
+                for key, value in node.kwargs.items():
+                    if filter(key, value):
+                        leaves.add((key, value))
+        return leaves
 
-        return builders
+    def fabuilder(self ) -> Set[FABuilder[Any]]:
+        return {v for _, v in self.leaf(lambda k, v: isinstance(v, FABuilder))}
         
 
 def run_state(*,

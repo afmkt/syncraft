@@ -490,21 +490,6 @@ T = TypeVar('T', bound=Hashable)
 
 @dataclass(frozen=True)
 class TokenClass(Generic[T]):
-    """
-    A generic class for describing token types and matching/generating tokens.
-
-    TokenClass encapsulates a token constructor (such as a dataclass or callable) and configuration
-    for matching and generating tokens. It supports case sensitivity and strictness, and provides
-    methods for extracting configuration, building predicates for token matching, and generating tokens.
-
-    Attributes:
-        TokenConstructor: Callable[..., T]
-            A callable (usually a dataclass) that constructs a token of type T from keyword arguments.
-        case_sensitive: bool
-            Whether string matching should be case sensitive (default: False).
-        strict: bool
-            Whether to require all specified fields to exist on the token (default: False).
-    """
     TokenConstructor: Callable[..., T]
     case_sensitive: bool = field(default=False, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
@@ -514,15 +499,6 @@ class TokenClass(Generic[T]):
         return TokenClass(Token)        
     
     def describe(self, **kwargs: Any) -> str:
-        """
-        Generates a human-readable description of the token class based on provided field values.
-
-        Args:
-            kwargs: Dictionary of token field values to include in the description.
-
-        Returns:
-            str: A string representation of the token class and its specified fields.
-        """
         c = CallWith(self.TokenConstructor, **kwargs)
         parts = []
         for k, v in c.kwargs.items():
@@ -535,32 +511,12 @@ class TokenClass(Generic[T]):
         return "(" + ", ".join(parts) + ")"
 
     def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """
-        Separates configuration options from token field parameters.
-
-        Args:
-            kwargs: Dictionary of keyword arguments passed to predicate/generator.
-
-        Returns:
-            Tuple[config, params]:
-                config: Dict of config options (e.g., case_sensitive, strict),
-                params: Dict of token field values to match or generate.
-        """
         config_dict = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
         config = {k: v for k, v in kwargs.items() if k in config_dict}
         params = {k: v for k, v in kwargs.items() if k not in config_dict}
         return config_dict | config, params
 
     def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
-        """
-        Returns a predicate function that matches tokens based on provided field values and config.
-
-        Keyword Args:
-            Any token field or config option (e.g., case_sensitive, strict).
-
-        Returns:
-            Callable[[T], bool]: Predicate that returns True if a token matches the criteria.
-        """
         config, kwargs = self.extract_config(kwargs)
         case_sensitive = config.get('case_sensitive', False)
         strict = config.get('strict', False)
@@ -590,15 +546,6 @@ class TokenClass(Generic[T]):
         return pred
 
     def generator(self, **kwargs: Any) -> Callable[[], T]:
-        """
-        Returns a generator function that produces tokens with specified field values.
-
-        Keyword Args:
-            Any token field or config option (config options are ignored for generation).
-
-        Returns:
-            Callable[[], T]: Generator that returns a new token instance.
-        """
         config, kwargs = self.extract_config(kwargs)
         def gen() -> T:
             data = {}

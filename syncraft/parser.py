@@ -4,7 +4,15 @@ from typing import (
     Generic, Generator, Callable, Type
 )
 from syncraft.charset import CodeUniverse
-from syncraft.lexer import Lexer, CacheWithLexer, LexerResult
+from syncraft.lexer import (
+    Lexer,
+    CacheWithLexer,
+    LexerResult,
+    register_ext_rule,
+    token_rule_tag,
+    LexerProtocol,
+    ExtLexer,
+)
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
 from syncraft.algebra import (
@@ -207,17 +215,71 @@ class Parser(Algebra[T, ParserState[T]]):
         return captured        
 
     @classmethod
-    def token(cls,
-              *, 
-              token_class:TokenClass, 
-              **kwargs: Any) -> Algebra[T, ParserState[T]]:
+    def primitive_token(
+        cls,
+        *,
+        token_class: TokenClass,
+        **kwargs: Any,
+    ) -> Algebra[T, ParserState[T]]:
         if token_class is None:
-            raise SyncraftError("TokenClass not configured for Parser", offender=cls, expect=TokenClass)
-        pred = token_class.predicate(**kwargs)
-        return cls.primitive(predicate=pred)
+            raise SyncraftError(
+                "TokenClass not configured for Parser",
+                offender=cls,
+                expect=TokenClass,
+            )
+        predicate = token_class.predicate(**kwargs)
+        return cls.primitive(predicate=predicate)
 
     @classmethod
-    def lex(cls, pattern: FABuilder) -> Algebra[T, ParserState[T]]:
+    def lex_token(
+        cls,
+        *,
+        token_class: TokenClass,
+        **kwargs: Any,
+    ) -> Algebra[T, ParserState[T]]:
+        if token_class is None:
+            raise SyncraftError(
+                "TokenClass not configured for Parser",
+                offender=cls,
+                expect=TokenClass,
+            )
+        predicate = token_class.predicate(**kwargs)
+
+        tag = token_rule_tag(token_class, kwargs)
+        pattern: FABuilder[Any] = FABuilder.literal("", tag=tag)
+        lex_algebra = cls.lex(pattern)
+
+        def token_run(
+            state: ParserState[T],
+            cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]],
+        ):
+            
+            if isinstance(cache, CacheWithLexer):
+                if cache.lexer is None or isinstance(cache.lexer, ExtLexer):
+                    register_ext_rule(
+                        cache,
+                        tag=tag,
+                        predicate=predicate,
+                        adapter=lambda x: x,  
+                    )
+            return (yield from lex_algebra.run(state, cache))
+
+        return cls(token_run, _name=predicate.__name__)
+
+    @classmethod
+    def token(
+        cls,
+        *,
+        token_class: TokenClass,
+        **kwargs: Any,
+    ) -> Algebra[T, ParserState[T]]:
+        return cls.lex_token(token_class=token_class, **kwargs)
+
+    @classmethod
+    def lex(cls, 
+            pattern: FABuilder,
+            predicate: Callable[..., bool]=lambda x: True
+            ) -> Algebra[T, ParserState[T]]:
         name = str(pattern)
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
@@ -226,8 +288,7 @@ class Parser(Algebra[T, ParserState[T]]):
                               Either[Any, Tuple[T, ParserState[T]]]]:
             if not isinstance(cache, CacheWithLexer):
                 raise SyncraftError("Cache must be CacheWithLexer to use lex", offender=cache, expect="CacheWithLexer")
-
-            if cache.lexer is None:
+            if not isinstance(cache.lexer, LexerProtocol):
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
             lexer = cache.lexer
             while True:
@@ -245,13 +306,15 @@ class Parser(Algebra[T, ParserState[T]]):
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
-                            if isinstance(lexeme, Token):
-                                token = lexeme
-                            elif lexeme is not None:
-                                token = Token(text=lexeme, token_type=tag)
-                            else:
+                            if lexeme is None:
                                 token = Token(text=state.slice(start, end), token_type=tag)
-                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name))
+                            else:
+                                token = lexeme
+                            if callable(predicate) and not predicate(token):
+                                err = Error(message=f"Cannot match token expect {name}, got '{token}'", this=lex_run, state=state)            
+                                return (yield from cache.return_value(Left(err), state, name=name))
+                            else:
+                                return (yield from cache.return_value(Right((token, state.advance())), state, name=name))
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
 
