@@ -244,8 +244,13 @@ class Parser(Algebra[T, ParserState[T]]):
                             return (yield from cache.return_value(Left(err), state, name=name))
                         case Right(None):
                             state = state.advance()
-                        case Right(LexerResult(tag=tag, start=start, end=end)):
-                            token = Token(text=state.slice(start, end), token_type=tag)
+                        case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
+                            if isinstance(lexeme, Token):
+                                token = lexeme
+                            elif lexeme is not None:
+                                token = Token(text=lexeme, token_type=tag)
+                            else:
+                                token = Token(text=state.slice(start, end), token_type=tag)
                             return (yield from cache.return_value(Right((token, state.advance())), state, name=name))
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")

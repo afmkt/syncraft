@@ -1,10 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple
+from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
-from syncraft.ast import SyncraftError
+from syncraft.ast import SyncraftError, Token
 from syncraft.cache import Either, Left, Right, Cache
 from collections import deque, defaultdict
 
@@ -13,6 +13,7 @@ import random
 C = TypeVar('C', bound=str | int | Enum | Any)
 A = TypeVar('A')
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
+ExtT = TypeVar('ExtT')
 
 
 
@@ -26,6 +27,7 @@ class Mode(Generic[C]):
     rdfa: ReverseDFA[C]
     priority: Dict[Tag, int] = field(default_factory=dict)
     skip: frozenset[Tag] = field(default_factory=frozenset)
+    greedy: frozenset[Tag] = field(default_factory=frozenset)
     start_index: Optional[int] = None
 
     def reset(self) -> Mode[C]:
@@ -49,9 +51,24 @@ class LexerResult(Generic[C]):
     tag: Tag | None
     start: int
     end: int
-    
+    value: Any | None = None
+
+
+@runtime_checkable
+class LexerProtocol(Protocol, Generic[C]):
+    def reset(self) -> "LexerProtocol[C]": ...
+
+    def clone(self) -> "LexerProtocol[C]": ...
+
+    def match(self, char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
+
+    def varify(self, tag: Tag | None, value: Any) -> bool: ...
+
+    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...] | Token: ...
+
+
 @dataclass
-class Lexer(Generic[C]):
+class Lexer(LexerProtocol[C], Generic[C]):
     universe: CodeUniverse[C]
     modes: Dict[str | None, Mode[C]] 
     actions: Dict[Tag, ModeAction]
@@ -79,6 +96,7 @@ class Lexer(Generic[C]):
                 runner=mode.runner,
                 priority=dict(mode.priority),
                 skip=frozenset(mode.skip),
+                greedy=frozenset(mode.greedy),
                 start_index=mode.start_index,
             )
 
@@ -129,6 +147,7 @@ class Lexer(Generic[C]):
             raise SyncraftError("Cannot build a Mode with no rules", offender=rules, expect="at least one rule")
         skip: Set[Tag] = set()
         priority: Dict[Tag, int] = {}
+        greedy: Set[Tag] = set()
         combined: Optional[NFA[C]] = None 
         for rule in rules:
             if rule.skip:
@@ -137,13 +156,23 @@ class Lexer(Generic[C]):
             if rule.priority != 0:
                 assert rule.tag is not None, "Priority rules must have a tag"
                 priority[rule.tag] = rule.priority
+            if rule.greedy:
+                assert rule.tag is not None, "Greedy rules must have a tag"
+                greedy.add(rule.tag)
             nfa = rule.compile(universe).nfa
             nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
         dfa = combined.dfa
-        return Mode(runner=dfa.runner(), rdfa=dfa.reverse, priority=dict(priority), skip=frozenset(skip))
+        greedy_set = frozenset(greedy)
+        return Mode(
+            runner=dfa.runner(greedy=greedy_set),
+            rdfa=dfa.reverse,
+            priority=dict(priority),
+            skip=frozenset(skip),
+            greedy=greedy_set,
+        )
 
     @classmethod
     def from_builders(cls, 
@@ -200,16 +229,26 @@ class Lexer(Generic[C]):
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
         return ret
 
-    def varify(self, tag: Tag | None, txt: str | bytes | Tuple[C, ...]) -> bool:
+    def varify(self, tag: Tag | None, value: Any) -> bool:
+        if isinstance(value, Token):
+            if tag is not None and value.token_type != tag:
+                return False
+            txt = value.text
+        else:
+            txt = value
+
+        if not isinstance(txt, (str, bytes, tuple)):
+            return False
+
         lexer = self
         for index, char in enumerate(txt):
-            match lexer.match(char, index): # type: ignore
+            match lexer.match(char, index):  # type: ignore[arg-type]
                 case Left(_):
                     return False
                 case Right(None):
                     continue
                 case Right(LexerResult(tag=t, start=s, end=e)):
-                    if t != tag:
+                    if tag is not None and t != tag:
                         return False
                     if s != 0 or e != len(txt) - 1:
                         return False
@@ -265,4 +304,53 @@ class Lexer(Generic[C]):
 
 @dataclass
 class CacheWithLexer(Cache[A, Ret], Generic[C, A, Ret]):
-    lexer: Optional[Lexer[C]] = None
+    lexer: Optional[LexerProtocol[C]] = None
+
+
+@dataclass
+class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
+    adapter: Callable[[ExtT], Token]
+    verifier: Optional[Callable[[Tag | None, Token], bool]] = None
+    generator: Optional[Callable[[Tag, random.Random], Token | str | bytes | Tuple[ExtT, ...]]] = None
+
+    def reset(self) -> "ExtLexer[ExtT]":
+        return replace(self)
+
+    def clone(self) -> "ExtLexer[ExtT]":
+        return replace(self)
+
+    def match(self, item: ExtT, index: int) -> Either[Any, None | LexerResult[ExtT]]:
+        try:
+            token = self.adapter(item)
+        except Exception as exc:  # pragma: no cover - adapter supplied by user
+            return Left(f"External lexer failed to adapt token at index {index}: {exc}")
+
+        if self.verifier is not None and not self.verifier(token.token_type, token):
+            return Left(f"External lexer rejected token at index {index}: {token}")
+
+        return Right(LexerResult(tag=token.token_type, start=index, end=index + 1, value=token))
+
+    def varify(self, tag: Tag | None, value: Any) -> bool:
+        token: Token
+        if isinstance(value, Token):
+            token = value
+        else:
+            try:
+                token = self.adapter(value)
+            except Exception:  # pragma: no cover - adapter failure treated as mismatch
+                return False
+
+        if tag is not None and token.token_type != tag:
+            return False
+        if self.verifier is None:
+            return True
+        return self.verifier(tag, token)
+
+    def gen(self, tag: Tag, rng: random.Random) -> Token | str | bytes | Tuple[ExtT, ...]:
+        if self.generator is None:
+            raise SyncraftError(
+                "External lexer cannot generate tokens without a generator callback",
+                offender=self,
+                expect="generator callable",
+            )
+        return self.generator(tag, rng)

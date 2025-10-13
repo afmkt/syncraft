@@ -444,12 +444,15 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             if input.pruned:
                 input = input.fork(tag=pattern.tag)
                 txt = lexer.gen(pattern.tag, input.rng())
-                tkn = Token(text=txt, token_type=pattern.tag)
+                if isinstance(txt, Token):
+                    tkn = txt
+                else:
+                    tkn = Token(text=txt, token_type=pattern.tag)
                 return (yield from cache.return_value(Right((tkn, input)), input, name=name))
             else:
                 current = input.ast
                 if (not isinstance(current, Token) 
-                    or not lexer.varify(current.token_type, current.text)): 
+                    or not lexer.varify(current.token_type, current)): 
                     return (yield from cache.return_value( 
                         Left(Error(None, 
                                   message=f"Expected a token, but got {current}.", 

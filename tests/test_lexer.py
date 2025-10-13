@@ -129,3 +129,24 @@ def test_match_reports_correct_span_boundaries() -> None:
 
     assert token.start == 0
     assert token.end == 2
+
+
+def test_greedy_rule_short_circuits_longer_match() -> None:
+    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    long_rule: FABuilder[str] = FABuilder.lit("ab").tagged("LONG")
+    short_rule: FABuilder[str] = FABuilder.lit("a", tag="SHORT", greedy=True)
+    trailing: FABuilder[str] = FABuilder.lit("b").tagged("B")
+
+    greedy_lexer = Lexer.from_builders(universe, long_rule, short_rule, trailing)
+    tokens = _collect_tokens(greedy_lexer, "ab")
+    assert [tok.tag for tok in tokens] == ["SHORT", "B"]
+
+
+def test_default_lexer_still_prefers_maximal_munch() -> None:
+    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    long_rule: FABuilder[str] = FABuilder.lit("ab").tagged("LONG")
+    short_rule: FABuilder[str] = FABuilder.lit("a").tagged("SHORT")
+
+    lexer = Lexer.from_builders(universe, long_rule, short_rule)
+    tokens = _collect_tokens(lexer, "ab")
+    assert [tok.tag for tok in tokens] == ["LONG"]
