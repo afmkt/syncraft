@@ -295,24 +295,19 @@ def _instantiate_lexer(
     config: Mapping[str, Any],
     kind: str,
 ) -> LexerProtocol[Any]:
-    factory = config.get("lexer_class")
-    if isinstance(factory, type):
-        if issubclass(factory, LexerProtocol):
-            bound_cls = factory
-        else:
-            raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=factory, expect="subclass of LexerProtocol")
+    bound_cls = config.get("lexer_class")
+    if isinstance(bound_cls, type):
+        if not issubclass(bound_cls, LexerProtocol):
+            raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
     elif kind == 'text':
-        factory = Lexer
         default_mode = config.get("default_mode")
         universe = config.get("universe") or CodeUniverse.unicode()
-        bound_cls = CallWith(factory.bind, universe=universe, default_mode=default_mode)()
+        bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
     elif kind == 'bytes':
-        factory = Lexer
         default_mode = config.get("default_mode")
         universe = config.get("universe") or CodeUniverse.byte()
-        bound_cls = CallWith(factory.bind, universe=universe, default_mode=default_mode)()
+        bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
     else:
-        factory = ExtLexer
         def _ensure_token_class(value: Any) -> TokenClass:
             if isinstance(value, TokenClass):
                 return value
@@ -322,7 +317,7 @@ def _instantiate_lexer(
         token_class_cfg = _ensure_token_class(config.get("token_class"))
         case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
         strict = config.get("strict", getattr(token_class_cfg, "strict", False))
-        bound_cls = CallWith(factory.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
+        bound_cls = CallWith(ExtLexer.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
 
     lexer = bound_cls.from_syntax(syntax)
     assert isinstance(lexer, LexerProtocol)
