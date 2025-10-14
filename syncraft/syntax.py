@@ -562,24 +562,19 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
-        """Create a lazy syntax that defers evaluation of the thunk until needed.
-        
-        Note: This method is not thread-safe due to internal caching. For concurrent
-        usage, each thread should use its own copy of the Syntax object or ensure
-        that lazy evaluation occurs before sharing across threads.
-        """
         algebra: Optional[Algebra[A, S]] = None
         syntax: Optional[Syntax[A, S]] = None
         previous_cls: Optional[Type[Algebra[Any, S]]] = None
+        captured : Syntax[A, S]
         def spec_lazy_f()-> SyntaxSpec:
             nonlocal syntax
             if syntax is None:
                 syntax = thunk()
             return syntax.spec
         def syntax_lazy_run(acls: Type[Algebra[Any, S]], **global_kwargs) -> Algebra[A, S]:
-            nonlocal algebra, syntax, previous_cls
+            nonlocal algebra, syntax, previous_cls, captured
             if syntax is None:
-                syntax = thunk()
+                syntax = thunk()                
             def algebra_lazy_f():
                 if syntax is None:
                     raise SyncraftError("Lazy thunk did not resolve to a Syntax", offender=thunk, expect="a Syntax")
@@ -593,7 +588,8 @@ class Syntax(Generic[A, S]):
                     pass
                 previous_cls = acls
             return algebra
-        return cls(syntax_lazy_run, spec=LazySpec(spec=spec_lazy_f))
+        captured = cls(syntax_lazy_run, spec=LazySpec(spec=spec_lazy_f))
+        return captured
 
 
     @classmethod
