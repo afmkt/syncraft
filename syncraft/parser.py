@@ -290,30 +290,14 @@ def parse(syntax: Syntax[Any, Any],
         return v, None
 
 
-def _collect_config(alg: Type[Algebra[Any, Any]]) -> dict[str, Any]:
-    cfg = getattr(alg, "__syncraft_config__", {})
-    return dict(cfg) if isinstance(cfg, Mapping) else {}
 
 
-def _call_bind(factory: Any, *args: Any, **kwargs: Any) -> Type[LexerProtocol[Any]]:
-    bind = getattr(factory, "bind", None)
-    if callable(bind):
-        return CallWith(bind, *args, **kwargs)()
-    return factory
 
 
-def _determine_payload_kind(source: Input[Any], sample: str | bytes | Tuple[Any, ...]) -> str:
-    if source.payload_kind:
-        return source.payload_kind
-    if isinstance(sample, str):
-        return "text"
-    if isinstance(sample, bytes):
-        return "bytes"
-    if isinstance(sample, tuple):
-        if sample and isinstance(sample[0], Token):
-            return "token"
-        return "token"
-    return "text"
+
+
+
+
 
 
 def _ensure_token_class(value: Any) -> TokenClass:
@@ -331,16 +315,17 @@ def _instantiate_lexer(
     universe: CodeUniverse[Any],
     kind: str,
 ) -> LexerProtocol[Any]:
+    def _call_bind(factory: Any, *args: Any, **kwargs: Any) -> Type[LexerProtocol[Any]]:
+        bind = getattr(factory, "bind", None)
+        if callable(bind):
+            return CallWith(bind, *args, **kwargs)()
+        return factory
+    
     if kind in ("text", "bytes"):
         factory = config.get("lexer_class") or Lexer
+        assert issubclass(factory, LexerProtocol), f"Lexer class must be a subclass of LexerProtocol, got {factory}"
         default_mode = config.get("default_mode")
-        bound_cls = _call_bind(factory, universe=universe, default_mode=default_mode)
-        if not hasattr(bound_cls, "from_syntax"):
-            raise SyncraftError(
-                "Configured lexer class must implement from_syntax",
-                offender=bound_cls,
-                expect="LexerProtocol with from_syntax",
-            )
+        bound_cls = CallWith(factory.bind, universe=universe, default_mode=default_mode)()
         lexer = bound_cls.from_syntax(syntax)
         assert isinstance(lexer, LexerProtocol)
         return lexer
@@ -355,12 +340,6 @@ def _instantiate_lexer(
         case_sensitive=case_sensitive,
         strict=strict,
     )
-    if not hasattr(bound_cls, "from_syntax"):
-        raise SyncraftError(
-            "Configured lexer class must implement from_syntax",
-            offender=bound_cls,
-            expect="LexerProtocol with from_syntax",
-        )
     lexer = bound_cls.from_syntax(syntax)
     assert isinstance(lexer, LexerProtocol)
     return lexer
@@ -377,22 +356,20 @@ def run(*,
     
     gen_cache = cache or CacheWithLexer()
     assert isinstance(gen_cache, CacheWithLexer), "Cache must be CacheWithLexer or None"
-    config = _collect_config(alg)
+
 
     cursor = StreamCursor(source, chunk_size=chunk_size)
     buffer, final = cursor.initial_buffer()
-    kind = _determine_payload_kind(source, buffer)
+    kind = source.payload_kind
     source.mark_payload_kind(kind)
-
+    parser = syntax(alg)
     gen_cache.lexer = _instantiate_lexer(
         syntax=syntax,
-        config=config,
+        config=parser.config(),
         universe=universe,
         kind=kind,
     )
-
-    parser = syntax(alg)
-    
+        
     state = ParserState(input=buffer, index=0, base=0, final=final)
     parser_gen = parser.run(state, cache=gen_cache)
 

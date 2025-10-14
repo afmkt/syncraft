@@ -11,8 +11,8 @@ from syncraft.ast import SyncraftError
 T = TypeVar("T")
 Chunk = Union[Sequence[T], str, bytes]
 class Input(Generic[T]):
-    def __init__(self, *, payload_kind: Optional[str] = None) -> None:
-        self._payload_kind: Optional[str] = payload_kind
+    def __init__(self, *, payload_kind: str) -> None:
+        self._payload_kind: str = payload_kind
 
     def read(self, n: Optional[int] = None) -> Chunk:
         raise NotImplementedError
@@ -25,10 +25,10 @@ class Input(Generic[T]):
         raise NotImplementedError
 
     @property
-    def payload_kind(self) -> Optional[str]:
+    def payload_kind(self) -> str:
         return self._payload_kind
 
-    def mark_payload_kind(self, kind: Optional[str]) -> None:
+    def mark_payload_kind(self, kind: str) -> None:
         self._payload_kind = kind
     
     @staticmethod
@@ -38,22 +38,12 @@ class Input(Generic[T]):
         elif isinstance(data, bytes):
             return BytesInput(data)
         elif isinstance(data, Sequence):
-            payload_kind: Optional[str] = None
-            if len(data) > 0:
-                first = data[0]
-                if isinstance(first, str):
-                    payload_kind = "token"
-                elif isinstance(first, bytes):
-                    payload_kind = "token"
-                else:
-                    payload_kind = "token"
-            else:
-                payload_kind = "token"
+            payload_kind = "token"
             return IteratorInput(cast(Iterator[T], iter(data)), payload_kind=payload_kind)
         elif isinstance(data, Iterator):
-            return IteratorInput(data)
+            return IteratorInput(data, payload_kind="token")
         elif isinstance(data, AsyncIterator):
-            return AsyncIteratorInput(data)
+            return AsyncIteratorInput(data, payload_kind="token")
         else:
             raise TypeError(f"Unsupported data type: {type(data)}")
     
@@ -159,7 +149,7 @@ class BytesInput(Input[bytes]):
     
 
 class IteratorInput(Input[T]):
-    def __init__(self, data: Iterator[T], *, payload_kind: Optional[str] = None) -> None:
+    def __init__(self, data: Iterator[T], *, payload_kind: str = "token") -> None:
         super().__init__(payload_kind=payload_kind)
         self.data = data
         self.done = False
@@ -184,7 +174,7 @@ class IteratorInput(Input[T]):
     
 
 class AsyncIteratorInput(Input[T]):
-    def __init__(self, data: AsyncIterator[T], *, payload_kind: Optional[str] = None) -> None:
+    def __init__(self, data: AsyncIterator[T], *, payload_kind: str = "token") -> None:
         super().__init__(payload_kind=payload_kind)
         self.data = data
         self.done = False
