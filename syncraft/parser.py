@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
-    Generic, Generator, Callable, Type
+    Generic, Generator, Callable, Type, Mapping
 )
 from syncraft.charset import CodeUniverse
 from syncraft.lexer import (
@@ -9,6 +9,7 @@ from syncraft.lexer import (
     CacheWithLexer,
     LexerResult,
     LexerProtocol,
+    ExtLexer,
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
@@ -23,6 +24,7 @@ from syncraft.input import Input, StreamCursor
 
 from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
 from syncraft.constraint import Bindable
+from syncraft.utils import CallWith
 
 T = TypeVar('T', bound=Hashable)  
 A = TypeVar('A')
@@ -288,6 +290,82 @@ def parse(syntax: Syntax[Any, Any],
         return v, None
 
 
+def _collect_config(alg: Type[Algebra[Any, Any]]) -> dict[str, Any]:
+    cfg = getattr(alg, "__syncraft_config__", {})
+    return dict(cfg) if isinstance(cfg, Mapping) else {}
+
+
+def _call_bind(factory: Any, *args: Any, **kwargs: Any) -> Type[LexerProtocol[Any]]:
+    bind = getattr(factory, "bind", None)
+    if callable(bind):
+        return CallWith(bind, *args, **kwargs)()
+    return factory
+
+
+def _determine_payload_kind(source: Input[Any], sample: str | bytes | Tuple[Any, ...]) -> str:
+    if source.payload_kind:
+        return source.payload_kind
+    if isinstance(sample, str):
+        return "text"
+    if isinstance(sample, bytes):
+        return "bytes"
+    if isinstance(sample, tuple):
+        if sample and isinstance(sample[0], Token):
+            return "token"
+        return "token"
+    return "text"
+
+
+def _ensure_token_class(value: Any) -> TokenClass:
+    if isinstance(value, TokenClass):
+        return value
+    if callable(value):
+        return TokenClass(TokenConstructor=value)
+    return TokenClass.simple()
+
+
+def _instantiate_lexer(
+    *,
+    syntax: Syntax[Any, Any],
+    config: Mapping[str, Any],
+    universe: CodeUniverse[Any],
+    kind: str,
+) -> LexerProtocol[Any]:
+    if kind in ("text", "bytes"):
+        factory = config.get("lexer_class") or Lexer
+        default_mode = config.get("default_mode")
+        bound_cls = _call_bind(factory, universe=universe, default_mode=default_mode)
+        if not hasattr(bound_cls, "from_syntax"):
+            raise SyncraftError(
+                "Configured lexer class must implement from_syntax",
+                offender=bound_cls,
+                expect="LexerProtocol with from_syntax",
+            )
+        lexer = bound_cls.from_syntax(syntax)
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
+
+    token_class_cfg = _ensure_token_class(config.get("token_class", TokenClass.simple()))
+    case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
+    strict = config.get("strict", getattr(token_class_cfg, "strict", False))
+    factory = config.get("lexer_class") or ExtLexer
+    bound_cls = _call_bind(
+        factory,
+        token_class=token_class_cfg.TokenConstructor,
+        case_sensitive=case_sensitive,
+        strict=strict,
+    )
+    if not hasattr(bound_cls, "from_syntax"):
+        raise SyncraftError(
+            "Configured lexer class must implement from_syntax",
+            offender=bound_cls,
+            expect="LexerProtocol with from_syntax",
+        )
+    lexer = bound_cls.from_syntax(syntax)
+    assert isinstance(lexer, LexerProtocol)
+    return lexer
+
+
 def run(*,
         syntax: Syntax[A, ParserState[T]],
         alg: Type[Algebra[A, ParserState[T]]],
@@ -299,13 +377,22 @@ def run(*,
     
     gen_cache = cache or CacheWithLexer()
     assert isinstance(gen_cache, CacheWithLexer), "Cache must be CacheWithLexer or None"
-    
-    gen_cache.lexer = Lexer.from_builders(universe, *syntax.fabuilder())
+    config = _collect_config(alg)
+
+    cursor = StreamCursor(source, chunk_size=chunk_size)
+    buffer, final = cursor.initial_buffer()
+    kind = _determine_payload_kind(source, buffer)
+    source.mark_payload_kind(kind)
+
+    gen_cache.lexer = _instantiate_lexer(
+        syntax=syntax,
+        config=config,
+        universe=universe,
+        kind=kind,
+    )
 
     parser = syntax(alg)
     
-    cursor = StreamCursor(source, chunk_size=chunk_size)
-    buffer, final = cursor.initial_buffer()
     state = ParserState(input=buffer, index=0, base=0, final=final)
     parser_gen = parser.run(state, cache=gen_cache)
 

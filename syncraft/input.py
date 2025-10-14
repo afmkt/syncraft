@@ -11,6 +11,9 @@ from syncraft.ast import SyncraftError
 T = TypeVar("T")
 Chunk = Union[Sequence[T], str, bytes]
 class Input(Generic[T]):
+    def __init__(self, *, payload_kind: Optional[str] = None) -> None:
+        self._payload_kind: Optional[str] = payload_kind
+
     def read(self, n: Optional[int] = None) -> Chunk:
         raise NotImplementedError
     
@@ -20,6 +23,13 @@ class Input(Generic[T]):
     @property
     def eof(self) -> bool:
         raise NotImplementedError
+
+    @property
+    def payload_kind(self) -> Optional[str]:
+        return self._payload_kind
+
+    def mark_payload_kind(self, kind: Optional[str]) -> None:
+        self._payload_kind = kind
     
     @staticmethod
     def from_data(data: Union[str, bytes, Iterator[T], AsyncIterator[T], Sequence[T]]) -> Input[str] | Input[bytes] | Input[T]:
@@ -28,7 +38,18 @@ class Input(Generic[T]):
         elif isinstance(data, bytes):
             return BytesInput(data)
         elif isinstance(data, Sequence):
-            return IteratorInput(cast(Iterator[T], iter(data)))
+            payload_kind: Optional[str] = None
+            if len(data) > 0:
+                first = data[0]
+                if isinstance(first, str):
+                    payload_kind = "token"
+                elif isinstance(first, bytes):
+                    payload_kind = "token"
+                else:
+                    payload_kind = "token"
+            else:
+                payload_kind = "token"
+            return IteratorInput(cast(Iterator[T], iter(data)), payload_kind=payload_kind)
         elif isinstance(data, Iterator):
             return IteratorInput(data)
         elif isinstance(data, AsyncIterator):
@@ -66,7 +87,7 @@ class Input(Generic[T]):
                     if not chunk:
                         break
                     yield chunk
-            return IteratorInput(gen_text())
+            return IteratorInput(gen_text(), payload_kind="text")
 
         # Sync binary file
         if isinstance(source, io.BufferedIOBase):
@@ -77,7 +98,7 @@ class Input(Generic[T]):
                     if not chunk:
                         break
                     yield chunk
-            return IteratorInput(gen_binary())
+            return IteratorInput(gen_binary(), payload_kind="bytes")
 
         # Async stream (socket/file-like wrapped by asyncio)
         if isinstance(source, asyncio.StreamReader):
@@ -91,12 +112,13 @@ class Input(Generic[T]):
                         if not chunk:
                             break
                         yield chunk
-                return AsyncIteratorInput(agen_binary())
+                return AsyncIteratorInput(agen_binary(), payload_kind="bytes")
         raise TypeError(f"Unsupported stream type: {type(source)}")
 
 
 class StringInput(Input[str]):
     def __init__(self, data: str) -> None:
+        super().__init__(payload_kind="text")
         self.data = data
         self.position = 0
 
@@ -117,6 +139,7 @@ class StringInput(Input[str]):
 
 class BytesInput(Input[bytes]):
     def __init__(self, data: bytes) -> None:
+        super().__init__(payload_kind="bytes")
         self.data = data
         self.position = 0
 
@@ -136,7 +159,8 @@ class BytesInput(Input[bytes]):
     
 
 class IteratorInput(Input[T]):
-    def __init__(self, data: Iterator[T]) -> None:
+    def __init__(self, data: Iterator[T], *, payload_kind: Optional[str] = None) -> None:
+        super().__init__(payload_kind=payload_kind)
         self.data = data
         self.done = False
 
@@ -160,7 +184,8 @@ class IteratorInput(Input[T]):
     
 
 class AsyncIteratorInput(Input[T]):
-    def __init__(self, data: AsyncIterator[T]) -> None:
+    def __init__(self, data: AsyncIterator[T], *, payload_kind: Optional[str] = None) -> None:
+        super().__init__(payload_kind=payload_kind)
         self.data = data
         self.done = False
 
@@ -188,6 +213,7 @@ class AsyncIteratorInput(Input[T]):
 
 class AsyncTextStream(Input[str]):
     def __init__(self, reader: asyncio.StreamReader, encoding="utf-8"):
+        super().__init__(payload_kind="text")
         self.reader = reader
         self.decoder = codecs.getincrementaldecoder(encoding)()
         self.buffer = ""
@@ -271,6 +297,7 @@ class StreamCursor(Generic[T]):
                     expect="non-empty chunk",
                 )
             self._empty = ""
+            self.source.mark_payload_kind("text")
             return chunk
         if isinstance(chunk, bytes):
             if not chunk and not self.source.eof:
@@ -280,6 +307,7 @@ class StreamCursor(Generic[T]):
                     expect="non-empty chunk",
                 )
             self._empty = b""
+            self.source.mark_payload_kind("bytes")
             return chunk
         seq = tuple(cast(Sequence[T], chunk))
         if not seq and not self.source.eof:
@@ -289,4 +317,6 @@ class StreamCursor(Generic[T]):
                 expect="non-empty chunk",
             )
         self._empty = tuple()
+        if seq:
+            self.source.mark_payload_kind("token")
         return cast(Tuple[T, ...], seq)

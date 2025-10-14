@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import (
-    Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast,
+    Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
     Type, Generator, Union
 )
 
@@ -22,7 +22,8 @@ S = TypeVar('S', bound=Bindable)
 A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Mapped result type
 
-
+SYNCRAFT_CONFIG_KEY = "__syncraft_config__"
+SYNCRAFT_TRANSFORM_KEY = "__syncraft_transform__"
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,10 @@ class Algebra(Generic[A, S]):
     run_f: Callable[[S, Cache[S, Either[Any, Tuple[A, S]]]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
     _name: str | Callable[[], str]
     
-        
+    def config(self) -> dict[str, Any]:
+        cfg = getattr(self, SYNCRAFT_CONFIG_KEY, {})
+        return dict(cfg) if isinstance(cfg, Mapping) else {}
+
     def named(self, name: str) -> Algebra[A, S]:
         return replace(self, _name=name)
 

@@ -6,7 +6,7 @@ from typing import (
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
-from syncraft.algebra import Algebra, Error, Either, Left, Right
+from syncraft.algebra import Algebra, Error, Either, Left, Right, SYNCRAFT_CONFIG_KEY, SYNCRAFT_TRANSFORM_KEY
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
@@ -157,21 +157,21 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def transform(cls, f: Callable[[Type[Any]], Type[Any]]) -> Type['Syntax[Any, Any]']:
-        old = getattr(cls, '__syncraft_transform__', lambda c: c)
-        return type(cls.__name__, (cls,), {'__syncraft_transform__': lambda c: f(old(c))})
+        old = getattr(cls, SYNCRAFT_TRANSFORM_KEY, lambda c: c)
+        return type(cls.__name__, (cls,), {SYNCRAFT_TRANSFORM_KEY: lambda c: f(old(c))})
 
     @classmethod
     def config(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
         def attach_f(alg_cls: Type[Algebra[Any, Any]]) -> Type[Algebra[Any, Any]]:
-            old = getattr(alg_cls, '__syncraft_config__', {})
-            return type(alg_cls.__name__, (alg_cls,), {'__syncraft_config__': old | attrs})
+            old = getattr(alg_cls, SYNCRAFT_CONFIG_KEY, {})
+            return type(alg_cls.__name__, (alg_cls,), {SYNCRAFT_CONFIG_KEY: old | attrs})
         return cls.transform(attach_f)
 
 
     def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
-        trans: None | Callable[[Type[Any]], Type[Any]] = getattr(self.__class__, '__syncraft_transform__', None)
+        trans: None | Callable[[Type[Any]], Type[Any]] = getattr(self.__class__, SYNCRAFT_TRANSFORM_KEY, None)
         alg = alg if not callable(trans) else trans(alg)
-        cfg = getattr(alg, '__syncraft_config__', {})
+        cfg = getattr(alg, SYNCRAFT_CONFIG_KEY, {})
         return self.alg_f(alg, **(cfg | global_kwargs))
     
         
