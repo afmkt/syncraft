@@ -298,9 +298,7 @@ def _instantiate_lexer(
     factory = config.get("lexer_class")
     if isinstance(factory, type):
         if issubclass(factory, LexerProtocol):
-            lexer = factory.from_syntax(syntax)
-            assert isinstance(lexer, LexerProtocol)
-            return lexer
+            bound_cls = factory
         else:
             raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=factory, expect="subclass of LexerProtocol")
     elif kind == 'text':
@@ -308,17 +306,11 @@ def _instantiate_lexer(
         default_mode = config.get("default_mode")
         universe = config.get("universe") or CodeUniverse.unicode()
         bound_cls = CallWith(factory.bind, universe=universe, default_mode=default_mode)()
-        lexer = bound_cls.from_syntax(syntax)
-        assert isinstance(lexer, LexerProtocol)
-        return lexer
     elif kind == 'bytes':
         factory = Lexer
         default_mode = config.get("default_mode")
         universe = config.get("universe") or CodeUniverse.byte()
         bound_cls = CallWith(factory.bind, universe=universe, default_mode=default_mode)()
-        lexer = bound_cls.from_syntax(syntax)
-        assert isinstance(lexer, LexerProtocol)
-        return lexer
     else:
         factory = ExtLexer
         def _ensure_token_class(value: Any) -> TokenClass:
@@ -331,10 +323,10 @@ def _instantiate_lexer(
         case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
         strict = config.get("strict", getattr(token_class_cfg, "strict", False))
         bound_cls = CallWith(factory.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
-        lexer = bound_cls.from_syntax(syntax)
-        assert isinstance(lexer, LexerProtocol)
-        return lexer
 
+    lexer = bound_cls.from_syntax(syntax)
+    assert isinstance(lexer, LexerProtocol)
+    return lexer
 
 def run(*,
         syntax: Syntax[A, ParserState[T]],
