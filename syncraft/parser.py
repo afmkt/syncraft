@@ -9,7 +9,6 @@ from syncraft.lexer import (
     CacheWithLexer,
     LexerResult,
     LexerProtocol,
-    ExtLexer,
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
@@ -18,7 +17,7 @@ from syncraft.algebra import (
 )
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
-from syncraft.fa import FABuilder
+
 from syncraft.syntax import Syntax
 from syncraft.input import Input, StreamCursor
 

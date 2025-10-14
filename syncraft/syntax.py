@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List, Dict, Set, Iterator, Hashable
+    Type, List, Dict, Set, Iterator
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -10,10 +10,10 @@ from syncraft.algebra import Algebra, Error, Either, Left, Right
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
+from syncraft.fa import FABuilder
 import keyword
 from enum import Enum
 import re
-from syncraft.fa import FABuilder, NFA, DFA
 
 
 def valid_name(name: str) -> bool:
@@ -667,20 +667,21 @@ class Syntax(Generic[A, S]):
 
         return _rehydrate(cls, spec, c)
 
-    def leaf(self, visitor: Callable[[str, Any], Any]) -> Set[Any]:
-        leaves: Set[Any] = set()
+    def factory_spec(self, visitor: Callable[[FactorySpec, Any], Any], init: Any) -> Any:
         for _, node in self.spec.walk():
             if isinstance(node, FactorySpec):
-                for key, value in node.kwargs.items():
-                    data = visitor(key, value)
-                    if data is not None:
-                        leaves.add(data)
-        return leaves
+                init = visitor(node, init)
+        return init
 
-    def fabuilder(self ) -> Set[FABuilder[Any]]:
-        return {v for _, v in self.leaf(lambda k, v: (k, v) if isinstance(v, FABuilder) else None)}
         
-
+    def fabuilder(self) -> Set[FABuilder[Any]]:
+        def visitor( fspec: FactorySpec, acc: Set[FABuilder[Any]]) -> Set[FABuilder[Any]]:
+            for k, v in fspec.kwargs.items():
+                if isinstance(v, FABuilder):
+                    acc.add(v)
+            return acc
+        acc = self.factory_spec(visitor, set())
+        return acc
 
 def run_state(*,
     syntax: Syntax[A, S], 

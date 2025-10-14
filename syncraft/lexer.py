@@ -1,7 +1,9 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, replace, asdict
+from dataclasses import dataclass, field, replace, asdict, is_dataclass
 from enum import Enum
-from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable, Mapping, Hashable, Type
+from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable, Mapping, Hashable, Type, cast
+from typing import TYPE_CHECKING
+from syncraft.utils import CallWith
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError, Token, TokenClass
@@ -10,9 +12,26 @@ from collections import deque, defaultdict
 
 import random
 
+
+def object_to_dict(value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    if is_dataclass(value):
+        return asdict(value) # type: ignore[arg-type]
+    if hasattr(value, "__dict__"):
+        return vars(value)
+    if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
+        return {str(idx): elem for idx, elem in enumerate(value)}
+    raise SyncraftError("Cannot introspect token fields", offender=value)
+
+
 C = TypeVar('C', bound=str | int | Enum | Any)
 A = TypeVar('A')
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
+
+
+if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
+    from syncraft.syntax import FactorySpec, Syntax
 
 
 
@@ -66,10 +85,18 @@ class LexerProtocol(Protocol, Generic[C]):
     def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...] | Token: ...
 
     @classmethod
-    def tag(cls, *args:Any, **kwargs: Any) -> Tag: ...
+    def tag(cls, *args:Any, **kwargs: Any) -> Tag: 
+        cw = CallWith(cls._tag, *args, **kwargs)
+        return cw()
 
     @classmethod
-    def from_syntax(cls, syntax: Any) -> "LexerProtocol[C]": ...
+    def _tag(cls, *args:Any, **kwargs: Any) -> Tag: ...
+
+    @classmethod
+    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "LexerProtocol[C]": ...
+
+    @classmethod
+    def bind(cls, *args:Any, **kwargs: Any) -> Type["LexerProtocol[C]"]: ...
 
 @dataclass
 class Lexer(LexerProtocol[C], Generic[C]):
@@ -77,8 +104,13 @@ class Lexer(LexerProtocol[C], Generic[C]):
     modes: Dict[str | None, Mode[C]] 
     actions: Dict[Tag, ModeAction]
     _stack: deque[Mode[C]] = field(default_factory=deque)
+
     @classmethod
-    def tag(cls, fabuilder: FABuilder) -> Tag:
+    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "Lexer[C]":
+        raise NotImplementedError("Lexer cannot be constructed from syntax directly; use from_builders or another method")
+
+    @classmethod
+    def _tag(cls, fabuilder: FABuilder) -> Tag:
         return fabuilder.tag
 
     def _reset_runner(self, mode: Mode[C]) -> None:
@@ -304,8 +336,22 @@ class Lexer(LexerProtocol[C], Generic[C]):
             )
         return Right(None)
 
-
-
+    @classmethod
+    def bind(cls, universe: CodeUniverse[C], default_mode: str | None = None) -> Type["Lexer[C]"]:
+        def fabuilder(syntax: Syntax[Any, Any]) -> Set[FABuilder[Any]]:
+            def visitor( fspec: FactorySpec, acc: Set[FABuilder[Any]]) -> Set[FABuilder[Any]]:
+                for k, v in fspec.kwargs.items():
+                    if isinstance(v, FABuilder):
+                        acc.add(v)
+                return acc
+            acc = syntax.factory_spec(visitor, set())
+            return acc
+        class BoundLexer(Lexer[Any]):
+            @classmethod
+            def from_syntax(cls, syntax: Syntax[Any, Any]) -> "Lexer[C]":
+                builders = fabuilder(syntax)
+                return cls.from_builders(universe, *builders, default_mode=default_mode)
+        return BoundLexer
 
 
 
@@ -329,13 +375,32 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
     token_class: TokenClass[ExtT]
     rules: Dict[Tag, ExtRule[ExtT]] = field(default_factory=dict)
     @classmethod
-    def tag(cls, token_type: Tag, text: str) -> Tag:
-        return token_type if token_type is not None else text
-
+    def _tag(cls, token_type: Optional[Tag] = None, text: Optional[str] = None) -> Tag:
+        if token_type is None and text is None:
+            raise SyncraftError("Cannot derive tag", offender=(token_type, text), expect="token_type or text")
+        if token_type is not None:
+            return token_type
+        assert text is not None  # defensive: already guarded above
+        return cast(Tag, text)
 
     @classmethod
-    def create(cls, token_class: Callable[..., Any] = Token, case_sensitive: bool = False, strict: bool=False)-> ExtLexer[ExtT]:
-        return ExtLexer(TokenClass(TokenConstructor=token_class, case_sensitive=case_sensitive, strict=strict))
+    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[ExtT]":
+        raise NotImplementedError("ExtLexer cannot be constructed from syntax directly; use create or another method")
+    
+    @classmethod
+    def bind(cls, token_class: Callable[..., Any] = Token, case_sensitive: bool = False, strict: bool=False)-> Type[ExtLexer[ExtT]]:
+        class BoundLexer(ExtLexer[Any]):
+            @classmethod
+            def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[ExtT]":
+                ret = cls(TokenClass(TokenConstructor=token_class, case_sensitive=case_sensitive, strict=strict))
+                def visitor( fspec: FactorySpec, acc: ExtLexer[ExtT]) -> ExtLexer[ExtT]:
+                    acc.register(**fspec.kwargs)
+                    return acc
+                ret = syntax.factory_spec(visitor, ret)
+                return ret
+        return BoundLexer
+
+        
 
 
     def reset(self) -> "ExtLexer[ExtT]":
@@ -355,7 +420,7 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
         self.rules[tag] = ExtRule(pred, gen)
 
     def match(self, item: ExtT, index: int) -> Either[Any, None | LexerResult[ExtT]]:
-        tag = self.tag(**asdict(item))
+        tag = self.tag(**object_to_dict(item))
         if tag in self.rules:
             if self.rules[tag].predicate(item):
                 return Right(LexerResult(tag=tag, start=index, end=index + 1, value=item))
