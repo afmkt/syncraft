@@ -378,10 +378,6 @@ class Syntax(Generic[A, S]):
         """
         return (self | self.success(Nothing()))
         
-        
-    
-
-        
 
     def cut(self) -> Syntax[A, S]:
         """Commit this branch: on failure, prevent trying alternatives.

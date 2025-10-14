@@ -137,3 +137,16 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     assert _flatten_token_text(original_ast) == ["n", "+", "n", "+", "n"]
     assert _flatten_token_text(transformed_ast) == ["n", "+", "n", "+", "n"]
     assert not _grammar_is_left_recursive(transformed.spec)
+
+
+def test_walk_handles_recursive_grammar() -> None:
+    TestSyntax = Syntax.config(token_class=TokenClass.simple())
+    literal = TestSyntax.literal
+
+    Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]
+
+    nodes = list(Expr.walk(max_depth=4))
+
+    assert nodes, "Expected walk to yield at least one node"
+    unique_nodes = {id(node) for _, node in nodes}
+    assert len(unique_nodes) == len(nodes), "Walk should not revisit nodes in recursive grammars"

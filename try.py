@@ -1,40 +1,79 @@
 from __future__ import annotations
-
-from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, TokenClass
-from syncraft.algebra import Error
-from syncraft.parser import  parse_word
-import syncraft.generator as gen
+from typing import Any, Iterable
+from syncraft.ast import Nothing, Token, Lazy
+from syncraft.parser import parse_word
+from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
+from syncraft.cache import LeftRecursionError
 from syncraft.lexer import CacheWithLexer
 
-from rich import print
+import re
+import pytest
+from syncraft.ast import TokenClass
+
+
+def iter_tokens(ast: Any) -> Iterable[str]:
+    if isinstance(ast, Token):
+        yield ast.text
+    elif isinstance(ast, (tuple, list)):
+        for x in ast:
+            yield from iter_tokens(x)
+    elif hasattr(ast, 'value') and isinstance(getattr(ast, 'value'), tuple):
+        # For Then/Choice wrappers from syncraft.ast
+        for x in getattr(ast, 'value'):
+            yield from iter_tokens(x)
+    elif hasattr(ast, 'left') and hasattr(ast, 'right'):
+        yield from iter_tokens(getattr(ast, 'left'))
+        yield from iter_tokens(getattr(ast, 'right'))
+    else:
+        # Fallback: scan string repr for bare word tokens (letters, digits)
+        for t in re.findall(r'[A-Za-z0-9_]+', str(ast)):
+            yield t
+
+
+def token_multiset(ast: Any) -> dict[str, int]:
+    counts: dict[str,int] = {}
+    for t in iter_tokens(ast):
+        counts[t] = counts.get(t, 0) + 1
+    return counts
+
+literal = Syntax.config(token_class = TokenClass.simple()).literal
+token = Syntax.config(token_class = TokenClass.simple()).token
 
 def from_string(string: str) -> Token:
     return Token(text=string)
 
 
-literal = Syntax.config(token_class = TokenClass.simple()).literal
-
-def test_optional():
-    A = literal("a").mark("a")
-    syntax = A.optional()
-    ast1, bound = parse_word(syntax, "", cache=CacheWithLexer())
-    v1, _ = ast1.bimap()
-    assert isinstance(v1, Nothing)
-    ast2, bound = parse_word(syntax, "a", cache=CacheWithLexer())
-    v2, _ = ast2.bimap()
-    assert v2 == Marked(name='a', value=from_string('a'))
 
 
+def test_recursion() -> None:
+    A = literal('a')
+    B = literal('b')
+    L = Syntax.lazy(lambda: literal("if") >> (A | B) // literal('then'))
 
-def test_many_optional():
-    A = literal("a")
-    syntax = A.optional().many()
-    ast1, _ = parse_word(syntax, "a a b", cache=CacheWithLexer())
-    # print(ast1)
-    ast2, inv = ast1.bimap()
-    assert Many(value=(Choice(kind=None, value=from_string('a')), Choice(kind=None, value=from_string('a')))) == inv(ast2)
+    def parens():
+        return A + ~Syntax.lazy(parens) + B
+    p_code = 'a a b b'
+    LL = parens() | L
+    
+    v, s = parse_word(LL, p_code, cache=CacheWithLexer())
+    ast1, inv = v.bimap()
+    assert ast1 == (
+            from_string('a'), 
+            (
+                from_string('a'), 
+                Nothing(), 
+                from_string('b')
+            ), 
+            from_string('b')
+        )
+    x, y = inv(ast1).bimap()
+    assert x == ast1
+
+    vv, ss = generate_with(LL, y(x))
+    assert vv == v
+
 
 
 if __name__ == "__main__":
-    test_many_optional()
+    test_recursion()
