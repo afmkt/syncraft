@@ -289,60 +289,51 @@ def parse(syntax: Syntax[Any, Any],
     else:
         return v, None
 
-
-
-
-
-
-
-
-
-
-
-
-def _ensure_token_class(value: Any) -> TokenClass:
-    if isinstance(value, TokenClass):
-        return value
-    if callable(value):
-        return TokenClass(TokenConstructor=value)
-    return TokenClass.simple()
-
-
 def _instantiate_lexer(
     *,
     syntax: Syntax[Any, Any],
     config: Mapping[str, Any],
-    universe: CodeUniverse[Any],
     kind: str,
 ) -> LexerProtocol[Any]:
-    def _call_bind(factory: Any, *args: Any, **kwargs: Any) -> Type[LexerProtocol[Any]]:
-        bind = getattr(factory, "bind", None)
-        if callable(bind):
-            return CallWith(bind, *args, **kwargs)()
-        return factory
-    
-    if kind in ("text", "bytes"):
-        factory = config.get("lexer_class") or Lexer
-        assert issubclass(factory, LexerProtocol), f"Lexer class must be a subclass of LexerProtocol, got {factory}"
+    factory = config.get("lexer_class")
+    if isinstance(factory, type):
+        if issubclass(factory, LexerProtocol):
+            lexer = factory.from_syntax(syntax)
+            assert isinstance(lexer, LexerProtocol)
+            return lexer
+        else:
+            raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=factory, expect="subclass of LexerProtocol")
+    elif kind == 'text':
+        factory = Lexer
         default_mode = config.get("default_mode")
+        universe = config.get("universe") or CodeUniverse.unicode()
         bound_cls = CallWith(factory.bind, universe=universe, default_mode=default_mode)()
         lexer = bound_cls.from_syntax(syntax)
         assert isinstance(lexer, LexerProtocol)
         return lexer
-
-    token_class_cfg = _ensure_token_class(config.get("token_class", TokenClass.simple()))
-    case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
-    strict = config.get("strict", getattr(token_class_cfg, "strict", False))
-    factory = config.get("lexer_class") or ExtLexer
-    bound_cls = _call_bind(
-        factory,
-        token_class=token_class_cfg.TokenConstructor,
-        case_sensitive=case_sensitive,
-        strict=strict,
-    )
-    lexer = bound_cls.from_syntax(syntax)
-    assert isinstance(lexer, LexerProtocol)
-    return lexer
+    elif kind == 'bytes':
+        factory = Lexer
+        default_mode = config.get("default_mode")
+        universe = config.get("universe") or CodeUniverse.byte()
+        bound_cls = CallWith(factory.bind, universe=universe, default_mode=default_mode)()
+        lexer = bound_cls.from_syntax(syntax)
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
+    else:
+        factory = ExtLexer
+        def _ensure_token_class(value: Any) -> TokenClass:
+            if isinstance(value, TokenClass):
+                return value
+            if callable(value):
+                return TokenClass(TokenConstructor=value)
+            return TokenClass.simple()
+        token_class_cfg = _ensure_token_class(config.get("token_class"))
+        case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
+        strict = config.get("strict", getattr(token_class_cfg, "strict", False))
+        bound_cls = CallWith(factory.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
+        lexer = bound_cls.from_syntax(syntax)
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
 
 
 def run(*,
@@ -350,7 +341,6 @@ def run(*,
         alg: Type[Algebra[A, ParserState[T]]],
         source: Input[T],
         chunk_size: int = 4096,
-        universe: CodeUniverse[Any], 
         cache: Optional[CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[A, ParserState[T]]]]] = None,
         ) -> Tuple[Any, None | ParserState[T]]:
     
@@ -363,13 +353,8 @@ def run(*,
     kind = source.payload_kind
     source.mark_payload_kind(kind)
     parser = syntax(alg)
-    gen_cache.lexer = _instantiate_lexer(
-        syntax=syntax,
-        config=parser.config(),
-        universe=universe,
-        kind=kind,
-    )
-        
+    gen_cache.lexer = _instantiate_lexer(syntax=syntax, config=parser.config(), kind=kind)
+
     state = ParserState(input=buffer, index=0, base=0, final=final)
     parser_gen = parser.run(state, cache=gen_cache)
 
