@@ -271,7 +271,10 @@ class Parser(Algebra[T, ParserState[T]]):
         return cls(lex_run, _name=str(ntag))
 
 
-def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Cache[Any, Any]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+def parse_word(syntax: Syntax[Any, Any], 
+               sql: str, 
+               *, 
+               cache: CacheWithLexer[Any, Any, Any]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     tokens = word_lexer(sql)
     return parse(syntax, tokens, cache=cache)
 
@@ -279,49 +282,19 @@ def parse_word(syntax: Syntax[Any, Any], sql: str, *, cache: Cache[Any, Any]) ->
 def parse(syntax: Syntax[Any, Any], 
           tokens: List[Token],
           *,
-          cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]
+          cache: CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    from syncraft.syntax import run_state
-    state = ParserState(input=tuple(tokens), index=0, final=True, base=0)
-    v, s = run_state(syntax=syntax, alg=Parser, state=state, cache=cache)
+    if False:
+        from syncraft.syntax import run_state
+        state = ParserState(input=tuple(tokens), index=0, final=True, base=0)
+        v, s = run_state(syntax=syntax, alg=Parser, state=state, cache=cache)
+    else:
+        v, s = run(syntax=syntax, alg=Parser, source=Input.from_data(tokens), cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:
         return v, None
 
-def _instantiate_lexer(
-    *,
-    syntax: Syntax[Any, Any],
-    config: Mapping[str, Any],
-    kind: str,
-) -> LexerProtocol[Any]:
-    bound_cls = config.get("lexer_class")
-    if isinstance(bound_cls, type):
-        if not issubclass(bound_cls, LexerProtocol):
-            raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
-    elif kind == 'text':
-        default_mode = config.get("default_mode")
-        universe = config.get("universe") or CodeUniverse.unicode()
-        bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
-    elif kind == 'bytes':
-        default_mode = config.get("default_mode")
-        universe = config.get("universe") or CodeUniverse.byte()
-        bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
-    else:
-        def _ensure_token_class(value: Any) -> TokenClass:
-            if isinstance(value, TokenClass):
-                return value
-            if callable(value):
-                return TokenClass(TokenConstructor=value)
-            return TokenClass.simple()
-        token_class_cfg = _ensure_token_class(config.get("token_class"))
-        case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
-        strict = config.get("strict", getattr(token_class_cfg, "strict", False))
-        bound_cls = CallWith(ExtLexer.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
-
-    lexer = bound_cls.from_syntax(syntax)
-    assert isinstance(lexer, LexerProtocol)
-    return lexer
 
 def run(*,
         syntax: Syntax[A, ParserState[T]],
@@ -331,16 +304,49 @@ def run(*,
         cache: Optional[CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[A, ParserState[T]]]]] = None,
         ) -> Tuple[Any, None | ParserState[T]]:
     
+    def _instantiate_lexer(
+        *,
+        syntax: Syntax[Any, Any],
+        config: Mapping[str, Any],
+        kind: str,
+    ) -> LexerProtocol[Any]:
+        bound_cls = config.get("lexer_class")
+        if isinstance(bound_cls, type):
+            if not issubclass(bound_cls, LexerProtocol):
+                raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
+        elif kind == 'text':
+            default_mode = config.get("default_mode")
+            universe = config.get("universe") or CodeUniverse.unicode()
+            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
+        elif kind == 'bytes':
+            default_mode = config.get("default_mode")
+            universe = config.get("universe") or CodeUniverse.byte()
+            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
+        else:
+            def _ensure_token_class(value: Any) -> TokenClass:
+                if isinstance(value, TokenClass):
+                    return value
+                if callable(value):
+                    return TokenClass(TokenConstructor=value)
+                return TokenClass.simple()
+            token_class_cfg = _ensure_token_class(config.get("token_class"))
+            case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
+            strict = config.get("strict", getattr(token_class_cfg, "strict", False))
+            bound_cls = CallWith(ExtLexer.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
+
+        lexer = bound_cls.from_syntax(syntax)
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
+
+
     gen_cache = cache or CacheWithLexer()
     assert isinstance(gen_cache, CacheWithLexer), "Cache must be CacheWithLexer or None"
 
 
     cursor = StreamCursor(source, chunk_size=chunk_size)
     buffer, final = cursor.initial_buffer()
-    kind = source.payload_kind
-    source.mark_payload_kind(kind)
     parser = syntax(alg)
-    gen_cache.lexer = _instantiate_lexer(syntax=syntax, config=parser.config(), kind=kind)
+    gen_cache.lexer = _instantiate_lexer(syntax=syntax, config=parser.config(), kind=source.payload_kind)
 
     state = ParserState(input=buffer, index=0, base=0, final=final)
     parser_gen = parser.run(state, cache=gen_cache)

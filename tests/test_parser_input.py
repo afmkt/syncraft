@@ -19,7 +19,6 @@ def test_run_with_input_stream_handles_incomplete() -> None:
         alg=Parser,
         source=source,
         chunk_size=1,
-        universe=CodeUniverse.ascii()
     )
 
     assert state is not None
@@ -37,8 +36,7 @@ def test_run_with_input_reads_all_when_unbounded() -> None:
     value, state = parser_run(
         syntax=syntax,
         alg=Parser,
-        source=source,
-        universe=CodeUniverse.ascii()
+        source=source
     )
 
     assert state is not None

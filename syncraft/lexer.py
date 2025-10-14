@@ -393,8 +393,9 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
             @classmethod
             def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[ExtT]":
                 ret = cls(TokenClass(TokenConstructor=token_class, case_sensitive=case_sensitive, strict=strict))
-                def visitor( fspec: FactorySpec, acc: ExtLexer[ExtT]) -> ExtLexer[ExtT]:
-                    acc.register(**fspec.kwargs)
+                def visitor(fspec: FactorySpec, acc: ExtLexer[ExtT]) -> ExtLexer[ExtT]:
+                    if fspec.name in ("lex", "token"):
+                        acc.register(**fspec.kwargs)
                     return acc
                 ret = syntax.factory_spec(visitor, ret)
                 return ret
