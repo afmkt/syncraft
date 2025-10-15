@@ -284,7 +284,7 @@ def parse(syntax: Syntax[Any, Any],
           *,
           cache: CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    if True:
+    if False:
         from syncraft.syntax import run_state
         state = ParserState(input=tuple(tokens), index=0, final=True, base=0)
         v, s = run_state(syntax=syntax, alg=Parser, state=state, cache=cache)

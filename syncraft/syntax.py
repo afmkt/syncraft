@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List, Dict, Set, Iterator
+    Type, List, Dict, Set, Iterator, ClassVar
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -14,6 +14,8 @@ from syncraft.fa import FABuilder
 import keyword
 from enum import Enum
 import re
+import threading
+from weakref import WeakValueDictionary
 
 
 def valid_name(name: str) -> bool:
@@ -73,6 +75,8 @@ class SyntaxSpec:
                 edges.append((node, child))
 
         return edges
+    
+
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec):
     spec: Callable[[], SyntaxSpec]
@@ -93,6 +97,8 @@ class LazySpec(SyntaxSpec):
             return ()
         lazy_cache[key] = target
         return (target,)
+    
+
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
@@ -150,6 +156,7 @@ class Syntax(Generic[A, S]):
     """
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
+    
     
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
@@ -560,28 +567,40 @@ class Syntax(Generic[A, S]):
 
         return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else cls.success(Nothing())
 
+
+    @classmethod
+    def new_lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+        return LazySyntax.from_thunk(thunk)
+
     @classmethod
     def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+        if not hasattr(cls, "_lazy_thunk_cache"):
+            setattr(cls, "_lazy_thunk_cache", {})  
+        _cache: Dict[Callable[..., Any], Syntax] = getattr(cls, "_lazy_thunk_cache")
+        if thunk in _cache:
+            return _cache[thunk]  
+
         algebra: Optional[Algebra[A, S]] = None
         syntax: Optional[Syntax[A, S]] = None
         previous_cls: Optional[Type[Algebra[Any, S]]] = None
-        captured : Syntax[A, S]
-        def spec_lazy_f()-> SyntaxSpec:
+        captured: Syntax[A, S]  
+
+        def spec_lazy_f() -> SyntaxSpec:
             nonlocal syntax
             if syntax is None:
                 syntax = thunk()
             return syntax.spec
+
         def syntax_lazy_run(acls: Type[Algebra[Any, S]], **global_kwargs) -> Algebra[A, S]:
             nonlocal algebra, syntax, previous_cls, captured
             if syntax is None:
-                syntax = thunk()                
+                syntax = thunk()
             def algebra_lazy_f():
                 if syntax is None:
                     raise SyncraftError("Lazy thunk did not resolve to a Syntax", offender=thunk, expect="a Syntax")
                 return syntax(acls, **global_kwargs)
             if algebra is None or (previous_cls is not None and previous_cls is not acls):
                 algebra = acls.lazy(algebra_lazy_f)
-                # Attach rule id to this algebra's run_f for stable identity
                 try:
                     setattr(algebra.run_f, '_rule_id', thunk)
                 except Exception:
@@ -589,6 +608,7 @@ class Syntax(Generic[A, S]):
                 previous_cls = acls
             return algebra
         captured = cls(syntax_lazy_run, spec=LazySpec(spec=spec_lazy_f))
+        _cache[thunk] = captured
         return captured
 
 
@@ -674,6 +694,95 @@ class Syntax(Generic[A, S]):
             return acc
         acc = self.factory_spec(visitor, set())
         return acc
+
+
+
+
+# keep your existing imports above (Algebra, Syntax, LazySpec, SyncraftError, ...)
+
+@dataclass(frozen=True)
+class LazySyntax(Syntax[A, S]):
+    # thunk returns a Syntax[A, S]
+    thunk: Callable[[], Syntax[A, S]] = field(repr=False, compare=False)
+    # cached resolved Syntax; excluded from comparisons
+    _cached: Optional[Syntax[A, S]] = field(default=None, init=False, repr=False, compare=False)
+    # cache algebras per (alg, kwargs_key). excluded from comparisons
+    _cached_algebras: Dict[Tuple[Type[Algebra[Any, Any]], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    # lock to guard initialization
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
+    _lazy_thunk_cache: ClassVar[WeakValueDictionary[Callable[..., Any], LazySyntax]] = WeakValueDictionary()
+
+    @property
+    def cached(self) -> Syntax[A, S]:
+        # Double-checked locking: avoid acquiring lock in the fast path.
+        if self._cached is None:
+            with self._lock:
+                if self._cached is None:
+                    resolved = self.thunk()
+                    if not isinstance(resolved, Syntax):
+                        raise SyncraftError("Lazy thunk did not return a Syntax", offender=(self.thunk, resolved), expect="Syntax")
+                    # store resolved syntax into the frozen dataclass slot
+                    object.__setattr__(self, "_cached", resolved)
+        return self._cached  # type: ignore
+
+    def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
+        # Create a deterministic, hashable representation of global_kwargs.
+        # NOTE: this requires that keys are strings (they are) and values are hashable.
+        if global_kwargs:
+            try:
+                kwargs_key = tuple(sorted(global_kwargs.items()))
+            except TypeError as e:
+                # If kwargs contain unhashable values, fallback to using id() for values.
+                kwargs_key = tuple(sorted(
+                    (k, (v if isinstance(v, (int, str, float, bool, type(None))) else id(v))) 
+                    for k, v in global_kwargs.items()))
+        else:
+            kwargs_key = ()
+
+        key = (alg, kwargs_key)
+
+        # fast path: avoid lock if already cached
+        existing = self._cached_algebras.get(key)
+        if existing is not None:
+            return existing
+
+        # guarded path: populate cache under lock
+        with self._lock:
+            existing = self._cached_algebras.get(key)
+            if existing is not None:
+                return existing
+            resolved_syntax = self.cached
+            def algebra_lazy_f() -> Algebra[A, S]:
+                return resolved_syntax(alg, **global_kwargs)
+            algebra = alg.lazy(algebra_lazy_f)
+            # --- Patch _rule_id for left-recursion recovery ---
+            try:
+                setattr(algebra.run_f, "_rule_id", self.thunk)
+            except Exception:
+                pass
+            self._cached_algebras[key] = algebra
+            return algebra
+
+    @classmethod
+    def from_thunk(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+        cached = cls._lazy_thunk_cache.get(thunk)
+        if cached is not None:
+            return cached
+
+        # captured will be assigned to the LazySyntax instance below.
+        captured: LazySyntax[A, S]
+
+        def captured_f(alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
+            return captured(alg, **global_kwargs)
+
+        # NOTE: the lambda referencing captured is safe because captured is assigned immediately below.
+        captured = cls(alg_f=captured_f, thunk=thunk, spec=LazySpec(spec=lambda: captured.cached.spec))
+        cls._lazy_thunk_cache[thunk] = captured
+        return captured
+
+
+
+
 
 def run_state(*,
     syntax: Syntax[A, S], 

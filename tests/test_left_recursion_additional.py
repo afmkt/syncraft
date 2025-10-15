@@ -40,8 +40,7 @@ def test_deterministic_choice_prefers_first_branch():
 def test_iteration_cap_metrics_single_head():
     Term = literal('n')
     Expr = Syntax.lazy(lambda: (Expr + literal('+') + Term) | Term)
-    from syncraft.cache import Cache
-    cache = Cache()
+    cache = CacheWithLexer()
     cache.max_growth_iterations = 1
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(Expr, 'n + n + n + n', cache=cache)
