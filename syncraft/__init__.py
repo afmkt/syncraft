@@ -1,6 +1,6 @@
 from .syntax import (
 	Syntax,
-    run_state,
+    
 )
 from .algebra import (
     Algebra,
@@ -50,7 +50,7 @@ __all__ = [
     # algebra
     "Algebra", "Error", "Left", "Right", "Either",
 	# syntax & core
-	"Syntax", "run_state", 
+	"Syntax", 
 	# parsing/generation helpers
 	"parse",
 	"generate", "generate_with", "validate", "Parser", "Generator",

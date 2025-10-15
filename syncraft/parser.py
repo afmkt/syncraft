@@ -22,9 +22,10 @@ from functools import total_ordering
 from syncraft.syntax import Syntax
 from syncraft.input import Input, StreamCursor
 
-from syncraft.ast import Token, TokenClass, AST, SyncraftError, word_lexer
+from syncraft.ast import Token, TokenClass, AST, SyncraftError
 from syncraft.constraint import Bindable
 from syncraft.utils import CallWith
+import re
 
 T = TypeVar('T', bound=Hashable)  
 A = TypeVar('A')
@@ -275,7 +276,7 @@ def parse_word(syntax: Syntax[Any, Any],
                sql: str, 
                *, 
                cache: CacheWithLexer[Any, Any, Any]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    tokens = word_lexer(sql)
+    tokens: List[Token]  = [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', sql)]
     return parse(syntax, tokens, cache=cache)
 
     
@@ -284,12 +285,7 @@ def parse(syntax: Syntax[Any, Any],
           *,
           cache: CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    if False:
-        from syncraft.syntax import run_state
-        state = ParserState(input=tuple(tokens), index=0, final=True, base=0)
-        v, s = run_state(syntax=syntax, alg=Parser, state=state, cache=cache)
-    else:
-        v, s = run(syntax=syntax, alg=Parser, source=Input.from_data(tokens), cache=cache)
+    v, s = run(syntax=syntax, alg=Parser, source=Input.from_data(tokens), cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:

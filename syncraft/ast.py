@@ -481,8 +481,6 @@ class Token(AST, Generic[Char]):
         return self.__str__()
     
 
-def word_lexer(input: str) -> List[Token]:
-    return [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', input)]
 
 
 

@@ -637,14 +637,15 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
-        facade_cache: WeakValueDictionary[Callable[..., Any], Syntax[Any, Any]] = cls._lazy_facade_cache
+        facade_cache = cls._lazy_facade_cache
         existing = facade_cache.get(thunk)
         if existing is not None:
             return existing  
 
         helper = LazyState(thunk)
 
-        facade = cls(alg_f=lambda acls, **global_kwargs: helper(acls, **global_kwargs), spec=LazySpec(spec=lambda: helper.cached.spec))
+        facade = cls(alg_f=lambda acls, **global_kwargs: helper(acls, **global_kwargs), 
+                     spec=LazySpec(spec=lambda: helper.cached.spec))
         facade_cache[thunk] = facade
         return facade
     
