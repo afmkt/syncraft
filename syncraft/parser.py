@@ -352,15 +352,16 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
 def parse_word(syntax: Syntax[Any, Any], 
                sql: str, 
                *, 
-               cache: CacheWithLexer[Any, Any, Any]) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+               cache: None| CacheWithLexer[Any, Any, Any] = None
+               ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     tokens: List[Token]  = [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', sql)]
-    return parse(syntax, tokens, cache=cache)
+    return parse_data(syntax, tokens, cache=cache)
 
     
-def parse(syntax: Syntax[Any, Any], 
+def parse_data(syntax: Syntax[Any, Any], 
           tokens: List[Token],
           *,
-          cache: CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]
+          cache: None|CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     runner = Runner(input=Input.from_data(tokens))
     v, s = runner(syntax=syntax, alg_cls=Parser, cache=cache)
@@ -370,80 +371,11 @@ def parse(syntax: Syntax[Any, Any],
         return v, None
 
 
-def run(*,
-        syntax: Syntax[A, ParserState[T]],
-        alg: Type[Algebra[A, ParserState[T]]],
-        source: Input[T],
-        chunk_size: int = 4096,
-        cache: Optional[CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[A, ParserState[T]]]]] = None,
-        ) -> Tuple[Any, None | ParserState[T]]:
-    
-    def _instantiate_lexer(
-        *,
-        syntax: Syntax[Any, Any],
-        config: Mapping[str, Any],
-        kind: str,
-    ) -> LexerProtocol[Any]:
-        bound_cls = config.get("lexer_class")
-        if isinstance(bound_cls, type):
-            if not issubclass(bound_cls, LexerProtocol):
-                raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
-        elif kind == 'text':
-            default_mode = config.get("default_mode")
-            universe = config.get("universe") or CodeUniverse.unicode()
-            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
-        elif kind == 'bytes':
-            default_mode = config.get("default_mode")
-            universe = config.get("universe") or CodeUniverse.byte()
-            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
-        else:
-            def _ensure_token_class(value: Any) -> TokenClass:
-                if isinstance(value, TokenClass):
-                    return value
-                if callable(value):
-                    return TokenClass(TokenConstructor=value)
-                return TokenClass.simple()
-            token_class_cfg = _ensure_token_class(config.get("token_class"))
-            case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
-            strict = config.get("strict", getattr(token_class_cfg, "strict", False))
-            bound_cls = CallWith(ExtLexer.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
-
-        lexer = bound_cls.from_syntax(syntax)
-        assert isinstance(lexer, LexerProtocol)
-        return lexer
-
-
-    gen_cache = cache or CacheWithLexer()
-    assert isinstance(gen_cache, CacheWithLexer), "Cache must be CacheWithLexer or None"
-
-
-    cursor = StreamCursor(source, chunk_size=chunk_size)
-    buffer, final = cursor.initial_buffer()
-    parser = syntax(alg)
-    gen_cache.lexer = _instantiate_lexer(syntax=syntax, config=parser.config(), kind=source.payload_kind)
-
-    state = ParserState(input=buffer, index=0, base=0, final=final)
-    parser_gen = parser.run(state, cache=gen_cache)
-
-    try:
-        result = next(parser_gen)
-        while True:
-            if isinstance(result, Incomplete):
-                pending_state: ParserState[T] = result.state
-
-                if pending_state.final:
-                    raise SyncraftError("Parser requested more input but input is final", offender=pending_state, expect="not final")
-
-                chunk, final = cursor.next_chunk()
-                pending_state = pending_state.extend(chunk, final=final)
-                result = parser_gen.send(pending_state)
-            else:
-                raise AssertionError("Unexpected yield from algebra: expected Incomplete")  # pragma: no cover
-    except StopIteration as e:
-        result = e.value
-        if isinstance(result, Right):
-            return result.value[0], result.value[1]
-        if isinstance(result, Left):
-            return result.value, None
-        return Error(this=result, message="Algebra returned data that is not Left or Right"), None
+def parse(syntax: Syntax[Any, Any],
+          input: Input[T],
+          *,
+          cache: None | CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
+          ) -> Tuple[Any, None | ParserState[T]]:
+    runner = Runner(input=input)
+    return runner(syntax=syntax, alg_cls=Parser, cache=cache)
 

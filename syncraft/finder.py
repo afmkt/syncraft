@@ -50,13 +50,9 @@ class Finder(Generator[T], Generic[T]):
 anything = Syntax.factory('anything')
 
 def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any])-> bool:
-
-    state = GenState.from_ast(ast=data, seed=0, restore_pruned=True)
-    from syncraft.syntax import run_state
-    ast, _ = run_state(syntax=s, 
-                 alg=Finder, 
-                 state=state, 
-                 cache=cache)
+    from syncraft.generator import Runner
+    runner = Runner(ast = data, seed=0, restore_pruned=True)
+    ast, _ = runner(syntax=s, alg_cls=Finder)
     match ast:
         case Left(_):
             return False

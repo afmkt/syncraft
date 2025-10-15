@@ -9,23 +9,18 @@ from syncraft.generator import validate, generate_with
 from syncraft.algebra import Error
 from syncraft.lexer import CacheWithLexer
 from syncraft.cache import LeftRecursionError
+from syncraft.parser import parse_data
 
 
 
 def test():
     literal = Syntax.config(token_class=TokenClass.simple()).literal
-    Term = literal('n')
-    Expr = Syntax.lazy(lambda: (Expr + literal('+') + Term) | Term)
-    cache = CacheWithLexer()
-    cache.max_growth_iterations = 1
-    with pytest.raises(LeftRecursionError) as exc:
-        parse_word(Expr, 'n + n + n + n', cache=cache)
-    err = exc.value
-    assert err.limit == 1
-    assert err.reason == 'iteration-cap'
-    assert err.group_size == 1
+    syntax = literal("if")
+    value, next_state = parse_data(syntax=syntax, tokens=[], cache=CacheWithLexer())
 
-
+    assert isinstance(value, Error)
+    assert next_state is None
+    print(value)
 
 def test_recursion() -> None:
     literal = Syntax.literal

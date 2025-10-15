@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from syncraft.ast import TokenClass
 from syncraft.input import Input
-from syncraft.parser import Parser, run as parser_run
+from syncraft.parser import Parser, parse as parser_run
 from syncraft.syntax import Syntax
 
 import pytest
@@ -16,9 +16,7 @@ def test_run_with_input_stream_handles_incomplete() -> None:
 
     value, state = parser_run(
         syntax=syntax,
-        alg=Parser,
-        source=source,
-        chunk_size=1,
+        input=source
     )
 
     assert state is not None
@@ -35,8 +33,7 @@ def test_run_with_input_reads_all_when_unbounded() -> None:
 
     value, state = parser_run(
         syntax=syntax,
-        alg=Parser,
-        source=source
+        input=source
     )
 
     assert state is not None

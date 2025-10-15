@@ -503,7 +503,6 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
         return None
 
 
-
 def generate_with(
     syntax: Syntax[Any, Any], 
     data: Optional[ParseResult[Any]] = None, 
