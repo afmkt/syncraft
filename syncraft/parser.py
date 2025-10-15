@@ -272,6 +272,12 @@ class Parser(Algebra[T, ParserState[T]]):
         return cls(lex_run, _name=str(ntag))
 
 
+
+
+
+
+
+
 def parse_word(syntax: Syntax[Any, Any], 
                sql: str, 
                *, 

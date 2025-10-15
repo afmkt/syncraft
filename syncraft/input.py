@@ -238,6 +238,9 @@ class AsyncTextStream(Input[str]):
         return self.reader.at_eof() and not self.buffer
 
 
+
+
+
 class StreamCursor(Generic[T]):
     """Iterates over an ``Input`` in normalized, non-empty chunks.
 

@@ -5,12 +5,11 @@ from typing import (
     List, Generator as PyGenerator, cast, Type
 )
 from functools import cached_property
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
 from syncraft.lexer import CacheWithLexer, ExtLexer, LexerProtocol
-from syncraft.fa import FABuilder
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
@@ -20,7 +19,7 @@ from syncraft.ast import (
     Then, ThenKind, SyncraftError
 )
 from syncraft.constraint import FrozenDict
-from syncraft.syntax import Syntax
+from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, PayloadKind
 import random
 
 from syncraft.constraint import Bindable
@@ -481,6 +480,29 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
 
+
+@dataclass
+class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
+    ast : ParseResult[T] | None = None
+    seed: int = field(default_factory=lambda: random.randint(0, 2**32 - 1))
+    restore_pruned: bool = False
+    def bootstrap(self, 
+                  syntax: Syntax[ParseResult[T], GenState[T]], 
+                  alg_cls: Type[Algebra[ParseResult[T], GenState[T]]]
+                  ) -> Tuple[Algebra[ParseResult[T], GenState[T]], Cache[GenState[T], Either[Any, Tuple[Any, GenState[T]]]], GenState[T]]:
+        
+        initial_cache: CacheWithLexer[Any, GenState[T], Either[Any, Tuple[Any, GenState[T]]]] = CacheWithLexer()
+        initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
+        return syntax(alg_cls), initial_cache, initial_state
+    
+    def resume(self, request: Incomplete[S]) -> S:
+        raise SyncraftError("Generator does not support resuming from Incomplete states.", offender=request, expect="Not Incomplete")
+
+    def payload_kind(self) -> Optional[PayloadKind]: 
+        return None
+
+
+
 def generate_with(
     syntax: Syntax[Any, Any], 
     data: Optional[ParseResult[Any]] = None, 
@@ -499,10 +521,10 @@ def generate_with(
     Returns:
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
-    from syncraft.syntax import run_state
-    state = GenState.from_ast(ast=data, seed=seed, restore_pruned=restore_pruned)
+    # from syncraft.syntax import run_state
+    runner = Runner(ast=data, seed=seed, restore_pruned=restore_pruned)
 
-    v, s = run_state(syntax=syntax, alg=Generator, state=state, cache=CacheWithLexer())
+    v, s = runner(syntax=syntax, alg_cls=Generator)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -523,9 +545,9 @@ def validate(
     Returns:
         A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
     """
-    state = GenState.from_ast(ast=data, seed=0, restore_pruned=True)
-    from syncraft.syntax import run_state
-    v, s = run_state(syntax=syntax, alg=Generator, state=state, cache=CacheWithLexer())
+    runner = Runner(ast=data, seed=0, restore_pruned=True)
+    # from syncraft.syntax import run_state
+    v, s = runner(syntax=syntax, alg_cls=Generator)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -542,10 +564,13 @@ def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     Returns:
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
-    state = GenState.from_ast(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
-    from syncraft.syntax import run_state
-    v, s = run_state(syntax=syntax, alg=Generator, state=state, cache=CacheWithLexer())
+    runner = Runner(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    # from syncraft.syntax import run_state
+    v, s = runner(syntax=syntax, alg_cls=Generator)
     if s is not None:
         return v, s.binding.bound()
     else:
         return v, None
+    
+
+

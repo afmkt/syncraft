@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List, Dict, Set, Iterator, ClassVar
+    Type, List, Dict, Set, Iterator, ClassVar, Protocol
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -734,6 +734,48 @@ class Syntax(Generic[A, S]):
         return acc
 
 
+class PayloadKind(Enum):
+    TEXT = 'text'
+    TOKEN = 'token'
+    BINARY = 'binary'
+
+class RunnerProtocol(Protocol, Generic[A, S]):
+    def bootstrap(self, 
+                  syntax: Syntax[A, S],
+                  alg_cls: Type[Algebra[A, S]]                  
+                  ) -> Tuple[Algebra[A, S], Cache[S, Either[Any, Tuple[A, S]]], S]: ...
+
+    def resume(self, request: Incomplete[S]) -> S: ...
+
+    def payload_kind(self) -> Optional[PayloadKind]: ...
+
+    def finalize(self, result: Optional[Tuple[Any, None | S]]) -> None: 
+        return
+
+    def __call__(self, syntax: Syntax[A, S], alg_cls: Type[Algebra[A, S]]) -> Tuple[Any, None | S]:
+        ret = None
+        parser, gen_cache, state = self.bootstrap(syntax=syntax, alg_cls=alg_cls)  
+        parser_gen = parser.run(state, cache=gen_cache)
+        try:
+            result = next(parser_gen)
+            while True:
+                if isinstance(result, Incomplete):
+                    pending_state = self.resume(result)
+                    result = parser_gen.send(pending_state)
+                else:
+                    raise AssertionError("Unexpected yield from algebra: expected Incomplete")  # pragma: no cover
+            
+        except StopIteration as e:
+            result = e.value
+            if isinstance(result, Right):
+                ret = result.value
+            elif isinstance(result, Left):
+                ret = result.value, None
+            else:
+                ret = Error(this=result, message="Algebra returned data that is not Left or Right"), None
+        finally:
+            self.finalize(ret)
+        return ret # type: ignore
 
 
 
