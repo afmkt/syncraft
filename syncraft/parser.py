@@ -19,7 +19,7 @@ from syncraft.algebra import (
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
 
-from syncraft.syntax import Syntax
+from syncraft.syntax import Syntax, RunnerProtocol, PayloadKind
 from syncraft.input import Input, StreamCursor
 
 from syncraft.ast import Token, TokenClass, AST, SyncraftError
@@ -273,7 +273,78 @@ class Parser(Algebra[T, ParserState[T]]):
 
 
 
+@dataclass
+class Runner(RunnerProtocol[Any, ParserState[T]]):
+    input : Input[T] 
+    chunk_size: int = 4096
+    cursor : StreamCursor[T] = field(init=False, repr=False, compare=False, hash=False)
+    
+    def __post_init__(self):    
+        assert self.input is not None, "Input must be provided to Runner"
+        self.cursor = StreamCursor(self.input, chunk_size=self.chunk_size)
+    def bootstrap(self, 
+                  syntax: Syntax[Any, ParserState[T]], 
+                  alg_cls: Type[Algebra[Any, ParserState[T]]],
+                  cache: Optional[Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]] = None
+                  ) -> Tuple[Algebra[Any, ParserState[T]], Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]], ParserState[T]]:
+        assert cache is None or isinstance(cache, CacheWithLexer), "Cache must be CacheWithLexer or None"
+        parser = syntax(alg_cls)
+        cache = cache or CacheWithLexer()
+        buffer, final = self.cursor.initial_buffer()
+        initial_state = ParserState(input=buffer, index=0, base=0, final=final)
+        cache.lexer = self._instantiate_lexer(syntax=syntax, config=parser.config(), kind=self.input.payload_kind)
 
+        return syntax(alg_cls), cache, initial_state
+    
+    def resume(self, request: Incomplete[ParserState[T]]) -> ParserState[T]:
+        state = request.state
+        if state.final:
+            raise SyncraftError("Cannot resume parser: input is final", offender=state, expect="not final")
+        chunk, final = self.cursor.next_chunk()
+        return state.extend(chunk, final=final)
+
+    def payload_kind(self) -> Optional[PayloadKind]: 
+        return {
+            'text': PayloadKind.TEXT,
+            'bytes': PayloadKind.BINARY,
+            'tokens': PayloadKind.TOKEN,
+        }.get(self.input.payload_kind, None)
+        
+
+    def _instantiate_lexer(
+            self,
+            *,
+            syntax: Syntax[Any, Any],
+            config: Mapping[str, Any],
+            kind: str,
+        ) -> LexerProtocol[Any]:
+        bound_cls = config.get("lexer_class")
+        if isinstance(bound_cls, type):
+            if not issubclass(bound_cls, LexerProtocol):
+                raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
+        elif kind == 'text':
+            default_mode = config.get("default_mode")
+            universe = config.get("universe") or CodeUniverse.unicode()
+            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
+        elif kind == 'bytes':
+            default_mode = config.get("default_mode")
+            universe = config.get("universe") or CodeUniverse.byte()
+            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
+        else:
+            def _ensure_token_class(value: Any) -> TokenClass:
+                if isinstance(value, TokenClass):
+                    return value
+                if callable(value):
+                    return TokenClass(TokenConstructor=value)
+                return TokenClass.simple()
+            token_class_cfg = _ensure_token_class(config.get("token_class"))
+            case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
+            strict = config.get("strict", getattr(token_class_cfg, "strict", False))
+            bound_cls = CallWith(ExtLexer.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
+
+        lexer = bound_cls.from_syntax(syntax)
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
 
 
 
@@ -291,7 +362,8 @@ def parse(syntax: Syntax[Any, Any],
           *,
           cache: CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    v, s = run(syntax=syntax, alg=Parser, source=Input.from_data(tokens), cache=cache)
+    runner = Runner(input=Input.from_data(tokens))
+    v, s = runner(syntax=syntax, alg_cls=Parser, cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:

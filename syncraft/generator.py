@@ -488,10 +488,11 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     restore_pruned: bool = False
     def bootstrap(self, 
                   syntax: Syntax[ParseResult[T], GenState[T]], 
-                  alg_cls: Type[Algebra[ParseResult[T], GenState[T]]]
-                  ) -> Tuple[Algebra[ParseResult[T], GenState[T]], Cache[GenState[T], Either[Any, Tuple[Any, GenState[T]]]], GenState[T]]:
+                  alg_cls: Type[Algebra[ParseResult[T], GenState[T]]],
+                  cache: Optional[Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]] = None
+                  ) -> Tuple[Algebra[ParseResult[T], GenState[T]], Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]], GenState[T]]:
         
-        initial_cache: CacheWithLexer[Any, GenState[T], Either[Any, Tuple[Any, GenState[T]]]] = CacheWithLexer()
+        initial_cache: Cache[ GenState[T], Either[Any, Tuple[Any, GenState[T]]]] = cache or CacheWithLexer()
         initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
         return syntax(alg_cls), initial_cache, initial_state
     

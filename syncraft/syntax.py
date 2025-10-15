@@ -742,7 +742,8 @@ class PayloadKind(Enum):
 class RunnerProtocol(Protocol, Generic[A, S]):
     def bootstrap(self, 
                   syntax: Syntax[A, S],
-                  alg_cls: Type[Algebra[A, S]]                  
+                  alg_cls: Type[Algebra[A, S]],
+                  cache: Optional[Cache[S, Either[Any, Tuple[A, S]]]] = None                
                   ) -> Tuple[Algebra[A, S], Cache[S, Either[Any, Tuple[A, S]]], S]: ...
 
     def resume(self, request: Incomplete[S]) -> S: ...
@@ -752,9 +753,12 @@ class RunnerProtocol(Protocol, Generic[A, S]):
     def finalize(self, result: Optional[Tuple[Any, None | S]]) -> None: 
         return
 
-    def __call__(self, syntax: Syntax[A, S], alg_cls: Type[Algebra[A, S]]) -> Tuple[Any, None | S]:
+    def __call__(self, 
+                 syntax: Syntax[A, S], 
+                 alg_cls: Type[Algebra[A, S]],
+                 cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | S]:
         ret = None
-        parser, gen_cache, state = self.bootstrap(syntax=syntax, alg_cls=alg_cls)  
+        parser, gen_cache, state = self.bootstrap(syntax=syntax, alg_cls=alg_cls, cache=cache)  
         parser_gen = parser.run(state, cache=gen_cache)
         try:
             result = next(parser_gen)

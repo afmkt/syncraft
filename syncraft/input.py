@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, Iterator, Optional, TypeVar, Sequence, AsyncIterator, Union, Literal, cast, Tuple
+from typing import Generic, Iterator, Optional, TypeVar, Sequence, AsyncIterator, Union, Literal, cast, Tuple, overload
 import io
 import asyncio
 import codecs
@@ -31,6 +31,26 @@ class Input(Generic[T]):
     def mark_payload_kind(self, kind: str) -> None:
         self._payload_kind = kind
     
+    @staticmethod
+    @overload
+    def from_data(data: str) -> Input[str]: ...
+
+    @staticmethod
+    @overload
+    def from_data(data: bytes) -> Input[bytes]: ...
+
+    @staticmethod
+    @overload
+    def from_data(data: Sequence[T]) -> Input[T]: ...
+
+    @staticmethod
+    @overload
+    def from_data(data: Iterator[T]) -> Input[T]: ...
+
+    @staticmethod
+    @overload
+    def from_data(data: AsyncIterator[T]) -> Input[T]: ...
+
     @staticmethod
     def from_data(data: Union[str, bytes, Iterator[T], AsyncIterator[T], Sequence[T]]) -> Input[str] | Input[bytes] | Input[T]:
         if isinstance(data, str):
