@@ -450,19 +450,11 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 tag = input.rng("lex_tag").choice(tuple(tags))
                 input = input.fork(tag=tag)
                 generated = lexer.gen(tag, input.rng())
-                if isinstance(generated, (str, bytes, tuple)):
-                    result_value = Token(text=generated, token_type=tag)
-                else:
-                    result_value = generated
-                parsed_value = cast(ParseResult[T], result_value)
+                parsed_value = cast(ParseResult[T], generated)
                 return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tag)))
             else:
                 current = input.ast
-                if isinstance(lexer, ExtLexer):
-                    is_valid = lexer.varify(tags, current)
-                else:
-                    is_valid = isinstance(current, Token) and lexer.varify(tags, current)
-                if not is_valid:
+                if not lexer.varify(tags, current):
                     return (yield from cache.return_value(
                         Left(
                             Error(

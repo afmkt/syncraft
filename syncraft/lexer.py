@@ -82,7 +82,9 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def varify(self, tag: frozenset[Tag], value: Any) -> bool: ...
 
-    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...]: ...
+    # def make(self, tag: Tag, value: Any) -> Any: ...
+
+    def gen(self, tag: Tag, rng: random.Random) -> Any: ...
 
     @classmethod
     def tag(cls, *args:Any, **kwargs: Any) -> frozenset[Tag]: 
@@ -260,7 +262,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
         lexer.push_mode(default_mode)
         return lexer
 
-    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...]:
+    def gen(self, tag: Tag, rng: random.Random) -> Any:
         ret = self.current_mode.rdfa.gen(tag, rng)
         act = self.actions.get(tag)
         if act is not None:
