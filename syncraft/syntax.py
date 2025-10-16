@@ -728,7 +728,7 @@ class Syntax(Generic[A, S]):
         def visitor( fspec: FactorySpec, acc: Set[FABuilder[Any]]) -> Set[FABuilder[Any]]:
             for k, v in fspec.kwargs.items():
                 if isinstance(v, FABuilder):
-                    acc.add(v)
+                    acc.add(v.tagged(k) if v.tag is None else v)
             return acc
         acc = self.factory_spec(visitor, set())
         return acc

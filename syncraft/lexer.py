@@ -80,17 +80,17 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def match(self, char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
 
-    def varify(self, tag: Tag | None, value: Any) -> bool: ...
+    def varify(self, tag: frozenset[Tag], value: Any) -> bool: ...
 
-    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...] | Token: ...
+    def gen(self, tag: Tag, rng: random.Random) -> str | bytes | Tuple[C, ...]: ...
 
     @classmethod
-    def tag(cls, *args:Any, **kwargs: Any) -> Tag: 
+    def tag(cls, *args:Any, **kwargs: Any) -> frozenset[Tag]: 
         cw = CallWith(cls._tag, *args, **kwargs)
         return cw()
 
     @classmethod
-    def _tag(cls, *args:Any, **kwargs: Any) -> Tag: ...
+    def _tag(cls, *args:Any, **kwargs: Any) -> frozenset[Tag]: ...
 
     @classmethod
     def from_syntax(cls, syntax: Syntax[Any, Any]) -> "LexerProtocol[C]": ...
@@ -110,8 +110,13 @@ class Lexer(LexerProtocol[C], Generic[C]):
         raise NotImplementedError("Lexer cannot be constructed from syntax directly; use from_builders or another method")
 
     @classmethod
-    def _tag(cls, fabuilder: FABuilder) -> Tag:
-        return fabuilder.tag
+    def _tag(cls, **kwargs: Any) -> frozenset[Tag]:
+        tags = set()
+        for k,v in kwargs.items():
+            if isinstance(v, FABuilder):
+                if v.tag is not None:
+                    tags.add(v.tag)
+        return frozenset(tags)
 
     def _reset_runner(self, mode: Mode[C]) -> None:
         mode.runner = mode.runner.reset()
@@ -268,9 +273,9 @@ class Lexer(LexerProtocol[C], Generic[C]):
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
         return ret
 
-    def varify(self, tag: Tag | None, value: Any) -> bool:
+    def varify(self, tag: frozenset[Tag], value: Any) -> bool:
         if isinstance(value, Token):
-            if tag is not None and value.token_type != tag:
+            if len(tag) > 0 and value.token_type not in tag:
                 return False
             txt = value.text
         else:
@@ -287,7 +292,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
                 case Right(None):
                     continue
                 case Right(LexerResult(tag=t, start=s, end=e)):
-                    if tag is not None and t != tag:
+                    if len(tag) > 0 and t not in tag:
                         return False
                     if s != 0 or e != len(txt) - 1:
                         return False
@@ -375,13 +380,13 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
     token_class: TokenClass[ExtT]
     rules: Dict[Tag, ExtRule[ExtT]] = field(default_factory=dict)
     @classmethod
-    def _tag(cls, token_type: Optional[Tag] = None, text: Optional[str] = None) -> Tag:
+    def _tag(cls, token_type: Optional[Tag] = None, text: Optional[str] = None) -> frozenset[Tag]:
         if token_type is None and text is None:
             raise SyncraftError("Cannot derive tag", offender=(token_type, text), expect="token_type or text")
         if token_type is not None:
-            return token_type
+            return frozenset([token_type])
         assert text is not None  # defensive: already guarded above
-        return cast(Tag, text)
+        return frozenset([text])
 
     @classmethod
     def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[ExtT]":
@@ -414,30 +419,32 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
         self,
         **kwargs: Any,
     ) -> None:
-        tag = self.tag(**kwargs)
+        tags = self.tag(**kwargs)
+        assert len(tags) == 1, "External lexer rules must have exactly one tag"
+        tag = next(iter(tags))
         existing = self.rules.get(tag)
         pred = self.token_class.predicate(**kwargs) if existing is None else existing.predicate
         gen = self.token_class.generator(**kwargs) if existing is None else existing.generator
         self.rules[tag] = ExtRule(pred, gen)
 
     def match(self, item: ExtT, index: int) -> Either[Any, None | LexerResult[ExtT]]:
-        tag = self.tag(**object_to_dict(item))
+        tags = self.tag(**object_to_dict(item))
+        assert len(tags) == 1, "External lexer rules must have exactly one tag"
+        tag = next(iter(tags))
         if tag in self.rules:
             if self.rules[tag].predicate(item):
                 return Right(LexerResult(tag=tag, start=index, end=index + 1, value=item))
         return Left(f"External lexer has no rule for token at index {index}: {item!r}")
         
 
-    def varify(self, tag: Tag | None, value: Any) -> bool:
-        if tag is None:
-            return False
-        rule = self.rules.get(tag)
-        if rule is None:
-            return False
-        try:
-            return rule.predicate(value)
-        except Exception:
-            return False
+    def varify(self, tag: frozenset[Tag], value: Any) -> bool:
+        assert len(tag) == 1, "External lexer varify must be called with exactly one tag"
+        for t in tag:
+            rule = self.rules.get(t)
+            if rule is not None:
+                if rule.predicate(value):
+                    return True
+        return False
 
     def gen(self, tag: Tag, rng: random.Random) -> Any:
         rule = self.rules.get(tag)

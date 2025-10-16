@@ -435,7 +435,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             *,
             lexer_class: Type[LexerProtocol],
             **kwargs: Any) -> Algebra[T, GenState[T]]:
-        tag = lexer_class.tag(**kwargs)
+        tags = lexer_class.tag(**kwargs)
         def lex_run(input: GenState[T], 
                     cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
                               YieldChannelType, 
@@ -447,6 +447,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             if not isinstance(lexer, LexerProtocol):
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
             if input.pruned:
+                tag = input.rng("lex_tag").choice(tuple(tags))
                 input = input.fork(tag=tag)
                 generated = lexer.gen(tag, input.rng())
                 if isinstance(generated, (str, bytes, tuple)):
@@ -458,25 +459,25 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             else:
                 current = input.ast
                 if isinstance(lexer, ExtLexer):
-                    is_valid = lexer.varify(tag, current)
+                    is_valid = lexer.varify(tags, current)
                 else:
-                    is_valid = isinstance(current, Token) and lexer.varify(tag, current)
+                    is_valid = isinstance(current, Token) and lexer.varify(tags, current)
                 if not is_valid:
                     return (yield from cache.return_value(
                         Left(
                             Error(
                                 None,
-                                message=f"Expected token tag {tag}, but got {current}.",
+                                message=f"Expected token tag {tags}, but got {current}.",
                                 state=input,
                             )
                         ),
                         input,
-                        name=str(tag),
+                        name=str(tags),
                     ))
                 parsed_value = cast(ParseResult[T], current)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tag)))
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tags)))
 
-        return cls(lex_run, _name=str(tag)) # type: ignore
+        return cls(lex_run, _name=str(tags)) # type: ignore
 
 
 

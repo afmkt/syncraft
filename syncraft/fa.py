@@ -1192,8 +1192,8 @@ class ModeAction:
 
 @dataclass(frozen=True)
 class FABuilder(Generic[C]):
-    tag: Tag
     kind: _NodeKind
+    tag: Tag | None = None
     children: Tuple[FABuilder[C], ...] = field(default_factory=tuple)
     text: Optional[Union[str, bytes, Sequence[C]]] = None
     at_least: int = 1
