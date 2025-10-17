@@ -373,7 +373,7 @@ class CacheWithLexer(Cache[A, Ret], Generic[C, A, Ret]):
 
 T = TypeVar('T', bound=Hashable)
 
-class TokenProtocol(Protocol[T]):
+class TokenSpec(Protocol[T]):
     def predicate(self, **kwargs: Any) -> Callable[[T], bool]: ...
     def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]: ...
     
@@ -385,7 +385,7 @@ class ExtRule(Generic[T]):
 
 @dataclass
 class ExtLexer(LexerProtocol[T]):
-    token_class: TokenProtocol[T]
+    tkspec: TokenSpec[T]
     rules: Dict[Tag, ExtRule[T]] = field(default_factory=dict)
     @classmethod
     def _tag(cls, token_type: Optional[Tag] = None, text: Optional[str] = None) -> frozenset[Tag]:
@@ -401,11 +401,11 @@ class ExtLexer(LexerProtocol[T]):
         raise NotImplementedError("ExtLexer cannot be constructed from syntax directly; use create or another method")
     
     @classmethod
-    def bind(cls, token_protocol: TokenProtocol[T]) -> Type[ExtLexer[T]]:
+    def bind(cls, tkspec: TokenSpec[T]) -> Type[ExtLexer[T]]:
         class BoundLexer(ExtLexer[Any]):
             @classmethod
             def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[T]":
-                ret = cls(token_protocol)
+                ret = cls(tkspec = tkspec)
                 def visitor(fspec: FactorySpec, acc: ExtLexer[T]) -> ExtLexer[T]:
                     if fspec.name in ("token"):
                         acc.register(**fspec.kwargs)
@@ -431,8 +431,8 @@ class ExtLexer(LexerProtocol[T]):
         assert len(tags) == 1, "External lexer rules must have exactly one tag"
         tag = next(iter(tags))
         existing = self.rules.get(tag)
-        pred = self.token_class.predicate(**kwargs) if existing is None else existing.predicate
-        gen = self.token_class.generator(**kwargs) if existing is None else existing.generator
+        pred = self.tkspec.predicate(**kwargs) if existing is None else existing.predicate
+        gen = self.tkspec.generator(**kwargs) if existing is None else existing.generator
         self.rules[tag] = ExtRule(pred, gen)
 
     def match(self, tags: frozenset[Tag], item: T, index: int) -> Either[Any, None | LexerResult[T]]:

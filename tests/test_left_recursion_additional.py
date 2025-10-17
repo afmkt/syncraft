@@ -9,10 +9,10 @@ from syncraft.lexer import CacheWithLexer
 from syncraft.ast import Token
 from syncraft.token import Structured
 # Reuse the pattern from existing tests: specialize Syntax with a Structured
-literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token))).literal
-token = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token))).token
-lazy = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token))).lazy
-success = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token))).success
+literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
+token = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).token
+lazy = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).lazy
+success = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).success
 # Note: Syntax.lazy is used to define recursive grammars.
 # NOTE: These tests target newly added diagnostics & edge scenarios for left recursion.
 # If import paths differ, adjust accordingly (assumes existing test helpers).

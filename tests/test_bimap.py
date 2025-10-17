@@ -9,7 +9,7 @@ from syncraft.lexer import CacheWithLexer, ExtLexer
 from syncraft.token import Structured
 
 
-literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token))).literal
+literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
 
 def from_string(string: str) -> Token:
     return Token(text=string)

@@ -16,7 +16,7 @@ from syncraft.token import Structured
 
 @pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
 def test() -> None:
-    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token)))
+    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
     literal = TestSyntax.literal
     identifier = TestSyntax.token(text="id", token_type="IDENT")
 

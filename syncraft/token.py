@@ -5,13 +5,13 @@ import random
 from typing import Any, Callable, Dict, Tuple, TypeVar, Hashable
 import re
 from syncraft.utils import CallWith
-from syncraft.lexer import TokenProtocol
+from syncraft.lexer import TokenSpec
 from dataclasses import field, fields
 import rstr
 
 T = TypeVar('T', bound=Hashable)
 @dataclass(frozen=True)
-class TokenMatcher(TokenProtocol[T]):
+class TokenMatcher(TokenSpec[T]):
     pred: Callable[[T], bool]
     gen: Callable[[Any, random.Random], T]
 
@@ -22,7 +22,7 @@ class TokenMatcher(TokenProtocol[T]):
         return self.gen
 
 @dataclass(frozen=True)
-class Scalar(TokenProtocol[T]):
+class Scalar(TokenSpec[T]):
     constructor: Callable[..., T]
     pattern: re.Pattern = field(default=re.compile(".*"), metadata={"is_config": True})
 
@@ -40,7 +40,7 @@ class Scalar(TokenProtocol[T]):
 
 
 @dataclass(frozen=True)
-class Structured(TokenProtocol[T]):
+class Structured(TokenSpec[T]):
     constructor: Callable[..., T]
     case_sensitive: bool = field(default=False, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
@@ -109,3 +109,5 @@ class Structured(TokenProtocol[T]):
             return CallWith(self.constructor, **data)()
         gen.__name__ = f"G({self.describe(**kwargs)})"
         return gen
+
+

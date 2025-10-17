@@ -8,7 +8,7 @@ from syncraft.ast import Token
 import pytest
 from syncraft.token import Structured
 def test_run_with_input_stream_handles_incomplete() -> None:
-    literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token))).literal
+    literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
     syntax = literal("if").many()
     tokens = ["if", "if"]
     source = Input.from_data(tokens)
