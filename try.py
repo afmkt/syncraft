@@ -1,37 +1,45 @@
+from __future__ import annotations
+
+from typing import List
 import pytest
-from syncraft.syntax import Syntax
+from syncraft.syntax import (
+    Syntax,
+    SyntaxSpec,
+    LazySpec,
+    ThenSpec,
+    ChoiceSpec,
+
+)
+from syncraft.ast import (
+    Token,
+    Then,
+    Choice,
+    Many,
+    Marked,
+    Collect,
+    Nothing,
+    Lazy,
+)
 from syncraft.lexer import ExtLexer
+from syncraft.input import Input
+from syncraft.parser import parse as parser_run
 from syncraft.parser import parse_word
-from syncraft.generator import validate, generate_with
-from syncraft.algebra import Error
-from syncraft.lexer import CacheWithLexer
-from syncraft.ast import Token
-S = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token))
-def tok(text: str):
-    return S.config(lexer_class=ExtLexer.bind(token_class=Token)).token(text=text, case_sensitive=True)
 
 
-def test_validate_and_generate_with_after_bimap_resets_choice_kind():
-    # Grammar: A := (A + 'a') | 'a'
-    A = S.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+@pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
+def test() -> None:
+    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token))
+    literal = TestSyntax.literal
+    identifier = TestSyntax.token(text="id", token_type="IDENT")
 
-    # Parse concrete input "a a a"
-    ast, _ = parse_word(A, 'a a a', cache=CacheWithLexer())
-    assert not isinstance(ast, Error)
+    grammar = (literal("a") + identifier) | literal("b")
 
-    # Apply bimap then reconstruct the AST. Choice.bimap resets kind to None.
-    x, invf = ast.bimap()  # x is a flattened tuple-like view; invf reconstructs AST with kind=None in Choice nodes
-    reconstructed = invf(x)
+    builders = grammar.fabuilder()
+    seen = {(builder.text, builder.tag) for builder in builders}
+    from rich import print
+    print(seen)
+    assert seen == {("a", 'a'), ("id", "IDENT"), ("b", 'b')}
 
-    # validate() should succeed even when Choice.kind is None
-    v1, b1 = validate(A, reconstructed)
-    assert not isinstance(v1, Error)
-    assert b1 is not None
-
-    # generate_with() should also respect kind=None and succeed
-    v2, b2 = generate_with(A, reconstructed)
-    assert not isinstance(v2, Error)
-    assert b2 is not None
 
 if __name__ == "__main__":
-    test_validate_and_generate_with_after_bimap_resets_choice_kind()
+    test()
