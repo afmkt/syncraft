@@ -54,11 +54,13 @@ class Structured(TokenSpec[T]):
     constructor: Callable[..., T]
     case_sensitive: bool = field(default=True, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
-    tag: Callable[..., frozenset[Tag]] = field(default=lambda **kwargs: frozenset())
+    tag: None | Callable[..., frozenset[Tag]] = field(default=None)
 
     def tags(self, **kwargs: Any) -> frozenset[Tag]:
         config, kwargs = self.extract_config(kwargs)
-        if 'tag' in kwargs:
+        if self.tag:
+            return self.tag(**kwargs)
+        elif 'tag' in kwargs:
             return frozenset([kwargs['tag']])
         elif 'token_type' in kwargs:
             return frozenset([kwargs['token_type']])
