@@ -5,9 +5,9 @@ from syncraft.parser import parse_data
 from syncraft.syntax import Syntax
 from syncraft.algebra import Error
 from syncraft.ast import Token
-from syncraft.token import TokenClass
+from syncraft.token import Structured
 def test_syntax_run_returns_error_on_incomplete() -> None:
-    literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
+    literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token))).literal
     syntax = literal("if")
     from syncraft.lexer import CacheWithLexer
     value, next_state = parse_data(syntax=syntax, tokens=[], cache=CacheWithLexer())

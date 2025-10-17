@@ -6,8 +6,8 @@ from syncraft.generator import generate_with, generate, validate
 from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
 from syncraft.lexer import ExtLexer
-from syncraft.token import TokenClass
-S = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token)))
+from syncraft.token import Structured
+S = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token)))
 def tok(text: str):
     return S.token(text=text, case_sensitive=True)
 

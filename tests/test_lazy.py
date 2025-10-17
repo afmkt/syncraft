@@ -10,8 +10,8 @@ import re
 import pytest
 from syncraft.lexer import ExtLexer
 from .test_utils import token_multiset
-from syncraft.token import TokenClass
-S = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token)))
+from syncraft.token import Structured
+S = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token)))
 literal = S.literal
 token = S.token
 lazy = S.lazy

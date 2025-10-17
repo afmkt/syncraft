@@ -102,7 +102,7 @@ T = TypeVar('T', bound=Hashable)
 
 
 @dataclass(frozen=True)
-class TokenClass(TokenProtocol[T]):
+class Structured(TokenProtocol[T]):
     TokenConstructor: Callable[..., T]
     case_sensitive: bool = field(default=False, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
@@ -120,20 +120,12 @@ class TokenClass(TokenProtocol[T]):
             parts.append(str(x))
         return "(" + ", ".join(parts) + ")"
 
-    def config_fields(self) -> List[str]:
-        return [f.name for f in fields(self) if f.metadata.get("is_config", False)]
-        
-    
-    def data_fields(self) -> List[str]:
-        c = CallWith(self.TokenConstructor)
-        return list(c.missing_keyword_params)
-
-
     def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        config_dict = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
-        config = {k: v for k, v in kwargs.items() if k in config_dict}
-        params = {k: v for k, v in kwargs.items() if k not in config_dict}
-        return config_dict | config, params
+        default_config = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
+        c = CallWith(self.TokenConstructor)
+        config = {k: v for k, v in kwargs.items() if k in c.missing_keyword_params}
+        params = {k: v for k, v in kwargs.items() if k not in c.missing_keyword_params}
+        return default_config | config, params
 
     def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
         config, kwargs = self.extract_config(kwargs)
@@ -180,9 +172,3 @@ class TokenClass(TokenProtocol[T]):
             return CallWith(self.TokenConstructor, **data)()
         gen.__name__ = f"G{self.describe(**kwargs)}"
         return gen
-
-
-
-
-def spec(**kwargs: Any) -> Dict[str, Any]:
-    return kwargs

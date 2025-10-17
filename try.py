@@ -12,11 +12,11 @@ from syncraft.ast import (
 
 )
 from syncraft.lexer import ExtLexer
-from syncraft.token import TokenClass
+from syncraft.token import Structured
 
 @pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
 def test() -> None:
-    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token)))
+    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=Structured(Token)))
     literal = TestSyntax.literal
     identifier = TestSyntax.token(text="id", token_type="IDENT")
 
