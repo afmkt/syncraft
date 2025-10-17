@@ -84,22 +84,6 @@ def _flatten_token_text(node: object) -> List[str]:
 
 
 
-
-
-@pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
-def test_spec_preserves_terminal_data_for_lexers() -> None:
-    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
-    literal = TestSyntax.literal
-    identifier = TestSyntax.token(text="id", token_type="IDENT")
-
-    grammar = (literal("a") + identifier) | literal("b")
-
-    builders = grammar.fabuilder()
-    seen = {(builder.text, builder.tag) for builder in builders}
-
-    assert seen == {("a", 'a'), ("id", "IDENT"), ("b", 'b')}
-
-
 def test_spec_can_drive_left_recursion_elimination() -> None:
     TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
     literal = TestSyntax.literal

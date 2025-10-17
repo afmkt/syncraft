@@ -665,7 +665,9 @@ class Syntax(Generic[A, S]):
 
         return cls.factory('token', **kwargs)
 
-        
+
+
+
     @classmethod
     def literal(cls, lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
         return cls.token(text=lit, case_sensitive=True)
@@ -722,17 +724,7 @@ class Syntax(Generic[A, S]):
             if isinstance(node, FactorySpec):
                 init = visitor(node, init)
         return init
-
-        
-    def fabuilder(self) -> Set[FABuilder[Any]]:
-        def visitor( fspec: FactorySpec, acc: Set[FABuilder[Any]]) -> Set[FABuilder[Any]]:
-            for k, v in fspec.kwargs.items():
-                if isinstance(v, FABuilder):
-                    acc.add(v.tagged(k) if v.tag is None else v)
-            return acc
-        acc = self.factory_spec(visitor, set())
-        return acc
-
+    
 
 class PayloadKind(Enum):
     TEXT = 'text'
