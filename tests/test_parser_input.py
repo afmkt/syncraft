@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from syncraft.ast import TokenClass
+from syncraft.lexer import ExtLexer
 from syncraft.input import Input
-from syncraft.parser import Parser, parse as parser_run
+from syncraft.parser import parse as parser_run
 from syncraft.syntax import Syntax
-
+from syncraft.ast import Token
 import pytest
 
 @pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
 def test_run_with_input_stream_handles_incomplete() -> None:
-    literal = Syntax.config(token_class=TokenClass.simple()).literal
+    literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
     syntax = literal("if").many()
     tokens = ["if", "if"]
     source = Input.from_data(tokens)
@@ -26,7 +26,7 @@ def test_run_with_input_stream_handles_incomplete() -> None:
 
 @pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
 def test_run_with_input_reads_all_when_unbounded() -> None:
-    literal = Syntax.config(token_class=TokenClass.simple()).literal
+    literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
     syntax = literal("if").many()
     tokens = ["if", "if"]
     source = Input.from_data(tokens)

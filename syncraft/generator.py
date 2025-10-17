@@ -13,7 +13,7 @@ from syncraft.lexer import CacheWithLexer, ExtLexer, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
-    ParseResult, AST, Token, TokenClass, 
+    ParseResult, AST, Token, 
     Nothing, Lazy,
     Choice, Many, ChoiceKind,
     Then, ThenKind, SyncraftError
@@ -416,25 +416,17 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     def token(
         cls,
         *,
-        token_class: TokenClass,
+        lexer_class: Type[LexerProtocol],
         **kwargs: Any,
     ) -> Algebra[ParseResult[T], GenState[T]]:
-        if token_class is None:
-            raise SyncraftError(
-                "TokenClass not configured for Generator",
-                offender=cls,
-                expect=TokenClass,
-            )
-        predicate = token_class.predicate(**kwargs)
-        base_generator = token_class.generator(**kwargs)
-        return cls.primitive(predicate=predicate, generator=base_generator)
+        return cls.lex(lexer_class=lexer_class, **kwargs)
 
         
     @classmethod
     def lex(cls,
             *,
             lexer_class: Type[LexerProtocol],
-            **kwargs: Any) -> Algebra[T, GenState[T]]:
+            **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
         tags = lexer_class.tag(**kwargs)
         def lex_run(input: GenState[T], 
                     cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
@@ -484,9 +476,18 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
                   alg_cls: Type[Algebra[ParseResult[T], GenState[T]]],
                   cache: Optional[Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]] = None
                   ) -> Tuple[Algebra[ParseResult[T], GenState[T]], Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]], GenState[T]]:
-        
+        generator = syntax(alg_cls)
+        config = generator.config()
         initial_cache: Cache[ GenState[T], Either[Any, Tuple[Any, GenState[T]]]] = cache or CacheWithLexer()
         initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
+        lexer_class = config.get("lexer_class")
+        if lexer_class is None or not issubclass(lexer_class, LexerProtocol):
+            raise SyncraftError(
+                "LexerClass not configured for Generator", 
+                offender=syntax, 
+                expect=LexerProtocol,
+            )
+        initial_cache.lexer = lexer_class.from_syntax(syntax) # type: ignore
         return syntax(alg_cls), initial_cache, initial_state
     
     def resume(self, request: Incomplete[S]) -> S:

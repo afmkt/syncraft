@@ -1,19 +1,20 @@
 import pytest
 from syncraft.syntax import Syntax
-from syncraft.ast import TokenClass
+from syncraft.lexer import ExtLexer
 from syncraft.parser import parse_word
 from syncraft.generator import validate, generate_with
 from syncraft.algebra import Error
 from syncraft.lexer import CacheWithLexer
+from syncraft.ast import Token
 
-
+S = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token))
 def tok(text: str):
-    return Syntax.token(token_class=TokenClass.simple(), text=text, case_sensitive=True)
+    return S.token(text=text, case_sensitive=True)
 
 
 def test_validate_and_generate_with_after_bimap_resets_choice_kind():
     # Grammar: A := (A + 'a') | 'a'
-    A = Syntax.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    A = S.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
 
     # Parse concrete input "a a a"
     ast, _ = parse_word(A, 'a a a', cache=CacheWithLexer())
@@ -40,8 +41,8 @@ def test_mutual_left_recursion_with_base_after_bimap_A():
     # Use standard mutual LR with base on each:
     #   A := (B + 'a') | 'a'
     #   B := (A + 'b') | 'b'
-    A = Syntax.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    B = Syntax.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
+    A = S.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    B = S.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
 
     # Parse a sequence that fits A: 'a b a' via A -> B + 'a', B -> A + 'b', A -> 'a'
     ast, _ = parse_word(A, 'a b a', cache=CacheWithLexer())
@@ -62,8 +63,8 @@ def test_mutual_left_recursion_with_base_after_bimap_A():
 # @pytest.mark.xfail(reason="Mutual LR with Choice.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
 def test_mutual_left_recursion_with_base_after_bimap_B():
     # Same grammar, start from B and parse 'b a b': B -> A + 'b', A -> B + 'a', B -> 'b'
-    A = Syntax.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    B = Syntax.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
+    A = S.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    B = S.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
 
     ast, _ = parse_word(B, 'b a b', cache=CacheWithLexer())
     assert not isinstance(ast, Error)

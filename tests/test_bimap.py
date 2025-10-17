@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, TokenClass
+from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing
 from syncraft.algebra import Error
 from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from syncraft.syntax import Syntax
-from syncraft.lexer import CacheWithLexer
+from syncraft.lexer import CacheWithLexer, ExtLexer
 
 
 
-literal = Syntax.config(token_class = TokenClass.simple()).literal
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
 
 def from_string(string: str) -> Token:
     return Token(text=string)

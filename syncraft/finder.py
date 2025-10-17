@@ -47,7 +47,11 @@ class Finder(Generator[T], Generic[T]):
 
 #: A ``Syntax`` that matches any node and returns it as the result without
 #: consuming or modifying state.
-anything = Syntax.factory('anything')
+
+
+def anything(syntax: Syntax[Any, Any]) -> Syntax[Any, Any]:
+    return syntax.factory('anything')
+        
 
 def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any])-> bool:
     from syncraft.generator import Runner

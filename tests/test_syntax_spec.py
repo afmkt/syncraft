@@ -19,12 +19,10 @@ from syncraft.ast import (
     Collect,
     Nothing,
     Lazy,
-    
-    TokenClass,
 )
 
 from syncraft.parser import parse_word
-
+from syncraft.lexer import ExtLexer
 
 
 
@@ -90,7 +88,7 @@ def _flatten_token_text(node: object) -> List[str]:
 
 @pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
 def test_spec_preserves_terminal_data_for_lexers() -> None:
-    TestSyntax = Syntax.config(token_class=TokenClass.simple())
+    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token))
     literal = TestSyntax.literal
     identifier = TestSyntax.token(text="id", token_type="IDENT")
 
@@ -103,7 +101,7 @@ def test_spec_preserves_terminal_data_for_lexers() -> None:
 
 
 def test_spec_can_drive_left_recursion_elimination() -> None:
-    TestSyntax = Syntax.config(token_class=TokenClass.simple())
+    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token))
     literal = TestSyntax.literal
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]
@@ -140,7 +138,7 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
 
 
 def test_walk_handles_recursive_grammar() -> None:
-    TestSyntax = Syntax.config(token_class=TokenClass.simple())
+    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token))
     literal = TestSyntax.literal
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]

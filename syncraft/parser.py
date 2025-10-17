@@ -22,7 +22,7 @@ from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol, PayloadKind
 from syncraft.input import Input, StreamCursor
 
-from syncraft.ast import Token, TokenClass, AST, SyncraftError
+from syncraft.ast import Token, AST, SyncraftError
 from syncraft.constraint import Bindable
 from syncraft.utils import CallWith
 import re
@@ -218,23 +218,17 @@ class Parser(Algebra[T, ParserState[T]]):
     def token(
         cls,
         *,
-        token_class: TokenClass,
+        lexer_class: Type[LexerProtocol],
         **kwargs: Any,
     ) -> Algebra[T, ParserState[T]]:
-        if token_class is None:
-            raise SyncraftError(
-                "TokenClass not configured for Parser",
-                offender=cls,
-                expect=TokenClass,
-            )
-        predicate = token_class.predicate(**kwargs)
-        return cls.primitive(predicate=predicate)
+        return cls.lex(lexer_class=lexer_class, **kwargs)
 
     @classmethod
     def lex(cls, 
             *,
             lexer_class: Type[LexerProtocol],
             **kwargs: Any) -> Algebra[T, ParserState[T]]:
+        
         ntag = lexer_class.tag(**kwargs)
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
@@ -248,13 +242,14 @@ class Parser(Algebra[T, ParserState[T]]):
             lexer = cache.lexer
             while True:
                 if state.ended():
-                    return (yield from cache.return_value(Left(state), state, name='EOF'))
+                    err = Error(message="Cannot match token at end of input", this=lex_run, state=state)
+                    return (yield from cache.return_value(Left(err), state, name='EOF'))
                 elif state.pending():
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
                     state = tmp
                 else:
-                    match lexer.match(state.current(), state.abs_index()):
+                    match lexer.match(ntag, state.current(), state.abs_index()):
                         case Left(err_msg):
                             err = Error(message=err_msg, this=lex_run, state=state)            
                             return (yield from cache.return_value(Left(err), state, name=str(ntag)))
@@ -319,29 +314,14 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
             kind: str,
         ) -> LexerProtocol[Any]:
         bound_cls = config.get("lexer_class")
-        if isinstance(bound_cls, type):
-            if not issubclass(bound_cls, LexerProtocol):
-                raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
-        elif kind == 'text':
-            default_mode = config.get("default_mode")
-            universe = config.get("universe") or CodeUniverse.unicode()
-            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
-        elif kind == 'bytes':
-            default_mode = config.get("default_mode")
-            universe = config.get("universe") or CodeUniverse.byte()
-            bound_cls = CallWith(Lexer.bind, universe=universe, default_mode=default_mode)()
+        if not isinstance(bound_cls, type) or not issubclass(bound_cls, LexerProtocol):
+            raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
+        if kind in ('text', 'bytes'):
+            if bound_cls is None or not issubclass(bound_cls, Lexer):
+                raise SyncraftError(f'The lexer class for text input must be a subclass of Lexer, got {bound_cls}', offender=bound_cls, expect="subclass of Lexer")
         else:
-            def _ensure_token_class(value: Any) -> TokenClass:
-                if isinstance(value, TokenClass):
-                    return value
-                if callable(value):
-                    return TokenClass(TokenConstructor=value)
-                return TokenClass.simple()
-            token_class_cfg = _ensure_token_class(config.get("token_class"))
-            case_sensitive = config.get("case_sensitive", getattr(token_class_cfg, "case_sensitive", False))
-            strict = config.get("strict", getattr(token_class_cfg, "strict", False))
-            bound_cls = CallWith(ExtLexer.bind, token_class=token_class_cfg.TokenConstructor, case_sensitive=case_sensitive, strict=strict)()
-
+            if bound_cls is None or not issubclass(bound_cls, ExtLexer):
+                raise SyncraftError(f'The lexer class for token input must be a subclass of ExtLexer, got {bound_cls}', offender=bound_cls, expect="subclass of ExtLexer")
         lexer = bound_cls.from_syntax(syntax)
         assert isinstance(lexer, LexerProtocol)
         return lexer

@@ -7,9 +7,9 @@ import pytest
 from syncraft.finder import find, anything
 from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
-
-from syncraft.ast import TokenClass
-literal = Syntax.config(token_class = TokenClass.simple()).literal
+from syncraft.lexer import ExtLexer
+from syncraft.ast import Token
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
 
 # @pytest.mark.xfail(reason="Finder integration is pending")
 def test_find()->None:
@@ -48,7 +48,7 @@ def test_find()->None:
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
     from syncraft.lexer import CacheWithLexer
     ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
-    nodes = list(find(anything, ast))
+    nodes = list(find(anything(syntax), ast))
 
     assert nodes[0] == ast
     # assert any(isinstance(node, IfThenElse) for node in nodes)

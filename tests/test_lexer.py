@@ -33,7 +33,7 @@ def _lexer_with_parentheses() -> Lexer[str]:
 def _collect_tokens(lexer: Lexer[str], text: str) -> list[LexerResult[str]]:
     tokens: list[LexerResult[str]] = []
     for idx, ch in enumerate(text):
-        result = lexer.match(ch, idx)
+        result = lexer.match(frozenset(),ch, idx)
         assert not isinstance(result, Left), f"Lexing failed on {ch!r}: {result}"
         if isinstance(result, Right) and result.value is not None:
             tokens.append(result.value)
@@ -90,7 +90,7 @@ def test_skip_rules_return_none_when_selected() -> None:
     lexer = _lexer_with_skip()
     results: list[LexerResult[str]] = []
     for idx, ch in enumerate(" a a"):
-        out = lexer.match(ch, idx)
+        out = lexer.match(frozenset(), ch, idx)
         assert not isinstance(out, Left), f"Lexing produced error at {idx}: {out}"
         if isinstance(out, Right) and out.value is not None:
             results.append(out.value)

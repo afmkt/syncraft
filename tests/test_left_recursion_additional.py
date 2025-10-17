@@ -3,20 +3,22 @@ import pytest
 # LeftRecursionError no longer imported; xfail test does not enforce error path.
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
-from syncraft.ast import TokenClass
+from syncraft.lexer import ExtLexer
 from syncraft.parser import parse_word
 from syncraft.lexer import CacheWithLexer
-
+from syncraft.ast import Token
 # Reuse the pattern from existing tests: specialize Syntax with a TokenClass
-literal = Syntax.config(token_class=TokenClass.simple()).literal
-token = Syntax.config(token_class=TokenClass.simple()).token
-
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
+token = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).token
+lazy = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).lazy
+success = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).success
+# Note: Syntax.lazy is used to define recursive grammars.
 # NOTE: These tests target newly added diagnostics & edge scenarios for left recursion.
 # If import paths differ, adjust accordingly (assumes existing test helpers).
 
 
 def test_nullable_left_recursion_no_progress_error():
-    S = Syntax.lazy(lambda: S | literal(""))
+    S = lazy(lambda: S | literal(""))
     try:
         parse_word(S, "", cache=CacheWithLexer())
     except LeftRecursionError as e:
@@ -39,7 +41,7 @@ def test_deterministic_choice_prefers_first_branch():
 
 def test_iteration_cap_metrics_single_head():
     Term = literal('n')
-    Expr = Syntax.lazy(lambda: (Expr + literal('+') + Term) | Term)
+    Expr = lazy(lambda: (Expr + literal('+') + Term) | Term)
     cache = CacheWithLexer()
     cache.max_growth_iterations = 1
     with pytest.raises(LeftRecursionError) as exc:
@@ -58,8 +60,8 @@ def test_mutual_recursion_productivity_consumption():
         B -> A 'y' | 'b'
     Input: 'a y b x'
     """
-    A = Syntax.lazy(lambda: (B >> token(text='x')) | token(text='a'))
-    B = Syntax.lazy(lambda: (A >> token(text='y')) | token(text='b'))
+    A = lazy(lambda: (B >> token(text='x')) | token(text='a'))
+    B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
     v, s = parse_word(A, 'a y b x', cache=CacheWithLexer())
     ast, end_state = v.bimap()
     # Ensure at least 'a' retained
@@ -73,9 +75,9 @@ def test_global_fixpoint_propagation_precedence_chain():
     """Precedence chain: Expr -> Expr '-' Term | Term; Term -> Term '*' Factor | Factor; Factor -> '(' Expr ')' | 'n'
     Ensures improvements in deeper nonterminals propagate so Expr consumes full input.
     """
-    Factor = Syntax.lazy(lambda: (literal('(') >> Expr >> literal(')')) | literal('n'))  # type: ignore  # noqa: F821
-    Term = Syntax.lazy(lambda: (Term + literal('*') + Factor) | Factor)
-    Expr = Syntax.lazy(lambda: (Expr + literal('-') + Term) | Term)
+    Factor = lazy(lambda: (literal('(') >> Expr >> literal(')')) | literal('n'))  # type: ignore  # noqa: F821
+    Term = lazy(lambda: (Term + literal('*') + Factor) | Factor)
+    Expr = lazy(lambda: (Expr + literal('-') + Term) | Term)
     v, s = parse_word(Expr, 'n - n * n - n', cache=CacheWithLexer())
     ast, end_state = v.bimap()
     # Ensure multiple 'n' tokens included
@@ -92,9 +94,9 @@ def test_mutual_nullable_left_recursion_no_progress_error():
     Input: ''  (only nullable ε alternatives fire; recursion detected via ordering of recursive alt first)
     Expect: LeftRecursionError(reason='no-progress', group_size>=2)
     """
-    epsilon = Syntax.success(None)
-    A = Syntax.lazy(lambda: (B >> literal('x')) | epsilon)  # type: ignore  # noqa: F821
-    B = Syntax.lazy(lambda: (A >> literal('y')) | epsilon)  # type: ignore  # noqa: F821
+    epsilon = success(None)
+    A = lazy(lambda: (B >> literal('x')) | epsilon)  # type: ignore  # noqa: F821
+    B = lazy(lambda: (A >> literal('y')) | epsilon)  # type: ignore  # noqa: F821
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(A, "", cache=CacheWithLexer())
     err = exc.value

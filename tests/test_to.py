@@ -5,9 +5,9 @@ from syncraft.syntax import Syntax
 import syncraft.generator as gen
 from syncraft.lexer import CacheWithLexer
 from dataclasses import dataclass
-
-from syncraft.ast import TokenClass
-literal = Syntax.config(token_class=TokenClass.simple()).literal
+from syncraft.lexer import ExtLexer
+from syncraft.ast import Token
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
 
 
 def test_to() -> None:

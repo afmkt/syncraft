@@ -1,16 +1,19 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, replace, asdict, is_dataclass
+from dataclasses import dataclass, field, fields, replace, asdict, is_dataclass
 from enum import Enum
-from typing import Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, runtime_checkable, Callable, Mapping, Hashable, Type, cast
+from typing import (
+    Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, 
+    runtime_checkable, Callable, Mapping, Hashable, Type, List
+)
 from typing import TYPE_CHECKING
 from syncraft.utils import CallWith
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
-from syncraft.ast import SyncraftError, Token, TokenClass
+from syncraft.ast import SyncraftError, Token
 from syncraft.cache import Either, Left, Right, Cache
 from collections import deque, defaultdict
-
 import random
+import re
 
 
 def object_to_dict(value: Any) -> Mapping[str, Any]:
@@ -78,7 +81,7 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def clone(self) -> "LexerProtocol[C]": ...
 
-    def match(self, char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
+    def match(self, tag: frozenset[Tag], char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
 
     def varify(self, tag: frozenset[Tag], value: Any) -> bool: ...
 
@@ -288,7 +291,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
 
         lexer = self
         for index, char in enumerate(txt):
-            match lexer.match(char, index):  # type: ignore[arg-type]
+            match lexer.match(tag, char, index):  # type: ignore[arg-type]
                 case Left(_):
                     return False
                 case Right(None):
@@ -303,7 +306,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
                     return True
         return False
 
-    def match(self, char: C, index: int) -> Either[Any, None | LexerResult[C]]:
+    def match(self, tags:frozenset[Tag], char: C, index: int) -> Either[Any, None | LexerResult[C]]:
         mode = self.current_mode
         if mode.start_index is None:
             mode.start_index = index
@@ -347,9 +350,10 @@ class Lexer(LexerProtocol[C], Generic[C]):
     def bind(cls, universe: CodeUniverse[C], default_mode: str | None = None) -> Type["Lexer[C]"]:
         def fabuilder(syntax: Syntax[Any, Any]) -> Set[FABuilder[Any]]:
             def visitor( fspec: FactorySpec, acc: Set[FABuilder[Any]]) -> Set[FABuilder[Any]]:
-                for k, v in fspec.kwargs.items():
-                    if isinstance(v, FABuilder):
-                        acc.add(v)
+                if fspec.name in ("lex"):                    
+                    for k, v in fspec.kwargs.items():
+                        if isinstance(v, FABuilder):
+                            acc.add(v.tagged(k) if v.tag is None else v)
                 return acc
             acc = syntax.factory_spec(visitor, set())
             return acc
@@ -367,20 +371,104 @@ class CacheWithLexer(Cache[A, Ret], Generic[C, A, Ret]):
     lexer: Optional[LexerProtocol[C]] = None
 
 
-ExtT = TypeVar('ExtT', bound=Token)
-@dataclass(frozen=True)
-class ExtRule(Generic[ExtT]):
-    predicate: Callable[[ExtT], bool]
-    generator: Callable[[random.Random], Any]
-
-
 T = TypeVar('T', bound=Hashable)
 
+class TokenProtocol(Protocol[T]):
+    def predicate(self, **kwargs: Any) -> Callable[[T], bool]: ...
+    def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]: ...
+@dataclass(frozen=True)
+class TokenClass(TokenProtocol[T]):
+    TokenConstructor: Callable[..., T]
+    case_sensitive: bool = field(default=False, metadata={"is_config": True})
+    strict: bool = field(default=False, metadata={"is_config": True})
+
+    @classmethod
+    def simple(cls)-> TokenClass[Token]:
+        return TokenClass(Token)        
+    
+    def describe(self, **kwargs: Any) -> str:
+        c = CallWith(self.TokenConstructor, **kwargs)
+        parts = []
+        for k, v in c.kwargs.items():
+            if isinstance(v, re.Pattern):
+                parts.append(f"{k}=/{v.pattern}/")
+            else:
+                parts.append(f"{k}={v}")
+        for x in c.args:
+            parts.append(str(x))
+        return "(" + ", ".join(parts) + ")"
+
+    def config_fields(self) -> List[str]:
+        return [f.name for f in fields(self) if f.metadata.get("is_config", False)]
+        
+    
+    def data_fields(self) -> List[str]:
+        c = CallWith(self.TokenConstructor)
+        return list(c.missing_keyword_params)
+
+
+    def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        config_dict = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
+        config = {k: v for k, v in kwargs.items() if k in config_dict}
+        params = {k: v for k, v in kwargs.items() if k not in config_dict}
+        return config_dict | config, params
+
+    def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
+        config, kwargs = self.extract_config(kwargs)
+        case_sensitive = config.get('case_sensitive', False)
+        strict = config.get('strict', False)
+        def pred(token: T) -> bool:
+            for key, pattern in kwargs.items():
+                if not hasattr(token, key):
+                    if strict:
+                        return False
+                else:
+                    data = getattr(token, key)
+                    if isinstance(pattern, re.Pattern):
+                        if pattern.fullmatch(str(data)) is None:
+                            return False
+                        else:
+                            continue
+                    elif isinstance(pattern, str):
+                        if case_sensitive:
+                            if str(data).strip() != pattern.strip():
+                                return False
+                        else:
+                            if str(data).strip().upper() != pattern.strip().upper():
+                                return False
+                    elif pattern != data:
+                        return False
+            return True
+        pred.__name__ = f"P{self.describe(**kwargs)}"
+        return pred
+
+    def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]:
+        config, kwargs = self.extract_config(kwargs)
+        def gen(input: Any, rnd: random.Random) -> T:
+            data = {}
+            for k, v in kwargs.items():
+                if isinstance(v, re.Pattern):
+                    import rstr
+                    try:
+                        data[k] = rstr.xeger(v)
+                    except Exception:
+                        data[k] = v.pattern
+                else:
+                    data[k] = v
+            return CallWith(self.TokenConstructor, **data)()
+        gen.__name__ = f"G{self.describe(**kwargs)}"
+        return gen
+
+
+@dataclass(frozen=True)
+class ExtRule(Generic[T]):
+    predicate: Callable[[T], bool]
+    generator: Callable[[Any, random.Random], T]
 
 @dataclass
-class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
-    token_class: TokenClass[ExtT]
-    rules: Dict[Tag, ExtRule[ExtT]] = field(default_factory=dict)
+class ExtLexer(LexerProtocol[T]):
+    token_class: TokenProtocol[T]
+    rules: Dict[Tag, ExtRule[T]] = field(default_factory=dict)
     @classmethod
     def _tag(cls, token_type: Optional[Tag] = None, text: Optional[str] = None) -> frozenset[Tag]:
         if token_type is None and text is None:
@@ -391,17 +479,17 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
         return frozenset([text])
 
     @classmethod
-    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[ExtT]":
+    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[T]":
         raise NotImplementedError("ExtLexer cannot be constructed from syntax directly; use create or another method")
     
     @classmethod
-    def bind(cls, token_class: Callable[..., Any] = Token, case_sensitive: bool = False, strict: bool=False)-> Type[ExtLexer[ExtT]]:
+    def bind(cls, token_class: Callable[..., Any] = Token, case_sensitive: bool = False, strict: bool=False)-> Type[ExtLexer[T]]:
         class BoundLexer(ExtLexer[Any]):
             @classmethod
-            def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[ExtT]":
+            def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[T]":
                 ret = cls(TokenClass(TokenConstructor=token_class, case_sensitive=case_sensitive, strict=strict))
-                def visitor(fspec: FactorySpec, acc: ExtLexer[ExtT]) -> ExtLexer[ExtT]:
-                    if fspec.name in ("lex", "token"):
+                def visitor(fspec: FactorySpec, acc: ExtLexer[T]) -> ExtLexer[T]:
+                    if fspec.name in ("token"):
                         acc.register(**fspec.kwargs)
                     return acc
                 ret = syntax.factory_spec(visitor, ret)
@@ -411,10 +499,10 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
         
 
 
-    def reset(self) -> "ExtLexer[ExtT]":
+    def reset(self) -> "ExtLexer[T]":
         return replace(self, rules=dict(self.rules))
 
-    def clone(self) -> "ExtLexer[ExtT]":
+    def clone(self) -> "ExtLexer[T]":
         return replace(self, rules=dict(self.rules))
 
     def register(
@@ -429,8 +517,7 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
         gen = self.token_class.generator(**kwargs) if existing is None else existing.generator
         self.rules[tag] = ExtRule(pred, gen)
 
-    def match(self, item: ExtT, index: int) -> Either[Any, None | LexerResult[ExtT]]:
-        tags = self.tag(**object_to_dict(item))
+    def match(self, tags: frozenset[Tag], item: T, index: int) -> Either[Any, None | LexerResult[T]]:
         assert len(tags) == 1, "External lexer rules must have exactly one tag"
         tag = next(iter(tags))
         if tag in self.rules:
@@ -456,7 +543,7 @@ class ExtLexer(LexerProtocol[ExtT], Generic[ExtT]):
                 offender=self,
                 expect="generator callable",
             )
-        return rule.generator(rng)
+        return rule.generator(tag, rng)
 
 
 
