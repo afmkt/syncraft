@@ -6,7 +6,7 @@ from syncraft.parser import parse as parser_run
 from syncraft.syntax import Syntax
 from syncraft.ast import Token
 import pytest
-from syncraft.token_spec import TokenClass
+from syncraft.token import TokenClass
 def test_run_with_input_stream_handles_incomplete() -> None:
     literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
     syntax = literal("if").many()

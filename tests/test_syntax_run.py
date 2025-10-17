@@ -5,7 +5,7 @@ from syncraft.parser import parse_data
 from syncraft.syntax import Syntax
 from syncraft.algebra import Error
 from syncraft.ast import Token
-from syncraft.token_spec import TokenClass
+from syncraft.token import TokenClass
 def test_syntax_run_returns_error_on_incomplete() -> None:
     literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
     syntax = literal("if")

@@ -9,7 +9,7 @@ from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
 from syncraft.lexer import ExtLexer
 from syncraft.ast import Token
-from syncraft.token_spec import TokenClass
+from syncraft.token import TokenClass
 literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
 
 # @pytest.mark.xfail(reason="Finder integration is pending")

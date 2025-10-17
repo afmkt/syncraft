@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import List
-from syncraft.ast import TokenClass
+from syncraft.token import TokenClass
 
 
 

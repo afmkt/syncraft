@@ -6,7 +6,7 @@ from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from syncraft.syntax import Syntax
 from syncraft.lexer import CacheWithLexer, ExtLexer
-from syncraft.token_spec import TokenClass
+from syncraft.token import TokenClass
 
 
 literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal

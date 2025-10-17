@@ -23,7 +23,7 @@ from syncraft.ast import (
 
 from syncraft.parser import parse_word
 from syncraft.lexer import ExtLexer
-from syncraft.token_spec import TokenClass
+from syncraft.token import TokenClass
 
 
 

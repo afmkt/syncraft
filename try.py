@@ -12,7 +12,7 @@ from syncraft.ast import (
 
 )
 from syncraft.lexer import ExtLexer
-from syncraft.token_spec import TokenClass
+from syncraft.token import TokenClass
 
 @pytest.mark.xfail(reason="Currently fails due to missing token data in spec")
 def test() -> None:

@@ -7,7 +7,7 @@ from syncraft.lexer import ExtLexer
 from syncraft.parser import parse_word
 from syncraft.lexer import CacheWithLexer
 from syncraft.ast import Token
-from syncraft.token_spec import TokenClass
+from syncraft.token import TokenClass
 # Reuse the pattern from existing tests: specialize Syntax with a TokenClass
 literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
 token = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).token

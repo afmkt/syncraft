@@ -496,7 +496,7 @@ ParseResult = Union[
     Many['ParseResult[T]'],
     Collect['ParseResult[T]', Any],
     Nothing,
-    Token[T],
+    # Token[T],
     T,
 ]
 
