@@ -83,8 +83,8 @@ class Structured(TokenSpec[T]):
     def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         default_config = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
         c = CallWith(self.constructor, **kwargs)
-        config = {k: v for k, v in kwargs.items() if k in c.missing_keyword_params}
-        params = {k: v for k, v in kwargs.items() if k not in c.missing_keyword_params}
+        config = {k: v for k, v in kwargs.items() if k in c.unused_kwargs}
+        params = {k: v for k, v in kwargs.items() if k not in c.unused_kwargs}
         return default_config | config, params
 
     def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
@@ -104,12 +104,20 @@ class Structured(TokenSpec[T]):
                         else:
                             continue
                     elif isinstance(pattern, str):
-                        if case_sensitive:
-                            if str(data).strip() != pattern.strip():
-                                return False
+                        if strict:
+                            if case_sensitive:
+                                if str(data) != pattern:
+                                    return False
+                            else:
+                                if str(data).upper() != pattern.upper():
+                                    return False
                         else:
-                            if str(data).strip().upper() != pattern.strip().upper():
-                                return False
+                            if case_sensitive:
+                                if str(data).strip() != pattern.strip():
+                                    return False
+                            else:
+                                if str(data).strip().upper() != pattern.strip().upper():
+                                    return False
                     elif pattern != data:
                         return False
             return True

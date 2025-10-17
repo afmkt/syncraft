@@ -405,8 +405,14 @@ class ExtLexer(LexerProtocol[T]):
         # from rich import print
         def register_one(tag: Tag | None, spec: TokenSpec, **kwargs: Any) -> None:
             existing = self.rules.get(tag)
-            pred = spec.predicate(**kwargs) if existing is None else existing.predicate
-            gen = spec.generator(**kwargs) if existing is None else existing.generator
+            if existing is not None:
+                raise SyncraftError(
+                    f"External lexer already has a rule for tag '{tag}'",
+                    offender=existing,
+                    expect="unique tag per rule",
+                )
+            pred = spec.predicate(**kwargs) 
+            gen = spec.generator(**kwargs) 
             self.rules[tag] = ExtRule(pred, gen)
 
         specs = {k: v for k, v in kwargs.items() if isinstance(v, TokenSpec)}
