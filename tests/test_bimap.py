@@ -6,10 +6,10 @@ from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from syncraft.syntax import Syntax
 from syncraft.lexer import CacheWithLexer, ExtLexer
+from syncraft.token_spec import TokenClass
 
 
-
-literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
 
 def from_string(string: str) -> Token:
     return Token(text=string)

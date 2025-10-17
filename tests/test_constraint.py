@@ -7,7 +7,8 @@ import syncraft.generator as gen
 from dataclasses import dataclass
 from syncraft.lexer import ExtLexer
 from syncraft.ast import Token
-literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
+from syncraft.token_spec import TokenClass
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
 
 def test_to() -> None:
     @dataclass

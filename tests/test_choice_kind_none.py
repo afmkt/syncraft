@@ -6,8 +6,8 @@ from syncraft.generator import validate, generate_with
 from syncraft.algebra import Error
 from syncraft.lexer import CacheWithLexer
 from syncraft.ast import Token
-
-S = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token))
+from syncraft.token_spec import TokenClass
+S = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token)))
 def tok(text: str):
     return S.token(text=text, case_sensitive=True)
 

@@ -5,7 +5,8 @@ import syncraft.generator as gen
 from syncraft.ast import Token
 
 from syncraft.lexer import ExtLexer
-literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
+from syncraft.token_spec import TokenClass
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
 
 
 IF = literal("if")

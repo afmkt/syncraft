@@ -7,11 +7,12 @@ from syncraft.lexer import ExtLexer
 from syncraft.parser import parse_word
 from syncraft.lexer import CacheWithLexer
 from syncraft.ast import Token
+from syncraft.token_spec import TokenClass
 # Reuse the pattern from existing tests: specialize Syntax with a TokenClass
-literal = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).literal
-token = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).token
-lazy = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).lazy
-success = Syntax.config(lexer_class=ExtLexer.bind(token_class=Token)).success
+literal = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).literal
+token = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).token
+lazy = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).lazy
+success = Syntax.config(lexer_class=ExtLexer.bind(token_protocol=TokenClass(Token))).success
 # Note: Syntax.lazy is used to define recursive grammars.
 # NOTE: These tests target newly added diagnostics & edge scenarios for left recursion.
 # If import paths differ, adjust accordingly (assumes existing test helpers).
