@@ -12,7 +12,7 @@ from sqlglot import Token as SQLGlotToken
 
 
 def sqlglot_token_class()->Structured[SQLGlotToken]:
-    return Structured(TokenConstructor=SQLGlotToken)
+    return Structured(constructor=SQLGlotToken)
 
 def sqlglot_lex(input: str, dialect: str) -> List[SQLGlotToken]:
     tkns = tokenize(input, dialect=dialect)
