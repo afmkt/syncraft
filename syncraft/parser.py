@@ -227,7 +227,7 @@ class Parser(Algebra[T, ParserState[T]]):
             lexer_class: Type[LexerProtocol],
             **kwargs: Any) -> Algebra[T, ParserState[T]]:
         
-        ntag = lexer_class.tag(**kwargs)
+        
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               YieldChannelType, 
@@ -238,6 +238,7 @@ class Parser(Algebra[T, ParserState[T]]):
             if not isinstance(cache.lexer, LexerProtocol):
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
             lexer = cache.lexer
+            ntag = lexer.tag(**kwargs)
             while True:
                 if state.ended():
                     err = Error(message="Cannot match token at end of input", this=lex_run, state=state)
@@ -262,7 +263,7 @@ class Parser(Algebra[T, ParserState[T]]):
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
 
-        return cls(lex_run, _name=str(ntag))
+        return cls(lex_run, _name=lexer_class.name(**kwargs))
 
 
 

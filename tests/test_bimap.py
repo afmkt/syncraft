@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing
+from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, Any
 from syncraft.algebra import Error
 from syncraft.parser import  parse_word
 import syncraft.generator as gen

@@ -427,7 +427,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             *,
             lexer_class: Type[LexerProtocol],
             **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
-        tags = lexer_class.tag(**kwargs)
+        
         def lex_run(input: GenState[T], 
                     cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
                               YieldChannelType, 
@@ -435,9 +435,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             if not isinstance(cache, CacheWithLexer):
                 raise SyncraftError("Cache must be CacheWithLexer to use lex", offender=cache, expect="CacheWithLexer")
-            lexer = cache.lexer
-            if not isinstance(lexer, LexerProtocol):
+            if not isinstance(cache.lexer, LexerProtocol):
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
+            lexer = cache.lexer
+            tags = lexer.tag(**kwargs)
             if input.pruned:
                 tag = input.rng("lex_tag").choice(tuple(tags))
                 input = input.fork(tag=tag)
@@ -461,7 +462,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 parsed_value = cast(ParseResult[T], current)
                 return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tags)))
 
-        return cls(lex_run, _name=str(tags)) # type: ignore
+        return cls(lex_run, _name=lexer_class.name(**kwargs)) 
 
 
 
