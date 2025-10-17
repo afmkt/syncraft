@@ -3,7 +3,6 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable,
     Generic, Generator, Callable, Type, Mapping
 )
-from syncraft.charset import CodeUniverse
 from syncraft.lexer import (
     Lexer,
     CacheWithLexer,
@@ -24,7 +23,6 @@ from syncraft.input import Input, StreamCursor
 
 from syncraft.ast import Token, AST, SyncraftError
 from syncraft.constraint import Bindable
-from syncraft.utils import CallWith
 import re
 
 T = TypeVar('T', bound=Hashable)  

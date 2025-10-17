@@ -4,26 +4,14 @@ from typing import List
 import pytest
 from syncraft.syntax import (
     Syntax,
-    SyntaxSpec,
-    LazySpec,
-    ThenSpec,
-    ChoiceSpec,
+
 
 )
 from syncraft.ast import (
     Token,
-    Then,
-    Choice,
-    Many,
-    Marked,
-    Collect,
-    Nothing,
-    Lazy,
+
 )
 from syncraft.lexer import ExtLexer
-from syncraft.input import Input
-from syncraft.parser import parse as parser_run
-from syncraft.parser import parse_word
 
 
 @pytest.mark.xfail(reason="Currently fails due to missing token data in spec")

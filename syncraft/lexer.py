@@ -376,89 +376,7 @@ T = TypeVar('T', bound=Hashable)
 class TokenProtocol(Protocol[T]):
     def predicate(self, **kwargs: Any) -> Callable[[T], bool]: ...
     def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]: ...
-@dataclass(frozen=True)
-class TokenClass(TokenProtocol[T]):
-    TokenConstructor: Callable[..., T]
-    case_sensitive: bool = field(default=False, metadata={"is_config": True})
-    strict: bool = field(default=False, metadata={"is_config": True})
-
-    @classmethod
-    def simple(cls)-> TokenClass[Token]:
-        return TokenClass(Token)        
     
-    def describe(self, **kwargs: Any) -> str:
-        c = CallWith(self.TokenConstructor, **kwargs)
-        parts = []
-        for k, v in c.kwargs.items():
-            if isinstance(v, re.Pattern):
-                parts.append(f"{k}=/{v.pattern}/")
-            else:
-                parts.append(f"{k}={v}")
-        for x in c.args:
-            parts.append(str(x))
-        return "(" + ", ".join(parts) + ")"
-
-    def config_fields(self) -> List[str]:
-        return [f.name for f in fields(self) if f.metadata.get("is_config", False)]
-        
-    
-    def data_fields(self) -> List[str]:
-        c = CallWith(self.TokenConstructor)
-        return list(c.missing_keyword_params)
-
-
-    def extract_config(self, kwargs: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        config_dict = {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("is_config", False)}
-        config = {k: v for k, v in kwargs.items() if k in config_dict}
-        params = {k: v for k, v in kwargs.items() if k not in config_dict}
-        return config_dict | config, params
-
-    def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
-        config, kwargs = self.extract_config(kwargs)
-        case_sensitive = config.get('case_sensitive', False)
-        strict = config.get('strict', False)
-        def pred(token: T) -> bool:
-            for key, pattern in kwargs.items():
-                if not hasattr(token, key):
-                    if strict:
-                        return False
-                else:
-                    data = getattr(token, key)
-                    if isinstance(pattern, re.Pattern):
-                        if pattern.fullmatch(str(data)) is None:
-                            return False
-                        else:
-                            continue
-                    elif isinstance(pattern, str):
-                        if case_sensitive:
-                            if str(data).strip() != pattern.strip():
-                                return False
-                        else:
-                            if str(data).strip().upper() != pattern.strip().upper():
-                                return False
-                    elif pattern != data:
-                        return False
-            return True
-        pred.__name__ = f"P{self.describe(**kwargs)}"
-        return pred
-
-    def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]:
-        config, kwargs = self.extract_config(kwargs)
-        def gen(input: Any, rnd: random.Random) -> T:
-            data = {}
-            for k, v in kwargs.items():
-                if isinstance(v, re.Pattern):
-                    import rstr
-                    try:
-                        data[k] = rstr.xeger(v)
-                    except Exception:
-                        data[k] = v.pattern
-                else:
-                    data[k] = v
-            return CallWith(self.TokenConstructor, **data)()
-        gen.__name__ = f"G{self.describe(**kwargs)}"
-        return gen
-
 
 @dataclass(frozen=True)
 class ExtRule(Generic[T]):
@@ -483,11 +401,11 @@ class ExtLexer(LexerProtocol[T]):
         raise NotImplementedError("ExtLexer cannot be constructed from syntax directly; use create or another method")
     
     @classmethod
-    def bind(cls, token_class: Callable[..., Any] = Token, case_sensitive: bool = False, strict: bool=False)-> Type[ExtLexer[T]]:
+    def bind(cls, token_protocol: TokenProtocol[T]) -> Type[ExtLexer[T]]:
         class BoundLexer(ExtLexer[Any]):
             @classmethod
             def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[T]":
-                ret = cls(TokenClass(TokenConstructor=token_class, case_sensitive=case_sensitive, strict=strict))
+                ret = cls(token_protocol)
                 def visitor(fspec: FactorySpec, acc: ExtLexer[T]) -> ExtLexer[T]:
                     if fspec.name in ("token"):
                         acc.register(**fspec.kwargs)
