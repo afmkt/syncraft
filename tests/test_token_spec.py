@@ -8,11 +8,11 @@ from syncraft.ast import Token
 from syncraft.cache import Left, Right
 from syncraft.lexer import ExtLexer, LexerResult
 from syncraft.syntax import Syntax
-from syncraft.token import Scalar, Structured, TokenMatcher
+from syncraft.token import Scalar, TokenMatcher, scalar, struct, matcher
 
 
 def _build_scalar_literal_lexer() -> ExtLexer[Any]:
-    scalar_spec: Scalar[str] = Scalar(constructor=str, pattern=re.compile(r"[A-Za-z]+"))
+    scalar_spec: Scalar[str] = scalar(r"[A-Za-z]+")
     lexer_cls: Type[ExtLexer[str]] = ExtLexer.bind(tkspec=scalar_spec)  # type: ignore[type-abstract]
     literal = Syntax.config(lexer_class=lexer_cls).literal
 
@@ -50,8 +50,8 @@ def test_scalar_literal_supports_distinct_tags() -> None:
 
 
 def test_scalar_explicit_token_spec_enforces_config() -> None:
-    lexer_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=Structured(Token))
-    scalar_spec: Scalar[str] = Scalar(constructor=str, pattern=re.compile(r"[A-Z]+"))
+    lexer_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=struct(Token))
+    scalar_spec: Scalar[str] = scalar(re.compile(r"[A-Z]+"))
     token = Syntax.config(lexer_class=lexer_cls).token
 
     syntax = token(
@@ -78,12 +78,12 @@ def test_scalar_explicit_token_spec_enforces_config() -> None:
 
 
 def _token_matcher_literal_lexer() -> ExtLexer[Token]:
-    matcher: TokenMatcher[Token] = TokenMatcher(
+    matcher_spec: TokenMatcher[Token] = matcher(
         pred=lambda tok: isinstance(tok, Token) and tok.text == "ping",
         gen=lambda _tag, _rng: Token(text="ping"),
-        tag=lambda **kwargs: frozenset({kwargs["text"]}) if "text" in kwargs else frozenset(),
+        tag="ping",
     )
-    lexer_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=matcher)
+    lexer_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=matcher_spec)
     literal = Syntax.config(lexer_class=lexer_cls).literal
     syntax = literal("ping")
     lexer = cast(ExtLexer[Any], lexer_cls.from_syntax(syntax))
@@ -110,21 +110,21 @@ def test_token_matcher_literal_matches_expected_token() -> None:
 
 
 def test_token_matcher_explicit_tag_registration() -> None:
-    lexer_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=Structured(Token))
-    matcher: TokenMatcher[Token] = TokenMatcher(
+    lexer_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=struct(Token))
+    matcher_spec: TokenMatcher[Token] = matcher(
         pred=lambda tok: isinstance(tok, Token)
         and tok.token_type == "PRED"
         and tok.text == "42",
         gen=lambda _tag, _rng: Token(text="42", token_type="PRED"),
-        tag=lambda **kwargs: frozenset({kwargs.get("token_type", "PRED")}),
+        tag_fn=lambda **kwargs: frozenset({kwargs.get("token_type", "PRED")}),
     )
 
     token = Syntax.config(lexer_class=lexer_cls).token
-    syntax = token(token_type="PRED", PRED=matcher)
+    syntax = token(token_type="PRED", PRED=matcher_spec)
     lexer = lexer_cls.from_syntax(syntax)
     assert isinstance(lexer, ExtLexer)
 
-    tags = lexer.tag(token_type="PRED", PRED=matcher)
+    tags = lexer.tag(token_type="PRED", PRED=matcher_spec)
     assert tags == frozenset({"PRED"})
 
     ok = lexer.match(tags, Token(text="42", token_type="PRED"), 0)

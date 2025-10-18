@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import random
-from typing import Any, Callable, Dict, Tuple, TypeVar, Hashable, Union
+from typing import Any, Callable, Dict, Iterable, Tuple, TypeVar, Hashable, Union, cast, Literal, overload
 import re
 from enum import Enum
 from syncraft.utils import CallWith
 from syncraft.lexer import TokenSpec
-from dataclasses import field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 import rstr
 
 
@@ -55,6 +54,39 @@ class TokenSpecSupportMixin:
 Tag = Union[str, Enum]
 
 T = TypeVar('T', bound=Hashable)
+TokenT = TypeVar('TokenT', bound=Hashable)
+ScalarValueT = TypeVar('ScalarValueT', bound=Hashable)
+
+
+def _normalise_tag_input(tag: Tag | Iterable[Tag]) -> frozenset[Tag]:
+    if isinstance(tag, (str, Enum)):
+        return frozenset([tag])
+    return frozenset(tag)
+
+
+def _make_static_tag(tag: Tag | Iterable[Tag] | None) -> None | Callable[..., frozenset[Tag]]:
+    if tag is None:
+        return None
+    tags = _normalise_tag_input(tag)
+
+    def _static_tag(**_kwargs: Any) -> frozenset[Tag]:
+        return tags
+
+    return _static_tag
+
+
+def _make_tag_mode_callable(mode: Literal["token_type", "text"]) -> Callable[..., frozenset[Tag]]:
+    def _tag_mode(**kwargs: Any) -> frozenset[Tag]:
+        if mode not in kwargs:
+            return frozenset()
+        value = kwargs[mode]
+        if isinstance(value, (set, frozenset)):
+            return frozenset(value)
+        if isinstance(value, re.Pattern):
+            return frozenset([value.pattern])
+        return frozenset([value])
+
+    return _tag_mode
 @dataclass(frozen=True)
 class TokenMatcher(TokenSpecSupportMixin, TokenSpec[T]):
     pred: Callable[[T], bool]
@@ -187,5 +219,89 @@ class Structured(TokenSpecSupportMixin, TokenSpec[T]):
             return CallWith(self.constructor, **data)()
         gen.__name__ = f"G({self.describe(**kwargs)})"
         return gen
+
+
+
+def matcher(
+    *,
+    pred: Callable[[TokenT], bool],
+    gen: Callable[[Any, random.Random], TokenT],
+    tag: Tag | Iterable[Tag] | None = None,
+    tag_fn: None | Callable[..., frozenset[Tag]] = None,
+) -> TokenMatcher[TokenT]:
+    """Create a TokenMatcher with optional static or dynamic tagging."""
+    if tag is not None and tag_fn is not None:
+        raise ValueError("Specify either tag or tag_fn, not both")
+    tag_callable = tag_fn if tag_fn is not None else _make_static_tag(tag)
+    return TokenMatcher(pred=pred, gen=gen, tag=tag_callable)
+
+
+def raw(
+    pred: Callable[[TokenT], bool],
+    gen: Callable[[Any, random.Random], TokenT],
+    tag: Tag | Iterable[Tag] | None = None,
+    tag_fn: None | Callable[..., frozenset[Tag]] = None,
+) -> TokenMatcher[TokenT]:
+    """Alias for matcher() to aid fluent imports."""
+    return matcher(pred=pred, gen=gen, tag=tag, tag_fn=tag_fn)
+@overload
+def scalar(
+    pattern: str | re.Pattern[str],
+    *,
+    constructor: Callable[..., ScalarValueT],
+    flags: int | None = None,
+) -> Scalar[ScalarValueT]:
+    ...
+
+
+@overload
+def scalar(
+    pattern: str | re.Pattern[str],
+    *,
+    flags: int | None = None,
+) -> Scalar[str]:
+    ...
+
+
+def scalar(
+    pattern: str | re.Pattern[str],
+    *,
+    constructor: Callable[..., ScalarValueT] | None = None,
+    flags: int | None = None,
+) -> Scalar[Any]:
+    """Build a Scalar spec from a pattern literal."""
+    compiled = re.compile(pattern, flags or 0) if isinstance(pattern, str) else pattern
+    if constructor is not None:
+        return cast(Scalar[ScalarValueT], Scalar(constructor=constructor, pattern=compiled))
+    return cast(Scalar[str], Scalar(constructor=str, pattern=compiled))
+
+
+def struct(
+    constructor: Callable[..., TokenT],
+    *,
+    case_sensitive: bool = True,
+    strict: bool = False,
+    tag: Tag | Iterable[Tag] | None = None,
+    tag_fn: None | Callable[..., frozenset[Tag]] = None,
+    tag_mode: Literal["token_type", "text", "none"] | None = "token_type",
+) -> Structured[TokenT]:
+    """Convenience constructor for Structured token specs."""
+    if sum(value is not None for value in (tag, tag_fn)) > 1:
+        raise ValueError("Specify at most one of tag or tag_fn")
+    tag_callable: None | Callable[..., frozenset[Tag]]
+    if tag_fn is not None:
+        tag_callable = tag_fn
+    elif tag is not None:
+        tag_callable = _make_static_tag(tag)
+    elif tag_mode and tag_mode != "none":
+        tag_callable = _make_tag_mode_callable(cast(Literal["token_type", "text"], tag_mode))
+    else:
+        tag_callable = None
+    return Structured(
+        constructor=constructor,
+        case_sensitive=case_sensitive,
+        strict=strict,
+        tag=tag_callable,
+    )
 
 
