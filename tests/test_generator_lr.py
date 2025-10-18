@@ -1,12 +1,21 @@
+from typing import Type
+
 import pytest
 
 from syncraft.syntax import Syntax
 from syncraft.ast import Token, Then, ThenKind, Choice, ChoiceKind, Lazy
-from syncraft.generator import generate_with, generate, validate
+from syncraft.generator import (
+    generate_with,
+    generate,
+    validate,
+    Generator,
+    Runner as GeneratorRunner,
+)
 from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
-from syncraft.lexer import ExtLexer
-from syncraft.token import Structured
+from syncraft.lexer import ExtLexer, CacheWithLexer
+from syncraft.fa import FABuilder
+from syncraft.token import Structured, matcher, TokenMatcher
 S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 def tok(text: str):
     return S.token(text=text, case_sensitive=True)
@@ -83,3 +92,44 @@ def test_validate_mutual_left_recursion_without_base_raises():
     with pytest.raises(LeftRecursionError):
         # Any AST will do; grammar has no base and should be flagged
         generate(A)
+
+
+def test_generate_with_infers_text_lexer_without_config() -> None:
+    syntax = Syntax.literal("hi")
+    ast, bound = generate_with(syntax, seed=123)
+    assert ast == Token("hi")
+
+
+def test_generate_with_infers_from_fabuilder_literal() -> None:
+    lex_syntax = Syntax.factory("lex", WORD=FABuilder.lit("go").tagged("WORD"))
+    ast, bound = generate_with(lex_syntax, seed=321)
+    assert isinstance(ast, Token)
+    assert ast.token_type == "WORD"
+    assert ast.text == "go"
+    assert bound is not None
+
+
+def test_generator_runner_uses_override_lexer_class() -> None:
+    override_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=Structured(Token))
+    original_func = override_cls.from_syntax.__func__  # type: ignore[attr-defined]
+    call_count = {"value": 0}
+
+    def tracked(cls, syntax):
+        call_count["value"] += 1
+        return original_func(cls, syntax)
+
+    override_cls.from_syntax = classmethod(tracked)  # type: ignore[assignment]
+    try:
+        matcher_spec: TokenMatcher[Token] = matcher(
+            pred=lambda tok: isinstance(tok, Token) and tok.token_type == "PING",
+            gen=lambda _tag, _rng: Token(text="ping", token_type="PING"),
+            tag="PING",
+        )
+        syntax = Syntax.token(token_type="PING", PING=matcher_spec)
+        runner: GeneratorRunner = GeneratorRunner(lexer_class=override_cls)
+        _generator, cache_obj, _state = runner.bootstrap(syntax, Generator)
+        assert call_count["value"] == 1
+        assert isinstance(cache_obj, CacheWithLexer)
+        assert isinstance(cache_obj.lexer, override_cls)
+    finally:
+        setattr(override_cls, "from_syntax", classmethod(original_func))  # type: ignore[arg-type]

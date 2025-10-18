@@ -9,6 +9,7 @@ from syncraft.lexer import (
     LexerResult,
     LexerProtocol,
     ExtLexer,
+    TokenSpec,
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
@@ -18,12 +19,15 @@ from syncraft.algebra import (
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
 
-from syncraft.syntax import Syntax, RunnerProtocol, PayloadKind
+from syncraft.syntax import Syntax, RunnerProtocol, PayloadKind, FactorySpec
 from syncraft.input import Input, StreamCursor
 
 from syncraft.ast import Token, AST, SyncraftError
 from syncraft.constraint import Bindable
 import re
+from syncraft.charset import CodeUniverse
+from syncraft.fa import FABuilder
+from syncraft.token import Structured
 
 T = TypeVar('T', bound=Hashable)  
 A = TypeVar('A')
@@ -216,7 +220,7 @@ class Parser(Algebra[T, ParserState[T]]):
     def token(
         cls,
         *,
-        lexer_class: Type[LexerProtocol],
+        lexer_class: Type[LexerProtocol] | None = None,
         **kwargs: Any,
     ) -> Algebra[T, ParserState[T]]:
         return cls.lex(lexer_class=lexer_class, **kwargs)
@@ -224,7 +228,7 @@ class Parser(Algebra[T, ParserState[T]]):
     @classmethod
     def lex(cls, 
             *,
-            lexer_class: Type[LexerProtocol],
+            lexer_class: Type[LexerProtocol] | None = None,
             **kwargs: Any) -> Algebra[T, ParserState[T]]:
         
         
@@ -262,8 +266,13 @@ class Parser(Algebra[T, ParserState[T]]):
                             return (yield from cache.return_value(Right((token, state.advance())), state, name=str(ntag)))
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
+        if isinstance(lexer_class, type) and issubclass(lexer_class, LexerProtocol):
+            token_name = lexer_class.name(**kwargs)
+        else:
+            key_summary = ", ".join(sorted(kwargs)) if kwargs else "token"
+            token_name = f"token({key_summary})"
 
-        return cls(lex_run, _name=lexer_class.name(**kwargs))
+        return cls(lex_run, _name=token_name)
 
 
 
@@ -313,15 +322,106 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
             kind: str,
         ) -> LexerProtocol[Any]:
         bound_cls = config.get("lexer_class")
-        if not isinstance(bound_cls, type) or not issubclass(bound_cls, LexerProtocol):
-            raise SyncraftError("Lexer class must be a subclass of LexerProtocol", offender=bound_cls, expect="subclass of LexerProtocol")
-        if kind in ('text', 'bytes'):
-            if bound_cls is None or not issubclass(bound_cls, Lexer):
-                raise SyncraftError(f'The lexer class for text input must be a subclass of Lexer, got {bound_cls}', offender=bound_cls, expect="subclass of Lexer")
-        else:
-            if bound_cls is None or not issubclass(bound_cls, ExtLexer):
-                raise SyncraftError(f'The lexer class for token input must be a subclass of ExtLexer, got {bound_cls}', offender=bound_cls, expect="subclass of ExtLexer")
-        lexer = bound_cls.from_syntax(syntax)
+        if isinstance(bound_cls, type) and issubclass(bound_cls, LexerProtocol):
+            if kind in ("text", "bytes") and not issubclass(bound_cls, Lexer):
+                raise SyncraftError(
+                    "The lexer class for text input must be a subclass of Lexer",
+                    offender=bound_cls,
+                    expect="subclass of Lexer",
+                )
+            if kind == "token" and not issubclass(bound_cls, ExtLexer):
+                raise SyncraftError(
+                    "The lexer class for token input must be a subclass of ExtLexer",
+                    offender=bound_cls,
+                    expect="subclass of ExtLexer",
+                )
+            lexer = bound_cls.from_syntax(syntax)
+            assert isinstance(lexer, LexerProtocol)
+            return lexer
+
+        token_nodes = self._collect_token_factories(syntax)
+        if kind in ("text", "bytes"):
+            return self._build_lexer_from_syntax(kind=kind, token_nodes=token_nodes)
+        if kind == "token":
+            return self._build_extlexer_from_syntax(token_nodes=token_nodes)
+
+        raise SyncraftError(
+            f"Unsupported input payload kind '{kind}' for automatic lexer inference",
+            offender=kind,
+            expect="text, bytes, or token",
+        )
+
+    def _collect_token_factories(self, syntax: Syntax[Any, Any]) -> List[Mapping[str, Any]]:
+        def visitor(fspec: FactorySpec, acc: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+            if fspec.name == "token":
+                acc.append(dict(fspec.kwargs))
+            return acc
+
+        return syntax.factory_spec(visitor, [])
+
+    def _build_lexer_from_syntax(
+        self,
+        *,
+        kind: str,
+        token_nodes: List[Mapping[str, Any]],
+    ) -> LexerProtocol[Any]:
+        builders: List[FABuilder[Any]] = []
+        for kwargs in token_nodes:
+            if any(isinstance(v, TokenSpec) for v in kwargs.values()):
+                raise SyncraftError(
+                    "TokenSpec detected in grammar but input stream provides characters; configure an ExtLexer explicitly",
+                    offender=kwargs,
+                    expect="text-oriented token() calls without TokenSpec",
+                )
+            text_value = kwargs.get("text")
+            if isinstance(text_value, str) and kind == "text":
+                tag = kwargs.get("token_type", text_value)
+                builders.append(FABuilder.lit(text_value).tagged(tag))
+            elif isinstance(text_value, bytes) and kind == "bytes":
+                tag = kwargs.get("token_type", text_value)
+                builders.append(FABuilder.lit(text_value).tagged(tag))
+            elif text_value is not None:
+                raise SyncraftError(
+                    "Unsupported literal type for automatic lexer inference",
+                    offender=text_value,
+                    expect="str" if kind == "text" else "bytes",
+                )
+
+        if not builders:
+            raise SyncraftError(
+                "Unable to infer a Lexer from the grammar; supply Syntax.config(lexer_class=...)",
+                offender=token_nodes,
+                expect="token() calls with text literals",
+            )
+
+        lexer = Lexer.from_builders(
+            CodeUniverse.unicode() if kind == "text" else CodeUniverse.byte(),
+            *builders,
+        )
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
+
+    def _build_extlexer_from_syntax(
+        self,
+        *,
+        token_nodes: List[Mapping[str, Any]],
+    ) -> LexerProtocol[Any]:
+        base_spec: TokenSpec[Any] | None = None
+        for kwargs in token_nodes:
+            for value in kwargs.values():
+                if isinstance(value, TokenSpec):
+                    base_spec = value
+                    break
+            if base_spec is not None:
+                break
+
+        if base_spec is None:
+            base_spec = Structured(Token)
+
+        lexer = ExtLexer(tkspec=base_spec)
+        for kwargs in token_nodes:
+            lexer.register(**dict(kwargs))
+
         assert isinstance(lexer, LexerProtocol)
         return lexer
 

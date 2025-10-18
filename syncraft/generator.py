@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
-    List, Generator as PyGenerator, cast, Type
+    List, Mapping, Generator as PyGenerator, cast, Type, Literal
 )
+from enum import Enum
 from functools import cached_property
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
-from syncraft.lexer import CacheWithLexer, ExtLexer, LexerProtocol
+from syncraft.lexer import CacheWithLexer, ExtLexer, Lexer, LexerProtocol, TokenSpec
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
@@ -19,10 +20,28 @@ from syncraft.ast import (
     Then, ThenKind, SyncraftError
 )
 from syncraft.constraint import FrozenDict
-from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, PayloadKind
+from syncraft.charset import CodeUniverse
+from syncraft.fa import FABuilder
+from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, PayloadKind, FactorySpec
 import random
 
 from syncraft.constraint import Bindable
+from syncraft.token import Structured, Tag
+
+
+def _coerce_tags(value: Any) -> frozenset[Tag]:
+    def _coerce_one(item: Any) -> Tag:
+        if isinstance(item, Enum):
+            return cast(Tag, item)
+        if isinstance(item, str):
+            return cast(Tag, item)
+        return cast(Tag, str(item))
+
+    if isinstance(value, (set, frozenset, list, tuple)):
+        items = value
+    else:
+        items = (value,)
+    return frozenset(_coerce_one(item) for item in items)
 
 
 S = TypeVar('S', bound=Bindable)
@@ -416,7 +435,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     def token(
         cls,
         *,
-        lexer_class: Type[LexerProtocol],
+        lexer_class: Type[LexerProtocol] | None = None,
         **kwargs: Any,
     ) -> Algebra[ParseResult[T], GenState[T]]:
         return cls.lex(lexer_class=lexer_class, **kwargs)
@@ -425,7 +444,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     @classmethod
     def lex(cls,
             *,
-            lexer_class: Type[LexerProtocol],
+            lexer_class: Type[LexerProtocol] | None = None,
             **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
         
         def lex_run(input: GenState[T], 
@@ -439,10 +458,36 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
             lexer = cache.lexer
             tags = lexer.tag(**kwargs)
+            if not tags:
+                token_type = kwargs.get("token_type")
+                if token_type is not None:
+                    tags = _coerce_tags(token_type)
+                elif "text" in kwargs:
+                    literal = kwargs["text"]
+                    tags = _coerce_tags(literal)
+                if not tags:
+                    raise SyncraftError(
+                        "Unable to determine token tags for generation",
+                        offender=kwargs,
+                        expect="token_type or text",
+                    )
             if input.pruned:
                 tag = input.rng("lex_tag").choice(tuple(tags))
                 input = input.fork(tag=tag)
                 generated = lexer.gen(tag, input.rng())
+                if (
+                    isinstance(lexer, Lexer)
+                    and any(isinstance(value, FABuilder) for value in kwargs.values())
+                    and not isinstance(generated, Token)
+                ):
+                    if isinstance(generated, (str, bytes, tuple)):
+                        generated = Token(text=generated, token_type=tag)
+                    else:
+                        raise SyncraftError(
+                            "Lexer produced unsupported payload for lex()",
+                            offender=generated,
+                            expect="str, bytes, or tuple",
+                        )
                 parsed_value = cast(ParseResult[T], generated)
                 return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tag)))
             else:
@@ -462,7 +507,13 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 parsed_value = cast(ParseResult[T], current)
                 return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tags)))
 
-        return cls(lex_run, _name=lexer_class.name(**kwargs)) 
+        if isinstance(lexer_class, type) and issubclass(lexer_class, LexerProtocol):
+            token_name = lexer_class.name(**kwargs)
+        else:
+            key_summary = ", ".join(sorted(kwargs)) if kwargs else "token"
+            token_name = f"token({key_summary})"
+
+        return cls(lex_run, _name=token_name) 
 
 
 
@@ -472,24 +523,31 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     ast : ParseResult[T] | None = None
     seed: int = field(default_factory=lambda: random.randint(0, 2**32 - 1))
     restore_pruned: bool = False
+    lexer_class: Type[LexerProtocol] | None = None
     def bootstrap(self, 
                   syntax: Syntax[ParseResult[T], GenState[T]], 
                   alg_cls: Type[Algebra[ParseResult[T], GenState[T]]],
                   cache: Optional[Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]] = None
                   ) -> Tuple[Algebra[ParseResult[T], GenState[T]], Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]], GenState[T]]:
+        if cache is not None and not isinstance(cache, CacheWithLexer):
+            raise SyncraftError("Cache must be CacheWithLexer or None", offender=cache, expect="CacheWithLexer")
         generator = syntax(alg_cls)
         config = generator.config()
-        initial_cache: Cache[ GenState[T], Either[Any, Tuple[Any, GenState[T]]]] = cache or CacheWithLexer()
+        initial_cache: CacheWithLexer[Any, GenState[T], Either[Any, Tuple[Any, GenState[T]]]] = cache or CacheWithLexer()
         initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
-        lexer_class = config.get("lexer_class")
-        if lexer_class is None or not issubclass(lexer_class, LexerProtocol):
-            raise SyncraftError(
-                "LexerClass not configured for Generator", 
-                offender=syntax, 
-                expect=LexerProtocol,
-            )
-        initial_cache.lexer = lexer_class.from_syntax(syntax) # type: ignore
-        return syntax(alg_cls), initial_cache, initial_state
+
+        override_cls = self.lexer_class
+        if override_cls is not None:
+            if not (isinstance(override_cls, type) or not issubclass(override_cls, LexerProtocol)):
+                raise SyncraftError(
+                    "Generator Runner received invalid lexer_class override",
+                    offender=override_cls,
+                    expect="subclass of LexerProtocol",
+                )
+            initial_cache.lexer = override_cls.from_syntax(syntax)
+        else:
+            initial_cache.lexer = self._instantiate_lexer(syntax=syntax, config=config)
+        return generator, initial_cache, initial_state
     
     def resume(self, request: Incomplete[S]) -> S:
         raise SyncraftError("Generator does not support resuming from Incomplete states.", offender=request, expect="Not Incomplete")
@@ -497,12 +555,239 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     def payload_kind(self) -> Optional[PayloadKind]: 
         return None
 
+    def _instantiate_lexer(
+        self,
+        *,
+        syntax: Syntax[Any, Any],
+        config: Mapping[str, Any],
+    ) -> LexerProtocol[Any]:
+        bound_cls = config.get("lexer_class")
+        if isinstance(bound_cls, type) and issubclass(bound_cls, LexerProtocol):
+            return bound_cls.from_syntax(syntax)
+
+        token_nodes = self._collect_token_factories(syntax)
+        if not token_nodes:
+            raise SyncraftError(
+                "Unable to infer a lexer for generator",
+                offender=syntax,
+                expect="token() calls or literals",
+            )
+
+        kind = self._infer_payload_kind(token_nodes)
+        if kind in ("text", "bytes"):
+            return self._build_lexer_from_syntax(kind=kind, token_nodes=token_nodes) # type: ignore
+        if kind == "token":
+            return self._build_extlexer_from_syntax(token_nodes=token_nodes)
+
+        raise SyncraftError(
+            f"Unsupported payload kind '{kind}' for generator inference",
+            offender=kind,
+            expect="text, bytes, or token",
+        )
+
+    def _collect_token_factories(
+        self,
+        syntax: Syntax[Any, Any],
+    ) -> List[Tuple[Mapping[str, Any], Mapping[str, Any]]]:
+        def visitor(
+            fspec: FactorySpec,
+            acc: List[Tuple[Mapping[str, Any], Mapping[str, Any]]],
+        ) -> List[Tuple[Mapping[str, Any], Mapping[str, Any]]]:
+            if fspec.name in {"token", "lex"}:
+                meta = dict(fspec.metadata)
+                meta.setdefault("factory", fspec.name)
+                acc.append((dict(fspec.kwargs), meta))
+            return acc
+
+        return syntax.factory_spec(visitor, [])
+
+    def _infer_payload_kind(
+        self,
+        token_nodes: List[Tuple[Mapping[str, Any], Mapping[str, Any]]],
+    ) -> Literal["text", "bytes", "token"]:
+        has_spec = False
+        has_builder = False
+        literal_kind: Optional[Literal["text", "bytes"]] = None
+
+        for kwargs, meta in token_nodes:
+            meta_kind = meta.get("literal_kind")
+            if isinstance(meta_kind, str):
+                if meta_kind not in {"text", "bytes"}:
+                    raise SyncraftError(
+                        "Unsupported literal kind metadata",
+                        offender=meta_kind,
+                        expect="'text' or 'bytes'",
+                    )
+                if literal_kind not in (None, meta_kind):
+                    raise SyncraftError(
+                        "Mixed literal kinds detected across token() calls",
+                        offender=token_nodes,
+                        expect="consistent literal kinds",
+                    )
+                literal_kind = cast(Literal["text", "bytes"], meta_kind)
+
+            specs_meta = meta.get("token_specs")
+            if specs_meta:
+                has_spec = True
+
+            if any(isinstance(value, TokenSpec) for value in kwargs.values()):
+                has_spec = True
+
+            text_value = kwargs.get("text")
+            if isinstance(text_value, str):
+                if literal_kind not in (None, "text"):
+                    raise SyncraftError(
+                        "Mixed literal types detected across token() calls",
+                        offender=token_nodes,
+                        expect="consistent str or bytes literals",
+                    )
+                literal_kind = cast(Literal["text", "bytes"], "text")
+            elif isinstance(text_value, bytes):
+                if literal_kind not in (None, "bytes"):
+                    raise SyncraftError(
+                        "Mixed literal types detected across token() calls",
+                        offender=token_nodes,
+                        expect="consistent str or bytes literals",
+                    )
+                literal_kind = cast(Literal["text", "bytes"], "bytes")
+            elif text_value is not None:
+                raise SyncraftError(
+                    "Unsupported literal type for automatic lexer inference",
+                    offender=text_value,
+                    expect="str or bytes",
+                )
+
+            for value in kwargs.values():
+                if isinstance(value, FABuilder):
+                    has_builder = True
+                    builder_kind_raw = value.infer_literal_kind()
+                    if builder_kind_raw is None:
+                        continue
+                    if builder_kind_raw not in {"text", "bytes"}:
+                        raise SyncraftError(
+                            "Unsupported literal kind detected across FABuilder token() calls",
+                            offender=builder_kind_raw,
+                            expect="text or bytes",
+                        )
+                    builder_kind = cast(Literal["text", "bytes"], builder_kind_raw)
+                    if literal_kind not in (None, builder_kind):
+                        raise SyncraftError(
+                            "Mixed literal types detected across FABuilder token() calls",
+                            offender=token_nodes,
+                            expect="consistent literal kinds",
+                        )
+                    literal_kind = builder_kind
+
+        if has_spec or not has_builder:
+            return "token"
+        if literal_kind is not None:
+            return literal_kind
+
+        raise SyncraftError(
+            "Unable to infer payload kind from token() usage",
+            offender=token_nodes,
+            expect="text literals or TokenSpec",
+        )
+
+    def _build_lexer_from_syntax(
+        self,
+    *,
+    kind: Literal["text", "bytes"],
+        token_nodes: List[Tuple[Mapping[str, Any], Mapping[str, Any]]],
+    ) -> LexerProtocol[Any]:
+        builders: List[FABuilder[Any]] = []
+        for kwargs, meta in token_nodes:
+            if any(isinstance(value, TokenSpec) for value in kwargs.values()):
+                raise SyncraftError(
+                    "TokenSpec detected in grammar but generator expects character input",
+                    offender=kwargs,
+                    expect="text-oriented token() calls without TokenSpec",
+                )
+            literal_value = meta.get("literal_value") if isinstance(meta, Mapping) else None
+            if literal_value is not None:
+                if kind == "text":
+                    if not isinstance(literal_value, str):
+                        raise SyncraftError(
+                            "Literal metadata does not match inferred text universe",
+                            offender=literal_value,
+                            expect="str literal",
+                        )
+                    builders.append(FABuilder.lit(literal_value))
+                elif kind == "bytes":
+                    if not isinstance(literal_value, bytes):
+                        raise SyncraftError(
+                            "Literal metadata does not match inferred bytes universe",
+                            offender=literal_value,
+                            expect="bytes literal",
+                        )
+                    builders.append(FABuilder.lit(literal_value))
+
+            for value in kwargs.values():
+                if isinstance(value, FABuilder):
+                    builder_kind = value.infer_literal_kind()
+                    if builder_kind is not None and builder_kind != kind:
+                        raise SyncraftError(
+                            "FABuilder literal kind does not match inferred universe",
+                            offender=value,
+                            expect=kind,
+                        )
+                    builders.append(value)
+
+        if not builders:
+            raise SyncraftError(
+                "Unable to infer a Lexer from the grammar; supply Syntax.config(lexer_class=...)",
+                offender=token_nodes,
+                expect="token() calls with text literals",
+            )
+
+        universe: CodeUniverse[Any] = CodeUniverse.unicode() if kind == "text" else CodeUniverse.byte()
+        lexer = Lexer.from_builders(universe, *builders)
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
+
+    def _build_extlexer_from_syntax(
+        self,
+        *,
+        token_nodes: List[Tuple[Mapping[str, Any], Mapping[str, Any]]],
+    ) -> LexerProtocol[Any]:
+        base_spec: TokenSpec[Any] | None = None
+        for kwargs, meta in token_nodes:
+            specs_meta = meta.get("token_specs")
+            if isinstance(specs_meta, Mapping):
+                for key in specs_meta:
+                    candidate = kwargs.get(key)
+                    if isinstance(candidate, TokenSpec):
+                        base_spec = candidate
+                        break
+            if base_spec is not None:
+                break
+
+        if base_spec is None:
+            for kwargs, _meta in token_nodes:
+                for value in kwargs.values():
+                    if isinstance(value, TokenSpec):
+                        base_spec = value
+                        break
+                if base_spec is not None:
+                    break
+
+        if base_spec is None:
+            base_spec = Structured(Token)
+
+        lexer = ExtLexer(tkspec=base_spec)
+        for kwargs, _meta in token_nodes:
+            lexer.register(**dict(kwargs))
+
+        assert isinstance(lexer, LexerProtocol)
+        return lexer
+
 
 def generate_with(
     syntax: Syntax[Any, Any], 
     data: Optional[ParseResult[Any]] = None, 
     seed: int = 0, 
-    restore_pruned: bool = False
+    restore_pruned: bool = False,
+    lexer_class: Type[LexerProtocol] | None = None,
 ) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     """
     Generate an AST from the given syntax, optionally constrained by a partial parse result.
@@ -511,13 +796,14 @@ def generate_with(
         syntax: The syntax specification to generate from.
         data: An optional partial parse result (AST) to constrain generation.
         seed: Random seed for reproducibility.
-        restore_pruned: Whether to restore pruned branches in the AST.
+    restore_pruned: Whether to restore pruned branches in the AST.
+    lexer_class: Optional explicit lexer class override for generation.
 
     Returns:
         A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
     """
     # from syncraft.syntax import run_state
-    runner = Runner(ast=data, seed=seed, restore_pruned=restore_pruned)
+    runner = Runner(ast=data, seed=seed, restore_pruned=restore_pruned, lexer_class=lexer_class)
 
     v, s = runner(syntax=syntax, alg_cls=Generator)
     if s is not None:

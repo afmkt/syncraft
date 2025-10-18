@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List, Callable, Dict, Sequence, Union
+    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List,
+    Callable, Dict, Sequence, Union, Iterator
 )
 
 from dataclasses import dataclass, field, replace
@@ -1229,6 +1230,40 @@ class FABuilder(Generic[C]):
                 return f"({self.children[0]} - {self.children[1]})"
             case _:
                 return f"FABuilder({self.kind})"
+
+    def walk(self) -> Iterator["FABuilder[C]"]:
+        yield self
+        for child in self.children:
+            yield from child.walk()
+
+    def literal_values(self) -> Tuple[str | bytes, ...]:
+        values: List[str | bytes] = []
+
+        for node in self.walk():
+            payload = node._literal_payload()
+            if payload is not None:
+                values.append(payload)
+
+        return tuple(values)
+
+    def infer_literal_kind(self) -> Optional[str]:
+        kind: Optional[str] = None
+        for value in self.literal_values():
+            value_kind = "text" if isinstance(value, str) else "bytes"
+            if kind is None:
+                kind = value_kind
+            elif kind != value_kind:
+                raise SyncraftError(
+                    "Mixed literal types detected within FABuilder",
+                    offender=value,
+                    expect="consistent str or bytes literals",
+                )
+        return kind
+
+    def _literal_payload(self) -> str | bytes | None:
+        if self.kind == _NodeKind.LITERAL and isinstance(self.text, (str, bytes)):
+            return self.text
+        return None
 
 
     @classmethod

@@ -1,34 +1,27 @@
-from __future__ import annotations
+from typing import Type
 
-from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, Any
-from syncraft.algebra import Error
-from syncraft.parser import  parse_word
-import syncraft.generator as gen
+import pytest
+
 from syncraft.syntax import Syntax
-from syncraft.lexer import CacheWithLexer, ExtLexer
+from syncraft.ast import Token
+from syncraft.generator import (
+    generate_with,
+)
+from syncraft.lexer import ExtLexer
 from syncraft.token import Structured
 from rich import print
 
-literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
 
-def from_string(string: str) -> Token:
-    return Token(text=string)
+S = Syntax
 
-def test1_simple_then() -> None:
-    A, B, C = literal("a"), literal("b"), literal("c")
-    syntax = A // B // C
-    sql = "a b c"
-    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
-    # print("---" * 40)
-    print(ast)
-    generated, bound = gen.generate_with(syntax, ast)
-    # print("---" * 40)
-    print(generated)
-    assert ast == generated
-    value, bmap = generated.bimap()
-    # print(value)
-    u, v = gen.generate_with(syntax, bmap(value))
-    assert u == generated
+
+
+def test_generate_with_infers_text_lexer_without_config() -> None:
+    syntax = Syntax.literal("hi")
+    ast, bound = generate_with(syntax, seed=123)
+    assert ast == Token('hi')
+
+
 
 if __name__ == "__main__":
-    test1_simple_then()
+    test_generate_with_infers_text_lexer_without_config()

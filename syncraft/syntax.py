@@ -2,20 +2,23 @@ from __future__ import annotations
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List, Dict, Set, Iterator, ClassVar, Protocol
+    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Mapping
 )
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, asdict, is_dataclass
 from functools import reduce
 from syncraft.algebra import Algebra, Error, Either, Left, Right, SYNCRAFT_CONFIG_KEY, SYNCRAFT_TRANSFORM_KEY
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, FrozenDict
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError, CallWith
-from syncraft.fa import FABuilder
+from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
+from syncraft.utils import CallWith
 import keyword
 from enum import Enum
 import re
 import threading
 from weakref import WeakValueDictionary
+
+
+_FACTORY_META_KEY = "__factory_meta__"
 
 
 def valid_name(name: str) -> bool:
@@ -144,6 +147,7 @@ class FactorySpec(SyntaxSpec):
     name: str
 
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
+    metadata: FrozenDict[str, Any] = field(default_factory=FrozenDict)
 
 
 
@@ -652,18 +656,67 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def factory(cls, name: str, **kwargs: Any) -> Syntax[Any, Any]:
+        meta_payload = kwargs.pop(_FACTORY_META_KEY, None)
+        meta_dict: FrozenDict[str, Any] = (
+            FrozenDict(meta_payload)
+            if isinstance(meta_payload, Mapping)
+            else FrozenDict()
+        )
         def factory_run(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
             method = getattr(acls, name, None)
             if method is None or not callable(method):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
-        return cls(factory_run, spec=FactorySpec(name=name, kwargs=FrozenDict(kwargs)))
+        return cls(factory_run, spec=FactorySpec(name=name, kwargs=FrozenDict(kwargs), metadata=meta_dict))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
+        meta = cls._build_token_metadata(kwargs)
+        return cls.factory('token', **{_FACTORY_META_KEY: meta} | kwargs)
 
-        return cls.factory('token', **kwargs)
+    @staticmethod
+    def _build_token_metadata(kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
+        meta: Dict[str, Any] = {}
+        literal_value = kwargs.get("text")
+        if isinstance(literal_value, str):
+            meta["literal_kind"] = "text"
+            meta["literal_value"] = literal_value
+        elif isinstance(literal_value, bytes):
+            meta["literal_kind"] = "bytes"
+            meta["literal_value"] = literal_value
+
+        specs: Dict[str, Any] = {}
+        for key, value in kwargs.items():
+            descriptor = Syntax._describe_token_spec(value)
+            if descriptor is not None:
+                specs[key] = descriptor
+
+        if specs:
+            meta["token_specs"] = specs
+
+        token_type = kwargs.get("token_type")
+        if token_type is not None:
+            meta["token_type"] = token_type
+
+        return meta
+
+    @staticmethod
+    def _describe_token_spec(value: Any) -> Optional[Dict[str, Any]]:
+        if not all(hasattr(value, attr) for attr in ("tags", "predicate", "generator")):
+            return None
+
+        descriptor: Dict[str, Any] = {
+            "module": value.__class__.__module__,
+            "qualname": value.__class__.__qualname__,
+        }
+
+        if is_dataclass(value) and not isinstance(value, type):
+            descriptor["params"] = asdict(value)
+        elif hasattr(value, "__dict__"):
+            descriptor["params"] = {k: v for k, v in vars(value).items() if not callable(v)}
+
+        return descriptor
 
 
 

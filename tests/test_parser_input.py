@@ -10,6 +10,44 @@ from syncraft.lexer import ExtLexer, Lexer
 from syncraft.parser import parse as parser_run, parse_data
 from syncraft.syntax import Syntax
 from syncraft.token import Structured, TokenMatcher, matcher, struct
+
+
+def test_parse_text_input_without_config_infers_lexer() -> None:
+    syntax = Syntax.literal("hi")
+
+    value, state = parser_run(syntax=syntax, input=Input.from_data("hi"))
+
+    assert isinstance(value, Token)
+    assert value.text == "hi"
+    assert state is not None
+    assert state.ended()
+
+
+def test_parse_bytes_input_without_config_infers_lexer() -> None:
+    syntax = Syntax.token(text=b"\x01")
+
+    value, state = parser_run(syntax=syntax, input=Input.from_data(b"\x01"))
+
+    assert isinstance(value, Token)
+    assert value.text == b"\x01"
+    assert state is not None
+    assert state.ended()
+
+
+def test_parse_token_input_without_config_infers_extlexer() -> None:
+    matcher_spec: TokenMatcher[Token] = matcher(
+        pred=lambda tok: isinstance(tok, Token) and tok.token_type == "PING",
+        gen=lambda _tag, _rng: Token(text="ping", token_type="PING"),
+        tag="PING",
+    )
+    syntax = Syntax.token(token_type="PING", PING=matcher_spec)
+
+    tokens: list[Token] = [Token(text="ping", token_type="PING")]
+    value, bound = parse_data(syntax=syntax, tokens=tokens)
+
+    assert isinstance(value, Token)
+    assert value.token_type == "PING"
+    assert bound is not None
 def test_run_with_input_stream_handles_incomplete() -> None:
     literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
     syntax = literal("if").many()
