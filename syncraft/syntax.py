@@ -20,7 +20,7 @@ from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from syncraft.utils import CallWith
 from syncraft.token import TokenSpec
-
+from syncraft.fa import FABuilder
 
 _FACTORY_META_KEY = "__factory_meta__"
 
@@ -692,6 +692,10 @@ class Syntax(Generic[A, S]):
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
         meta = cls._build_token_metadata(kwargs)
         return cls.factory('token', **{_FACTORY_META_KEY: meta} | kwargs)
+
+    @classmethod
+    def lex(cls, **kwargs: FABuilder) -> Syntax[Any, Any]:
+        return cls.factory('lex', **kwargs)
 
     @staticmethod
     def _build_token_metadata(kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
