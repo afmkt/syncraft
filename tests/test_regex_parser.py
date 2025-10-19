@@ -4,6 +4,8 @@ from typing import Any
 
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
+import pytest
+
 from syncraft.regex import (
     Alternation,
     CharClass,
@@ -11,8 +13,8 @@ from syncraft.regex import (
     Literal,
     Quantifier,
     Repeat,
-    compile_regex,
-    parse_regex,
+    # compile_regex,
+    # parse_regex,
 )
 
 
@@ -26,50 +28,57 @@ def _matches(builder: FABuilder[str], text: str) -> bool:
     return runner.is_accepted()
 
 
-def test_compile_regex_literal_sequence() -> None:
-    builder = compile_regex("abc")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_compile_regex_literal_sequence(engine: str) -> None:
+    builder = compile_regex("abc", engine=engine)
     assert _matches(builder, "abc")
     assert not _matches(builder, "ab")
 
 
-def test_compile_regex_alternation() -> None:
-    builder = compile_regex("a|bc")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_compile_regex_alternation(engine: str) -> None:
+    builder = compile_regex("a|bc", engine=engine)
     assert _matches(builder, "a")
     assert _matches(builder, "bc")
     assert not _matches(builder, "b")
 
 
-def test_compile_regex_quantifiers() -> None:
-    builder = compile_regex("ab*c")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_compile_regex_quantifiers(engine: str) -> None:
+    builder = compile_regex("ab*c", engine=engine)
     assert _matches(builder, "ac")
     assert _matches(builder, "abc")
     assert _matches(builder, "abbbc")
     assert not _matches(builder, "abb")
 
 
-def test_compile_regex_bounded_quantifier() -> None:
-    builder = compile_regex("a{2,3}")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_compile_regex_bounded_quantifier(engine: str) -> None:
+    builder = compile_regex("a{2,3}", engine=engine)
     assert _matches(builder, "aa")
     assert _matches(builder, "aaa")
     assert not _matches(builder, "a")
     assert not _matches(builder, "aaaa")
 
 
-def test_compile_regex_char_class() -> None:
-    builder = compile_regex("[a-c]+d")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_compile_regex_char_class(engine: str) -> None:
+    builder = compile_regex("[a-c]+d", engine=engine)
     assert _matches(builder, "ad")
     assert _matches(builder, "bbcd")
     assert not _matches(builder, "ed")
 
 
-def test_compile_regex_escaped_literal() -> None:
-    builder = compile_regex("\\?")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_compile_regex_escaped_literal(engine: str) -> None:
+    builder = compile_regex("\\?", engine=engine)
     assert _matches(builder, "?")
     assert not _matches(builder, "q")
 
 
-def test_parse_regex_ast_shapes() -> None:
-    expr = parse_regex("(ab|c)+")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_parse_regex_ast_shapes(engine: str) -> None:
+    expr = parse_regex("(ab|c)+", engine=engine)
     assert isinstance(expr, Repeat)
     assert expr.quant == Quantifier(1, None)
     assert isinstance(expr.expr, Alternation)
@@ -80,8 +89,9 @@ def test_parse_regex_ast_shapes() -> None:
     assert isinstance(expr.expr.options[1], Literal)
 
 
-def test_parse_regex_char_class_ast() -> None:
-    expr = parse_regex("[^a-c]")
+@pytest.mark.parametrize("engine", ["syntax", "rd"])
+def test_parse_regex_char_class_ast(engine: str) -> None:
+    expr = parse_regex("[^a-c]", engine=engine)
     assert isinstance(expr, CharClass)
     assert expr.negated is True
     assert expr.ranges[0] == ("a", "c")
