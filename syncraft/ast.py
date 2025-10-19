@@ -1,7 +1,6 @@
 
 
 from __future__ import annotations
-import re
 from typing import (
     Optional, Any, TypeVar, Tuple, cast,
     Generic, Callable, Union, Protocol, Type, List, ClassVar,

@@ -178,12 +178,10 @@ class Algebra(Generic[A, S]):
                     [
                         Algebra[A, S], 
                         S, 
-                        Left[Any], 
-                        Any
+                        Left[Any]
                     ], 
                         Either[Any, Tuple[B, S]]
-                    ], 
-                ctx: Optional[Any] = None) -> Algebra[A | B, S]:
+                    ]) -> Algebra[A | B, S]:
         assert callable(func), "func must be callable"
         def fail_run(input: S, 
                      cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
@@ -191,7 +189,7 @@ class Algebra(Generic[A, S]):
                                                                            Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Left):
-                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result, ctx))
+                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result))
             else:
                 return cast(Either[Any, Tuple[A | B, S]], result)
         return replace(self, run_f=fail_run) # type: ignore
@@ -203,11 +201,9 @@ class Algebra(Generic[A, S]):
                             Algebra[A, S], 
                             S, 
                             Right[Tuple[A, S]], 
-                            Any
                         ], 
                             Either[Any, Tuple[B, S]]
-                        ], 
-                    ctx: Optional[Any] = None) -> Algebra[A | B, S]:
+                        ]) -> Algebra[A | B, S]:
         assert callable(func), "func must be callable"
         def success_run(input: S, 
                         cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
@@ -215,7 +211,7 @@ class Algebra(Generic[A, S]):
                                                                               Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Right):
-                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result, ctx))
+                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result))
             else:
                 return cast(Either[Any, Tuple[A | B, S]], result)
         return replace(self, run_f=success_run) # type: ignore
