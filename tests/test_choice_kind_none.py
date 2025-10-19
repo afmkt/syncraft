@@ -7,7 +7,8 @@ from syncraft.algebra import Error
 from syncraft.lexer import CacheWithLexer
 from syncraft.ast import Token
 from syncraft.token import Structured
-S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
+# S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
+S = Syntax
 def tok(text: str):
     return S.token(text=text, case_sensitive=True)
 

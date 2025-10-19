@@ -5,6 +5,9 @@ from typing import (
     List, Mapping, Generator as PyGenerator, cast, Type, Literal
 )
 from enum import Enum
+import importlib
+import random
+import re
 from functools import cached_property
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
@@ -23,7 +26,6 @@ from syncraft.constraint import FrozenDict
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, PayloadKind, FactorySpec
-import random
 
 from syncraft.constraint import Bindable
 from syncraft.token import Structured, Tag
@@ -524,6 +526,75 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     seed: int = field(default_factory=lambda: random.randint(0, 2**32 - 1))
     restore_pruned: bool = False
     lexer_class: Type[LexerProtocol] | None = None
+
+    @staticmethod
+    def _load_symbol(module_name: str, qualname: str) -> Any:
+        module = importlib.import_module(module_name)
+        attr: Any = module
+        for part in qualname.split('.'):
+            attr = getattr(attr, part)
+        return attr
+
+    @staticmethod
+    def _decode_metadata_value(value: Any) -> Any:
+        if isinstance(value, FrozenDict):
+            return {k: Runner._decode_metadata_value(v) for k, v in value.items()}
+        if isinstance(value, tuple) and value:
+            tag = value[0]
+            if tag == "enum":
+                _, module_name, qualname, member = value
+                enum_cls = Runner._load_symbol(module_name, qualname)
+                return getattr(enum_cls, member)
+            if tag == "callable":
+                _, module_name, qualname = value
+                return Runner._load_symbol(module_name, qualname)
+            if tag == "regex":
+                _, pattern, flags = value
+                return re.compile(pattern, flags)
+            if tag == "tuple":
+                return tuple(Runner._decode_metadata_value(v) for v in value[1])
+            if tag == "list":
+                return [Runner._decode_metadata_value(v) for v in value[1]]
+            if tag == "set":
+                return frozenset(Runner._decode_metadata_value(v) for v in value[1])
+            if tag == "dict":
+                return {
+                    key: Runner._decode_metadata_value(encoded)
+                    for key, encoded in value[1]
+                }
+        return value
+
+    @staticmethod
+    def _rehydrate_token_spec(descriptor: Mapping[str, Any]) -> TokenSpec[Any] | None:
+        module_name = descriptor.get("module")
+        qualname = descriptor.get("qualname")
+        if not isinstance(module_name, str) or not isinstance(qualname, str):
+            return None
+        try:
+            spec_type = Runner._load_symbol(module_name, qualname)
+        except (ImportError, AttributeError):
+            return None
+
+        dataclass_state = descriptor.get("dataclass")
+        if dataclass_state is not None:
+            if isinstance(dataclass_state, Mapping):
+                items = dataclass_state.items()
+            elif isinstance(dataclass_state, (tuple, list)):
+                items = dataclass_state # type: ignore
+            else:
+                items = tuple(dataclass_state)  # type: ignore
+            kwargs = {}
+            for key, encoded in items:
+                kwargs[key] = Runner._decode_metadata_value(encoded)
+            try:
+                return spec_type(**kwargs)
+            except Exception:
+                return None
+
+        try:
+            return spec_type()
+        except Exception:
+            return None
     def bootstrap(self, 
                   syntax: Syntax[ParseResult[T], GenState[T]], 
                   alg_cls: Type[Algebra[ParseResult[T], GenState[T]]],
@@ -546,7 +617,9 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
                 )
             initial_cache.lexer = override_cls.from_syntax(syntax)
         else:
-            initial_cache.lexer = self._instantiate_lexer(syntax=syntax, config=config)
+            inferred_lexer = self._instantiate_lexer(syntax=syntax, config=config)
+            if inferred_lexer is not None:
+                initial_cache.lexer = inferred_lexer
         return generator, initial_cache, initial_state
     
     def resume(self, request: Incomplete[S]) -> S:
@@ -560,13 +633,15 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
         *,
         syntax: Syntax[Any, Any],
         config: Mapping[str, Any],
-    ) -> LexerProtocol[Any]:
+    ) -> LexerProtocol[Any] | None:
         bound_cls = config.get("lexer_class")
         if isinstance(bound_cls, type) and issubclass(bound_cls, LexerProtocol):
             return bound_cls.from_syntax(syntax)
 
         token_nodes = self._collect_token_factories(syntax)
         if not token_nodes:
+            if self.ast is not None:
+                return None
             raise SyncraftError(
                 "Unable to infer a lexer for generator",
                 offender=syntax,
@@ -594,9 +669,25 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
             acc: List[Tuple[Mapping[str, Any], Mapping[str, Any]]],
         ) -> List[Tuple[Mapping[str, Any], Mapping[str, Any]]]:
             if fspec.name in {"token", "lex"}:
-                meta = dict(fspec.metadata)
+                raw_meta = dict(fspec.metadata)
+                meta = {
+                    key: Runner._decode_metadata_value(value)
+                    for key, value in raw_meta.items()
+                }
                 meta.setdefault("factory", fspec.name)
-                acc.append((dict(fspec.kwargs), meta))
+
+                kwargs = dict(fspec.kwargs)
+                specs_meta = meta.get("token_specs")
+                if isinstance(specs_meta, Mapping):
+                    for key, descriptor in specs_meta.items():
+                        if isinstance(kwargs.get(key), TokenSpec):
+                            continue
+                        if isinstance(descriptor, Mapping):
+                            spec = Runner._rehydrate_token_spec(descriptor)
+                            if spec is not None:
+                                kwargs[key] = spec
+
+                acc.append((kwargs, meta))
             return acc
 
         return syntax.factory_spec(visitor, [])

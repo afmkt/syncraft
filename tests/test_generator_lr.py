@@ -16,7 +16,8 @@ from syncraft.cache import LeftRecursionError
 from syncraft.lexer import ExtLexer, CacheWithLexer
 from syncraft.fa import FABuilder
 from syncraft.token import Structured, matcher, TokenMatcher
-S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
+# S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
+S = Syntax
 def tok(text: str):
     return S.token(text=text, case_sensitive=True)
 
@@ -71,24 +72,26 @@ def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
     assert bound is not None
 
 
+SS = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
+# SS = S
 def test_generate_with_mutual_left_recursion_without_base_raises():
     # Mutual recursion with no productive base: A := B ; B := A
-    A = S.lazy(lambda: B)  # type: ignore[name-defined]
-    B = S.lazy(lambda: A)  # type: ignore[name-defined]
+    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
+    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
     with pytest.raises(LeftRecursionError):
         generate_with(A)
 
 
 def test_generate_mutual_left_recursion_without_base_raises():
-    A = S.lazy(lambda: B)  # type: ignore[name-defined]
-    B = S.lazy(lambda: A)  # type: ignore[name-defined]
+    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
+    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
     with pytest.raises(LeftRecursionError):
         generate(A)
 
 
 def test_validate_mutual_left_recursion_without_base_raises():
-    A = S.lazy(lambda: B)  # type: ignore[name-defined]
-    B = S.lazy(lambda: A)  # type: ignore[name-defined]
+    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
+    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
     with pytest.raises(LeftRecursionError):
         # Any AST will do; grammar has no base and should be flagged
         generate(A)
