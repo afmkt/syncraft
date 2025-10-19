@@ -5,9 +5,8 @@ from dataclasses import dataclass, field
 from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
-from syncraft.utils import callable_str, TablePrinter
+from syncraft.utils import callable_str
 from typing import cast
-table_printer = TablePrinter()
 
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
@@ -599,11 +598,6 @@ class Cache(Generic[A, Ret]):
             if len(group.members) > 1:
                 for m in group.members:
                     m.head = True
-        # DEBUG: group formation details (remove after troubleshooting)
-        try:
-            _ = len(entry.group.members) if entry.group else 0
-        except Exception:
-            pass
         # If still in base-only phase for this entry (no consumption yet), block the recursive
         # expansion by returning a sentinel failure; base alternatives may still succeed.
         if entry.base_only:
@@ -791,14 +785,6 @@ class Cache(Generic[A, Ret]):
                         attempt = yield from self._run_rule(member.f, member.key)
                     finally:
                         self._force = None
-                    # DEBUG: log attempt consumption for multi-head detection troubleshooting
-                    # (Will be removed after test passes.)
-                    try:
-                        if isinstance(attempt, Right):  # type: ignore
-                            _ = self._consumed(member.key, attempt)  # type: ignore[arg-type]
-                    except Exception:
-                        pass
-                    # (Debug logging removed in principled refactor)
                     if self._improved(member.key, member.result, attempt):
                         member.result = cast(Ret, attempt)
                         self._lr_version += 1
