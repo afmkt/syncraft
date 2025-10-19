@@ -183,7 +183,7 @@ class DFA(Generic[C]):
         # If no intervals (degenerate), return self
         if not all_intvs:
             return self
-        pieces: List[Tuple[int, int]] = CharSet.partition_charsets(all_intvs)
+        pieces: List[Tuple[int, int]] = list(CharSet.partition_charsets(all_intvs))
         piece_charsets: List[CharSet[C]] = [CharSet.from_interval([p], universe) for p in pieces]
 
         # Map: state -> list[target_state or None] per piece; also build reverse maps.
@@ -572,7 +572,7 @@ class DFA(Generic[C]):
                     edges.append((e, targets))
 
             intvs: List[Tuple[int, int]] = [interval for e, _ in edges for interval in (e.interval if isinstance(e.interval, tuple) and isinstance(e.interval[0], int) else e.interval)]
-            pieces: List[Tuple[int, int]] = CharSet.partition_charsets(intvs)
+            pieces: List[Tuple[int, int]] = list(CharSet.partition_charsets(intvs))
             for p in pieces:
                 tgt_states: Set[FAState] = set()
                 for e, targets in edges:
@@ -702,7 +702,7 @@ class NFA(Generic[C]):
     
 
     @classmethod
-    def _from_charset(cls, c: CharSet[C], tag: Optional[Tag] = None) -> NFA[C]:
+    def from_raw_charset(cls, c: CharSet[C], tag: Optional[Tag] = None) -> NFA[C]:
         assert c.interval != tuple(), "charset cannot be empty"
         current: FAState = FAState()
         accept: FAState = FAState()
@@ -726,7 +726,7 @@ class NFA(Generic[C]):
             charset = -charset
         if charset.interval == tuple():
             raise CodepointError(f"Character {char!r} is not valid in the specified universe {universe}", offender=char, universe=universe)
-        return cls._from_charset(charset, tag=tag)
+        return cls.from_raw_charset(charset, tag=tag)
 
     @classmethod
     def from_string(cls, 
@@ -1165,6 +1165,7 @@ class DFARunner(Runner[C, DFA[C]]):
 Tag = Union[str, Enum]
 
 class _NodeKind(str, Enum):
+    RANGE = "RANGE"
     LITERAL = "LITERAL"
     ONEOF = "ONEOF"
     CONCAT = "CONCAT"
@@ -1196,6 +1197,7 @@ class FABuilder(Generic[C]):
     kind: _NodeKind
     tag: Tag | None = None
     children: Tuple[FABuilder[C], ...] = field(default_factory=tuple)
+    intervals: Tuple[Tuple[str | bytes | C, str | bytes | C], ...] = field(default_factory=tuple)
     text: Optional[Union[str, bytes, Sequence[C]]] = None
     at_least: int = 1
     at_most: Optional[int] = None
@@ -1207,6 +1209,9 @@ class FABuilder(Generic[C]):
     # ---- Factory entry points ----
     def __str__(self) -> str:
         match self.kind:
+            case _NodeKind.RANGE:
+                ranges_str = ", ".join(f"{start!r}-{end!r}" for start, end in self.intervals)
+                return f"/{ranges_str}/"
             case _NodeKind.LITERAL:
                 return f"'{self.text!r}'"
             case _NodeKind.ONEOF:
@@ -1298,6 +1303,19 @@ class FABuilder(Generic[C]):
         return cls.literal(text, tag=tag, action=action, skip=skip, priority=priority, greedy=greedy)
 
     @classmethod
+    def range(cls, 
+              start: Union[str, bytes, C], 
+              end: Union[str, bytes, C], 
+              *, 
+              tag: Optional[Tag] = None,
+              skip: bool = False, 
+              priority: int = 0,
+              greedy: bool = False,
+              action: Optional[ModeAction] = None) -> FABuilder[C]:
+        return cls(kind=_NodeKind.RANGE, intervals=((start, end),), tag=tag, action=action, skip=skip, priority=priority, greedy=greedy)
+        
+
+    @classmethod
     def oneof(cls, 
               chars: Union[str, bytes, Sequence[C]], 
               *, 
@@ -1366,6 +1384,11 @@ class FABuilder(Generic[C]):
 
     def compile(self, universe: CodeUniverse[C]) -> NFA[C] | DFA[C]: 
         match self.kind:
+            case _NodeKind.RANGE:
+                if not self.intervals:
+                    raise SyncraftError("Range FABuilder must have intervals", offender=self, expect="at least one interval")
+                charset = CharSet.from_interval(self.intervals, universe=universe) # type: ignore
+                return NFA.from_raw_charset(charset, tag=self.tag)
             case _NodeKind.UNION:
                 left = self.children[0].compile(universe).nfa
                 right = self.children[1].compile(universe).nfa

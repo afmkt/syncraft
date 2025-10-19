@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Generic, Tuple, List, Callable, Type, ClassVar, Any, Iterable, Sequence, Optional
+    TypeVar, Generic, Tuple, Callable, Type, ClassVar, Any, Iterable, Sequence, Optional
 )
 
 from syncraft.constraint import FrozenDict
@@ -227,7 +227,7 @@ class CharSet(Generic[C]):
 
 
     @staticmethod
-    def partition_charsets(intervals: list[Tuple[int, int]]) -> list[Tuple[int, int]]:
+    def partition_charsets(intervals: Sequence[Tuple[int, int]]) -> Sequence[Tuple[int, int]]:
         """Given a list of intervals, return sorted list of disjoint intervals covering all points."""
         events = []
         for start, end in intervals:
@@ -252,7 +252,7 @@ class CharSet(Generic[C]):
 
 
     @staticmethod
-    def difference_interval(a: List[Tuple[int, int]], b: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def difference_interval(a: Sequence[Tuple[int, int]], b: Sequence[Tuple[int, int]]) -> Sequence[Tuple[int, int]]:
         result = []
         i = j = 0
         while i < len(a):
@@ -275,7 +275,7 @@ class CharSet(Generic[C]):
 
 
     @staticmethod
-    def intersect_interval(a: List[Tuple[int, int]], b: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def intersect_interval(a: Sequence[Tuple[int, int]], b: Sequence[Tuple[int, int]]) -> Sequence[Tuple[int, int]]:
         result = []
         i = j = 0
         while i < len(a) and j < len(b):
@@ -293,7 +293,7 @@ class CharSet(Generic[C]):
         return result
     
     @staticmethod
-    def merge_intervals(intv: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def merge_intervals(intv: Sequence[Tuple[int, int]]) -> Sequence[Tuple[int, int]]:
         if not intv:
             return []
         intv = sorted(intv)
@@ -340,7 +340,7 @@ class CharSet(Generic[C]):
         return cls._build(universe, codepoints)
 
     @classmethod
-    def from_interval(cls, intv: List[Tuple[int, int]], universe: CodeUniverse) -> CharSet[C]:
+    def from_interval(cls, intv: Sequence[Tuple[int, int]], universe: CodeUniverse) -> CharSet[C]:
         merged = tuple(cls.merge_intervals(intv))
         return cls(
             predicate=lambda c: any(start <= c <= end for start, end in merged), 
