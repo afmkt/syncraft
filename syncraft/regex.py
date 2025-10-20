@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence as TypingSequence, Tuple
+from enum import Enum, auto
+from typing import Optional, Tuple, Union, Any
 
-from syncraft.ast import Choice, Lazy, Many, Nothing, SyncraftError, Then, ThenKind, Token
+
+
+from syncraft.ast import Nothing
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.lexer import Lexer
@@ -74,6 +77,103 @@ unicode_scalar    = any code point U+0000..U+10FFFF ;
 unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
 unicode_digit     = code point with Unicode category Nd ;
 """
+
+
+
+class AnchorKind(Enum):
+    LINE_START = auto()
+    LINE_END = auto()
+    ABSOLUTE_START = auto()
+    ABSOLUTE_END = auto()
+    WORD_BOUNDARY = auto()
+    NOT_WORD_BOUNDARY = auto()
+
+class ShorthandKind(Enum):
+    DIGIT = auto()
+    NOT_DIGIT = auto()
+    WORD = auto()
+    NOT_WORD = auto()
+    SPACE = auto()
+    NOT_SPACE = auto()
+
+class GroupKind(Enum):
+    CAPTURE = auto()
+    NON_CAPTURE = auto()
+    LOOKAHEAD = auto()
+    NEG_LOOKAHEAD = auto()
+    LOOKBEHIND = auto()
+    NEG_LOOKBEHIND = auto()
+    FLAGS = auto()
+    FLAGS_SCOPED = auto()
+
+@dataclass(frozen=True)
+class Quantifier:
+    minimum: int
+    maximum: Optional[int]     # None → unbounded
+    greedy: bool = True
+
+@dataclass(frozen=True)
+class Piece:
+    atom: "Atom"
+    quantifier: Optional[Quantifier] = None
+
+@dataclass(frozen=True)
+class Branch:
+    pieces: Tuple[Piece, ...]
+
+@dataclass(frozen=True)
+class Regex:
+    branches: Tuple[Branch, ...]
+
+@dataclass(frozen=True)
+class LiteralAtom:
+    text: str
+
+@dataclass(frozen=True)
+class DotAtom:
+    pass
+
+@dataclass(frozen=True)
+class AnchorAtom:
+    kind: AnchorKind
+
+@dataclass(frozen=True)
+class ShorthandAtom:
+    kind: ShorthandKind
+
+@dataclass(frozen=True)
+class UnicodeCategoryAtom:
+    categories: Tuple[str, ...]
+
+@dataclass(frozen=True)
+class CharRange:
+    start: str
+    end: str
+
+@dataclass(frozen=True)
+class CharClassAtom:
+    items: Tuple[Union[str, CharRange], ...]
+    negated: bool = False
+
+@dataclass(frozen=True)
+class GroupAtom:
+    kind: GroupKind
+    pattern: Regex
+    name: Optional[str] = None
+    inline_flags: Optional[Tuple[str, ...]] = None
+    disabled_flags: Optional[Tuple[str, ...]] = None
+
+Atom = Union[
+    LiteralAtom,
+    DotAtom,
+    AnchorAtom,
+    ShorthandAtom,
+    UnicodeCategoryAtom,
+    CharClassAtom,
+    GroupAtom,
+]
+
+
 
 B = FABuilder[str]
 S = Syntax.config(lexer_class = Lexer.bind(CodeUniverse.unicode()))
@@ -168,3 +268,5 @@ atom = literal | char_class | group | anchor | dot | shorthand
 piece = atom + ~quantifier
 branch = piece.many()
 regex = branch.sep_by(or_)
+
+
