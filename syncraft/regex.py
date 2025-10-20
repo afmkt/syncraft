@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 
@@ -177,8 +177,7 @@ Atom = Union[
 
 B = FABuilder[str]
 S = Syntax.config(lexer_class = Lexer.bind(CodeUniverse.unicode()))
-digit = S.lex(digit=B.oneof("0123456789"))
-hex_digit = S.lex(hex_digit=B.oneof("0123456789abcdefABCDEF"))
+number = S.lex(number=B.oneof("0123456789").many()).map(lambda tok: int(tok.text))
 flag = S.lex(flag=B.oneof(["a", "i", "L", "m", "s", "u", "x"]))
 dot = S.lex(dot=B.lit("."))
 or_ = S.lex(or_=B.lit("|"))
@@ -220,9 +219,9 @@ name_start = unicode_letter | underscore
 name = name_start + name_continue.many()
 class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "-", "]"]))
 literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
-hex_octa = hex_digit + hex_digit + hex_digit + hex_digit + hex_digit + hex_digit + hex_digit + hex_digit
-hex_quad = hex_digit + hex_digit + hex_digit + hex_digit
-hex_pair = hex_digit + hex_digit
+hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text)
+hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)).map(lambda tok: tok.text)
+hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text)
 unicode_escape = (escaped_x >> hex_pair) | (escaped_u >> hex_quad) | (escaped_U >> hex_octa) | (escaped_N >> unicode_name // rbrace)
 meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
 escaped_metachar = backslash >> meta_char 
@@ -233,9 +232,10 @@ shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"]))
 class_meta_char = minus | rsquare | backslash 
 escaped_class_meta= backslash >> class_meta_char 
 class_atom = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta 
-range = class_atom // minus >> class_atom
-class_item = class_atom | range
-char_class = lsquare >> ~caret >> class_item.many() // rsquare
+
+range = (class_atom.mark('start') // minus >> class_atom.mark('end')).to(CharRange)
+class_item = class_atom.map(lambda t: t.mapped.text) | range
+char_class = lsquare >> ~caret.map(lambda t: t.mapped is not Nothing()).mark('negated') + class_item.many().mark('items') // rsquare
 flag_seq = flag.many()
 inline_flags = flag_seq + ~(minus + flag_seq)
 
@@ -255,16 +255,36 @@ def _group_body() -> Syntax[Any, Any]:
 
 group = S.lazy(_group_body)
 
-anchor = caret | dollar | boundary_escape
-number = digit.many()
+anchor = (caret.map(lambda _: AnchorKind.LINE_START) | 
+          dollar.map(lambda _: AnchorKind.LINE_END) | 
+          boundary_escape.map(lambda t: {"\\A": AnchorKind.ABSOLUTE_START,
+                                        "\\Z": AnchorKind.ABSOLUTE_END,
+                                        "\\b": AnchorKind.WORD_BOUNDARY,
+                                        "\\B": AnchorKind.NOT_WORD_BOUNDARY}[t.mapped.text])).mark('kind')
+
 
 exact = lbrace >> number // rbrace
-open_range = lbrace >> number + (comma >> S.success(Nothing())) // rbrace
-closed_range = lbrace >> number + (comma >> number) // rbrace
-braced_quantifier = exact | open_range | closed_range
+open_range = lbrace >> number // comma // rbrace
+closed_range = lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace
+braced_quantifier = (exact.map(lambda n: Quantifier(minimum=n.mapped[0], maximum=n.mapped[0])) | 
+                     open_range.map(lambda t: Quantifier(minimum=t.mapped[0], maximum=None)) | 
+                     closed_range.to(Quantifier))
 
-quantifier = question | star | plus | braced_quantifier + ~question 
-atom = literal | char_class | group | anchor | dot | shorthand
+quantifier = (question.map(lambda _: Quantifier(minimum=0, maximum=1)) | 
+              star.map(lambda _: Quantifier(minimum=0, maximum=None)) | 
+              plus.map(lambda _: Quantifier(minimum=1, maximum=None)) | 
+              (braced_quantifier + ~question).map(lambda t: replace(t.mapped[0], greedy=t.mapped[1] is not Nothing())) )
+atom = (literal.map(lambda x: x.mapped.text).mark('text').to(LiteralAtom) | 
+        char_class.to(CharClassAtom) | 
+        group.to(GroupAtom) | 
+        anchor.to(AnchorAtom) | 
+        dot.map(lambda _: DotAtom()) | 
+        shorthand.map(lambda t: ShorthandAtom(kind={"\\d": ShorthandKind.DIGIT,
+                                               "\\D": ShorthandKind.NOT_DIGIT,
+                                               "\\w": ShorthandKind.WORD,
+                                               "\\W": ShorthandKind.NOT_WORD,
+                                               "\\s": ShorthandKind.SPACE,
+                                               "\\S": ShorthandKind.NOT_SPACE}[t.mapped.text])) )
 piece = atom + ~quantifier
 branch = piece.many()
 regex = branch.sep_by(or_)

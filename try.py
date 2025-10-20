@@ -7,7 +7,7 @@ import pytest
 from syncraft.finder import find, anything
 from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
-
+from syncraft.ast import Nothing
 
 from syncraft.generator import (
     generate_with,
@@ -15,8 +15,8 @@ from syncraft.generator import (
 )
 
 from syncraft.cache import LeftRecursionError
-
-
+from rich import print
+from syncraft.lexer import CacheWithLexer
 
 # literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
 literal = Syntax.literal
@@ -32,7 +32,7 @@ def test_find()->None:
     @dataclass
     class While:
         condition:Any
-        body:Any
+        body:IfThenElse
 
     WHILE = literal("while")
     IF = literal("if")
@@ -45,25 +45,30 @@ def test_find()->None:
     D = literal('d')
     M = literal(',')
     var = A | B | C | D
+
+
+
     condition = var.sep_by(M).mark('condition') 
+
+    ast, _ = parse_word(A + ~B, 'a')    
+    print(ast.mapped)
+    print(ast.mapped[1] is Nothing())
+    quit()
     ifthenelse = (IF >> condition
               // THEN 
-              + var.sep_by(M).mark('then') 
+              + var.sep_by(M).map(lambda x: x).mark('then') 
               // ELSE 
               + var.sep_by(M).mark('otherwise') 
-              // END).to(IfThenElse).many()
+              // END).to(IfThenElse)
     syntax = (WHILE >> condition
             + ifthenelse.mark('body')
             // ~END).to(While)
-    sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
-    from syncraft.lexer import CacheWithLexer
-    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
-    target = (WHILE >> anything(syntax=condition)
-              + anything(syntax=ifthenelse)
-              // ~END)
-    nodes = list(find(target, ast))
+    sql = 'while b if a , b then c , d else a , d end'
+    
 
-    assert nodes[0] == ast
+    ast, bound = parse_word(syntax, sql)
+
+    print(ast.mapped)
 
 
 

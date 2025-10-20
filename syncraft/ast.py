@@ -231,6 +231,12 @@ class AST:
         node itself as input. The ``r`` only applies to the leaf node of AST tree.
         """
         return r(self)
+    
+    @property
+    def mapped(self) -> Any:
+        """Apply the default bimap and return only the forward value."""
+        v, _ = self.bimap()
+        return v
 
 @dataclass(frozen=True)
 class Nothing(AST):
