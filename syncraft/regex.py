@@ -140,19 +140,29 @@ flag_seq = flag.many()
 inline_flags = flag_seq + ~(minus + flag_seq)
 
 
-group = (lparen + branch + rparen) | \
-        (S.lex(_=B.lit("(?:" )) + branch + rparen) | \
-        (S.lex(_=B.lit("(?P<")) + name + greater + branch + rparen) | \
-        (S.lex(_=B.lit("(?=" )) + branch + rparen) | \
-        (S.lex(_=B.lit("(?!" )) + branch + rparen) | \
-        (S.lex(_=B.lit("(?<=" )) + branch + rparen) | \
-        (S.lex(_=B.lit("(?<!" )) + branch + rparen) | \
-        (S.lex(_=B.lit("(?")) + inline_flags + rparen) | \
-        (S.lex(_=B.lit("(?")) + inline_flags + colon + branch + rparen)
+def _group_body() -> Syntax[Any, Any]:
+    plain = lparen >> branch // rparen
+    noncapturing = S.lex(_=B.lit("(?:" )) >> branch // rparen
+    named = S.lex(_=B.lit("(?P<")) >> name // greater >> branch // rparen
+    lookahead = S.lex(_=B.lit("(?=" )) >> branch // rparen
+    negative_lookahead = S.lex(_=B.lit("(?!" )) >> branch // rparen
+    lookbehind = S.lex(_=B.lit("(?<=" )) >> branch // rparen
+    negative_lookbehind = S.lex(_=B.lit("(?<!" )) >> branch // rparen
+    inline_flag_only = S.lex(_=B.lit("(?")) >> inline_flags // rparen
+    inline_flag_with_colon = S.lex(_=B.lit("(?")) >> inline_flags + colon >> branch // rparen
+    return plain | noncapturing | named | lookahead | negative_lookahead | lookbehind | negative_lookbehind | inline_flag_only | inline_flag_with_colon
+
+
+group = S.lazy(_group_body)
 
 anchor = caret | dollar | boundary_escape
 number = digit.many()
-braced_quantifier = lbrace + number.sep_by(comma) + rbrace
+
+exact = lbrace >> number // rbrace
+open_range = lbrace >> number + (comma >> S.success(Nothing())) // rbrace
+closed_range = lbrace >> number + (comma >> number) // rbrace
+braced_quantifier = exact | open_range | closed_range
+
 quantifier = question | star | plus | braced_quantifier + ~question 
 atom = literal | char_class | group | anchor | dot | shorthand
 piece = atom + ~quantifier

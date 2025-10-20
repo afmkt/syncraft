@@ -1197,7 +1197,7 @@ class FABuilder(Generic[C]):
     kind: _NodeKind
     tag: Tag | None = None
     children: Tuple[FABuilder[C], ...] = field(default_factory=tuple)
-    intervals: Tuple[Tuple[str | bytes | C, str | bytes | C], ...] = field(default_factory=tuple)
+    intervals: Tuple[Tuple[str | bytes | int | C, str | bytes | int | C], ...] = field(default_factory=tuple)
     text: Optional[Union[str, bytes, Sequence[C]]] = None
     at_least: int = 1
     at_most: Optional[int] = None
@@ -1301,6 +1301,34 @@ class FABuilder(Generic[C]):
             greedy: bool = False,
             action: Optional[ModeAction] = None) -> FABuilder[C]:
         return cls.literal(text, tag=tag, action=action, skip=skip, priority=priority, greedy=greedy)
+
+
+    @classmethod
+    def unicode_category(cls, 
+                         cats: List[str], 
+                         *, 
+                         tag: Optional[Tag] = None,
+                         skip: bool = False, 
+                         priority: int = 0,
+                         greedy: bool = False,
+                         action: Optional[ModeAction] = None,
+                         ) -> FABuilder[C]:
+        import unicodedata
+        from itertools import groupby
+        def unicode_category_ranges(*cats: str) -> list[tuple[int, int]]:
+            universe = range(0x110000)  # full Unicode range (0 .. 0x10FFFF)
+            points = [cp for cp in universe if unicodedata.category(chr(cp)) in cats]
+            # Collapse consecutive codepoints into ranges
+            ranges = []
+            for _, group in groupby(enumerate(points), key=lambda x: x[0] - x[1]):
+                seq = list(group)
+                start = seq[0][1]
+                end = seq[-1][1]
+                ranges.append((start, end))
+            return ranges
+
+        ranges = unicode_category_ranges(*cats)
+        return cls(kind=_NodeKind.RANGE, intervals=tuple(ranges), tag=tag or f"\\p{{{cats}}}", action=action, skip=skip, priority=priority, greedy=greedy)
 
     @classmethod
     def range(cls, 

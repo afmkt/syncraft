@@ -6,16 +6,16 @@ from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 import pytest
 
-from syncraft.regex import (
-    Alternation,
-    CharClass,
-    Concat,
-    Literal,
-    Quantifier,
-    Repeat,
-    # compile_regex,
-    # parse_regex,
-)
+# from syncraft.regex import (
+#     Alternation,
+#     CharClass,
+#     Concat,
+#     Literal,
+#     Quantifier,
+#     Repeat,
+#     # compile_regex,
+#     # parse_regex,
+# )
 
 
 def _matches(builder: FABuilder[str], text: str) -> bool:
