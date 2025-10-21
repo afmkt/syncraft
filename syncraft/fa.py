@@ -15,7 +15,7 @@ from syncraft.constraint import  FrozenDict
 from syncraft.charset import CharSet, CodeUniverse, MixedUniverseError, CodepointError
 from enum import Enum
 from collections import defaultdict
-
+from functools import reduce
 import random
 
 
@@ -1352,6 +1352,12 @@ class FABuilder(Generic[C]):
               priority: int = 0,
               greedy: bool = False,
               action: Optional[ModeAction] = None) -> FABuilder[C]:
+        if not isinstance(chars, (str, bytes)):
+            if len(chars) > 0:
+                if isinstance(chars[0], (str, bytes)):
+                    if not all(len(c) == 1 for c in chars): # type: ignore
+                        return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars]) # type: ignore
+                        
         return cls(
             kind=_NodeKind.ONEOF,
             text=chars,

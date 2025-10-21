@@ -242,6 +242,8 @@ class AST:
 class Nothing(AST):
     """Singleton sentinel representing the absence of a value in the AST."""
     _instance = None
+    def __bool__(self)->bool:
+        return False
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(Nothing, cls).__new__(cls)

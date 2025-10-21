@@ -464,7 +464,7 @@ class Syntax(Generic[A, S]):
         """
         return self.sep_by(sep=sep).between(left=open, right=close)
 
-    def optional(self) -> Syntax[Choice[A, Optional[Nothing]], S]:
+    def optional(self, default:Optional[B]=None) -> Syntax[Choice[A, Optional[Nothing | B]], S]:
         """Make this syntax optional.
 
         Returns a Choice of the value or Nothing when absent.
@@ -472,7 +472,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice of value or Nothing.
         """
-        return (self | self.success(Nothing()))
+        return (self | self.success(default if default is not None else Nothing())) # type: ignore
         
 
     def cut(self) -> Syntax[A, S]:
@@ -643,11 +643,11 @@ class Syntax(Generic[A, S]):
         return self.bimap(mark_s, imark_s)
     
     @classmethod
-    def fail(cls, error: Any) -> Syntax[Any, Any]:
+    def fail(cls, error: B) -> Syntax[B, S]:
         return cls.factory('fail', error=error)
 
     @classmethod
-    def success(cls, value: Any) -> Syntax[Any, Any]:
+    def success(cls, value: B) -> Syntax[B, S]:
         return cls.factory('success', value=value)
 
 

@@ -6,7 +6,6 @@ from typing import Optional, Tuple, Union, Any
 
 
 
-from syncraft.ast import Nothing
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.lexer import Lexer
@@ -42,7 +41,11 @@ inline_flags      = flag_seq [ "-" flag_seq ] ;
 flag_seq          = flag { flag } ;
 flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
 
-char_class        = "[" [ "^" ] class_item { class_item } "]" ;
+char_class        = "[" [ "^" ] class_class_items "]" ;
+class_class_items = leading_rsquare? class_item { class_item } ;
+leading_rsquare   = "]" ;
+class_literal     = unicode_scalar - {"\\", "]"} ;
+
 class_item        = range | class_atom ;
 range             = class_atom "-" class_atom ;
 class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
@@ -65,7 +68,6 @@ hex_octa          = hex_quad hex_quad ;
 hex_digit         = "0".."9" | "a".."f" | "A".."F" ;
 
 literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
-class_literal     = unicode_scalar - {"\\", "-", "]"} ;
 
 name              = name_start { name_continue } ;
 name_start        = unicode_letter | "_" ;
@@ -76,6 +78,9 @@ unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " 
 unicode_scalar    = any code point U+0000..U+10FFFF ;
 unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
 unicode_digit     = code point with Unicode category Nd ;
+
+
+
 """
 
 
@@ -87,6 +92,16 @@ class AnchorKind(Enum):
     ABSOLUTE_END = auto()
     WORD_BOUNDARY = auto()
     NOT_WORD_BOUNDARY = auto()
+    @classmethod
+    def from_literal(cls, literal: str) -> AnchorKind:        
+        return {
+            "^": cls.LINE_START,
+            "$": cls.LINE_END,
+            r"\A": cls.ABSOLUTE_START,
+            r"\Z": cls.ABSOLUTE_END,
+            r"\b": cls.WORD_BOUNDARY,
+            r"\B": cls.NOT_WORD_BOUNDARY,
+        }[literal]
 
 class ShorthandKind(Enum):
     DIGIT = auto()
@@ -95,6 +110,16 @@ class ShorthandKind(Enum):
     NOT_WORD = auto()
     SPACE = auto()
     NOT_SPACE = auto()
+    @classmethod
+    def from_literal(cls, literal: str) -> ShorthandKind:        
+        return {
+            r"\d": cls.DIGIT,
+            r"\D": cls.NOT_DIGIT,
+            r"\w": cls.WORD,
+            r"\W": cls.NOT_WORD,
+            r"\s": cls.SPACE,
+            r"\S": cls.NOT_SPACE,
+        }[literal]
 
 class GroupKind(Enum):
     CAPTURE = auto()
@@ -129,13 +154,6 @@ class Regex:
 class LiteralAtom:
     text: str
 
-@dataclass(frozen=True)
-class DotAtom:
-    pass
-
-@dataclass(frozen=True)
-class AnchorAtom:
-    kind: AnchorKind
 
 @dataclass(frozen=True)
 class ShorthandAtom:
@@ -145,15 +163,6 @@ class ShorthandAtom:
 class UnicodeCategoryAtom:
     categories: Tuple[str, ...]
 
-@dataclass(frozen=True)
-class CharRange:
-    start: str
-    end: str
-
-@dataclass(frozen=True)
-class CharClassAtom:
-    items: Tuple[Union[str, CharRange], ...]
-    negated: bool = False
 
 @dataclass(frozen=True)
 class GroupAtom:
@@ -163,24 +172,21 @@ class GroupAtom:
     inline_flags: Optional[Tuple[str, ...]] = None
     disabled_flags: Optional[Tuple[str, ...]] = None
 
-Atom = Union[
-    LiteralAtom,
-    DotAtom,
-    AnchorAtom,
-    ShorthandAtom,
-    UnicodeCategoryAtom,
-    CharClassAtom,
-    GroupAtom,
-]
 
 
 
 B = FABuilder[str]
 S = Syntax.config(lexer_class = Lexer.bind(CodeUniverse.unicode()))
-number = S.lex(number=B.oneof("0123456789").many()).map(lambda tok: int(tok.text))
+# number            = digit { digit } ;
+number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text))
+# flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
 flag = S.lex(flag=B.oneof(["a", "i", "L", "m", "s", "u", "x"]))
+# dot               = "." ;
 dot = S.lex(dot=B.lit("."))
 or_ = S.lex(or_=B.lit("|"))
+# leading_rsquare   = "]" ;
+leading_rsquare   = S.lex(leading_rsquare=B.lit("]")) 
+
 whitespace = S.lex(whitespace=B.oneof([" ", "\t", "\n", "\r", "\f", "\v"]))
 question = S.lex(question=B.lit("?"))
 star = S.lex(star=B.lit("*"))
@@ -201,6 +207,7 @@ caret = S.lex(caret=B.lit("^"))
 dollar = S.lex(dollar=B.lit("$"))
 backslash = S.lex(backslash=B.lit("\\"))
 minus = S.lex(minus=B.lit("-"))
+# boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
 boundary_escape = S.lex(boundary_escape=B.oneof(["\\A", "\\Z", "\\b", "\\B"]))
 escaped_x = S.lex(escaped_x=B.lit("\\x")) 
 escaped_u = S.lex(escaped_u=B.lit("\\u")) 
@@ -209,84 +216,182 @@ escaped_N = S.lex(escaped_N=B.lit("\\N{"))
 underscore = S.lex(underscore=B.lit("_"))
 space = S.lex(space=B.lit(" "))
 hyphen = S.lex(hyphen=B.lit("-"))
+# unicode_scalar    = any code point U+0000..U+10FFFF ;
 unicode_scalar = S.lex(unicode_scalar=B.range("\u0000", "\U0010FFFF"))
+# unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
 unicode_letter = S.lex(unicode_letter=B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]))
+# unicode_digit     = code point with Unicode category Nd ;
 unicode_digit = S.lex(unicode_digit=B.unicode_category(["Nd"]))
-
-unicode_name = unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()
-name_continue = unicode_letter | unicode_digit | underscore
-name_start = unicode_letter | underscore
-name = name_start + name_continue.many()
-class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "-", "]"]))
+# class_literal     = unicode_scalar - {"\\", "]"} ;
+class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "]"]))
+# literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
 literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
-hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text)
-hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)).map(lambda tok: tok.text)
-hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text)
-unicode_escape = (escaped_x >> hex_pair) | (escaped_u >> hex_quad) | (escaped_U >> hex_octa) | (escaped_N >> unicode_name // rbrace)
-meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
-escaped_metachar = backslash >> meta_char 
-control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"]))
-escaped_literal   = control_escape | unicode_escape | escaped_metachar 
-literal = escaped_literal | literal_char
-shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"]))
-class_meta_char = minus | rsquare | backslash 
-escaped_class_meta= backslash >> class_meta_char 
-class_atom = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta 
 
+# hex_octa          = hex_quad hex_quad ;
+hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text)
+# hex_quad          = hex_digit hex_digit hex_digit hex_digit ;
+hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)).map(lambda tok: tok.text)
+# hex_pair          = hex_digit hex_digit ;
+hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text)
+
+# meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}" | "|" | "+" | "*" | "?" | "^" | "$" ;
+meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
+# control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" ;
+control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"]))
+# shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
+shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"]))
+# unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
+unicode_name = unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()
+# name_continue     = unicode_letter | unicode_digit | "_" ;
+name_continue = unicode_letter | unicode_digit | underscore
+# name_start        = unicode_letter | "_" ;
+name_start = unicode_letter | underscore
+# name              = name_start { name_continue } ;
+name = name_start + name_continue.many()
+# unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
+unicode_escape = (escaped_x >> hex_pair) | (escaped_u >> hex_quad) | (escaped_U >> hex_octa) | (escaped_N >> unicode_name // rbrace)
+# escaped_metachar  = "\\" meta_char ;
+escaped_metachar = backslash >> meta_char 
+# escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
+escaped_literal   = control_escape | unicode_escape | escaped_metachar 
+# literal           = escaped_literal | literal_char ;
+literal = escaped_literal | literal_char
+# class_meta_char   = "-" | "]" | "\\" ;
+class_meta_char = minus | rsquare | backslash 
+# escaped_class_meta= "\\" class_meta_char ;
+escaped_class_meta= backslash >> class_meta_char 
+
+# class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
+class_atom = (class_literal | 
+              shorthand | 
+              control_escape | 
+              unicode_escape | 
+              escaped_class_meta).map(lambda t: t.mapped.text)
+
+
+@dataclass(frozen=True)
+class CharRange:
+    start: str
+    end: str
+@dataclass(frozen=True)
+class CharClassAtom:
+    items: Tuple[Union[str, CharRange], ...]
+    negated: bool = False
+
+
+# range             = class_atom "-" class_atom ;
 range = (class_atom.mark('start') // minus >> class_atom.mark('end')).to(CharRange)
-class_item = class_atom.map(lambda t: t.mapped.text) | range
-char_class = lsquare >> ~caret.map(lambda t: t.mapped is not Nothing()).mark('negated') + class_item.many().mark('items') // rsquare
-flag_seq = flag.many()
+
+# class_item = range | class_atom ;
+class_item = range | class_atom
+
+# class_class_items = leading_rsquare? class_item { class_item } ;
+class_class_items = ~leading_rsquare + class_item.many(at_least=1)
+# char_class        = "[" [ "^" ] class_class_items "]" ;
+char_class = lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare
+
+
+# flag_seq          = flag { flag } ;
+flag_seq = flag.many(at_least=1)
+# inline_flags      = flag_seq [ "-" flag_seq ] ;
 inline_flags = flag_seq + ~(minus + flag_seq)
 
 
 def _group_body() -> Syntax[Any, Any]:
+    # group = "(" branch ")"
     plain = lparen >> branch // rparen
+    # group = "(?:" branch ")"
     noncapturing = S.lex(_=B.lit("(?:" )) >> branch // rparen
+    # group = "(?P<" name ">" branch ")"
     named = S.lex(_=B.lit("(?P<")) >> name // greater >> branch // rparen
+    # group = "(?=" branch ")"
     lookahead = S.lex(_=B.lit("(?=" )) >> branch // rparen
+    # group = "(?!" branch ")"
     negative_lookahead = S.lex(_=B.lit("(?!" )) >> branch // rparen
+    # group = "(?<=" branch ")"
     lookbehind = S.lex(_=B.lit("(?<=" )) >> branch // rparen
+    # group = "(?<!" branch ")"
     negative_lookbehind = S.lex(_=B.lit("(?<!" )) >> branch // rparen
+    # group = "(?" inline_flags ")"
     inline_flag_only = S.lex(_=B.lit("(?")) >> inline_flags // rparen
+    # group = "(?" inline_flags ":" branch ")"
     inline_flag_with_colon = S.lex(_=B.lit("(?")) >> inline_flags + colon >> branch // rparen
-    return plain | noncapturing | named | lookahead | negative_lookahead | lookbehind | negative_lookbehind | inline_flag_only | inline_flag_with_colon
+    return (plain | 
+            noncapturing | 
+            named | 
+            lookahead | 
+            negative_lookahead | 
+            lookbehind | 
+            negative_lookbehind | 
+            inline_flag_only | 
+            inline_flag_with_colon)
 
 
 group = S.lazy(_group_body)
 
-anchor = (caret.map(lambda _: AnchorKind.LINE_START) | 
-          dollar.map(lambda _: AnchorKind.LINE_END) | 
-          boundary_escape.map(lambda t: {"\\A": AnchorKind.ABSOLUTE_START,
-                                        "\\Z": AnchorKind.ABSOLUTE_END,
-                                        "\\b": AnchorKind.WORD_BOUNDARY,
-                                        "\\B": AnchorKind.NOT_WORD_BOUNDARY}[t.mapped.text])).mark('kind')
+# anchor            = "^" | "$" | boundary_escape ;
+# - ^ → LINE_START
+# - $ → LINE_END
+# - \A → ABSOLUTE_START
+# - \Z → ABSOLUTE_END
+# - \b → WORD_BOUNDARY
+# - \B → NOT_WORD_BOUNDARY
+anchor = (caret | 
+          dollar | 
+          boundary_escape).map(lambda t: AnchorKind.from_literal(t.mapped.text)).mark('kind')
 
 
-exact = lbrace >> number // rbrace
-open_range = lbrace >> number // comma // rbrace
-closed_range = lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace
-braced_quantifier = (exact.map(lambda n: Quantifier(minimum=n.mapped[0], maximum=n.mapped[0])) | 
-                     open_range.map(lambda t: Quantifier(minimum=t.mapped[0], maximum=None)) | 
-                     closed_range.to(Quantifier))
+# braced_quantifier = "{" number [ "," [ number ] ] "}" ;
+# - {n} → minimum=n, maximum=n
+# - {n,} → minimum=n, maximum=None
+# - {n,m} → minimum=n, maximum=m
+braced_quantifier = ((lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n.mapped[0], maximum=n.mapped[0])) | 
+                     (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t.mapped[0], maximum=None)) | 
+                     (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier))
 
+
+# quantifier        = "?" | "*" | "+" | braced_quantifier [ "?" ] ;
+# - ? → minimum=0, maximum=1
+# - * → minimum=0, maximum=None
+# - + → minimum=1, maximum=None
+# - braced_quantifier followed by ? → same as braced_quantifier but greedy=False
 quantifier = (question.map(lambda _: Quantifier(minimum=0, maximum=1)) | 
               star.map(lambda _: Quantifier(minimum=0, maximum=None)) | 
               plus.map(lambda _: Quantifier(minimum=1, maximum=None)) | 
-              (braced_quantifier + ~question).map(lambda t: replace(t.mapped[0], greedy=t.mapped[1] is not Nothing())) )
+              (braced_quantifier + ~question).map(lambda t: replace(t.mapped[0], greedy=bool(t.mapped[1]))) )
+
+
+@dataclass(frozen=True)
+class AnchorAtom:
+    kind: AnchorKind
+
+@dataclass(frozen=True)
+class DotAtom:
+    pass
+
+
+# atom              = literal | char_class | group | anchor | dot | shorthand ;
 atom = (literal.map(lambda x: x.mapped.text).mark('text').to(LiteralAtom) | 
         char_class.to(CharClassAtom) | 
         group.to(GroupAtom) | 
         anchor.to(AnchorAtom) | 
-        dot.map(lambda _: DotAtom()) | 
-        shorthand.map(lambda t: ShorthandAtom(kind={"\\d": ShorthandKind.DIGIT,
-                                               "\\D": ShorthandKind.NOT_DIGIT,
-                                               "\\w": ShorthandKind.WORD,
-                                               "\\W": ShorthandKind.NOT_WORD,
-                                               "\\s": ShorthandKind.SPACE,
-                                               "\\S": ShorthandKind.NOT_SPACE}[t.mapped.text])) )
+        dot.to(DotAtom) | 
+        shorthand.map(lambda t: ShorthandKind.from_literal(t.mapped.text)).mark('kind').to(ShorthandAtom) )
+
+# piece             = atom [ quantifier ] ;
 piece = atom + ~quantifier
+# branch            = piece { piece } ;
 branch = piece.many()
+# regex             = branch { "|" branch } ;
 regex = branch.sep_by(or_)
 
 
+Atom = Union[
+    LiteralAtom,
+    DotAtom,
+    AnchorAtom,
+    ShorthandAtom,
+    UnicodeCategoryAtom,
+    CharClassAtom,
+    GroupAtom,
+]
