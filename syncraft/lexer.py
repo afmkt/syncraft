@@ -48,7 +48,7 @@ class Mode(Generic[C]):
     rdfa: ReverseDFA[C]
     priority: Dict[Tag, int] = field(default_factory=dict)
     skip: frozenset[Tag] = field(default_factory=frozenset)
-    greedy: frozenset[Tag] = field(default_factory=frozenset)
+    non_greedy: frozenset[Tag] = field(default_factory=frozenset)
     start_index: Optional[int] = None
 
     def reset(self) -> Mode[C]:
@@ -129,7 +129,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
                 runner=mode.runner,
                 priority=dict(mode.priority),
                 skip=frozenset(mode.skip),
-                greedy=frozenset(mode.greedy),
+                non_greedy=frozenset(mode.non_greedy),
                 start_index=mode.start_index,
             )
 
@@ -180,7 +180,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
             raise SyncraftError("Cannot build a Mode with no rules", offender=rules, expect="at least one rule")
         skip: Set[Tag] = set()
         priority: Dict[Tag, int] = {}
-        greedy: Set[Tag] = set()
+        non_greedy: Set[Tag] = set()
         combined: Optional[NFA[C]] = None 
         for rule in rules:
             if rule.skip:
@@ -189,22 +189,22 @@ class Lexer(LexerProtocol[C], Generic[C]):
             if rule.priority != 0:
                 assert rule.tag is not None, "Priority rules must have a tag"
                 priority[rule.tag] = rule.priority
-            if rule.greedy:
+            if rule.non_greedy:
                 assert rule.tag is not None, "Greedy rules must have a tag"
-                greedy.add(rule.tag)
+                non_greedy.add(rule.tag)
             nfa = rule.compile(universe).nfa
             nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
         dfa = combined.dfa
-        greedy_set = frozenset(greedy)
+        non_greedy_set = frozenset(non_greedy)
         return Mode(
-            runner=dfa.runner(greedy=greedy_set),
+            runner=dfa.runner(non_greedy=non_greedy_set),
             rdfa=dfa.reverse,
             priority=dict(priority),
             skip=frozenset(skip),
-            greedy=greedy_set,
+            non_greedy=non_greedy_set,
         )
 
     @classmethod

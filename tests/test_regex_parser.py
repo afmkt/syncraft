@@ -1,3 +1,4 @@
+from __future__ import annotations
 from syncraft.regex import (
     parse_regex, 
     literal, anchor, shorthand, dot, quantifier, char_class, group, piece, branch, regex,

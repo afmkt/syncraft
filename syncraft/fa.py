@@ -607,8 +607,8 @@ class DFA(Generic[C]):
                    transitions=transitions
                )
 
-    def runner(self, *, greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
-        return DFARunner.create(self, greedy=greedy)
+    def runner(self, *, non_greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
+        return DFARunner.create(self, non_greedy=non_greedy)
     
 @dataclass(frozen=True)
 class NFA(Generic[C]):
@@ -697,8 +697,8 @@ class NFA(Generic[C]):
                     stack.append(next_state)
         return frozenset(closure)
     
-    def runner(self, *, greedy: frozenset[Tag] | None = None) -> NFARunner[C]:
-        return NFARunner.create(self, greedy=greedy)
+    def runner(self, *, non_greedy: frozenset[Tag] | None = None) -> NFARunner[C]:
+        return NFARunner.create(self, non_greedy=non_greedy)
     
 
     @classmethod
@@ -883,7 +883,7 @@ class RunnerResult(Generic[C, Automata]):
 class Runner(Protocol[C, Automata]):
     fa: Automata
     accepted: Tuple[Tuple[int, frozenset[FAState] | FAState, frozenset[Tag]], ...] = field(default_factory=tuple)
-    greedy: frozenset[Tag] = field(default_factory=frozenset)
+    non_greedy: frozenset[Tag] = field(default_factory=frozenset)
 
     @property
     def dfa(self) -> DFA[C]:
@@ -901,7 +901,7 @@ class Runner(Protocol[C, Automata]):
 
 
     @classmethod
-    def create(cls, a: Automata, *, greedy: frozenset[Tag] | None = None) -> Self: ...
+    def create(cls, a: Automata, *, non_greedy: frozenset[Tag] | None = None) -> Self: ...
     def finalize(self) -> RunnerResult[C, Automata]: ...
     def start(self) -> RunnerResult[C, Automata]: ...
     def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, Automata]: ...
@@ -912,7 +912,7 @@ class Runner(Protocol[C, Automata]):
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[Tag]: ...    
     def reset(self) -> Runner[C, Automata]:
-        return self.create(self.fa, greedy=self.greedy)
+        return self.create(self.fa, non_greedy=self.non_greedy)
         
         
 
@@ -921,8 +921,8 @@ class Runner(Protocol[C, Automata]):
 class NFARunner(Runner[C, NFA[C]]):
     current: frozenset[FAState] = field(default_factory=frozenset)
     @classmethod
-    def create(cls, nfa: NFA[C], *, greedy: frozenset[Tag] | None = None) -> NFARunner[C]:
-        return cls(current=nfa.closure({nfa.init}), fa=nfa, greedy=greedy or frozenset())
+    def create(cls, nfa: NFA[C], *, non_greedy: frozenset[Tag] | None = None) -> NFARunner[C]:
+        return cls(current=nfa.closure({nfa.init}), fa=nfa, non_greedy=non_greedy or frozenset())
 
     def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, NFA[C]]: 
 
@@ -958,8 +958,8 @@ class NFARunner(Runner[C, NFA[C]]):
                 accepted_tags = new_runner.tags()
                 new_accepted = new_runner.accepted + ((pos, new_current, accepted_tags),)
                 new_runner = replace(new_runner, accepted=new_accepted)
-                greedy_hit = bool(new_runner.greedy & accepted_tags)
-                if greedy_hit or not has_future_non_anchor:
+                non_greedy_hit = bool(new_runner.non_greedy & accepted_tags)
+                if non_greedy_hit or not has_future_non_anchor:
                     return RunnerResult(
                         runner=replace(new_runner, accepted=()),
                         error=False,
@@ -1048,8 +1048,8 @@ class DFARunner(Runner[C, DFA[C]]):
     current: Optional[FAState] = None
 
     @classmethod
-    def create(cls, dfa: DFA[C], *, greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
-        return cls(current=dfa.init, fa=dfa, greedy=greedy or frozenset())
+    def create(cls, dfa: DFA[C], *, non_greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
+        return cls(current=dfa.init, fa=dfa, non_greedy=non_greedy or frozenset())
 
     def start(self) -> RunnerResult[C, DFA[C]]:
         start_state = self.current
@@ -1094,8 +1094,8 @@ class DFARunner(Runner[C, DFA[C]]):
                 accepted_tags = new_runner.tags()
                 new_accepted = new_runner.accepted + ((pos, next_state, accepted_tags),)
                 new_runner = replace(new_runner, accepted=new_accepted)
-                greedy_hit = bool(new_runner.greedy & accepted_tags)
-                if greedy_hit or not has_future:
+                non_greedy_hit = bool(new_runner.non_greedy & accepted_tags)
+                if non_greedy_hit or not has_future:
                     return RunnerResult(
                         runner=replace(new_runner, accepted=()),
                         error=False,
@@ -1203,7 +1203,7 @@ class FABuilder(Generic[C]):
     at_most: Optional[int] = None
     skip: bool = False  # if true, do not include this in the final automaton (used for whitespace, comments, etc)
     priority: int = 0  # higher number means higher priority
-    greedy: bool = False  # when true, first match wins instead of maximal munch
+    non_greedy: bool = True  # when true, first match wins instead of maximal munch
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
 
     # ---- Factory entry points ----
@@ -1278,7 +1278,7 @@ class FABuilder(Generic[C]):
                 tag: Optional[Tag] = None,
                 skip: bool = False, 
                 priority: int = 0,
-                greedy: bool = False,
+                non_greedy: bool = True,
                 action: Optional[ModeAction] = None) -> "FABuilder[C]":
         return cls(
             kind=_NodeKind.LITERAL,
@@ -1287,7 +1287,7 @@ class FABuilder(Generic[C]):
             action=action,
             skip=skip,
             priority=priority,
-            greedy=greedy,
+            non_greedy=non_greedy,
         )
 
     # Alias for convenience
@@ -1298,9 +1298,9 @@ class FABuilder(Generic[C]):
             tag: Optional[Tag] = None,
             skip: bool = False, 
             priority: int = 0,
-            greedy: bool = False,
+            non_greedy: bool = False,
             action: Optional[ModeAction] = None) -> FABuilder[C]:
-        return cls.literal(text, tag=tag, action=action, skip=skip, priority=priority, greedy=greedy)
+        return cls.literal(text, tag=tag, action=action, skip=skip, priority=priority, non_greedy=non_greedy)
 
 
     @classmethod
@@ -1310,7 +1310,7 @@ class FABuilder(Generic[C]):
                          tag: Optional[Tag] = None,
                          skip: bool = False, 
                          priority: int = 0,
-                         greedy: bool = False,
+                         non_greedy: bool = False,
                          action: Optional[ModeAction] = None,
                          ) -> FABuilder[C]:
         import unicodedata
@@ -1328,7 +1328,7 @@ class FABuilder(Generic[C]):
             return ranges
 
         ranges = unicode_category_ranges(*cats)
-        return cls(kind=_NodeKind.RANGE, intervals=tuple(ranges), tag=tag or f"\\p{{{cats}}}", action=action, skip=skip, priority=priority, greedy=greedy)
+        return cls(kind=_NodeKind.RANGE, intervals=tuple(ranges), tag=tag or f"\\p{{{cats}}}", action=action, skip=skip, priority=priority, non_greedy=non_greedy)
 
     @classmethod
     def range(cls, 
@@ -1338,9 +1338,9 @@ class FABuilder(Generic[C]):
               tag: Optional[Tag] = None,
               skip: bool = False, 
               priority: int = 0,
-              greedy: bool = False,
+              non_greedy: bool = False,
               action: Optional[ModeAction] = None) -> FABuilder[C]:
-        return cls(kind=_NodeKind.RANGE, intervals=((start, end),), tag=tag, action=action, skip=skip, priority=priority, greedy=greedy)
+        return cls(kind=_NodeKind.RANGE, intervals=((start, end),), tag=tag, action=action, skip=skip, priority=priority, non_greedy=non_greedy)
         
 
     @classmethod
@@ -1350,7 +1350,7 @@ class FABuilder(Generic[C]):
               tag: Optional[Tag] = None,
               skip: bool = False, 
               priority: int = 0,
-              greedy: bool = False,
+              non_greedy: bool = False,
               action: Optional[ModeAction] = None) -> FABuilder[C]:
         if not isinstance(chars, (str, bytes)):
             if len(chars) > 0:
@@ -1366,7 +1366,7 @@ class FABuilder(Generic[C]):
             action=action,
             skip=skip,
             priority=priority,
-            greedy=greedy,
+            non_greedy=non_greedy,
         )
 
     # ---- DSL operators ----
@@ -1414,8 +1414,8 @@ class FABuilder(Generic[C]):
     def prioritized(self, priority: int) -> FABuilder[C]:
         return replace(self, priority=priority)
 
-    def with_greedy(self, greedy: bool = True) -> FABuilder[C]:
-        return replace(self, greedy=greedy)
+    def with_non_greedy(self, non_greedy: bool = True) -> FABuilder[C]:
+        return replace(self, non_greedy=non_greedy)
 
     def compile(self, universe: CodeUniverse[C]) -> NFA[C] | DFA[C]: 
         match self.kind:
