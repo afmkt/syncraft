@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
-    Optional, List, Any, Tuple, TypeVar,Hashable,
-    Generic, Generator, Callable, Type, Mapping
+    Optional, List, Any, Tuple, TypeVar,Hashable, Literal,
+    Generic, Generator, Callable, Type, Mapping, Union
 )
 from syncraft.lexer import (
     Lexer,
@@ -28,6 +28,10 @@ import re
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.token import Structured
+from pathlib import Path
+import io
+import asyncio
+
 
 T = TypeVar('T', bound=Hashable)  
 A = TypeVar('A')
@@ -426,6 +430,14 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
         return lexer
 
 
+def parse(syntax: Syntax[Any, Any],
+          input: Input[Any],
+          *,
+          cache: None | CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
+          ) -> Tuple[Any, None | ParserState[T]]:
+    runner = Runner(input=input)
+    return runner(syntax=syntax, alg_cls=Parser, cache=cache)
+
 
 
 def parse_word(syntax: Syntax[Any, Any], 
@@ -438,23 +450,52 @@ def parse_word(syntax: Syntax[Any, Any],
 
     
 def parse_data(syntax: Syntax[Any, Any], 
-          tokens: List[Token],
+          tokens: List[T],
           *,
           cache: None|CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    runner = Runner(input=Input.from_data(tokens))
-    v, s = runner(syntax=syntax, alg_cls=Parser, cache=cache)
+    input : Input[T] = Input.from_data(tokens)
+    v, s = parse(syntax, input, cache=cache)
     if s is not None:
         return v, s.binding.bound()
     else:
         return v, None
 
 
-def parse(syntax: Syntax[Any, Any],
-          input: Input[T],
-          *,
-          cache: None | CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
-          ) -> Tuple[Any, None | ParserState[T]]:
-    runner = Runner(input=input)
-    return runner(syntax=syntax, alg_cls=Parser, cache=cache)
+def parse_string(syntax: Syntax[Any, Any],
+                 pattern: str,
+                 *,
+                 cache: None|CacheWithLexer[Any, ParserState[str], Either[Any, Tuple[Any, ParserState[str]]]] = None
+                 ) -> Tuple[Any, None | ParserState[str]]:
+    input : Input[str] = Input.from_data(pattern)
+    return parse(syntax, input, cache=cache)
 
+def parse_bytes(syntax: Syntax[Any, Any],
+                pattern: bytes,
+                *,
+                cache: None|CacheWithLexer[Any, ParserState[bytes], Either[Any, Tuple[Any, ParserState[bytes]]]] = None
+                ) -> Tuple[Any, None | ParserState[bytes]]:
+    input : Input[bytes] = Input.from_data(pattern)
+    return parse(syntax, input, cache=cache)
+
+def parse_file(syntax: Syntax[Any, Any],
+               filepath: str | Path,
+               *,
+               mode: Literal['text', 'binary'] = 'text', 
+               cache: None|CacheWithLexer[Any, ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
+               ) -> Tuple[Any, None | ParserState[str | bytes]]:
+    if mode == 'text':        
+        input : Input[str] = Input.from_path(filepath, mode=mode)
+        return parse(syntax, input, cache=cache)
+    else:
+        inputb : Input[bytes] = Input.from_path(filepath, mode=mode)
+        return parse(syntax, inputb, cache=cache)
+
+def parse_stream(syntax: Syntax[Any, Any],
+                 stream: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
+                 *,
+                 mode: Literal['text', 'binary'] = 'text', 
+                 cache: None|CacheWithLexer[Any, ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
+                 ) -> Tuple[Any, None | ParserState[str | bytes]]:
+    input : Input[str | bytes] = Input.from_stream(stream, mode=mode) # type: ignore
+    return parse(syntax, input, cache=cache)

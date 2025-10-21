@@ -68,6 +68,21 @@ class Input(Generic[T]):
             raise TypeError(f"Unsupported data type: {type(data)}")
     
     @staticmethod
+    @overload
+    def from_path(path: Union[str, Path], 
+                  mode: Literal['text'], 
+                  blocksize: int = 4096,
+                  encoding: str = "utf-8") -> Input[str]: ...
+    
+    @staticmethod
+    @overload
+    def from_path(path: Union[str, Path], 
+                  mode: Literal['binary'], 
+                  blocksize: int = 4096,
+                  encoding: str = "utf-8") -> Input[bytes]: ...
+
+
+    @staticmethod
     def from_path(path: Union[str, Path], 
                   mode: Literal['text', 'binary'] = 'text', 
                   blocksize: int = 4096,
@@ -81,6 +96,24 @@ class Input(Generic[T]):
             return Input.from_stream(fb, blocksize=blocksize, mode="binary")
         else:
             raise ValueError(f"Unknown mode: {mode}")
+
+    @staticmethod
+    @overload
+    def from_stream(
+        source: io.TextIOBase,
+        blocksize: int = 4096,
+        mode: Literal['text'] = 'text',
+        encoding: str = "utf-8"
+    ) -> Input[str]: ...
+
+    @staticmethod
+    @overload
+    def from_stream(
+        source: io.BufferedIOBase,
+        blocksize: int = 4096,
+        mode: Literal['binary'] = 'binary',
+        encoding: str = "utf-8"
+    ) -> Input[bytes]: ...
 
     @staticmethod
     def from_stream(

@@ -426,3 +426,11 @@ regex = branch.sep_by(or_).mark('branches').to(Regex)
 
 
 
+def parse_regex(pattern: str) -> Regex:
+    from syncraft.parser import parse_string
+    result, s = parse_string(regex, pattern)
+    if result:
+        return result.mapped
+    else:
+        return result
+
