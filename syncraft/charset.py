@@ -19,7 +19,7 @@ class MixedUniverseError(SyncraftError):
 class CodepointError(SyncraftError):
     pass
 
-C = TypeVar('C', bound=str | int | Enum | Any)
+C = TypeVar('C', bound=str | int | Enum | bytes | Any)
 
 
 @dataclass(frozen=True)
@@ -136,12 +136,18 @@ class CodeUniverse(Generic[C]):
         if isinstance(c, str):
             if len(c) != 1:
                 raise CodepointError(f"Expected single character, got {c!r}", offender=c, expect="single character")
+            if self.space is not str:
+                raise CodepointError(f"Expected character from universe {self}, got str {c!r}", offender=c, expect=f"character in {self.space}")
             cp = ord(c)
         elif isinstance(c, bytes):
             if len(c) != 1:
                 raise CodepointError(f"Expected single byte, got {c!r}", offender=c, expect="single byte")
+            if self.space is not bytes:
+                raise CodepointError(f"Expected character from universe {self}, got bytes {c!r}", offender=c, expect=f"byte in {self.space}")
             cp = c[0]
         elif self.space is bytes and isinstance(c, int):
+            cp = c
+        elif self.space is str and isinstance(c, int):
             cp = c
         elif isinstance(c, Enum):
             if c not in self.c2int:

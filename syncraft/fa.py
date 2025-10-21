@@ -897,8 +897,10 @@ class Runner(Protocol[C, Automata]):
             return self.fa
         else:
             return self.fa.nfa
-
-
+    
+    @property
+    def candidates(self)-> Tuple[Tuple[int, frozenset[Tag]],...]:
+        return tuple((pos, tags) for (pos, _, tags) in self.accepted)
 
     @classmethod
     def create(cls, a: Automata, *, non_greedy: frozenset[Tag] | None = None) -> Self: ...
@@ -1362,7 +1364,7 @@ class FABuilder(Generic[C]):
         return cls(
             kind=_NodeKind.ONEOF,
             text=chars,
-            tag=tag or f"[{str(chars)}]",
+            tag=tag,
             action=action,
             skip=skip,
             priority=priority,
@@ -1371,26 +1373,40 @@ class FABuilder(Generic[C]):
 
     # ---- DSL operators ----
     def __add__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other), tag=f"{hash(self)}{id(self)}+{hash(other)}{id(other)}")
+        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other), 
+                        tag=self.tag or other.tag
+                         )
 
     def __or__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.UNION, children=(self, other), tag=f"{hash(self)}{id(self)}|{hash(other)}{id(other)}")
+        return FABuilder(kind=_NodeKind.UNION, children=(self, other), 
+                         tag=self.tag or other.tag
+                         )
 
     def __and__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other), tag=f"{hash(self)}{id(self)}&{hash(other)}{id(other)}")
+        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other), 
+                         tag=self.tag or other.tag
+                         )
 
     def __sub__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.DIFF, children=(self, other), tag=f"{hash(self)}{id(self)}-{hash(other)}{id(other)}")
+        return FABuilder(kind=_NodeKind.DIFF, children=(self, other), 
+                         tag=self.tag or other.tag
+                         )
 
     def __invert__(self) -> FABuilder[C]:  # optional (~)
-        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,), tag=f"{hash(self)}{id(self)}.optional")
+        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,), 
+                         tag=self.tag
+                         )
 
     def __neg__(self) -> FABuilder[C]:  # complement (-)
-        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,), tag=f"{hash(self)}{id(self)}.complement")
+        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,), 
+                         tag=self.tag
+                         )
 
     @property
     def star(self) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.STAR, children=(self,), tag=f"{hash(self)}{id(self)}.star")
+        return FABuilder(kind=_NodeKind.STAR, children=(self,), 
+                         tag=self.tag
+                         )
 
     @property
     def plus(self) -> FABuilder[C]:
@@ -1400,7 +1416,12 @@ class FABuilder(Generic[C]):
              *, 
              at_least: int = 1, 
              at_most: Optional[int] = None) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.MANY, children=(self,), at_least=at_least, at_most=at_most, tag=f"{hash(self)}{id(self)}{at_least}{at_most}.many")
+        return FABuilder(kind=_NodeKind.MANY, 
+                         children=(self,), 
+                         at_least=at_least, 
+                         at_most=at_most, 
+                         tag=self.tag
+                         )
 
     def tagged(self, value: Tag) -> FABuilder[C]:
         return replace(self, tag=value)
@@ -1422,7 +1443,13 @@ class FABuilder(Generic[C]):
             case _NodeKind.RANGE:
                 if not self.intervals:
                     raise SyncraftError("Range FABuilder must have intervals", offender=self, expect="at least one interval")
-                charset = CharSet.from_interval(self.intervals, universe=universe) # type: ignore
+                codes = []
+                for (start, end) in self.intervals:
+                    code_start = universe.code2int(start) # type: ignore
+                    code_end = universe.code2int(end) # type: ignore
+                    if code_start < code_end:
+                        codes.append((code_start, code_end))
+                charset = CharSet.from_interval(codes, universe=universe) # type: ignore
                 return NFA.from_raw_charset(charset, tag=self.tag)
             case _NodeKind.UNION:
                 left = self.children[0].compile(universe).nfa

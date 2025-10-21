@@ -87,6 +87,9 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def gen(self, tag: Tag, rng: random.Random) -> Any: ...
 
+    def candidate(self) -> Either[Any, None | LexerResult[C]]: ...
+
+
     @classmethod
     def name(cls, **kwargs: Any) -> str: 
         return repr(kwargs)
@@ -290,6 +293,23 @@ class Lexer(LexerProtocol[C], Generic[C]):
                     return True
         return False
 
+    def candidate(self) -> Either[Any, None | LexerResult[C]]:
+        mode = self.current_mode
+        if mode.start_index is None:
+            return Left("Cannot get candidate when no input has been processed")
+        
+        candidate_ = mode.runner.candidates
+        if not candidate_:
+            return Left("No candidate available")
+        latest = candidate_[-1]
+        return Right(
+            LexerResult(
+                tag=mode.select_tag(latest[1]),
+                start=mode.start_index,
+                end=latest[0] + 1
+            )
+        )
+
     def match(self, tags:frozenset[Tag], char: C, index: int) -> Either[Any, None | LexerResult[C]]:
         mode = self.current_mode
         if mode.start_index is None:
@@ -419,6 +439,9 @@ class ExtLexer(LexerProtocol[T]):
             for t in self.tkspec.tags(**non_specs):
                 register_one(t, self.tkspec, **non_specs)
         # print(self.rules)
+
+    def candidate(self) -> Either[Any, None | LexerResult[T]]:
+        return Left("External lexer cannot provide candidates")
 
     def match(self, tags: frozenset[Tag], item: T, index: int) -> Either[Any, None | LexerResult[T]]:
         for tag in tags:
