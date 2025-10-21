@@ -1,30 +1,34 @@
 from __future__ import annotations
+from syncraft.ast import Token
 from syncraft.regex import (
     parse_regex, 
     literal, anchor, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
+    backslash, 
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
 )
 from rich import print
 
-def test_literal_characters():
+def t1():
     """Test parsing of literal characters."""
     # Single literal character
-    result = parse_regex(literal, "a")
-    print(result)
-    assert result == "a"
+    result = parse_regex(backslash, "a")
+    
+    assert result.text == "a"
 
 
-def test_literal_digits():
+def t2():
     """Test parsing of literal digits."""
     result = parse_regex(literal, "1")
+    print(result)
     assert result == "1"
 
 
-def test_literal_special_chars():
+def t3():
     """Test parsing of literal special characters that are not metacharacters."""
     # Characters that are allowed as literals (not in the excluded set)
     result = parse_regex(literal, "@")
+    print(result)
     assert result == "@"
 
 
@@ -491,7 +495,7 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test_literal_characters()
+    t1()
     # test_literal_digits()
     # test_literal_special_chars()
     # test_control_escapes()

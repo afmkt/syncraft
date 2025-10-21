@@ -250,12 +250,6 @@ class Parser(Algebra[T, ParserState[T]]):
             while True:
                 if state.ended():
                     match lexer.candidate():
-                        case Left(err_msg):
-                            err = Error(message=err_msg, this=lex_run, state=state)            
-                            return (yield from cache.return_value(Left(err), state, name='EOF'))
-                        case Right(None):
-                            err = Error(message="Cannot match token at end of input", this=lex_run, state=state)
-                            return (yield from cache.return_value(Left(err), state, name='EOF'))
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
                             if lexeme is None:
                                 token = Token(text=state.slice(start, end), token_type=tag)
@@ -263,7 +257,8 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = lexeme
                             return (yield from cache.return_value(Right((token, state.advance())), state, name=str(ntag)))
                         case _:
-                            raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
+                            err = Error(message="Cannot match token at end of input", this=lex_run, state=state)
+                            return (yield from cache.return_value(Left(err), state, name='EOF'))
                 elif state.pending():
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"

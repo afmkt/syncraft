@@ -134,7 +134,7 @@ def test_match_reports_correct_span_boundaries() -> None:
 def test_greedy_rule_short_circuits_longer_match() -> None:
     universe: CodeUniverse[str] = CodeUniverse.ascii()
     long_rule: FABuilder[str] = FABuilder.lit("ab").tagged("LONG")
-    short_rule: FABuilder[str] = FABuilder.lit("a", tag="SHORT", greedy=True)
+    short_rule: FABuilder[str] = FABuilder.lit("a", tag="SHORT", non_greedy=True)
     trailing: FABuilder[str] = FABuilder.lit("b").tagged("B")
 
     greedy_lexer = Lexer.from_builders(universe, long_rule, short_rule, trailing)
