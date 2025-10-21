@@ -1357,7 +1357,8 @@ class FABuilder(Generic[C]):
                 if isinstance(chars[0], (str, bytes)):
                     if not all(len(c) == 1 for c in chars): # type: ignore
                         return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars]) # type: ignore
-                        
+                    else:
+                        return cls.oneof("".join(chars)) # type: ignore
         return cls(
             kind=_NodeKind.ONEOF,
             text=chars,
