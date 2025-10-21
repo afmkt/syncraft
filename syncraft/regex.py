@@ -16,7 +16,13 @@ r"""
 regex             = branch { "|" branch } ;
 branch            = piece { piece } ;
 piece             = atom [ quantifier ] ;
-atom              = literal | char_class | group | anchor | dot | shorthand ;
+atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape ;
+
+category_name     = unicode_letter { unicode_letter } ;
+unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
+
+
+
 dot               = "." ;
 
 quantifier        = "?" | "*" | "+" | braced_quantifier [ "?" ] ;
@@ -121,58 +127,12 @@ class ShorthandKind(Enum):
             r"\S": cls.NOT_SPACE,
         }[literal]
 
-class GroupKind(Enum):
-    CAPTURE = auto()
-    NON_CAPTURE = auto()
-    LOOKAHEAD = auto()
-    NEG_LOOKAHEAD = auto()
-    LOOKBEHIND = auto()
-    NEG_LOOKBEHIND = auto()
-    FLAGS = auto()
-    FLAGS_SCOPED = auto()
 
-@dataclass(frozen=True)
-class Quantifier:
-    minimum: int
-    maximum: Optional[int]     # None → unbounded
-    greedy: bool = True
-
-@dataclass(frozen=True)
-class Piece:
-    atom: "Atom"
-    quantifier: Optional[Quantifier] = None
-
-@dataclass(frozen=True)
-class Branch:
-    pieces: Tuple[Piece, ...]
-
-@dataclass(frozen=True)
-class Regex:
-    branches: Tuple[Branch, ...]
-
-@dataclass(frozen=True)
-class LiteralAtom:
-    text: str
-
-
-@dataclass(frozen=True)
-class ShorthandAtom:
-    kind: ShorthandKind
 
 @dataclass(frozen=True)
 class UnicodeCategoryAtom:
     categories: Tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class GroupAtom:
-    kind: GroupKind
-    pattern: Regex
-    name: Optional[str] = None
-    inline_flags: Optional[Tuple[str, ...]] = None
-    disabled_flags: Optional[Tuple[str, ...]] = None
-
-
+    negated: bool = False   
 
 
 B = FABuilder[str]
@@ -213,6 +173,8 @@ escaped_x = S.lex(escaped_x=B.lit("\\x"))
 escaped_u = S.lex(escaped_u=B.lit("\\u")) 
 escaped_U = S.lex(escaped_U=B.lit("\\U")) 
 escaped_N = S.lex(escaped_N=B.lit("\\N{"))
+escaped_p = S.lex(escaped_p=B.lit("\\p{"))
+escaped_P = S.lex(escaped_P=B.lit("\\P{"))
 underscore = S.lex(underscore=B.lit("_"))
 space = S.lex(space=B.lit(" "))
 hyphen = S.lex(hyphen=B.lit("-"))
@@ -240,6 +202,15 @@ meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|
 control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"]))
 # shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
 shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"]))
+
+# category_name     = unicode_letter { unicode_letter } ;
+category_name = unicode_letter + unicode_letter.many()
+# unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
+unicode_category_escape = (
+    (escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace) |
+    (escaped_P.map(lambda _: True).mark('negated') + category_name.mark('categories') // rbrace)
+)
+
 # unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
 unicode_name = unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()
 # name_continue     = unicode_letter | unicode_digit | "_" ;
@@ -266,6 +237,7 @@ class_atom = (class_literal |
               shorthand | 
               control_escape | 
               unicode_escape | 
+              unicode_category_escape.to(UnicodeCategoryAtom)  |
               escaped_class_meta).map(lambda t: t.mapped.text)
 
 
@@ -291,40 +263,63 @@ class_class_items = ~leading_rsquare + class_item.many(at_least=1)
 char_class = lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare
 
 
+class GroupKind(Enum):
+    CAPTURE = auto()
+    NON_CAPTURE = auto()
+    LOOKAHEAD = auto()
+    NEG_LOOKAHEAD = auto()
+    LOOKBEHIND = auto()
+    NEG_LOOKBEHIND = auto()
+    FLAGS = auto()
+    FLAGS_SCOPED = auto()
+
+@dataclass(frozen=True)
+class GroupAtom:
+    kind: GroupKind
+    pattern: Regex
+    name: Optional[str] = None
+    inline_flags: Optional[Tuple[str, ...]] = None
+    disabled_flags: Optional[Tuple[str, ...]] = None
+
+
 # flag_seq          = flag { flag } ;
 flag_seq = flag.many(at_least=1)
 # inline_flags      = flag_seq [ "-" flag_seq ] ;
-inline_flags = flag_seq + ~(minus + flag_seq)
+inline_flags = flag_seq.mark('inline_flags') + ~(minus >> flag_seq.mark('disabled_flags'))
 
 
 def _group_body() -> Syntax[Any, Any]:
     # group = "(" branch ")"
-    plain = lparen >> branch // rparen
+    plain = lparen >> branch.mark('pattern') // rparen
     # group = "(?:" branch ")"
-    noncapturing = S.lex(_=B.lit("(?:" )) >> branch // rparen
+    noncapturing = S.lex(_=B.lit("(?:" )) >> branch.mark('pattern') // rparen
     # group = "(?P<" name ">" branch ")"
-    named = S.lex(_=B.lit("(?P<")) >> name // greater >> branch // rparen
+    named = S.lex(_=B.lit("(?P<")) >> name.mark('name') // greater >> branch.mark('pattern') // rparen
     # group = "(?=" branch ")"
-    lookahead = S.lex(_=B.lit("(?=" )) >> branch // rparen
+    lookahead = S.lex(_=B.lit("(?=" )) >> branch.mark('pattern') // rparen
     # group = "(?!" branch ")"
-    negative_lookahead = S.lex(_=B.lit("(?!" )) >> branch // rparen
+    negative_lookahead = S.lex(_=B.lit("(?!" )) >> branch.mark('pattern') // rparen
     # group = "(?<=" branch ")"
-    lookbehind = S.lex(_=B.lit("(?<=" )) >> branch // rparen
+    lookbehind = S.lex(_=B.lit("(?<=" )) >> branch.mark('pattern') // rparen
     # group = "(?<!" branch ")"
-    negative_lookbehind = S.lex(_=B.lit("(?<!" )) >> branch // rparen
+    negative_lookbehind = S.lex(_=B.lit("(?<!" )) >> branch.mark('pattern') // rparen
     # group = "(?" inline_flags ")"
     inline_flag_only = S.lex(_=B.lit("(?")) >> inline_flags // rparen
     # group = "(?" inline_flags ":" branch ")"
-    inline_flag_with_colon = S.lex(_=B.lit("(?")) >> inline_flags + colon >> branch // rparen
-    return (plain | 
-            noncapturing | 
-            named | 
-            lookahead | 
-            negative_lookahead | 
-            lookbehind | 
-            negative_lookbehind | 
-            inline_flag_only | 
-            inline_flag_with_colon)
+    inline_flag_with_colon = (S.lex(_=B.lit("(?")) 
+                              >> inline_flags
+                              + colon 
+                              + branch.mark('pattern') 
+                              // rparen)
+    return (plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)) | 
+            noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)) | 
+            named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)) | 
+            lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)) | 
+            negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)) | 
+            lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)) | 
+            negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)) | 
+            inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)) | 
+            inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t)))
 
 
 group = S.lazy(_group_body)
@@ -340,6 +335,11 @@ anchor = (caret |
           dollar | 
           boundary_escape).map(lambda t: AnchorKind.from_literal(t.mapped.text)).mark('kind')
 
+@dataclass(frozen=True)
+class Quantifier:
+    minimum: int
+    maximum: Optional[int]     # None → unbounded
+    greedy: bool = True
 
 # braced_quantifier = "{" number [ "," [ number ] ] "}" ;
 # - {n} → minimum=n, maximum=n
@@ -362,6 +362,16 @@ quantifier = (question.map(lambda _: Quantifier(minimum=0, maximum=1)) |
 
 
 @dataclass(frozen=True)
+class LiteralAtom:
+    text: str
+
+
+@dataclass(frozen=True)
+class ShorthandAtom:
+    kind: ShorthandKind
+
+
+@dataclass(frozen=True)
 class AnchorAtom:
     kind: AnchorKind
 
@@ -376,14 +386,32 @@ atom = (literal.map(lambda x: x.mapped.text).mark('text').to(LiteralAtom) |
         group.to(GroupAtom) | 
         anchor.to(AnchorAtom) | 
         dot.to(DotAtom) | 
+        unicode_category_escape.to(UnicodeCategoryAtom) |
         shorthand.map(lambda t: ShorthandKind.from_literal(t.mapped.text)).mark('kind').to(ShorthandAtom) )
 
+
+@dataclass(frozen=True)
+class Piece:
+    atom: "Atom"
+    quantifier: Optional[Quantifier] = None
+
 # piece             = atom [ quantifier ] ;
-piece = atom + ~quantifier
+piece = (atom.mark('atom') + (~quantifier).mark('quantifier')).to(Piece)
+
+@dataclass(frozen=True)
+class Branch:
+    pieces: Tuple[Piece, ...]
+
 # branch            = piece { piece } ;
-branch = piece.many()
+branch = piece.many().mark('pieces').to(Branch)
+
+@dataclass(frozen=True)
+class Regex:
+    branches: Tuple[Branch, ...]
+
+
 # regex             = branch { "|" branch } ;
-regex = branch.sep_by(or_)
+regex = branch.sep_by(or_).mark('branches').to(Regex)
 
 
 Atom = Union[
