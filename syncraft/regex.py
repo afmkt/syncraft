@@ -129,10 +129,6 @@ class ShorthandKind(Enum):
 
 
 
-@dataclass(frozen=True)
-class UnicodeCategoryAtom:
-    categories: Tuple[str, ...]
-    negated: bool = False   
 
 
 B = FABuilder[str]
@@ -232,6 +228,13 @@ class_meta_char = minus | rsquare | backslash
 # escaped_class_meta= "\\" class_meta_char ;
 escaped_class_meta= backslash >> class_meta_char 
 
+
+@dataclass(frozen=True)
+class UnicodeCategoryAtom:
+    categories: Tuple[str, ...]
+    negated: bool = False   
+
+
 # class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
 class_atom = (class_literal | 
               shorthand | 
@@ -276,7 +279,7 @@ class GroupKind(Enum):
 @dataclass(frozen=True)
 class GroupAtom:
     kind: GroupKind
-    pattern: Regex
+    pattern: Optional[Regex] = None
     name: Optional[str] = None
     inline_flags: Optional[Tuple[str, ...]] = None
     disabled_flags: Optional[Tuple[str, ...]] = None
