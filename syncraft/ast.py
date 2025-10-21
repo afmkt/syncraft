@@ -6,7 +6,7 @@ from typing import (
     Generic, Callable, Union, Protocol, Type, List, ClassVar,
     Dict, Hashable
 )
-
+from functools import cached_property
 
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
@@ -232,7 +232,7 @@ class AST:
         """
         return r(self)
     
-    @property
+    @cached_property
     def mapped(self) -> Any:
         """Apply the default bimap and return only the forward value."""
         v, _ = self.bimap()

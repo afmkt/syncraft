@@ -13,7 +13,11 @@ R = TypeVar('R')  # Right type for combined results
 S = TypeVar('S', bound=Bindable)
 
 class Either(Generic[L, R]):
-    pass
+    def __bool__(self) -> bool:
+        return isinstance(self, Right)
+    @property
+    def ok(self) -> bool:
+        return isinstance(self, Right)
 
 @dataclass(frozen=True)
 class Left(Either[L, Any]):
