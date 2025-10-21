@@ -395,7 +395,13 @@ atom = (literal.map(lambda x: x.mapped.text).mark('text').to(LiteralAtom) |
 
 @dataclass(frozen=True)
 class Piece:
-    atom: "Atom"
+    atom: Union[LiteralAtom,
+                DotAtom,
+                AnchorAtom,
+                ShorthandAtom,
+                UnicodeCategoryAtom,
+                CharClassAtom,
+                GroupAtom]
     quantifier: Optional[Quantifier] = None
 
 # piece             = atom [ quantifier ] ;
@@ -417,12 +423,6 @@ class Regex:
 regex = branch.sep_by(or_).mark('branches').to(Regex)
 
 
-Atom = Union[
-    LiteralAtom,
-    DotAtom,
-    AnchorAtom,
-    ShorthandAtom,
-    UnicodeCategoryAtom,
-    CharClassAtom,
-    GroupAtom,
-]
+
+
+
