@@ -1285,7 +1285,7 @@ class FABuilder(Generic[C]):
         return cls(
             kind=_NodeKind.LITERAL,
             text=text,
-            tag=tag or str(text),
+            tag=tag,
             action=action,
             skip=skip,
             priority=priority,
@@ -1330,7 +1330,13 @@ class FABuilder(Generic[C]):
             return ranges
 
         ranges = unicode_category_ranges(*cats)
-        return cls(kind=_NodeKind.RANGE, intervals=tuple(ranges), tag=tag or f"\\p{{{cats}}}", action=action, skip=skip, priority=priority, non_greedy=non_greedy)
+        return cls(kind=_NodeKind.RANGE, 
+                   intervals=tuple(ranges), 
+                   tag=tag, 
+                   action=action, 
+                   skip=skip, 
+                   priority=priority, 
+                   non_greedy=non_greedy)
 
     @classmethod
     def range(cls, 
@@ -1342,7 +1348,13 @@ class FABuilder(Generic[C]):
               priority: int = 0,
               non_greedy: bool = False,
               action: Optional[ModeAction] = None) -> FABuilder[C]:
-        return cls(kind=_NodeKind.RANGE, intervals=((start, end),), tag=tag, action=action, skip=skip, priority=priority, non_greedy=non_greedy)
+        return cls(kind=_NodeKind.RANGE, 
+                   intervals=((start, end),), 
+                   tag=tag, 
+                   action=action, 
+                   skip=skip, 
+                   priority=priority, 
+                   non_greedy=non_greedy)
         
 
     @classmethod

@@ -357,7 +357,10 @@ class Lexer(LexerProtocol[C], Generic[C]):
                 if fspec.name in ("lex"):                    
                     for k, v in fspec.kwargs.items():
                         if isinstance(v, FABuilder):
-                            acc.add(v.tagged(k) if v.tag is None else v)
+                            if v.tag is None and k != '_':
+                                acc.add(v.tagged(k))
+                            else:
+                                acc.add(v)
                 return acc
             acc = syntax.factory_spec(visitor, set())
             return acc

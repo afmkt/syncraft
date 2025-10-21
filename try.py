@@ -5,12 +5,13 @@ from syncraft.regex import (
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
 )
-
+from rich import print
 
 def test_literal_characters():
     """Test parsing of literal characters."""
     # Single literal character
     result = parse_regex(literal, "a")
+    print(result)
     assert result == "a"
 
 
