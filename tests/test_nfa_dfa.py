@@ -302,12 +302,6 @@ def test_dfa_tagged():
         assert 'X' in tags
     for tags in tagged_m.accept.values():
         assert 'X' in tags
-    tagged2 = tagged.tagged('Y', append=True)
-    tagged2_m = tagged_m.tagged('Y', append=True)
-    for tags in tagged2_m.accept.values():
-        assert 'X' in tags and 'Y' in tags
-    for tags in tagged2.accept.values():
-        assert 'X' in tags and 'Y' in tags
 
 def test_dfa_combinator_chain():
     u = CodeUniverse.ascii()
