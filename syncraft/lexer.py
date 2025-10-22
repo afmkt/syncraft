@@ -368,6 +368,17 @@ class TokenSpec(Protocol[T]):
     def tags(self, **kwargs: Any) -> frozenset[Tag]: ...
     def predicate(self, **kwargs: Any) -> Callable[[T], bool]: ...
     def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]: ...
+    @classmethod
+    def create(cls, *args: Any, **kwargs: Any) -> TokenSpec[T]: ...
+    @classmethod
+    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional["TokenSpec[T]"]: 
+        c = CallWith(cls.create, *args, **kwargs)
+        if c.missing_args:
+            return None
+        if c.missing_kwargs:
+            return None
+        return c()
+
     
 
 @dataclass(frozen=True)

@@ -45,9 +45,9 @@ def test_to() -> None:
             + ifthenelse.mark('body').bind()
             // ~END).to(While)
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
-    from syncraft.lexer import CacheWithLexer
+    from syncraft.lexer import Cache
 
-    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
+    ast, bound = parse_word(syntax, sql, cache=Cache())
     def p(condition, then, otherwise)->bool:
         return True
     if bound is not None:

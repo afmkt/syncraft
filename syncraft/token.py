@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from typing import Any, Callable, Dict, Iterable, Tuple, TypeVar, Hashable, Union, cast, Literal, overload
+from typing import Any, Callable, Dict, Iterable, Tuple, TypeVar, Hashable, Optional, cast, Literal, overload
 import re
 from enum import Enum
 from syncraft.utils import CallWith
@@ -64,6 +64,16 @@ class TokenMatcher(TokenSpecSupportMixin, TokenSpec[T]):
     gen: Callable[[Any, random.Random], T]
     tag: None | Callable[..., frozenset[Tag]] = field(default=None)
 
+    @classmethod
+    def create(cls,
+               *,
+                pred: Callable[[T], bool],
+                gen: Callable[[Any, random.Random], T],
+                tag: None | Tag | Iterable[Tag] | Callable[..., frozenset[Tag]] = None)-> TokenMatcher[T]:
+        tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
+        return cls(pred=pred, gen=gen, tag=tag_callable)
+        
+               
     def tags(self, **kwargs: Any) -> frozenset[Tag]:
         _, _, tags = self._normalise_kwargs(dict(kwargs))
         return tags
@@ -80,6 +90,16 @@ class TokenMatcher(TokenSpecSupportMixin, TokenSpec[T]):
 class Scalar(TokenSpecSupportMixin, TokenSpec[T]):
     constructor: Callable[..., T]
     pattern: re.Pattern = field(default=re.compile(".*"), metadata={"is_config": True})
+
+    @classmethod
+    def create(cls,
+                pattern: str | re.Pattern[str],
+                *,
+                constructor: Callable[..., T] = str, # type: ignore
+                flags: int | None = None) -> Scalar[T]:
+        compiled = re.compile(pattern, flags or 0) if isinstance(pattern, str) else pattern
+        return cls(constructor=constructor, pattern=compiled)
+        
 
     def tags(self, **kwargs: Any) -> frozenset[Tag]:
         config, params, tags = self._normalise_kwargs(dict(kwargs))
@@ -115,6 +135,21 @@ class Structured(TokenSpecSupportMixin, TokenSpec[T]):
     case_sensitive: bool = field(default=True, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
     tag: None | Callable[..., frozenset[Tag]] = field(default=None)
+    @classmethod
+    def create(cls, 
+               constructor: Callable[..., T],
+               *,
+               case_sensitive: bool = True,
+               strict: bool = False,
+               tag: Tag | Iterable[Tag] | None | Callable[..., frozenset[Tag]] = None) -> Structured[T]:
+        tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
+        return cls(
+            constructor=constructor,
+            case_sensitive=case_sensitive,
+            strict=strict,
+            tag=tag_callable,
+        )
+        
 
     def tags(self, **kwargs: Any) -> frozenset[Tag]:
         config, kwargs, tags = self._normalise_kwargs(dict(kwargs))
@@ -199,48 +234,16 @@ def matcher(
     gen: Callable[[Any, random.Random], TokenT],
     tag: None | Tag | Iterable[Tag] | Callable[..., frozenset[Tag]] = None,
 ) -> TokenMatcher[TokenT]:
-    tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
-    return TokenMatcher(pred=pred, gen=gen, tag=tag_callable)
+    return TokenMatcher.create(pred=pred, gen=gen, tag=tag)
 
 
-def raw(
-    pred: Callable[[TokenT], bool],
-    gen: Callable[[Any, random.Random], TokenT],
-    tag: None | Tag | Iterable[Tag] | Callable[..., frozenset[Tag]] = None,
-) -> TokenMatcher[TokenT]:
-    return matcher(pred=pred, gen=gen, tag=tag)
-
-
-
-@overload
 def scalar(
     pattern: str | re.Pattern[str],
     *,
-    constructor: Callable[..., ScalarValueT],
+    constructor: Callable[..., ScalarValueT] = str, # type: ignore
     flags: int | None = None,
 ) -> Scalar[ScalarValueT]:
-    ...
-
-
-@overload
-def scalar(
-    pattern: str | re.Pattern[str],
-    *,
-    flags: int | None = None,
-) -> Scalar[str]:
-    ...
-
-
-def scalar(
-    pattern: str | re.Pattern[str],
-    *,
-    constructor: Callable[..., ScalarValueT] | None = None,
-    flags: int | None = None,
-) -> Scalar[Any]:
-    compiled = re.compile(pattern, flags or 0) if isinstance(pattern, str) else pattern
-    if constructor is not None:
-        return cast(Scalar[ScalarValueT], Scalar(constructor=constructor, pattern=compiled))
-    return cast(Scalar[str], Scalar(constructor=str, pattern=compiled))
+    return Scalar.create(pattern, constructor=constructor, flags=flags)
 
 
 def struct(
@@ -250,12 +253,11 @@ def struct(
     strict: bool = False,
     tag: Tag | Iterable[Tag] | None | Callable[..., frozenset[Tag]] = None
 ) -> Structured[TokenT]:
-    tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
-    return Structured(
+    return Structured.create(
         constructor=constructor,
         case_sensitive=case_sensitive,
         strict=strict,
-        tag=tag_callable,
+        tag=tag,
     )
 
 

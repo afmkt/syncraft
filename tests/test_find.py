@@ -48,8 +48,8 @@ def test_find()->None:
             + ifthenelse.mark('body')
             // ~END).to(While)
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
-    from syncraft.lexer import CacheWithLexer
-    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
+    from syncraft.lexer import Cache
+    ast, bound = parse_word(syntax, sql, cache=Cache())
     nodes = list(find(anything(syntax), ast))
 
     assert nodes[0] == ast

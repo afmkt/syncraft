@@ -13,7 +13,7 @@ from syncraft.algebra import Error
 from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from syncraft.syntax import Syntax
-from syncraft.lexer import CacheWithLexer, ExtLexer
+from syncraft.lexer import Cache, ExtLexer
 from syncraft.token import Structured
 
 
@@ -460,7 +460,7 @@ def t0():
     A, B, C = literal("a"), literal("b"), literal("c")
     syntax = A // B // C
     sql = "a b c"
-    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
+    ast, bound = parse_word(syntax, sql, cache=Cache())
     # print("---" * 40)
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)

@@ -35,7 +35,7 @@ __all__ = ['iter_tokens', 'token_multiset']
 
 
 def parse_with_state(syntax, sql: str):
-    from syncraft.lexer import CacheWithLexer
-    return parse_word(syntax, sql, cache=CacheWithLexer())
+    from syncraft.lexer import Cache
+    return parse_word(syntax, sql, cache=Cache())
 
 __all__.append('parse_with_state')

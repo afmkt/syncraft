@@ -13,7 +13,7 @@ from syncraft.generator import (
 )
 from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
-from syncraft.lexer import ExtLexer, CacheWithLexer
+from syncraft.lexer import ExtLexer, Cache
 from syncraft.fa import FABuilder
 from syncraft.token import Structured, matcher, TokenMatcher
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
@@ -132,7 +132,7 @@ def test_generator_runner_uses_override_lexer_class() -> None:
         runner: GeneratorRunner = GeneratorRunner(lexer_class=override_cls)
         _generator, cache_obj, _state = runner.bootstrap(syntax, Generator)
         assert call_count["value"] == 1
-        assert isinstance(cache_obj, CacheWithLexer)
+        assert isinstance(cache_obj, Cache)
         assert isinstance(cache_obj.lexer, override_cls)
     finally:
         setattr(override_cls, "from_syntax", classmethod(original_func))  # type: ignore[arg-type]

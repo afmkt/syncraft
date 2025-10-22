@@ -19,7 +19,7 @@ def _build_scalar_literal_lexer() -> ExtLexer[Any]:
     foo = literal("foo")
     syntax = foo
 
-    lexer = cast(ExtLexer[Any], lexer_cls.from_syntax(syntax))
+    lexer = cast(ExtLexer[Any], lexer_cls.from_kwargs(text="foo"))
     assert isinstance(lexer, ExtLexer)
     return lexer
 
@@ -59,7 +59,7 @@ def test_scalar_explicit_token_spec_enforces_config() -> None:
         text=re.compile(r"[A-Z]+"),
         IDENT=scalar_spec,
     )
-    lexer = cast(ExtLexer[Any], lexer_cls.from_syntax(syntax))
+    lexer = cast(ExtLexer[Any], lexer_cls.from_kwargs(token_type="IDENT", text=re.compile(r"[A-Z]+"), IDENT=scalar_spec))
     assert isinstance(lexer, ExtLexer)
 
     tags = lexer.tag(token_type="IDENT", text=re.compile(r"[A-Z]+"), IDENT=scalar_spec)
@@ -86,7 +86,7 @@ def _token_matcher_literal_lexer() -> ExtLexer[Token]:
     lexer_cls: Type[ExtLexer[Token]] = ExtLexer.bind(tkspec=matcher_spec)
     literal = Syntax.config(lexer_class=lexer_cls).literal
     syntax = literal("ping")
-    lexer = cast(ExtLexer[Any], lexer_cls.from_syntax(syntax))
+    lexer = cast(ExtLexer[Any], lexer_cls.from_kwargs(text='ping'))
     assert isinstance(lexer, ExtLexer)
     return lexer
 
@@ -121,7 +121,7 @@ def test_token_matcher_explicit_tag_registration() -> None:
 
     token = Syntax.config(lexer_class=lexer_cls).token
     syntax = token(token_type="PRED", PRED=matcher_spec)
-    lexer = lexer_cls.from_syntax(syntax)
+    lexer = lexer_cls.from_kwargs(token_type="PRED", PRED=matcher_spec)
     assert isinstance(lexer, ExtLexer)
 
     tags = lexer.tag(token_type="PRED", PRED=matcher_spec)

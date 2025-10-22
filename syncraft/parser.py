@@ -5,7 +5,6 @@ from typing import (
 )
 from syncraft.lexer import (
     Lexer,
-    CacheWithLexer,
     LexerResult,
     LexerProtocol,
     ExtLexer,
@@ -19,7 +18,7 @@ from syncraft.algebra import (
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
 
-from syncraft.syntax import Syntax, RunnerProtocol, PayloadKind, FactorySpec
+from syncraft.syntax import Syntax, RunnerProtocol, FactorySpec
 from syncraft.input import Input, StreamCursor
 
 from syncraft.ast import Token, AST, SyncraftError

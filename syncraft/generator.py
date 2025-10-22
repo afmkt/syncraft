@@ -25,7 +25,7 @@ from syncraft.ast import (
 from syncraft.constraint import FrozenDict
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
-from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, PayloadKind, FactorySpec
+from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, FactorySpec
 
 from syncraft.constraint import Bindable
 from syncraft.token import Structured
@@ -467,7 +467,7 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
         generator = syntax(alg_cls)
         initial_cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]] = cache or Cache()
         initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
-        
+
         return generator, initial_cache, initial_state
     
     def resume(self, request: Incomplete[S]) -> S:

@@ -3,7 +3,7 @@ from typing import Any
 from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
 import syncraft.generator as gen
-from syncraft.lexer import CacheWithLexer
+from syncraft.cache import Cache
 from dataclasses import dataclass
 from syncraft.lexer import ExtLexer
 from syncraft.ast import Token
@@ -46,7 +46,7 @@ def test_to() -> None:
             + ifthenelse.mark('body')
             // ~END).to(While)
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
-    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
+    ast, bound = parse_word(syntax, sql, cache=Cache())
     # print(ast)
     g, bound = gen.generate_with(syntax, ast, restore_pruned=True)
     assert ast == g
