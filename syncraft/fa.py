@@ -282,13 +282,13 @@ class DFA(Generic[C]):
 
         # Map old states to new representatives
         block_rep: Dict[FAState, FAState] = {}
-        new_accept: Dict[FAState, frozenset[str | Enum]] = {}
+        new_accept: Dict[FAState, frozenset[Tag]] = {}
         for block in P:
             rep = fabuilder()
             for s in block:
                 block_rep[s] = rep
             # Union tags if any state accepting
-            tags: Set[str | Enum] = set()
+            tags: Set[Tag] = set()
             accepting = False
             for s in block:
                 if s in self.accept:
@@ -353,7 +353,7 @@ class DFA(Generic[C]):
 
 
 
-    def tagged(self, tag: str | Enum, append:bool=False) -> DFA[C]:
+    def tagged(self, tag: Tag, append:bool=False) -> DFA[C]:
         if append:
             return replace(self, accept=FrozenDict({a: (tags | frozenset({tag})) for a, tags in self.accept.items()}))
         else:
@@ -378,11 +378,11 @@ class DFA(Generic[C]):
 
         # flip accepting states
         all_states = set(transitions.keys())
-        new_accept: dict[FAState, frozenset[str | Enum]] = {s: frozenset() for s in all_states if s not in self.accept}
+        new_accept: dict[FAState, frozenset[Tag]] = {s: frozenset() for s in all_states if s not in self.accept}
 
         # freeze everything
         frozen_trans: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({s: FrozenDict(t) for s, t in transitions.items()})
-        frozen_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict(new_accept)
+        frozen_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict(new_accept)
         return DFA(
             universe=universe,
             init=self.init,
@@ -515,7 +515,7 @@ class DFA(Generic[C]):
             nfa_trans[nfa_s] = FrozenDict(
                 {cs: frozenset({state_map[tgt]}) for cs, tgt in trans.items()}
             )
-        nfa_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict(
+        nfa_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict(
             {state_map[s]: tags for s, tags in self.accept.items()}
         )
         return NFA(
@@ -586,9 +586,9 @@ class DFA(Generic[C]):
 
         for s, e in trans.items():
             trans[s] = DFA.merge_adjacent_transitions(nfa.universe, e)
-        accept: dict[FAState, frozenset[str | Enum]] = {}
+        accept: dict[FAState, frozenset[Tag]] = {}
         for nfa_states, fa_state in dfa_states.items():
-            tags: Set[str | Enum] = set()
+            tags: Set[Tag] = set()
             is_accept: bool = False
             for ns in nfa_states:
                 is_accept = is_accept or (ns in nfa.accept)
@@ -663,7 +663,7 @@ class NFA(Generic[C]):
                 state_map[s] = FAState()
             return state_map[s]
         new_start = get_clone(self.init)
-        new_accept: FrozenDict[FAState, frozenset[str | Enum]] = FrozenDict({get_clone(a):b for a,b in self.accept.items()})
+        new_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({get_clone(a):b for a,b in self.accept.items()})
         new_transitions: dict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = {}
         for k, v in self.transitions.items():
             new_transitions[get_clone(k)] = FrozenDict({
@@ -680,7 +680,7 @@ class NFA(Generic[C]):
                         transitions=FrozenDict(new_transitions),
                         epsilon=new_epsilon)
     
-    def tagged(self, tag: str | Enum, append:bool=False) -> NFA[C]:
+    def tagged(self, tag: Tag, append:bool=False) -> NFA[C]:
         if append:
             return replace(self, accept=FrozenDict({a: (tags | frozenset({tag})) for a, tags in self.accept.items()}))
         else:
@@ -1024,8 +1024,8 @@ class NFARunner(Runner[C, NFA[C]]):
         filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
         return frozenset(filtered)
 
-    def tags(self) -> frozenset[str | Enum]:
-        tags: Set[str | Enum] = set()
+    def tags(self) -> frozenset[Tag]:
+        tags: Set[Tag] = set()
         for s in self.current:
             tags.update(self.nfa.accept.get(s, frozenset()))
         return frozenset(tags)
@@ -1164,7 +1164,7 @@ class DFARunner(Runner[C, DFA[C]]):
 
 
 
-Tag = Union[str, Enum]
+Tag = str
 
 class _NodeKind(str, Enum):
     RANGE = "RANGE"
