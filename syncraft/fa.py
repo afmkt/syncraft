@@ -18,7 +18,7 @@ from collections import defaultdict
 from functools import reduce
 import random
 
-
+Tag = str
 C = TypeVar('C', bound=str | int | Enum | Any)
 
 FAStateBuilder = Callable[[], 'FAState']
@@ -353,11 +353,8 @@ class DFA(Generic[C]):
 
 
 
-    def tagged(self, tag: Tag, append:bool=False) -> DFA[C]:
-        if append:
-            return replace(self, accept=FrozenDict({a: (tags | frozenset({tag})) for a, tags in self.accept.items()}))
-        else:
-            return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
+    def tagged(self, tag: Tag) -> DFA[C]:
+        return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
         
     @property
     def complement(self) -> DFA[C]:
@@ -394,7 +391,8 @@ class DFA(Generic[C]):
         return self.complement
                        
 
-    def _product(self, other: "DFA[C]", accept_func: Callable[[bool, bool], bool]) -> "DFA[C]":
+    def _product(self, other: "DFA[C]", 
+                 accept_func: Callable[[Tuple[bool, frozenset[Tag]], Tuple[bool, frozenset[Tag]]], Tuple[bool, frozenset[Tag]]]) -> "DFA[C]":
         if self.universe != other.universe:
             raise MixedUniverseError("Cannot combine DFAs with different universes",
                                     offender=(self.universe, other.universe))
@@ -467,9 +465,9 @@ class DFA(Generic[C]):
             # acceptance of the product state
             b1 = s1 in self.accept
             b2 = s2 in other.accept
-            if accept_func(b1, b2):
-                tags = set(self.accept.get(s1, frozenset())) | set(other.accept.get(s2, frozenset()))
-                accept[new_state] = frozenset(tags)
+            rb, rs = accept_func((b1, self.accept.get(s1, frozenset())), (b2, other.accept.get(s2, frozenset())))
+            if rb:
+                accept[new_state] = rs
 
         # Optionally: we created sink1/sink2 FAState values; if any pair uses them they are already in state_map
         # Build frozen structures
@@ -487,17 +485,29 @@ class DFA(Generic[C]):
 
 
     def intersection(self, other: DFA[C]) -> DFA[C]:
-        return self._product(other, lambda b1, b2: b1 and b2)    
+        def accept_func(a: Tuple[bool, frozenset[Tag]], b: Tuple[bool, frozenset[Tag]]) -> Tuple[bool, frozenset[Tag]]:
+            accepts = a[0] and b[0]
+            tags = a[1] | b[1] if accepts else frozenset()
+            return (accepts, tags)
+        return self._product(other, accept_func)    
     def __and__(self, other: DFA[C]) -> DFA[C]:
         return self.intersection(other)
 
     def union(self, other: DFA[C]) -> DFA[C]:
-        return self._product(other, lambda b1, b2: b1 or b2)
+        def accept_func(a: Tuple[bool, frozenset[Tag]], b: Tuple[bool, frozenset[Tag]]) -> Tuple[bool, frozenset[Tag]]:
+            accepts = a[0] or b[0]
+            tags = a[1] | b[1] if accepts else frozenset()
+            return (accepts, tags)
+        return self._product(other, accept_func)
     def __or__(self, other: DFA[C]) -> DFA[C]:
         return self.union(other)
     
     def difference(self, other: DFA[C]) -> DFA[C]:
-        return self._product(other, lambda b1, b2: b1 and not b2)
+        def accept_func(a: Tuple[bool, frozenset[Tag]], b: Tuple[bool, frozenset[Tag]]) -> Tuple[bool, frozenset[Tag]]:
+            accepts = a[0] and not b[0]
+            tags = a[1] if accepts else frozenset()
+            return (accepts, tags)
+        return self._product(other, accept_func)
     def __sub__(self, other: DFA[C]) -> DFA[C]:
         return self.difference(other)
     
@@ -680,11 +690,8 @@ class NFA(Generic[C]):
                         transitions=FrozenDict(new_transitions),
                         epsilon=new_epsilon)
     
-    def tagged(self, tag: Tag, append:bool=False) -> NFA[C]:
-        if append:
-            return replace(self, accept=FrozenDict({a: (tags | frozenset({tag})) for a, tags in self.accept.items()}))
-        else:
-            return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
+    def tagged(self, tag: Tag) -> NFA[C]:
+        return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
 
     def closure(self, states: set[FAState] | frozenset[FAState]) -> frozenset[FAState]:
         stack = list(states)
@@ -702,7 +709,9 @@ class NFA(Generic[C]):
     
 
     @classmethod
-    def from_raw_charset(cls, c: CharSet[C], tag: Optional[Tag] = None) -> NFA[C]:
+    def from_raw_charset(cls, 
+                         c: CharSet[C], 
+                         tag: Optional[Tag] = None) -> NFA[C]:
         assert c.interval != tuple(), "charset cannot be empty"
         current: FAState = FAState()
         accept: FAState = FAState()
@@ -780,7 +789,7 @@ class NFA(Generic[C]):
         return this.__class__(
                               universe=this.universe,
                               init=this.init, 
-                              accept=other.accept, 
+                              accept=FrozenDict({k: frozenset() for k in other.accept}), 
                               transitions=FrozenDict(new_transitions), 
                               epsilon=FrozenDict(eps))
     def __rshift__(self, other: NFA[C]) -> NFA[C]:
@@ -1164,7 +1173,7 @@ class DFARunner(Runner[C, DFA[C]]):
 
 
 
-Tag = str
+
 
 class _NodeKind(str, Enum):
     RANGE = "RANGE"
@@ -1385,40 +1394,26 @@ class FABuilder(Generic[C]):
 
     # ---- DSL operators ----
     def __add__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other), 
-                        tag=self.tag or other.tag
-                         )
+        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other))
 
     def __or__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.UNION, children=(self, other), 
-                         tag=self.tag or other.tag
-                         )
+        return FABuilder(kind=_NodeKind.UNION, children=(self, other))
 
     def __and__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other), 
-                         tag=self.tag or other.tag
-                         )
+        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other))
 
     def __sub__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.DIFF, children=(self, other), 
-                         tag=self.tag or other.tag
-                         )
+        return FABuilder(kind=_NodeKind.DIFF, children=(self, other))
 
     def __invert__(self) -> FABuilder[C]:  # optional (~)
-        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,), 
-                         tag=self.tag
-                         )
+        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,))
 
     def __neg__(self) -> FABuilder[C]:  # complement (-)
-        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,), 
-                         tag=self.tag
-                         )
+        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,))
 
     @property
     def star(self) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.STAR, children=(self,), 
-                         tag=self.tag
-                         )
+        return FABuilder(kind=_NodeKind.STAR, children=(self,))
 
     @property
     def plus(self) -> FABuilder[C]:
@@ -1431,9 +1426,7 @@ class FABuilder(Generic[C]):
         return FABuilder(kind=_NodeKind.MANY, 
                          children=(self,), 
                          at_least=at_least, 
-                         at_most=at_most, 
-                         tag=self.tag
-                         )
+                         at_most=at_most)
 
     def tagged(self, value: Tag) -> FABuilder[C]:
         return replace(self, tag=value)
@@ -1474,11 +1467,11 @@ class FABuilder(Generic[C]):
             case _NodeKind.LITERAL:
                 if self.text is None:
                     raise SyncraftError("Literal FABuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
-                return NFA.from_string(self.text, universe=universe)
+                return NFA.from_string(self.text, universe=universe, tag=self.tag)
             case _NodeKind.ONEOF:
                 if self.text is None:
                     raise SyncraftError("OneOf FABuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
-                return NFA.from_charset(self.text, universe=universe)
+                return NFA.from_charset(self.text, universe=universe, tag=self.tag)
             case _NodeKind.STAR:
                 inner = self.children[0].compile(universe).nfa
                 return inner.star
