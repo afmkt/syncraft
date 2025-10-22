@@ -24,8 +24,7 @@ def t1():
     assert result.text == "@"
 
     result = parse_regex(backslash, "Z")
-    print(result)
-    assert isinstance(result, Error)
+    assert "backslash" in result.message
 
 
 def test_control_escapes():

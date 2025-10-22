@@ -4,7 +4,7 @@ from typing import (
     Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
     List, Mapping, Generator as PyGenerator, cast, Type, Literal
 )
-from enum import Enum
+
 import importlib
 import random
 import re
@@ -28,22 +28,7 @@ from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, PayloadKind, FactorySpec
 
 from syncraft.constraint import Bindable
-from syncraft.token import Structured, Tag
-
-
-def _coerce_tags(value: Any) -> frozenset[Tag]:
-    def _coerce_one(item: Any) -> Tag:
-        if isinstance(item, Enum):
-            return cast(Tag, item)
-        if isinstance(item, str):
-            return cast(Tag, item)
-        return cast(Tag, str(item))
-
-    if isinstance(value, (set, frozenset, list, tuple)):
-        items = value
-    else:
-        items = (value,)
-    return frozenset(_coerce_one(item) for item in items)
+from syncraft.token import Structured
 
 
 S = TypeVar('S', bound=Bindable)
@@ -402,51 +387,20 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
-
-
-    @classmethod
-    def primitive(cls, 
-                  *, 
-                  predicate: Optional[Callable[[T], bool]]=None,
-                  generator: Optional[Callable[..., T]] = None
-                  )-> Algebra[ParseResult[T], GenState[T]]:
-        name = generator.__name__ if generator is not None else "." 
-        def primitive_run(input: GenState[T], 
-                          cache:Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
-                              YieldChannelType, 
-                              SendChannelType, 
-                              Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
-            if input.pruned:
-                assert callable(generator), "In pruned mode, a generator function must be provided."
-                return (yield from cache.return_value(Right((generator(input.rng()), input)), input, name=generator.__name__))
-            else:
-                current = input.ast
-                assert callable(predicate), "In non-pruned mode, a predicate function must be provided."
-                if not isinstance(current, Token) or not predicate(current): # type: ignore
-                    return (yield from cache.return_value( 
-                        Left(Error(None, 
-                                  message=f"Expected a token, but got {current}.", 
-                                  state=input)), input, name=predicate.__name__))
-                else:
-                    return (yield from cache.return_value(Right((current, input)), input, name=predicate.__name__)) # type: ignore
-        return cls(primitive_run, _name=name)  # type: ignore
-        
-
-
+    
     @classmethod
     def token(
         cls,
-        *,
-        lexer_class: Type[LexerProtocol] | None = None,
+
         **kwargs: Any,
     ) -> Algebra[ParseResult[T], GenState[T]]:
-        return cls.lex(lexer_class=lexer_class, **kwargs)
+        return cls.lex(**kwargs)
 
         
     @classmethod
     def lex(cls,
             *,
-            lexer_class: Type[LexerProtocol] | None = None,
+            name: str | None = None,
             **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
         
         def lex_run(input: GenState[T], 
@@ -460,19 +414,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
             lexer = cache.lexer
             tags = lexer.tag(**kwargs)
-            if not tags:
-                token_type = kwargs.get("token_type")
-                if token_type is not None:
-                    tags = _coerce_tags(token_type)
-                elif "text" in kwargs:
-                    literal = kwargs["text"]
-                    tags = _coerce_tags(literal)
-                if not tags:
-                    raise SyncraftError(
-                        "Unable to determine token tags for generation",
-                        offender=kwargs,
-                        expect="token_type or text",
-                    )
+
             if input.pruned:
                 tag = input.rng("lex_tag").choice(tuple(tags))
                 input = input.fork(tag=tag)
@@ -509,13 +451,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 parsed_value = cast(ParseResult[T], current)
                 return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tags)))
 
-        if isinstance(lexer_class, type) and issubclass(lexer_class, LexerProtocol):
-            token_name = lexer_class.name(**kwargs)
-        else:
-            key_summary = ", ".join(sorted(kwargs)) if kwargs else "token"
-            token_name = f"token({key_summary})"
-
-        return cls(lex_run, _name=token_name) 
+        return cls(lex_run, _name=name or "lex(...)") 
 
 
 
@@ -782,8 +718,8 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
 
     def _build_lexer_from_syntax(
         self,
-    *,
-    kind: Literal["text", "bytes"],
+        *,
+        kind: Literal["text", "bytes"],
         token_nodes: List[Tuple[Mapping[str, Any], Mapping[str, Any]]],
     ) -> LexerProtocol[Any]:
         builders: List[FABuilder[Any]] = []
@@ -880,20 +816,7 @@ def generate_with(
     restore_pruned: bool = False,
     lexer_class: Type[LexerProtocol] | None = None,
 ) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
-    """
-    Generate an AST from the given syntax, optionally constrained by a partial parse result.
-
-    Args:
-        syntax: The syntax specification to generate from.
-        data: An optional partial parse result (AST) to constrain generation.
-        seed: Random seed for reproducibility.
-    restore_pruned: Whether to restore pruned branches in the AST.
-    lexer_class: Optional explicit lexer class override for generation.
-
-    Returns:
-        A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
-    """
-    # from syncraft.syntax import run_state
+    
     runner = Runner(ast=data, seed=seed, restore_pruned=restore_pruned, lexer_class=lexer_class)
 
     v, s = runner(syntax=syntax, alg_cls=Generator)
@@ -907,18 +830,9 @@ def validate(
     syntax: Syntax[Any, Any], 
     data: ParseResult[Any]
 ) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
-    """
-    Validate a parse result (AST) against the given syntax.
-
-    Args:
-        syntax: The syntax specification to validate against.
-        data: The parse result (AST) to validate.
-
-    Returns:
-        A tuple of (AST, variable bindings) if valid, or (None, None) if invalid.
-    """
+    
     runner = Runner(ast=data, seed=0, restore_pruned=True)
-    # from syncraft.syntax import run_state
+    
     v, s = runner(syntax=syntax, alg_cls=Generator)
     if s is not None:
         return v, s.binding.bound()
@@ -927,17 +841,9 @@ def validate(
 
 
 def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
-    """
-    Generate a random AST that conforms to the given syntax.
-
-    Args:
-        syntax: The syntax specification to generate from.
-
-    Returns:
-        A tuple of (AST, variable bindings) if successful, or (None, None) on failure.
-    """
+    
     runner = Runner(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
-    # from syncraft.syntax import run_state
+    
     v, s = runner(syntax=syntax, alg_cls=Generator)
     if s is not None:
         return v, s.binding.bound()

@@ -185,60 +185,19 @@ class ParserState(Bindable, Generic[T]):
 class Parser(Algebra[T, ParserState[T]]):
 
     @classmethod
-    def primitive(cls, 
-                  *, 
-                  predicate: Optional[Callable[[T], bool]]=None,
-                  generator: Optional[Callable[..., T]] = None
-                  )-> Algebra[T, ParserState[T]]:
-        name = predicate.__name__ if predicate is not None else "." 
-        def primitive_run(state: ParserState[T], 
-                          cache:Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
-                              YieldChannelType, 
-                              SendChannelType, 
-                              Either[Any, Tuple[T, ParserState[T]]]]:
-            while True:
-                if state.ended():
-                    return (yield from cache.return_value(Left(state), state, name=predicate.__name__ if predicate else 'EOF'))
-                elif state.pending():
-                    tmp = yield Incomplete(state)
-                    assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
-                    state = tmp
-                else:
-                    token = state.current()
-                    assert callable(predicate), "Predicate must be callable"
-                    if token is None or not predicate(token):
-                        return (yield from cache.return_value(Left(state), state, name=predicate.__name__))
-                    else:
-                        return (yield from cache.return_value(Right((token, state.advance())), state, name=predicate.__name__))
-        captured: Algebra[T, ParserState[T]] = cls(primitive_run, _name=name)
-        def error_fn(err: Any) -> Error:
-            if isinstance(err, ParserState):
-                return Error(message=f"Cannot match token expect {name}, got '{err.current() if not err.ended() or err.pending() else 'EOF'}'", this=captured, state=err)            
-            else:
-                return Error(message="Cannot match token at unknown state", this=captured)
-        # assign the updated parser(with description) to bound variable so the Error.this could be set correctly
-        captured = captured.map_error(error_fn)
-        return captured        
-
-    @classmethod
     def token(
         cls,
-        *,
-        lexer_class: Type[LexerProtocol] | None = None,
+
         **kwargs: Any,
     ) -> Algebra[T, ParserState[T]]:
-        return cls.lex(lexer_class=lexer_class, **kwargs)
+        return cls.lex(**kwargs)
 
     @classmethod
     def lex(cls, 
             *,
-            lexer_class: Type[LexerProtocol] | None = None,
+            name: str | None = None,
             **kwargs: Any) -> Algebra[T, ParserState[T]]:
-        
-        if isinstance(lexer_class, type) and issubclass(lexer_class, LexerProtocol):
-            token_name = lexer_class.name(**kwargs)
-        else:
-            raise SyncraftError("lexer_class must be provided and be a subclass of LexerProtocol", offender=lexer_class, expect="LexerProtocol subclass")
+
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               YieldChannelType, 
@@ -258,9 +217,9 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = Token(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return (yield from cache.return_value(Right((token, state.advance())), state, name=str(ntag)))
+                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name or str(ntag)))
                         case _:
-                            err = Error(message=f"Cannot match token at end of input, expect {token_name}", this=lex_run, state=state)
+                            err = Error(message=f"Cannot match token at end of input, expect {ntag}", this=lex_run, state=state)
                             return (yield from cache.return_value(Left(err), state, name='EOF'))
                 elif state.pending():
                     tmp = yield Incomplete(state)
@@ -269,8 +228,8 @@ class Parser(Algebra[T, ParserState[T]]):
                 else:
                     match lexer.match(ntag, state.current(), state.abs_index()):
                         case Left(err_msg):
-                            err = Error(message=f"{err_msg}, expect {token_name}", this=lex_run, state=state)            
-                            return (yield from cache.return_value(Left(err), state, name=str(ntag)))
+                            err = Error(message=f"{err_msg}, expect {ntag}", this=lex_run, state=state)            
+                            return (yield from cache.return_value(Left(err), state, name=name or str(ntag)))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
@@ -278,11 +237,11 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = Token(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return (yield from cache.return_value(Right((token, state.advance())), state, name=str(ntag)))
+                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name or str(ntag)))
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
 
-        return cls(lex_run, _name=token_name)
+        return cls(lex_run, _name=name or "lex(...)")
 
 
 

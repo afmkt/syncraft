@@ -51,7 +51,7 @@ class TokenSpecSupportMixin:
         tags, params = self._resolve_tag_kwargs(params)
         return config, params, tags
 
-Tag = Union[str, Enum]
+Tag = str
 
 T = TypeVar('T', bound=Hashable)
 TokenT = TypeVar('TokenT', bound=Hashable)

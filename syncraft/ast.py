@@ -19,6 +19,18 @@ class SyncraftError(Exception):
         self.expect = expect
         self.data = kwargs
 
+    def __str__(self) -> str:
+        base = super().__str__()
+        details = f"Offender: {self.offender!r}"
+        if self.expect is not None:
+            details += f", Expected: {self.expect!r}"
+        if self.data:
+            details += ", " + ", ".join(f"{k}={v!r}" for k, v in self.data.items())
+        return f"{base} ({details})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+
 def shallow_dict(a: Any)->Dict[str, Any]:
     if not is_dataclass(a):
         raise SyncraftError("Expected dataclass instance for collector inverse", offender=a, expect="dataclass")

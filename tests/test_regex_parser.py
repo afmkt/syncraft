@@ -11,20 +11,20 @@ def test_literal_characters():
     """Test parsing of literal characters."""
     # Single literal character
     result = parse_regex(literal, "a")
-    assert result == "a"
+    assert result.text == "a"
 
 
 def test_literal_digits():
     """Test parsing of literal digits."""
     result = parse_regex(literal, "1")
-    assert result == "1"
+    assert result.text == "1"
 
 
 def test_literal_special_chars():
     """Test parsing of literal special characters that are not metacharacters."""
     # Characters that are allowed as literals (not in the excluded set)
     result = parse_regex(literal, "@")
-    assert result == "@"
+    assert result.text == "@"
 
 
 def test_control_escapes():
@@ -41,11 +41,11 @@ def test_control_escapes():
         result = parse_regex(literal, pattern)
         assert isinstance(result, Regex)
         assert len(result.branches) == 1
-        branch = result.branches[0]
-        assert len(branch.pieces) == 1
-        piece = branch.pieces[0]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == expected
+        b = result.branches[0]
+        assert len(b.pieces) == 1
+        p = b.pieces[0]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == expected
 
 
 def test_unicode_escapes():
