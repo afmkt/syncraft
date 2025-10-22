@@ -1,5 +1,6 @@
 from __future__ import annotations
 from syncraft.ast import Token
+from syncraft.algebra import Error
 from syncraft.regex import (
     parse_regex, 
     literal, anchor, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
@@ -12,24 +13,19 @@ from rich import print
 def t1():
     """Test parsing of literal characters."""
     # Single literal character
-    result = parse_regex(backslash, "a")
-    
+    result = parse_regex(literal, "a")
     assert result.text == "a"
 
-
-def t2():
-    """Test parsing of literal digits."""
     result = parse_regex(literal, "1")
-    print(result)
-    assert result == "1"
+    assert result.text == "1"
 
 
-def t3():
-    """Test parsing of literal special characters that are not metacharacters."""
-    # Characters that are allowed as literals (not in the excluded set)
-    result = parse_regex(literal, "@")
+    result = parse_regex(literal, "@")    
+    assert result.text == "@"
+
+    result = parse_regex(backslash, "Z")
     print(result)
-    assert result == "@"
+    assert isinstance(result, Error)
 
 
 def test_control_escapes():

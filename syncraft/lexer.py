@@ -39,7 +39,7 @@ if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
 
 
 
-Tag = Union[str, Enum]
+Tag = str
 
 
 @dataclass
@@ -91,8 +91,8 @@ class LexerProtocol(Protocol, Generic[C]):
 
 
     @classmethod
-    def name(cls, **kwargs: Any) -> str: 
-        return repr(kwargs)
+    def name(cls, **kwargs: Any) -> str: ...
+        
 
     @classmethod
     def from_syntax(cls, syntax: Syntax[Any, Any]) -> "LexerProtocol[C]": ...
@@ -106,7 +106,17 @@ class Lexer(LexerProtocol[C], Generic[C]):
     modes: Dict[str | None, Mode[C]] 
     actions: Dict[Tag, ModeAction]
     _stack: deque[Mode[C]] = field(default_factory=deque)
-
+    @classmethod
+    def name(cls, **kwargs: Any) -> str:
+        strs = []
+        for k, v in kwargs.items():
+            if isinstance(v, FABuilder):
+                if v.tag is None and k != '_':
+                    strs.append(k)
+                else:
+                    strs.append(str(v.tag))
+        key_summary = ", ".join(strs) if strs else "token"
+        return f"token({key_summary})"
     @classmethod
     def from_syntax(cls, syntax: Syntax[Any, Any]) -> "Lexer[C]":
         raise NotImplementedError("Lexer cannot be constructed from syntax directly; use from_builders or another method")
@@ -399,7 +409,10 @@ class ExtLexer(LexerProtocol[T]):
     def tag(self, **kwargs: Any) -> frozenset[Tag]:
         return self.tkspec.tags(**kwargs)
         
-
+    @classmethod
+    def name(cls, **kwargs: Any) -> str:
+        return repr(kwargs)
+    
     @classmethod
     def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[T]":
         raise NotImplementedError("ExtLexer cannot be constructed from syntax directly; use create or another method")

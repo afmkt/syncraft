@@ -235,7 +235,10 @@ class Parser(Algebra[T, ParserState[T]]):
             lexer_class: Type[LexerProtocol] | None = None,
             **kwargs: Any) -> Algebra[T, ParserState[T]]:
         
-        
+        if isinstance(lexer_class, type) and issubclass(lexer_class, LexerProtocol):
+            token_name = lexer_class.name(**kwargs)
+        else:
+            raise SyncraftError("lexer_class must be provided and be a subclass of LexerProtocol", offender=lexer_class, expect="LexerProtocol subclass")
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               YieldChannelType, 
@@ -257,7 +260,7 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = lexeme
                             return (yield from cache.return_value(Right((token, state.advance())), state, name=str(ntag)))
                         case _:
-                            err = Error(message="Cannot match token at end of input", this=lex_run, state=state)
+                            err = Error(message=f"Cannot match token at end of input, expect {token_name}", this=lex_run, state=state)
                             return (yield from cache.return_value(Left(err), state, name='EOF'))
                 elif state.pending():
                     tmp = yield Incomplete(state)
@@ -266,7 +269,7 @@ class Parser(Algebra[T, ParserState[T]]):
                 else:
                     match lexer.match(ntag, state.current(), state.abs_index()):
                         case Left(err_msg):
-                            err = Error(message=err_msg, this=lex_run, state=state)            
+                            err = Error(message=f"{err_msg}, expect {token_name}", this=lex_run, state=state)            
                             return (yield from cache.return_value(Left(err), state, name=str(ntag)))
                         case Right(None):
                             state = state.advance()
@@ -278,11 +281,6 @@ class Parser(Algebra[T, ParserState[T]]):
                             return (yield from cache.return_value(Right((token, state.advance())), state, name=str(ntag)))
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
-        if isinstance(lexer_class, type) and issubclass(lexer_class, LexerProtocol):
-            token_name = lexer_class.name(**kwargs)
-        else:
-            key_summary = ", ".join(sorted(kwargs)) if kwargs else "token"
-            token_name = f"token({key_summary})"
 
         return cls(lex_run, _name=token_name)
 
