@@ -30,22 +30,19 @@ def test_literal_special_chars():
 def test_control_escapes():
     """Test parsing of control escape sequences."""
     test_cases = [
-        (r"\t", "\t"),
-        (r"\n", "\n"),
-        (r"\r", "\r"),
-        (r"\f", "\f"),
-        (r"\v", "\v"),
+        (r"\t", r"\t"),
+        (r"\n", r"\n"),
+        (r"\r", r"\r"),
+        (r"\f", r"\f"),
+        (r"\v", r"\v"),
     ]
 
     for pattern, expected in test_cases:
         result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        b = result.branches[0]
-        assert len(b.pieces) == 1
-        p = b.pieces[0]
-        assert isinstance(p.atom, LiteralAtom)
-        assert p.atom.text == expected
+        print(result)
+        assert result.text == expected
+        assert len(result.text) == 2
+        assert result.token_type == 'control_escape'
 
 
 def test_unicode_escapes():

@@ -58,35 +58,6 @@ TokenT = TypeVar('TokenT', bound=Hashable)
 ScalarValueT = TypeVar('ScalarValueT', bound=Hashable)
 
 
-def _normalise_tag_input(tag: Tag | Iterable[Tag]) -> frozenset[Tag]:
-    if isinstance(tag, (str, Enum)):
-        return frozenset([tag])
-    return frozenset(tag)
-
-
-def _make_static_tag(tag: Tag | Iterable[Tag] | None) -> None | Callable[..., frozenset[Tag]]:
-    if tag is None:
-        return None
-    tags = _normalise_tag_input(tag)
-
-    def _static_tag(**_kwargs: Any) -> frozenset[Tag]:
-        return tags
-
-    return _static_tag
-
-
-def _make_tag_mode_callable(mode: Literal["token_type", "text"]) -> Callable[..., frozenset[Tag]]:
-    def _tag_mode(**kwargs: Any) -> frozenset[Tag]:
-        if mode not in kwargs:
-            return frozenset()
-        value = kwargs[mode]
-        if isinstance(value, (set, frozenset)):
-            return frozenset(value)
-        if isinstance(value, re.Pattern):
-            return frozenset([value.pattern])
-        return frozenset([value])
-
-    return _tag_mode
 @dataclass(frozen=True)
 class TokenMatcher(TokenSpecSupportMixin, TokenSpec[T]):
     pred: Callable[[T], bool]
@@ -226,24 +197,21 @@ def matcher(
     *,
     pred: Callable[[TokenT], bool],
     gen: Callable[[Any, random.Random], TokenT],
-    tag: Tag | Iterable[Tag] | None = None,
-    tag_fn: None | Callable[..., frozenset[Tag]] = None,
+    tag: None | Tag | Iterable[Tag] | Callable[..., frozenset[Tag]] = None,
 ) -> TokenMatcher[TokenT]:
-    """Create a TokenMatcher with optional static or dynamic tagging."""
-    if tag is not None and tag_fn is not None:
-        raise ValueError("Specify either tag or tag_fn, not both")
-    tag_callable = tag_fn if tag_fn is not None else _make_static_tag(tag)
+    tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
     return TokenMatcher(pred=pred, gen=gen, tag=tag_callable)
 
 
 def raw(
     pred: Callable[[TokenT], bool],
     gen: Callable[[Any, random.Random], TokenT],
-    tag: Tag | Iterable[Tag] | None = None,
-    tag_fn: None | Callable[..., frozenset[Tag]] = None,
+    tag: None | Tag | Iterable[Tag] | Callable[..., frozenset[Tag]] = None,
 ) -> TokenMatcher[TokenT]:
-    """Alias for matcher() to aid fluent imports."""
-    return matcher(pred=pred, gen=gen, tag=tag, tag_fn=tag_fn)
+    return matcher(pred=pred, gen=gen, tag=tag)
+
+
+
 @overload
 def scalar(
     pattern: str | re.Pattern[str],
@@ -269,7 +237,6 @@ def scalar(
     constructor: Callable[..., ScalarValueT] | None = None,
     flags: int | None = None,
 ) -> Scalar[Any]:
-    """Build a Scalar spec from a pattern literal."""
     compiled = re.compile(pattern, flags or 0) if isinstance(pattern, str) else pattern
     if constructor is not None:
         return cast(Scalar[ScalarValueT], Scalar(constructor=constructor, pattern=compiled))
@@ -281,22 +248,9 @@ def struct(
     *,
     case_sensitive: bool = True,
     strict: bool = False,
-    tag: Tag | Iterable[Tag] | None = None,
-    tag_fn: None | Callable[..., frozenset[Tag]] = None,
-    tag_mode: Literal["token_type", "text", "none"] | None = "token_type",
+    tag: Tag | Iterable[Tag] | None | Callable[..., frozenset[Tag]] = None
 ) -> Structured[TokenT]:
-    """Convenience constructor for Structured token specs."""
-    if sum(value is not None for value in (tag, tag_fn)) > 1:
-        raise ValueError("Specify at most one of tag or tag_fn")
-    tag_callable: None | Callable[..., frozenset[Tag]]
-    if tag_fn is not None:
-        tag_callable = tag_fn
-    elif tag is not None:
-        tag_callable = _make_static_tag(tag)
-    elif tag_mode and tag_mode != "none":
-        tag_callable = _make_tag_mode_callable(cast(Literal["token_type", "text"], tag_mode))
-    else:
-        tag_callable = None
+    tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
     return Structured(
         constructor=constructor,
         case_sensitive=case_sensitive,

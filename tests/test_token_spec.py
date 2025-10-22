@@ -116,7 +116,7 @@ def test_token_matcher_explicit_tag_registration() -> None:
         and tok.token_type == "PRED"
         and tok.text == "42",
         gen=lambda _tag, _rng: Token(text="42", token_type="PRED"),
-        tag_fn=lambda **kwargs: frozenset({kwargs.get("token_type", "PRED")}),
+        tag=lambda **kwargs: frozenset({kwargs.get("token_type", "PRED")}),
     )
 
     token = Syntax.config(lexer_class=lexer_cls).token

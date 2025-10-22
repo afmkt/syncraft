@@ -216,7 +216,10 @@ name_start = unicode_letter | underscore
 # name              = name_start { name_continue } ;
 name = name_start + name_continue.many()
 # unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
-unicode_escape = (escaped_x >> hex_pair) | (escaped_u >> hex_quad) | (escaped_U >> hex_octa) | (escaped_N >> unicode_name // rbrace)
+unicode_escape = ((escaped_x + hex_pair).mark('escaped_x') | 
+                  (escaped_u + hex_quad).mark('escaped_u') | 
+                  (escaped_U + hex_octa).mark('escaped_U') | 
+                  (escaped_N + unicode_name).mark('escaped_N') // rbrace)
 # escaped_metachar  = "\\" meta_char ;
 escaped_metachar = backslash >> meta_char 
 # escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
@@ -428,6 +431,8 @@ def parse_regex(syntax: Syntax[Any, Any], pattern: str) -> Any:
     from syncraft.parser import parse_string
     result, s = parse_string(syntax, pattern)
     if s:
+        from rich import print
+        print(result)
         return result.mapped
     else:
         return result

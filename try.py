@@ -4,68 +4,23 @@ from syncraft.algebra import Error
 from syncraft.regex import (
     parse_regex, 
     literal, anchor, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
-    backslash, 
+    backslash, escaped_literal,unicode_escape,escaped_x,escaped_u,escaped_U,escaped_N,hex_pair,hex_quad,hex_octa,unicode_name,rbrace,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
 )
+from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, Any
+from syncraft.algebra import Error
+from syncraft.parser import  parse_word
+import syncraft.generator as gen
+from syncraft.syntax import Syntax
+from syncraft.lexer import CacheWithLexer, ExtLexer
+from syncraft.token import Structured
+
+
+
 from rich import print
 
-def t1():
-    """Test parsing of literal characters."""
-    # Single literal character
-    result = parse_regex(literal, "a")
-    assert result.text == "a"
 
-    result = parse_regex(literal, "1")
-    assert result.text == "1"
-
-
-    result = parse_regex(literal, "@")    
-    assert result.text == "@"
-
-    result = parse_regex(backslash, "Z")
-    assert "backslash" in result.message
-
-
-def test_control_escapes():
-    """Test parsing of control escape sequences."""
-    test_cases = [
-        (r"\t", "\t"),
-        (r"\n", "\n"),
-        (r"\r", "\r"),
-        (r"\f", "\f"),
-        (r"\v", "\v"),
-    ]
-
-    for pattern, expected in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        branch = result.branches[0]
-        assert len(branch.pieces) == 1
-        piece = branch.pieces[0]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == expected
-
-
-def test_unicode_escapes():
-    """Test parsing of unicode escape sequences."""
-    test_cases = [
-        (r"\x41", "A"),  # \x41 = 'A'
-        (r"\u0041", "A"),  # \u0041 = 'A'
-        (r"\U00000041", "A"),  # \U00000041 = 'A'
-        (r"\N{LATIN CAPITAL LETTER A}", "A"),  # Unicode name
-    ]
-
-    for pattern, expected in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        branch = result.branches[0]
-        assert len(branch.pieces) == 1
-        piece = branch.pieces[0]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == expected
 
 
 def test_escaped_metacharacters():
@@ -489,36 +444,48 @@ def test_unicode_category_escape_multiple():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+def t0():
+    literal = Syntax.literal
+    A, B, C = literal("a"), literal("b"), literal("c")
+    syntax = A // B // C
+    sql = "a b c"
+    ast, bound = parse_word(syntax, sql, cache=CacheWithLexer())
+    # print("---" * 40)
+    # print(ast)
+    generated, bound = gen.generate_with(syntax, ast)
+    # print("---" * 40)
+    # print(generated)
+    assert ast == generated
+    value, bmap = generated.bimap()
+    # print(value)
+    u, v = gen.generate_with(syntax, bmap(value))
+    assert u == generated
+
+
+
+def t1():
+    test_cases = [
+        # (r"\x41", "A"),  # \x41 = 'A'
+        (r"\u0041", "A"),  # \u0041 = 'A'
+        # (r"\U00000041", "A"),  # \U00000041 = 'A'
+        # (r"\N{LATIN CAPITAL LETTER A}", "A"),  # Unicode name
+    ]
+
+    for pattern, expected in test_cases:
+        result = parse_regex(unicode_escape, pattern)
+        print(result)
+
 if __name__ == "__main__":
     t1()
-    # test_literal_digits()
-    # test_literal_special_chars()
-    # test_control_escapes()
-    # test_unicode_escapes()
-    # test_escaped_metacharacters()
-    # test_anchors()
-    # test_shorthands()
-    # test_dot_atom()
-    # test_quantifiers()
-    # test_character_classes_simple()
-    # test_character_classes_negated()
-    # test_character_classes_with_ranges()
-    # test_character_classes_with_escaped_chars()
-    # test_character_classes_with_shorthands()
-    # test_groups_capture()
-    # test_groups_non_capture()
-    # test_groups_named()
-    # test_groups_lookahead()
-    # test_groups_negative_lookahead()
-    # test_groups_lookbehind()
-    # test_groups_negative_lookbehind()
-    # test_groups_flags_only()
-    # test_groups_flags_with_disable()
-    # test_groups_flags_scoped()
-    # test_groups_flags_scoped_with_disable()
-    # test_alternation()
-    # test_complex_regex()
-    # test_unicode_category_escape()
-    # test_unicode_category_escape_negated()
-    # test_unicode_category_escape_multiple()
-    print("All tests passed.")
+    t0()
