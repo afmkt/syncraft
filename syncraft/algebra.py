@@ -7,7 +7,6 @@ from typing import (
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
-from syncraft.lexer import CacheWithLexer
 from syncraft.constraint import Bindable
 import re
 
@@ -292,49 +291,19 @@ class Algebra(Generic[A, S]):
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
         def or_else_run(input: S, 
                         cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
-                                                                                SendChannelType, 
-                                                                                Either[Any, Tuple[Choice[A, B], S]]]:
-            def enter(input: S) -> S:
-                if hasattr(input, 'choice_depth'):
-                    sd = getattr(input, 'choice_depth')
-                    return replace(input, choice_depth=sd + 1) # type: ignore
-                else:
-                    return input
-            def leave(input: S) -> S:
-                if hasattr(input, 'choice_depth'):
-                    sd = getattr(input, 'choice_depth')
-                    if sd > 1:
-                        return replace(input, choice_depth=sd - 1) # type: ignore
-                    else:
-                        new_safe_base = getattr(input, 'base', 0) + getattr(input, 'index', 0)
-                        current_safe_base = getattr(input, 'safe_base', 0)
-                        return replace(input, choice_depth=0, safe_base=max(new_safe_base, current_safe_base)) # type: ignore
-                return input
-            inp = enter(input)
-            lexer_snapshot = None
-            cache_with_lexer: Optional[CacheWithLexer[Any, S, Either[Any, Tuple[A, S]]]] = None
-            if isinstance(cache, CacheWithLexer):
-                cache_with_lexer = cache
-                current_lexer = cache.lexer
-                if current_lexer is not None:
-                    lexer_snapshot = current_lexer.clone()
-
+                                                                                SendChannelType,                                                                                 Either[Any, Tuple[Choice[A, B], S]]]:
+            inp = input.enter()
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
-                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), leave(state)))
+                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), state.leave()))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
-                        if cache_with_lexer is not None and lexer_snapshot is not None:
-                            cache_with_lexer.lexer = lexer_snapshot
                         return Left(replace(err, committed=False))
-                    if cache_with_lexer is not None and lexer_snapshot is not None:
-                        cache_with_lexer.lexer = lexer_snapshot
-                        lexer_snapshot = None
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
-                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), leave(other_state)))
+                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state.leave()))
                         case Left(other_err):
                             return Left(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))

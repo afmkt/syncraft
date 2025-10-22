@@ -83,14 +83,13 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def varify(self, tag: frozenset[Tag], value: Any) -> bool: ...
 
-    def tag(self, **kwargs: Any) -> frozenset[Tag]: ...
 
     def gen(self, tag: Tag, rng: random.Random) -> Any: ...
 
     def candidate(self) -> Either[Any, None | LexerResult[C]]: ...
     
     @classmethod
-    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "LexerProtocol[C]": ...
+    def from_kwargs(cls, **kwargs: Any) -> "LexerProtocol[C]": ...
 
     @classmethod
     def bind(cls, *args:Any, **kwargs: Any) -> Type["LexerProtocol[C]"]: ...
@@ -103,16 +102,9 @@ class Lexer(LexerProtocol[C], Generic[C]):
     _stack: deque[Mode[C]] = field(default_factory=deque)
 
     @classmethod
-    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "Lexer[C]":
+    def from_kwargs(cls, **kwargs: Any) -> "Lexer[C]":
         raise NotImplementedError("Lexer cannot be constructed from syntax directly; use from_builders or another method")
 
-    def tag(self, **kwargs: Any) -> frozenset[Tag]:
-        tags = set()
-        for k,v in kwargs.items():
-            if isinstance(v, FABuilder):
-                if v.tag is not None:
-                    tags.add(v.tag)
-        return frozenset(tags)
 
     def _reset_runner(self, mode: Mode[C]) -> None:
         mode.runner = mode.runner.reset()
@@ -347,30 +339,27 @@ class Lexer(LexerProtocol[C], Generic[C]):
 
     @classmethod
     def bind(cls, universe: CodeUniverse[C], default_mode: str | None = None) -> Type["Lexer[C]"]:
-        def fabuilder(syntax: Syntax[Any, Any]) -> Set[FABuilder[Any]]:
-            def visitor( fspec: FactorySpec, acc: Set[FABuilder[Any]]) -> Set[FABuilder[Any]]:
-                if fspec.name in ("lex"):                    
-                    for k, v in fspec.kwargs.items():
-                        if isinstance(v, FABuilder):
-                            if v.tag is None and k != '_':
-                                acc.add(v.tagged(k))
-                            else:
-                                acc.add(v)
-                return acc
-            acc = syntax.factory_spec(visitor, set())
+        def fabuilder(**kwargs: Any) -> Set[FABuilder[Any]]:
+            acc: Set[FABuilder[Any]] = set()
+            for k, v in kwargs.items():
+                if isinstance(v, FABuilder):
+                    if v.tag is None and k != '_':
+                        acc.add(v.tagged(k))
+                    else:
+                        acc.add(v)                    
             return acc
         class BoundLexer(Lexer[Any]):
             @classmethod
-            def from_syntax(cls, syntax: Syntax[Any, Any]) -> "Lexer[C]":
-                builders = fabuilder(syntax)
-                return cls.from_builders(universe, *builders, default_mode=default_mode)
+            def from_kwargs(cls, **kwargs: Any) -> "Lexer[C]":
+                u = kwargs.pop('universe', universe)
+                d = kwargs.pop('default_mode', default_mode)
+                builders = fabuilder(**kwargs)
+                return cls.from_builders(u, *builders, default_mode=d)
         return BoundLexer
 
 
 
-@dataclass
-class CacheWithLexer(Cache[A, Ret], Generic[C, A, Ret]):
-    lexer: Optional[LexerProtocol[C]] = None
+
 
 
 T = TypeVar('T', bound=Hashable)
@@ -390,26 +379,19 @@ class ExtRule(Generic[T]):
 class ExtLexer(LexerProtocol[T]):
     tkspec: TokenSpec[T]
     rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)
-    
-    def tag(self, **kwargs: Any) -> frozenset[Tag]:
-        return self.tkspec.tags(**kwargs)
-        
+
 
     @classmethod
-    def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[T]":
+    def from_kwargs(cls, **kwargs: Any) -> "ExtLexer[T]":
         raise NotImplementedError("ExtLexer cannot be constructed from syntax directly; use create or another method")
     
     @classmethod
     def bind(cls, tkspec: TokenSpec[T]) -> Type[ExtLexer[T]]:
         class BoundLexer(ExtLexer[Any]):
             @classmethod
-            def from_syntax(cls, syntax: Syntax[Any, Any]) -> "ExtLexer[T]":
+            def from_kwargs(cls, **kwargs: Any) -> "ExtLexer[T]":
                 ret = cls(tkspec = tkspec)
-                def visitor(fspec: FactorySpec, acc: ExtLexer[T]) -> ExtLexer[T]:
-                    if fspec.name in ("token"):
-                        acc.register(**fspec.kwargs)
-                    return acc
-                ret = syntax.factory_spec(visitor, ret)
+                ret.register(**kwargs)
                 return ret
         return BoundLexer
     

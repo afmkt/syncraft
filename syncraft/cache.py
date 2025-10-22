@@ -253,34 +253,11 @@ class Cache(Generic[A, Ret]):
 
     def _call_rule(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], key: A) -> Generator[Any, Any, Ret]:
         return f(key, self)
-
-    # def _lexer_checkpoint(self) -> Tuple[Any, Any]:
-    #     owner: Any = None
-    #     snapshot: Any = None
-    #     lexer = getattr(self, "lexer", None)
-    #     clone = getattr(lexer, "clone", None)
-    #     if callable(clone):
-    #         owner = self
-    #         snapshot = clone()
-    #     return owner, snapshot
-
-    # def _lexer_restore(self, owner: Any, snapshot: Any) -> None:
-    #     if owner is not None and snapshot is not None:
-    #         setattr(owner, "lexer", snapshot)
-
+    
     def _run_rule(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], key: A) -> Generator[Any, Any, Ret]:
         result = yield from f(key, self)
         return result
-        # owner, snapshot = self._lexer_checkpoint()
-        # try:
-        #     result = yield from self._call_rule(f, key)
-        # except Exception:
-        #     self._lexer_restore(owner, snapshot)
-        #     raise
-        # if owner is not None and snapshot is not None and isinstance(result, Left):
-        #     self._lexer_restore(owner, snapshot)
-        # return result
-
+    
     def flat_cache(self)->List[Tuple[str, str, Any, Any]]:
         parts:List[Tuple[str, str, Any, Any]] = [('name', 'id', 'position', 'value')]
         if len(self.cache) > 0:

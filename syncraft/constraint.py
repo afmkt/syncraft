@@ -95,6 +95,14 @@ class Bindable:
         """Return a copy with ``node`` recorded under ``name`` in bindings."""
         return replace(self, binding=self.binding.bind(name, node))
 
+    def enter(self) -> Self:
+        """Enter a new binding scope (no-op by default)."""
+        return self
+    
+    def leave(self) -> Self:
+        """Leave the current binding scope (no-op by default)."""
+        return self
+
 
 class Quantifier(Enum):
     FORALL = "forall"

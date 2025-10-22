@@ -855,10 +855,10 @@ class Syntax(Generic[A, S]):
         return init
     
 
-class PayloadKind(Enum):
-    TEXT = 'text'
-    TOKEN = 'token'
-    BINARY = 'binary'
+# class PayloadKind(Enum):
+#     TEXT = 'text'
+#     TOKEN = 'token'
+#     BINARY = 'binary'
 
 class RunnerProtocol(Protocol, Generic[A, S]):
     def bootstrap(self, 
@@ -868,8 +868,6 @@ class RunnerProtocol(Protocol, Generic[A, S]):
                   ) -> Tuple[Algebra[A, S], Cache[S, Either[Any, Tuple[A, S]]], S]: ...
 
     def resume(self, request: Incomplete[S]) -> S: ...
-
-    def payload_kind(self) -> Optional[PayloadKind]: ...
 
     def finalize(self, result: Optional[Tuple[Any, None | S]]) -> None: 
         return

@@ -52,6 +52,16 @@ class ParserState(Bindable, Generic[T]):
     safe_base: int = 0
     choice_depth: int = 0
 
+    def enter(self) -> ParserState[T]:
+        return replace(self, choice_depth=self.choice_depth + 1)
+    
+    def leave(self) -> ParserState[T]:
+        if self.choice_depth > 1:
+            return replace(self, choice_depth=self.choice_depth - 1) 
+        else:
+            return replace(self, choice_depth=0, safe_base=max(self.base + self.index, self.safe_base)) 
+
+
     def slice(self, start: int, end: int) -> Tuple[T, ...] | str | bytes:
         start_rel = start - self.base
         end_rel = end - self.base
@@ -195,6 +205,7 @@ class Parser(Algebra[T, ParserState[T]]):
     @classmethod
     def lex(cls, 
             *,
+            lexer_class: Type[LexerProtocol] | None = None,
             name: str | None = None,
             **kwargs: Any) -> Algebra[T, ParserState[T]]:
 
@@ -203,10 +214,6 @@ class Parser(Algebra[T, ParserState[T]]):
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
-            if not isinstance(cache, CacheWithLexer):
-                raise SyncraftError("Cache must be CacheWithLexer to use lex", offender=cache, expect="CacheWithLexer")
-            if not isinstance(cache.lexer, LexerProtocol):
-                raise SyncraftError("Lexer not provided in cache.additional_kwargs", offender=cache, expect="lexer in cache.additional_kwargs")
             lexer = cache.lexer
             ntag = lexer.tag(**kwargs)
             while True:
@@ -259,14 +266,12 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
                   alg_cls: Type[Algebra[Any, ParserState[T]]],
                   cache: Optional[Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]] = None
                   ) -> Tuple[Algebra[Any, ParserState[T]], Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]], ParserState[T]]:
-        assert cache is None or isinstance(cache, CacheWithLexer), "Cache must be CacheWithLexer or None"
+        
         parser = syntax(alg_cls)
-        cache = cache or CacheWithLexer()
+        cache = cache or Cache()
         buffer, final = self.cursor.initial_buffer()
         initial_state = ParserState(input=buffer, index=0, base=0, final=final)
-        cache.lexer = self._instantiate_lexer(syntax=syntax, config=parser.config(), kind=self.input.payload_kind)
-
-        return syntax(alg_cls), cache, initial_state
+        return parser, cache, initial_state
     
     def resume(self, request: Incomplete[ParserState[T]]) -> ParserState[T]:
         state = request.state
@@ -275,130 +280,12 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
         chunk, final = self.cursor.next_chunk()
         return state.extend(chunk, final=final)
 
-    def payload_kind(self) -> Optional[PayloadKind]: 
-        return {
-            'text': PayloadKind.TEXT,
-            'bytes': PayloadKind.BINARY,
-            'tokens': PayloadKind.TOKEN,
-        }.get(self.input.payload_kind, None)
         
-
-    def _instantiate_lexer(
-            self,
-            *,
-            syntax: Syntax[Any, Any],
-            config: Mapping[str, Any],
-            kind: str,
-        ) -> LexerProtocol[Any]:
-        bound_cls = config.get("lexer_class")
-        if isinstance(bound_cls, type) and issubclass(bound_cls, LexerProtocol):
-            if kind in ("text", "bytes") and not issubclass(bound_cls, Lexer):
-                raise SyncraftError(
-                    "The lexer class for text input must be a subclass of Lexer",
-                    offender=bound_cls,
-                    expect="subclass of Lexer",
-                )
-            if kind == "token" and not issubclass(bound_cls, ExtLexer):
-                raise SyncraftError(
-                    "The lexer class for token input must be a subclass of ExtLexer",
-                    offender=bound_cls,
-                    expect="subclass of ExtLexer",
-                )
-            lexer = bound_cls.from_syntax(syntax)
-            assert isinstance(lexer, LexerProtocol)
-            return lexer
-
-        token_nodes = self._collect_token_factories(syntax)
-        if kind in ("text", "bytes"):
-            return self._build_lexer_from_syntax(kind=kind, token_nodes=token_nodes)
-        if kind == "token":
-            return self._build_extlexer_from_syntax(token_nodes=token_nodes)
-
-        raise SyncraftError(
-            f"Unsupported input payload kind '{kind}' for automatic lexer inference",
-            offender=kind,
-            expect="text, bytes, or token",
-        )
-
-    def _collect_token_factories(self, syntax: Syntax[Any, Any]) -> List[Mapping[str, Any]]:
-        def visitor(fspec: FactorySpec, acc: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
-            if fspec.name == "token":
-                acc.append(dict(fspec.kwargs))
-            return acc
-
-        return syntax.factory_spec(visitor, [])
-
-    def _build_lexer_from_syntax(
-        self,
-        *,
-        kind: str,
-        token_nodes: List[Mapping[str, Any]],
-    ) -> LexerProtocol[Any]:
-        builders: List[FABuilder[Any]] = []
-        for kwargs in token_nodes:
-            if any(isinstance(v, TokenSpec) for v in kwargs.values()):
-                raise SyncraftError(
-                    "TokenSpec detected in grammar but input stream provides characters; configure an ExtLexer explicitly",
-                    offender=kwargs,
-                    expect="text-oriented token() calls without TokenSpec",
-                )
-            text_value = kwargs.get("text")
-            if isinstance(text_value, str) and kind == "text":
-                tag = kwargs.get("token_type", text_value)
-                builders.append(FABuilder.lit(text_value).tagged(tag))
-            elif isinstance(text_value, bytes) and kind == "bytes":
-                tag = kwargs.get("token_type", text_value)
-                builders.append(FABuilder.lit(text_value).tagged(tag))
-            elif text_value is not None:
-                raise SyncraftError(
-                    "Unsupported literal type for automatic lexer inference",
-                    offender=text_value,
-                    expect="str" if kind == "text" else "bytes",
-                )
-
-        if not builders:
-            raise SyncraftError(
-                "Unable to infer a Lexer from the grammar; supply Syntax.config(lexer_class=...)",
-                offender=token_nodes,
-                expect="token() calls with text literals",
-            )
-
-        lexer = Lexer.from_builders(
-            CodeUniverse.unicode() if kind == "text" else CodeUniverse.byte(),
-            *builders,
-        )
-        assert isinstance(lexer, LexerProtocol)
-        return lexer
-
-    def _build_extlexer_from_syntax(
-        self,
-        *,
-        token_nodes: List[Mapping[str, Any]],
-    ) -> LexerProtocol[Any]:
-        base_spec: TokenSpec[Any] | None = None
-        for kwargs in token_nodes:
-            for value in kwargs.values():
-                if isinstance(value, TokenSpec):
-                    base_spec = value
-                    break
-            if base_spec is not None:
-                break
-
-        if base_spec is None:
-            base_spec = Structured(Token)
-
-        lexer = ExtLexer(tkspec=base_spec)
-        for kwargs in token_nodes:
-            lexer.register(**dict(kwargs))
-
-        assert isinstance(lexer, LexerProtocol)
-        return lexer
-
 
 def parse(syntax: Syntax[Any, Any],
           input: Input[Any],
           *,
-          cache: None | CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
+          cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, None | ParserState[T]]:
     runner = Runner(input=input)
     return runner(syntax=syntax, alg_cls=Parser, cache=cache)
@@ -408,7 +295,7 @@ def parse(syntax: Syntax[Any, Any],
 def parse_word(syntax: Syntax[Any, Any], 
                sql: str, 
                *, 
-               cache: None| CacheWithLexer[Any, Any, Any] = None
+               cache: None| Cache[Any, Any] = None
                ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     tokens: List[Token]  = [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', sql)]
     return parse_data(syntax, tokens, cache=cache)
@@ -417,7 +304,7 @@ def parse_word(syntax: Syntax[Any, Any],
 def parse_data(syntax: Syntax[Any, Any], 
           tokens: List[T],
           *,
-          cache: None|CacheWithLexer[Any, ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
+          cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     input : Input[T] = Input.from_data(tokens)
     v, s = parse(syntax, input, cache=cache)
@@ -430,7 +317,7 @@ def parse_data(syntax: Syntax[Any, Any],
 def parse_string(syntax: Syntax[Any, Any],
                  pattern: str,
                  *,
-                 cache: None|CacheWithLexer[Any, ParserState[str], Either[Any, Tuple[Any, ParserState[str]]]] = None
+                 cache: None | Cache[ParserState[str], Either[Any, Tuple[Any, ParserState[str]]]] = None
                  ) -> Tuple[Any, None | ParserState[str]]:
     input : Input[str] = Input.from_data(pattern)
     return parse(syntax, input, cache=cache)
@@ -438,7 +325,7 @@ def parse_string(syntax: Syntax[Any, Any],
 def parse_bytes(syntax: Syntax[Any, Any],
                 pattern: bytes,
                 *,
-                cache: None|CacheWithLexer[Any, ParserState[bytes], Either[Any, Tuple[Any, ParserState[bytes]]]] = None
+                cache: None | Cache[ParserState[bytes], Either[Any, Tuple[Any, ParserState[bytes]]]] = None
                 ) -> Tuple[Any, None | ParserState[bytes]]:
     input : Input[bytes] = Input.from_data(pattern)
     return parse(syntax, input, cache=cache)
@@ -447,7 +334,7 @@ def parse_file(syntax: Syntax[Any, Any],
                filepath: str | Path,
                *,
                mode: Literal['text', 'binary'] = 'text', 
-               cache: None|CacheWithLexer[Any, ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
+               cache: None | Cache[ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
                ) -> Tuple[Any, None | ParserState[str | bytes]]:
     if mode == 'text':        
         input : Input[str] = Input.from_path(filepath, mode=mode)
@@ -460,7 +347,7 @@ def parse_stream(syntax: Syntax[Any, Any],
                  stream: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
                  *,
                  mode: Literal['text', 'binary'] = 'text', 
-                 cache: None|CacheWithLexer[Any, ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
+                 cache: None | Cache[ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
                  ) -> Tuple[Any, None | ParserState[str | bytes]]:
     input : Input[str | bytes] = Input.from_stream(stream, mode=mode) # type: ignore
     return parse(syntax, input, cache=cache)
