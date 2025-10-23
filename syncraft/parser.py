@@ -213,7 +213,7 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = Token(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name or str(ntags)))
+                            return (yield from cache.return_value(Right((token, state.advance())), state, name=str(ntags)))
                         case _:
                             err = Error(message=f"Cannot match token at end of input, expect {ntags}", this=lex_run, state=state)
                             return (yield from cache.return_value(Left(err), state, name='EOF'))
