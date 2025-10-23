@@ -52,8 +52,10 @@ class Mode(Generic[C]):
     non_greedy: frozenset[Tag] = field(default_factory=frozenset)
     start_index: Optional[int] = None
 
-    def reset(self) -> Mode[C]:
-        return replace(self, runner=self.runner.reset(), start_index=None)
+    def reset(self) -> None:
+        self.runner = self.runner.reset()
+        self.start_index = None
+        
     
     def select_tag(self, tags: frozenset[Tag]) -> Optional[Tag]:
         if not tags:
@@ -78,7 +80,7 @@ class LexerResult(Generic[C]):
 
 @runtime_checkable
 class LexerProtocol(Protocol, Generic[C]):
-    def clone(self) -> "LexerProtocol[C]": ...
+    def reset(self) -> None: ...
 
     def match(self, tag: frozenset[Tag | None], char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
 
@@ -130,26 +132,20 @@ class LexerBase(LexerProtocol[C]):
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: 
-        lexer_class = kwargs.pop("lexer_class", None)
-        if lexer_class is not None:
-            c = CallWith(lexer_class.create, **kwargs)
+        kwargs = cls.normalise_kwargs(kwargs)
+        for sub in all_subclasses(cls):
+            c = CallWith(sub.create, **kwargs)
             if c.missing_args or c.missing_kwargs:
-                return None
+                continue
             return c()
-        else:
-            kwargs = cls.normalise_kwargs(kwargs)
-            for sub in all_subclasses(cls):
-                c = CallWith(sub.create, **kwargs)
-                if c.missing_args or c.missing_kwargs:
-                    continue
-                return c()
         return None
 
 @dataclass
 class Lexer(LexerBase[C]):
     universe: CodeUniverse[C]
-    modes: Dict[str | None, Mode[C]] 
+    modes: Dict[str | None, Mode[C]]     
     actions: Dict[Tag | None, ModeAction]
+    default_mode: str | None 
     _stack: deque[Mode[C]] = field(default_factory=deque)
 
     def tags(self) -> frozenset[str|None]:
@@ -179,37 +175,12 @@ class Lexer(LexerBase[C]):
         d = kwargs.pop('default_mode', None)
         builders = fabuilder(**kwargs)
         return cls.from_builders(u, *builders, default_mode=d)
-        
-
-    def _reset_runner(self, mode: Mode[C]) -> None:
-        mode.runner = mode.runner.reset()
-        mode.start_index = None
-    
-    def clone(self) -> "Lexer[C]":
-        """Return a deep-ish copy preserving runner state for backtracking."""
-        mode_copies: Dict[str | None, Mode[C]] = {}
-        for name, mode in self.modes.items():
-            mode_copies[name] = replace(
-                mode,
-                runner=mode.runner,
-                priority=dict(mode.priority),
-                skip=frozenset(mode.skip),
-                non_greedy=frozenset(mode.non_greedy),
-                start_index=mode.start_index,
-            )
-
-        cloned = Lexer(
-            universe=self.universe,
-            modes=mode_copies,
-            actions=dict(self.actions),
-            _stack=deque(),
-        )
-
-        mode_lookup = {id(mode): name for name, mode in self.modes.items()}
-        cloned._stack = deque(
-            mode_copies[mode_lookup[id(mode)]] for mode in self._stack
-        )
-        return cloned
+            
+    def reset(self) -> None:
+        for m in self.modes.values():
+            m.reset()
+        for m in self._stack:
+            m.reset()
     
     @property
     def current_mode(self) -> Mode[C]:
@@ -235,7 +206,7 @@ class Lexer(LexerBase[C]):
         if current is target_mode:
             return target_mode
         self._stack.append(target_mode)
-        self._reset_runner(target_mode)
+        target_mode.reset()
         return target_mode
             
 
@@ -310,7 +281,7 @@ class Lexer(LexerBase[C]):
         for mname, mode_rules in modes.items():
             lexer_modes[mname] = cls.one_mode(universe, *mode_rules)
 
-        lexer = cls(universe=universe, modes=lexer_modes, actions=actions)
+        lexer = cls(universe=universe, modes=lexer_modes, actions=actions, default_mode=default_mode)
         lexer.push_mode(default_mode)
         return lexer
 
@@ -388,7 +359,7 @@ class Lexer(LexerBase[C]):
             accepted_pos, accepted_tags = rr.accepted
             tag = mode.select_tag(accepted_tags)
             if tag is None:
-                self._reset_runner(mode)
+                mode.reset()
                 return Right(None)
             act = self.actions.get(tag)
             if act is not None:
@@ -488,6 +459,9 @@ class ExtRule(Generic[T]):
 class ExtLexer(LexerBase[T]):
     tkspec: TokenSpec[T]
     rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)
+
+    def reset(self) -> None:
+        pass
 
     def tags(self) -> frozenset[str|None]:
         return frozenset(self.rules.keys())

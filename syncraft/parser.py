@@ -204,7 +204,7 @@ class Parser(Algebra[T, ParserState[T]]):
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
-
+            lexer.reset()
             while True:
                 if state.ended():
                     match lexer.candidate():

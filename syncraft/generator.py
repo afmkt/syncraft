@@ -395,7 +395,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
-
+            lexer.reset()
             if input.pruned:
                 tag = input.rng("lex_tag").choice(tuple(ntags))
                 input = input.fork(tag=tag)
