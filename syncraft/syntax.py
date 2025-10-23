@@ -689,22 +689,11 @@ class Syntax(Generic[A, S]):
     @classmethod
     def lex(cls, **kwargs: FABuilder) -> Syntax[Any, Any]:
         return cls.factory('lex', **kwargs)
-
-
-
+    
     @classmethod
     def literal(cls, lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
         return cls.token(text=lit, case_sensitive=True)
-
-    @classmethod
-    def lift(cls, value: Any)-> Syntax[Any, Any]:
-        if isinstance(value, str):
-            return cls.literal(value)
-        elif isinstance(value, Enum):
-            return cls.token(token_type=value)
-        else:
-            return cls.success(value)
-
+    
 
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax[Any, Any]:

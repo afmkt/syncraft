@@ -27,7 +27,7 @@ def _build_scalar_literal_lexer() -> ExtLexer[Any]:
 def test_scalar_literal_supports_distinct_tags() -> None:
     lexer = _build_scalar_literal_lexer()
 
-    foo_tags = lexer.tag(text="foo")
+    foo_tags = lexer.tags()
     assert foo_tags == frozenset({r"[A-Za-z]+"})
 
     foo_result = lexer.match(foo_tags, "foo", 0)
@@ -62,7 +62,7 @@ def test_scalar_explicit_token_spec_enforces_config() -> None:
     lexer = cast(ExtLexer[Any], lexer_cls.from_kwargs(token_type="IDENT", text=re.compile(r"[A-Z]+"), IDENT=scalar_spec))
     assert isinstance(lexer, ExtLexer)
 
-    tags = lexer.tag(token_type="IDENT", text=re.compile(r"[A-Z]+"), IDENT=scalar_spec)
+    tags = lexer.tags()
     assert tags == frozenset({"IDENT"})
 
     ok = lexer.match(tags, "FOO", 0)
@@ -94,7 +94,7 @@ def _token_matcher_literal_lexer() -> ExtLexer[Token]:
 def test_token_matcher_literal_matches_expected_token() -> None:
     lexer = _token_matcher_literal_lexer()
 
-    tags = lexer.tag(text="ping")
+    tags = lexer.tags()
     assert tags == frozenset({"ping"})
 
     ok = lexer.match(tags, Token(text="ping"), 0)
@@ -119,12 +119,12 @@ def test_token_matcher_explicit_tag_registration() -> None:
         tag=lambda **kwargs: frozenset({kwargs.get("token_type", "PRED")}),
     )
 
-    token = Syntax.config(lexer_class=lexer_cls).token
+    token = Syntax.config(tkspec=struct(Token)).token
     syntax = token(token_type="PRED", PRED=matcher_spec)
     lexer = lexer_cls.from_kwargs(token_type="PRED", PRED=matcher_spec)
     assert isinstance(lexer, ExtLexer)
 
-    tags = lexer.tag(token_type="PRED", PRED=matcher_spec)
+    tags = lexer.tags()
     assert tags == frozenset({"PRED"})
 
     ok = lexer.match(tags, Token(text="42", token_type="PRED"), 0)

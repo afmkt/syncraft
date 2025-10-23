@@ -93,10 +93,13 @@ class LexerProtocol(Protocol, Generic[C]):
     def candidate(self) -> Either[Any, None | LexerResult[C]]: ...
     
     @classmethod
-    def create(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
+    def create(cls, *args: Any, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
 
+    @classmethod
+    def bind(cls, *args: Any, **kwargs: Any) -> Type["LexerProtocol[Any]"]:...
 
-
+    @classmethod
+    def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
 class LexerBase(LexerProtocol[C]):
 
 
@@ -159,7 +162,11 @@ class Lexer(LexerBase[C]):
         return frozenset(all_tags)
 
     @classmethod
-    def create(cls, **kwargs: Any) -> Optional["Lexer[C]"]:
+    def create(cls, 
+               *, 
+               universe: CodeUniverse, 
+               default_mode:str|None=None,
+               **kwargs: Any) -> Optional["Lexer[C]"]:
         def fabuilder(**kwargs: Any) -> Set[FABuilder[Any]]:
             acc: Set[FABuilder[Any]] = set()
             for k, v in kwargs.items():
@@ -169,13 +176,19 @@ class Lexer(LexerBase[C]):
                     else:
                         acc.add(v)                    
             return acc
-        u = kwargs.pop('universe', None)
-        if not isinstance(u, CodeUniverse):
-            return None
-        d = kwargs.pop('default_mode', None)
+        
         builders = fabuilder(**kwargs)
-        return cls.from_builders(u, *builders, default_mode=d)
+        return cls.from_builders(universe, *builders, default_mode=default_mode)
             
+    @classmethod
+    def bind(cls,*, universe: CodeUniverse[C], default_mode:str|None=None) -> Type["Lexer[Any]"]:
+        class BoundLexer(Lexer[Any]):
+            @classmethod
+            def from_kwargs(cls, **kwargs: Any) -> Optional["Lexer[C]"]:
+                return Lexer.create(universe=universe, default_mode=default_mode, **kwargs)
+        return BoundLexer
+
+
     def reset(self) -> None:
         for m in self.modes.values():
             m.reset()
@@ -248,6 +261,8 @@ class Lexer(LexerBase[C]):
                       universe: CodeUniverse[Any], 
                       *rules: FABuilder[C],
                       default_mode: str | None = None) -> "Lexer[C]":
+        if len(rules) == 0:
+            raise SyncraftError("Cannot build a Lexer with no rules", offender=rules, expect="at least one rule")
         modes: Dict[str | None, Set[FABuilder[C]]] = defaultdict(set)
         actions: Dict[Tag | None, ModeAction] = {}
         for rule in rules:
@@ -467,14 +482,22 @@ class ExtLexer(LexerBase[T]):
         return frozenset(self.rules.keys())
 
     @classmethod
-    def create(cls, **kwargs: Any) -> Optional["ExtLexer[T]"]:
-        tkspec = kwargs.pop("tkspec", None)
-        if not isinstance(tkspec, TokenSpec):
-            return None
+    def create(cls, 
+               *, 
+               tkspec: TokenSpec[T], 
+               **kwargs: Any) -> Optional["ExtLexer[T]"]:
         ret = cls(tkspec = tkspec)
         ret.register(**kwargs)
         return ret
     
+    @classmethod
+    def bind(cls,*, tkspec: TokenSpec[T]) -> Type["ExtLexer[Any]"]:
+        class BoundLexer(ExtLexer[Any]):
+            @classmethod
+            def from_kwargs(cls, **kwargs: Any) -> Optional["ExtLexer[T]"]:
+                return ExtLexer.create(tkspec=tkspec, **kwargs)
+        return BoundLexer
+
     
     def clone(self) -> "ExtLexer[T]":
         return replace(self, rules=dict(self.rules))
@@ -483,7 +506,7 @@ class ExtLexer(LexerBase[T]):
         self,
         **kwargs: Any,
     ) -> None:
-        # from rich import print
+
         def register_one(tag: Tag | None, spec: TokenSpec, **kwargs: Any) -> None:
             existing = self.rules.get(tag)
             if existing is None:
@@ -499,7 +522,7 @@ class ExtLexer(LexerBase[T]):
         elif non_specs:
             for t in self.tkspec.tags(**non_specs):
                 register_one(t, self.tkspec, **non_specs)
-        # print(self.rules)
+        
 
     def candidate(self) -> Either[Any, None | LexerResult[T]]:
         return Left("External lexer cannot provide candidates")

@@ -55,13 +55,9 @@ def test_compile_to_nfa():
 
 def test_literal_values_detect_text_universe() -> None:
     builder: FABuilder[str] = FABuilder.lit("hi") + FABuilder.lit("bye")
-    literals = builder.literal_values()
-    assert literals == ("hi", "bye")
-    assert builder.infer_literal_kind() == "text"
+    assert builder.payload_kind == "text"
 
 
 def test_literal_values_detect_bytes_universe() -> None:
     builder: FABuilder[bytes] = FABuilder.lit(b"x") | FABuilder.lit(b"y")
-    literals = builder.literal_values()
-    assert literals == (b"x", b"y")
-    assert builder.infer_literal_kind() == "bytes"
+    assert builder.payload_kind == "bytes"

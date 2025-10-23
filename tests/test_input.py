@@ -65,7 +65,7 @@ def test_async_iterator_input_reads_and_marks_eof() -> None:
             for item in (1, 2, 3):
                 yield item
 
-        stream: AsyncIteratorInput[int] = AsyncIteratorInput(agen())
+        stream: AsyncIteratorInput[int] = AsyncIteratorInput(agen(), payload_kind='token')
 
         first = await stream.aread(2)
         assert first == (1, 2)

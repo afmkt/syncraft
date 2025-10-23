@@ -85,7 +85,7 @@ def _flatten_token_text(node: object) -> List[str]:
 
 
 def test_spec_can_drive_left_recursion_elimination() -> None:
-    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
+    TestSyntax = Syntax.config(tkspec=Structured(Token))
     literal = TestSyntax.literal
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]
@@ -111,7 +111,7 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     suffix_choice = suffix_nodes[0] if len(suffix_nodes) == 1 else TestSyntax.choice(*suffix_nodes)
 
     transformed = base_syntax + suffix_choice.many().optional()
-    from syncraft.lexer import Cache
+    from syncraft.cache import Cache
 
     original_ast, _ = parse_word(Expr, "n + n + n", cache=Cache())
     transformed_ast, _ = parse_word(transformed, "n + n + n", cache=Cache())
@@ -122,7 +122,7 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
 
 
 def test_walk_handles_recursive_grammar() -> None:
-    TestSyntax = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
+    TestSyntax = Syntax.config(tkspec=Structured(Token))
     literal = TestSyntax.literal
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]

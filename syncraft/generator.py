@@ -388,7 +388,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         if lexer_class is None:
             lexer:LexerProtocol[Any] | None = LexerBase.from_kwargs(**kwargs)
         else:
-            lexer = lexer_class.create(**kwargs)            
+            lexer = lexer_class.from_kwargs(**kwargs)            
         
         if lexer is None:
             raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")

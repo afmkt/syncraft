@@ -1,35 +1,32 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, Any
-from syncraft.algebra import Error
-from syncraft.parser import  parse_word
-import syncraft.generator as gen
+from typing import Type
+
+from syncraft.ast import Token
+from syncraft.charset import CodeUniverse
+from syncraft.fa import FABuilder
+from syncraft.input import Input
+from syncraft.lexer import ExtLexer, Lexer
+from syncraft.parser import parse as parser_run, parse_data
 from syncraft.syntax import Syntax
-from syncraft.cache import Cache
+from syncraft.token import Structured, TokenMatcher, matcher, struct
+from rich import print
 
 
+def test_parse_token_input_without_config_infers_extlexer() -> None:
+    matcher_spec: TokenMatcher[Token] = matcher(
+        pred=lambda tok: isinstance(tok, Token) and tok.token_type == "PING",
+        gen=lambda _tag, _rng: Token(text="ping", token_type="PING"),
+    )
+    syntax = Syntax.token(PING=matcher_spec)
 
-literal = Syntax.literal
-
-def from_string(string: str) -> Token:
-    return Token(text=string)
-
-def test1_simple_then() -> None:
-    A, B, C = literal("a"), literal("b"), literal("c")
-    syntax = A // B // C
-    sql = "a b c"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
-    # print("---" * 40)
-    # print(ast)
-    # generated, bound = gen.generate_with(syntax, ast)
-    # print("---" * 40)
-    # print(generated)
-    # assert ast == generated
-    # value, bmap = generated.bimap()
-    # print(value)
-    # u, v = gen.generate_with(syntax, bmap(value))
-    # assert u == generated
+    tokens: list[Token] = [Token(text="ping", token_type="PING")]
+    value, bound = parse_data(syntax=syntax, tokens=tokens)
+    print(value)
+    assert isinstance(value, Token)
+    assert value.token_type == "PING"
+    assert bound is not None
 
 
 if __name__ == "__main__":
-    test1_simple_then()
+    test_parse_token_input_without_config_infers_extlexer()

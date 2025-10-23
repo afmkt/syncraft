@@ -57,7 +57,7 @@ class Scalar(TokenSpecBase[T]):
     def create(cls,
                 *,
                 pattern: str | re.Pattern[str],
-
+                
                 constructor: Callable[..., T] = str, # type: ignore
                 flags: int | None = None) -> Scalar[T]:
         compiled = re.compile(pattern, flags or 0) if isinstance(pattern, str) else pattern
@@ -101,7 +101,7 @@ class Structured(TokenSpecBase[T]):
     @classmethod
     def create(cls, 
                *,
-               constructor: Callable[..., T] = Token,
+               constructor: Callable[..., T] = Token, # type: ignore
                case_sensitive: bool = True,
                strict: bool = False,
                tag: Tag | Iterable[Tag] | None | Callable[..., frozenset[Tag]] = None) -> Structured[T]:
@@ -206,7 +206,7 @@ def scalar(
     constructor: Callable[..., ScalarValueT] = str, # type: ignore
     flags: int | None = None,
 ) -> Scalar[ScalarValueT]:
-    return Scalar.create(pattern, constructor=constructor, flags=flags)
+    return Scalar.create(pattern=pattern, constructor=constructor, flags=flags)
 
 
 def struct(

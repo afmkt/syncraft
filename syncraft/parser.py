@@ -198,7 +198,7 @@ class Parser(Algebra[T, ParserState[T]]):
         if lexer_class is None:
             lexer:LexerProtocol[Any] | None = LexerBase.from_kwargs(**kwargs)
         else:
-            lexer = lexer_class.create(**kwargs)            
+            lexer = lexer_class.from_kwargs(**kwargs)            
         if lexer is None:
             raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
         ntags = lexer.tags()
@@ -279,7 +279,7 @@ def parse(syntax: Syntax[Any, Any],
           input: Input[Any],
           *,
           cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
-          ) -> Tuple[Any, None | ParserState[T]]:
+          ) -> Tuple[Any, Any]:
     runner = Runner(input=input)
     return runner(syntax=syntax, alg_cls=Parser, cache=cache)
 

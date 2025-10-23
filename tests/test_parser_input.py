@@ -15,10 +15,9 @@ from syncraft.token import Structured, TokenMatcher, matcher, struct
 def test_parse_text_input_without_config_infers_lexer() -> None:
     syntax = Syntax.literal("hi")
 
-    value, state = parser_run(syntax=syntax, input=Input.from_data("hi"))
+    value, state = parser_run(syntax=syntax, input=Input.from_data(["hi"]))
 
-    assert isinstance(value, Token)
-    assert value.text == "hi"
+    assert value == "hi"
     assert state is not None
     assert state.ended()
 
@@ -26,10 +25,9 @@ def test_parse_text_input_without_config_infers_lexer() -> None:
 def test_parse_bytes_input_without_config_infers_lexer() -> None:
     syntax = Syntax.token(text=b"\x01")
 
-    value, state = parser_run(syntax=syntax, input=Input.from_data(b"\x01"))
-
-    assert isinstance(value, Token)
-    assert value.text == b"\x01"
+    value, state = parser_run(syntax=syntax, input=Input.from_data([b"\x01"]))
+    
+    assert value == b"\x01"
     assert state is not None
     assert state.ended()
 
@@ -37,10 +35,9 @@ def test_parse_bytes_input_without_config_infers_lexer() -> None:
 def test_parse_token_input_without_config_infers_extlexer() -> None:
     matcher_spec: TokenMatcher[Token] = matcher(
         pred=lambda tok: isinstance(tok, Token) and tok.token_type == "PING",
-        gen=lambda _tag, _rng: Token(text="ping", token_type="PING"),
-        tag="PING",
+        gen=lambda _tag, _rng: Token(text="ping", token_type="PING")
     )
-    syntax = Syntax.token(token_type="PING", PING=matcher_spec)
+    syntax = Syntax.token(PING=matcher_spec)
 
     tokens: list[Token] = [Token(text="ping", token_type="PING")]
     value, bound = parse_data(syntax=syntax, tokens=tokens)
@@ -48,6 +45,8 @@ def test_parse_token_input_without_config_infers_extlexer() -> None:
     assert isinstance(value, Token)
     assert value.token_type == "PING"
     assert bound is not None
+
+
 def test_run_with_input_stream_handles_incomplete() -> None:
     literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
     syntax = literal("if").many()
@@ -86,9 +85,9 @@ def test_parse_list_accepts_token_spec_from_token_call() -> None:
 
 def test_parse_string_input_with_lexer_bind() -> None:
     universe: CodeUniverse[str] = CodeUniverse.ascii()
-    lexer_cls: Type[Lexer[str]] = Lexer.bind(universe)
+    lexer_cls: Type[Lexer[str]] = Lexer.bind(universe=universe)
     syntax_cls = Syntax.config(lexer_class=lexer_cls)
-    word = syntax_cls.factory("lex", WORD=FABuilder.lit("hi").tagged("WORD"))
+    word = syntax_cls.lex(WORD=FABuilder.lit("hi").tagged("WORD"))
 
     value, state = parser_run(syntax=word, input=Input.from_data("hi"))
 
@@ -100,10 +99,8 @@ def test_parse_string_input_with_lexer_bind() -> None:
 
 
 def test_parse_bytes_input_with_lexer_bind() -> None:
-    universe: CodeUniverse[bytes] = CodeUniverse.byte()
-    lexer_cls: Type[Lexer[bytes]] = Lexer.bind(universe)
-    syntax_cls = Syntax.config(lexer_class=lexer_cls)
-    byte_token = syntax_cls.factory("lex", BYTE=FABuilder.lit(b"\x01").tagged("BYTE"))
+    syntax_cls = Syntax.config(universe=CodeUniverse.byte())
+    byte_token = syntax_cls.lex(BYTE=FABuilder.lit(b"\x01").tagged("BYTE"))
 
     value, state = parser_run(syntax=byte_token, input=Input.from_data(b"\x01"))
 

@@ -1,14 +1,11 @@
 from __future__ import annotations
 from typing import Any
 from syncraft.parser import parse_word
-from syncraft.constraint import forall, exists
+from syncraft.constraint import forall
 from syncraft.syntax import Syntax
 import syncraft.generator as gen
 from dataclasses import dataclass
-from syncraft.lexer import ExtLexer
-from syncraft.ast import Token
-from syncraft.token import Structured
-# literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
+
 literal = Syntax.literal
 
 def test_to() -> None:
@@ -45,7 +42,7 @@ def test_to() -> None:
             + ifthenelse.mark('body').bind()
             // ~END).to(While)
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
-    from syncraft.lexer import Cache
+    from syncraft.cache import Cache
 
     ast, bound = parse_word(syntax, sql, cache=Cache())
     def p(condition, then, otherwise)->bool:
