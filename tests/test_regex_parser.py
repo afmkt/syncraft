@@ -388,14 +388,14 @@ def test_groups_flags_scoped_with_disable():
     result = parse_regex(literal, "(?im-s:abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.FLAGS_SCOPED
-    assert piece.atom.inline_flags == ("i", "m")
-    assert piece.atom.disabled_flags == ("s",)
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.FLAGS_SCOPED
+    assert p.atom.inline_flags == ("i", "m")
+    assert p.atom.disabled_flags == ("s",)
+    assert isinstance(p.atom.pattern, Regex)
 
 
 def test_alternation():
@@ -408,25 +408,25 @@ def test_alternation():
     branch1 = result.branches[0]
     assert len(branch1.pieces) == 3
     for i, char in enumerate("abc"):
-        piece = branch1.pieces[i]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == char
+        p = branch1.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
 
     # Check second branch
     branch2 = result.branches[1]
     assert len(branch2.pieces) == 3
     for i, char in enumerate("def"):
-        piece = branch2.pieces[i]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == char
+        p = branch2.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
 
     # Check third branch
     branch3 = result.branches[2]
     assert len(branch3.pieces) == 3
     for i, char in enumerate("ghi"):
-        piece = branch3.pieces[i]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == char
+        p = branch3.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
 
 
 def test_complex_regex():
@@ -435,15 +435,15 @@ def test_complex_regex():
     result = parse_regex(literal, pattern)
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
+    b = result.branches[0]
     # Should have: ^ ( \w+ ) \s+ ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) $
-    assert len(branch.pieces) == 11
+    assert len(b.pieces) == 11
 
     # Check anchors
-    assert isinstance(branch.pieces[0].atom, AnchorAtom)
-    assert branch.pieces[0].atom.kind == AnchorKind.LINE_START
-    assert isinstance(branch.pieces[-1].atom, AnchorAtom)
-    assert branch.pieces[-1].atom.kind == AnchorKind.LINE_END
+    assert isinstance(b.pieces[0].atom, AnchorAtom)
+    assert b.pieces[0].atom.kind == AnchorKind.LINE_START
+    assert isinstance(b.pieces[-1].atom, AnchorAtom)
+    assert b.pieces[-1].atom.kind == AnchorKind.LINE_END
 
 
 def test_unicode_category_escape():
@@ -451,12 +451,12 @@ def test_unicode_category_escape():
     result = parse_regex(literal, r"\p{L}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, UnicodeCategoryAtom)
-    assert not piece.atom.negated
-    assert piece.atom.categories == ("L",)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, UnicodeCategoryAtom)
+    assert not p.atom.negated
+    assert p.atom.categories == ("L",)
 
 
 def test_unicode_category_escape_negated():
@@ -464,12 +464,12 @@ def test_unicode_category_escape_negated():
     result = parse_regex(literal, r"\P{L}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, UnicodeCategoryAtom)
-    assert piece.atom.negated
-    assert piece.atom.categories == ("L",)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, UnicodeCategoryAtom)
+    assert p.atom.negated
+    assert p.atom.categories == ("L",)
 
 
 def test_unicode_category_escape_multiple():
@@ -477,9 +477,9 @@ def test_unicode_category_escape_multiple():
     result = parse_regex(literal, r"\p{LuLl}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, UnicodeCategoryAtom)
-    assert not piece.atom.negated
-    assert piece.atom.categories == ("Lu", "Ll")
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, UnicodeCategoryAtom)
+    assert not p.atom.negated
+    assert p.atom.categories == ("Lu", "Ll")

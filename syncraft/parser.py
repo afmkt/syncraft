@@ -276,30 +276,30 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
         
 
 def parse(syntax: Syntax[Any, Any],
-          input: Input[Any],
+          data: Input[Any],
           *,
           cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, Any]:
-    runner = Runner(input=input)
+    runner = Runner(input=data)
     return runner(syntax=syntax, alg_cls=Parser, cache=cache)
 
 
 
 def parse_word(syntax: Syntax[Any, Any], 
-               sql: str, 
+               data: str, 
                *, 
                cache: None| Cache[Any, Any] = None
                ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    tokens: List[Token]  = [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', sql)]
+    tokens: List[Token]  = [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens, cache=cache)
 
     
 def parse_data(syntax: Syntax[Any, Any], 
-          tokens: List[T],
+          data: List[T],
           *,
           cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    input : Input[T] = Input.from_data(tokens)
+    input : Input[T] = Input.from_data(data)
     v, s = parse(syntax, input, cache=cache)
     if s is not None:
         return v, s.binding.bound()
@@ -308,19 +308,19 @@ def parse_data(syntax: Syntax[Any, Any],
 
 
 def parse_string(syntax: Syntax[Any, Any],
-                 pattern: str,
+                 data: str,
                  *,
                  cache: None | Cache[ParserState[str], Either[Any, Tuple[Any, ParserState[str]]]] = None
                  ) -> Tuple[Any, None | ParserState[str]]:
-    input : Input[str] = Input.from_data(pattern)
+    input : Input[str] = Input.from_data(data)
     return parse(syntax, input, cache=cache)
 
 def parse_bytes(syntax: Syntax[Any, Any],
-                pattern: bytes,
+                data: bytes,
                 *,
                 cache: None | Cache[ParserState[bytes], Either[Any, Tuple[Any, ParserState[bytes]]]] = None
                 ) -> Tuple[Any, None | ParserState[bytes]]:
-    input : Input[bytes] = Input.from_data(pattern)
+    input : Input[bytes] = Input.from_data(data)
     return parse(syntax, input, cache=cache)
 
 def parse_file(syntax: Syntax[Any, Any],

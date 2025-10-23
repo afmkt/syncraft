@@ -8,7 +8,7 @@ def test_syntax_run_returns_error_on_incomplete() -> None:
     literal = Syntax.literal
     syntax = literal("if")
     from syncraft.cache import Cache
-    value, next_state = parse_data(syntax=syntax, tokens=[], cache=Cache())
+    value, next_state = parse_data(syntax=syntax, data=[], cache=Cache())
 
     assert isinstance(value, Error)
     assert next_state is None

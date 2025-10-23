@@ -1061,7 +1061,7 @@ class DFARunner(Runner[C, DFA[C]]):
 
     @classmethod
     def create(cls, dfa: DFA[C], *, non_greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
-        return cls(current=dfa.init, fa=dfa, non_greedy=non_greedy or frozenset())
+        return cls(current=dfa.init, fa=dfa, non_greedy=non_greedy if non_greedy is not None else frozenset())
 
     def start(self) -> RunnerResult[C, DFA[C]]:
         start_state = self.current
@@ -1349,7 +1349,7 @@ class FABuilder(Generic[C]):
               skip: bool = False, 
               priority: int = 0,
               non_greedy: bool = False,
-              action: Optional[ModeAction] = None) -> FABuilder[C]:
+              action: Optional[ModeAction] = None) -> FABuilder[Any]:
         return cls(kind=_NodeKind.RANGE, 
                    intervals=((start, end),), 
                    tag=tag, 
