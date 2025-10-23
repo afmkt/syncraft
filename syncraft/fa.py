@@ -10,6 +10,7 @@ from functools import cached_property
 from syncraft.algebra import (
     SyncraftError
 )
+from syncraft.input import PayloadKind
 from collections import deque
 from syncraft.constraint import  FrozenDict
 from syncraft.charset import CharSet, CodeUniverse, MixedUniverseError, CodepointError
@@ -50,10 +51,10 @@ class FAState:
 class ReverseDFA(Generic[C]):
     universe: CodeUniverse
     final: FAState
-    accept: FrozenDict[Tag, frozenset[FAState]] = field(default_factory=FrozenDict)    
+    accept: FrozenDict[Tag|None, frozenset[FAState]] = field(default_factory=FrozenDict)    
     transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
 
-    def gen(self, tag: Tag, rnd: random.Random) -> str | bytes | Tuple[C, ...]:
+    def gen(self, tag: Tag | None, rnd: random.Random) -> str | bytes | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
         if not current_states:
             raise SyncraftError(f"Tag '{tag}' not accepted by this DFA", offender=tag, expect=f"one of {list(self.accept.keys())}")
@@ -1252,33 +1253,25 @@ class FABuilder(Generic[C]):
         for child in self.children:
             yield from child.walk()
 
-    def literal_values(self) -> Tuple[str | bytes, ...]:
-        values: List[str | bytes] = []
-
+    @property
+    def payload_kind(self) -> Optional[PayloadKind]:    
         for node in self.walk():
-            payload = node._literal_payload()
-            if payload is not None:
-                values.append(payload)
-
-        return tuple(values)
-
-    def infer_literal_kind(self) -> Optional[str]:
-        kind: Optional[str] = None
-        for value in self.literal_values():
-            value_kind = "text" if isinstance(value, str) else "bytes"
-            if kind is None:
-                kind = value_kind
-            elif kind != value_kind:
-                raise SyncraftError(
-                    "Mixed literal types detected within FABuilder",
-                    offender=value,
-                    expect="consistent str or bytes literals",
-                )
-        return kind
-
-    def _literal_payload(self) -> str | bytes | None:
-        if self.kind == _NodeKind.LITERAL and isinstance(self.text, (str, bytes)):
-            return self.text
+            if node.kind == _NodeKind.LITERAL:
+                if isinstance(node.text, bytes):
+                    return 'bytes'
+                elif isinstance(node.text, str):
+                    return 'text'
+            elif node.kind == _NodeKind.RANGE:
+                for start, end in node.intervals:
+                    if isinstance(start, bytes) or isinstance(end, bytes):
+                        return 'bytes'
+                    elif isinstance(start, str) or isinstance(end, str):
+                        return 'text'
+            elif node.kind == _NodeKind.ONEOF:
+                if isinstance(node.text, bytes):
+                    return 'bytes'
+                elif isinstance(node.text, str):
+                    return 'text'
         return None
 
 

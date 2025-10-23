@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, Iterator, Optional, TypeVar, Sequence, AsyncIterator, Union, Literal, cast, Tuple, overload
+from typing import Generic, Iterator, Literal, Optional, TypeVar, Sequence, AsyncIterator, Union, Literal, cast, Tuple, overload
 import io
 import asyncio
 import codecs
@@ -7,12 +7,13 @@ from pathlib import Path
 from syncraft.ast import SyncraftError
 
 
+PayloadKind = Literal['text', 'bytes', 'token']
 
 T = TypeVar("T")
 Chunk = Union[Sequence[T], str, bytes]
 class Input(Generic[T]):
-    def __init__(self, *, payload_kind: str) -> None:
-        self._payload_kind: str = payload_kind
+    def __init__(self, *, payload_kind: PayloadKind) -> None:
+        self._payload_kind: PayloadKind = payload_kind
 
     def read(self, n: Optional[int] = None) -> Chunk:
         raise NotImplementedError
@@ -25,12 +26,11 @@ class Input(Generic[T]):
         raise NotImplementedError
 
     @property
-    def payload_kind(self) -> str:
+    def payload_kind(self) -> PayloadKind:
         return self._payload_kind
 
-    def mark_payload_kind(self, kind: str) -> None:
-        self._payload_kind = kind
     
+
     @staticmethod
     @overload
     def from_data(data: str) -> Input[str]: ...
@@ -58,8 +58,7 @@ class Input(Generic[T]):
         elif isinstance(data, bytes):
             return BytesInput(data)
         elif isinstance(data, Sequence):
-            payload_kind = "token"
-            return IteratorInput(cast(Iterator[T], iter(data)), payload_kind=payload_kind)
+            return IteratorInput(cast(Iterator[T], iter(data)), payload_kind="token")
         elif isinstance(data, Iterator):
             return IteratorInput(data, payload_kind="token")
         elif isinstance(data, AsyncIterator):
@@ -202,7 +201,7 @@ class BytesInput(Input[bytes]):
     
 
 class IteratorInput(Input[T]):
-    def __init__(self, data: Iterator[T], *, payload_kind: str = "token") -> None:
+    def __init__(self, data: Iterator[T], *, payload_kind: PayloadKind = "token") -> None:
         super().__init__(payload_kind=payload_kind)
         self.data = data
         self.done = False
@@ -227,7 +226,7 @@ class IteratorInput(Input[T]):
     
 
 class AsyncIteratorInput(Input[T]):
-    def __init__(self, data: AsyncIterator[T], *, payload_kind: str = "token") -> None:
+    def __init__(self, data: AsyncIterator[T], *, payload_kind: PayloadKind) -> None:
         super().__init__(payload_kind=payload_kind)
         self.data = data
         self.done = False
@@ -310,6 +309,10 @@ class StreamCursor(Generic[T]):
             self._empty = b""
         else:
             self._empty = tuple()
+    
+    @property            
+    def payload_kind(self) -> PayloadKind:
+        return self.source.payload_kind
 
     def initial_buffer(self) -> tuple[str | bytes | Tuple[T, ...], bool]:
         if self.source.eof:
@@ -323,8 +326,7 @@ class StreamCursor(Generic[T]):
         normalized = self._normalize(chunk)
         return normalized, self.source.eof
 
-    def empty_like(self) -> str | bytes | Tuple[T, ...]:
-        return self._empty
+
 
     def _read(self) -> Sequence[T] | str | bytes:
         try:
@@ -342,8 +344,7 @@ class StreamCursor(Generic[T]):
                     offender=self.source,
                     expect="non-empty chunk",
                 )
-            self._empty = ""
-            self.source.mark_payload_kind("text")
+            
             return chunk
         if isinstance(chunk, bytes):
             if not chunk and not self.source.eof:
@@ -352,8 +353,7 @@ class StreamCursor(Generic[T]):
                     offender=self.source,
                     expect="non-empty chunk",
                 )
-            self._empty = b""
-            self.source.mark_payload_kind("bytes")
+            
             return chunk
         seq = tuple(cast(Sequence[T], chunk))
         if not seq and not self.source.eof:
@@ -362,7 +362,7 @@ class StreamCursor(Generic[T]):
                 offender=self.source,
                 expect="non-empty chunk",
             )
-        self._empty = tuple()
-        if seq:
-            self.source.mark_payload_kind("token")
+        
         return cast(Tuple[T, ...], seq)
+
+    

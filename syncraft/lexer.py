@@ -1,31 +1,21 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, fields, replace, asdict, is_dataclass
+from dataclasses import dataclass, field, fields, replace, is_dataclass
 from enum import Enum
 from typing import (
-    Any, Dict, Set, Optional, Union, TypeVar, Generic, Tuple, Protocol, 
-    runtime_checkable, Callable, Mapping, Hashable, Type, List
+    Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, 
+    runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING
 )
-from typing import TYPE_CHECKING
+if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
+    from syncraft.syntax import FactorySpec, Syntax
+
 from syncraft.utils import CallWith
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError, Token
-from syncraft.cache import Either, Left, Right, Cache
+from syncraft.cache import Either, Left, Right
 from collections import deque, defaultdict
 import random
-import re
 
-
-def object_to_dict(value: Any) -> Mapping[str, Any]:
-    if isinstance(value, Mapping):
-        return value
-    if is_dataclass(value):
-        return asdict(value) # type: ignore[arg-type]
-    if hasattr(value, "__dict__"):
-        return vars(value)
-    if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
-        return {str(idx): elem for idx, elem in enumerate(value)}
-    raise SyncraftError("Cannot introspect token fields", offender=value)
 
 
 C = TypeVar('C', bound=str | int | Enum | Any)
@@ -33,14 +23,25 @@ A = TypeVar('A')
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 
-if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
-    from syncraft.syntax import FactorySpec, Syntax
 
 
 
 
 Tag = str
 
+
+def all_subclasses(cls: Type[Any])->Set[Type[Any]]:
+    """Recursively find all subclasses of a given class."""
+    result = set(cls.__subclasses__())
+    for subclass in cls.__subclasses__():
+        result.update(all_subclasses(subclass))
+    return result
+
+def all_terminal(syn: Syntax[Any, Any]) -> Set[FactorySpec]:
+    def collect(spec: FactorySpec, acc: Set[FactorySpec]) -> Set[FactorySpec]:
+        acc.add(spec)
+        return acc
+    return syn.factory_spec(collect, set())
 
 @dataclass
 class Mode(Generic[C]):
@@ -79,32 +80,106 @@ class LexerResult(Generic[C]):
 class LexerProtocol(Protocol, Generic[C]):
     def clone(self) -> "LexerProtocol[C]": ...
 
-    def match(self, tag: frozenset[Tag], char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
+    def match(self, tag: frozenset[Tag | None], char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
 
-    def varify(self, tag: frozenset[Tag], value: Any) -> bool: ...
+    def varify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
 
+    def tags(self) -> frozenset[str|None]: ...
 
-    def gen(self, tag: Tag, rng: random.Random) -> Any: ...
+    def gen(self, tag: Tag | None, rng: random.Random) -> Any: ...
 
     def candidate(self) -> Either[Any, None | LexerResult[C]]: ...
     
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> "LexerProtocol[C]": ...
+    def create(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
+
+
+
+class LexerBase(LexerProtocol[C]):
+
 
     @classmethod
-    def bind(cls, *args:Any, **kwargs: Any) -> Type["LexerProtocol[C]"]: ...
+    def normalise_kwargs(cls, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        payload_kind = kwargs.pop("payload_kind", None)
+        syn = kwargs.pop("syntax", None)
+        if syn and not payload_kind:
+            fabuilder: None | FABuilder = None
+            for fspec in all_terminal(syn):
+                for k,v in fspec.kwargs.items():
+                    if isinstance(v, FABuilder):
+                        fabuilder = v
+                        break  
+            if fabuilder is None:
+                payload_kind = 'token'
+            else:
+                payload_kind = fabuilder.payload_kind
+
+        if payload_kind in ('text', 'bytes'):
+            universe: CodeUniverse[str | bytes] = CodeUniverse.unicode() if payload_kind == 'text' else CodeUniverse.byte()
+            return {**kwargs, 'universe': kwargs.pop('universe', universe)}
+        elif payload_kind in ('token',):
+            tkspec: Optional[TokenSpec[Any]]  = TokenSpecBase.from_kwargs(**kwargs)
+            return {**kwargs, 'tkspec': kwargs.pop('tkspec', tkspec)}
+        else:
+            raise SyncraftError(
+                "Lexer must be provided with 'payload_kind' or 'syntax' parameter",
+                offender=kwargs,
+                expect="'payload_kind' or 'syntax' parameter",
+            )
+
+
+    @classmethod
+    def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: 
+        lexer_class = kwargs.pop("lexer_class", None)
+        if lexer_class is not None:
+            c = CallWith(lexer_class.create, **kwargs)
+            if c.missing_args or c.missing_kwargs:
+                return None
+            return c()
+        else:
+            kwargs = cls.normalise_kwargs(kwargs)
+            for sub in all_subclasses(cls):
+                c = CallWith(sub.create, **kwargs)
+                if c.missing_args or c.missing_kwargs:
+                    continue
+                return c()
+        return None
 
 @dataclass
 class Lexer(LexerProtocol[C], Generic[C]):
     universe: CodeUniverse[C]
     modes: Dict[str | None, Mode[C]] 
-    actions: Dict[Tag, ModeAction]
+    actions: Dict[Tag | None, ModeAction]
     _stack: deque[Mode[C]] = field(default_factory=deque)
 
-    @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> "Lexer[C]":
-        raise NotImplementedError("Lexer cannot be constructed from syntax directly; use from_builders or another method")
+    def tags(self) -> frozenset[str|None]:
+        all_tags: Set[Tag|None] = set()
+        for mode in self.modes.values():
+            for tags in mode.runner.dfa.accept.values():
+                if tags:
+                    all_tags.update(tags)
+                else:
+                    all_tags.add(None)
+        return frozenset(all_tags)
 
+    @classmethod
+    def create(cls, **kwargs: Any) -> Optional["Lexer[C]"]:
+        def fabuilder(**kwargs: Any) -> Set[FABuilder[Any]]:
+            acc: Set[FABuilder[Any]] = set()
+            for k, v in kwargs.items():
+                if isinstance(v, FABuilder):
+                    if v.tag is None and k != '_':
+                        acc.add(v.tagged(k))
+                    else:
+                        acc.add(v)                    
+            return acc
+        u = kwargs.pop('universe', None)
+        if not isinstance(u, CodeUniverse):
+            return None
+        d = kwargs.pop('default_mode', None)
+        builders = fabuilder(**kwargs)
+        return cls.from_builders(u, *builders, default_mode=d)
+        
 
     def _reset_runner(self, mode: Mode[C]) -> None:
         mode.runner = mode.runner.reset()
@@ -199,11 +274,11 @@ class Lexer(LexerProtocol[C], Generic[C]):
 
     @classmethod
     def from_builders(cls, 
-                      universe: CodeUniverse[C], 
+                      universe: CodeUniverse[Any], 
                       *rules: FABuilder[C],
                       default_mode: str | None = None) -> "Lexer[C]":
         modes: Dict[str | None, Set[FABuilder[C]]] = defaultdict(set)
-        actions: Dict[Tag, ModeAction] = {}
+        actions: Dict[Tag | None, ModeAction] = {}
         for rule in rules:
             match rule.action:
                 case None:
@@ -239,7 +314,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
         lexer.push_mode(default_mode)
         return lexer
 
-    def gen(self, tag: Tag, rng: random.Random) -> Any:
+    def gen(self, tag: Tag | None, rng: random.Random) -> Any:
         ret = self.current_mode.rdfa.gen(tag, rng)
         act = self.actions.get(tag)
         if act is not None:
@@ -252,7 +327,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
         return ret
 
-    def varify(self, tag: frozenset[Tag], value: Any) -> bool:
+    def varify(self, tag: frozenset[Tag | None], value: Any) -> bool:
         if isinstance(value, Token):
             if len(tag) > 0 and value.token_type not in tag:
                 return False
@@ -297,7 +372,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
             )
         )
 
-    def match(self, tags:frozenset[Tag], char: C, index: int) -> Either[Any, None | LexerResult[C]]:
+    def match(self, tags:frozenset[Tag|None], char: C, index: int) -> Either[Any, None | LexerResult[C]]:
         mode = self.current_mode
         if mode.start_index is None:
             mode.start_index = index
@@ -336,30 +411,7 @@ class Lexer(LexerProtocol[C], Generic[C]):
                 )
             )
         return Right(None)
-
-    @classmethod
-    def bind(cls, universe: CodeUniverse[C], default_mode: str | None = None) -> Type["Lexer[C]"]:
-        def fabuilder(**kwargs: Any) -> Set[FABuilder[Any]]:
-            acc: Set[FABuilder[Any]] = set()
-            for k, v in kwargs.items():
-                if isinstance(v, FABuilder):
-                    if v.tag is None and k != '_':
-                        acc.add(v.tagged(k))
-                    else:
-                        acc.add(v)                    
-            return acc
-        class BoundLexer(Lexer[Any]):
-            @classmethod
-            def from_kwargs(cls, **kwargs: Any) -> "Lexer[C]":
-                u = kwargs.pop('universe', universe)
-                d = kwargs.pop('default_mode', default_mode)
-                builders = fabuilder(**kwargs)
-                return cls.from_builders(u, *builders, default_mode=d)
-        return BoundLexer
-
-
-
-
+    
 
 
 T = TypeVar('T', bound=Hashable)
@@ -370,14 +422,60 @@ class TokenSpec(Protocol[T]):
     def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]: ...
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> TokenSpec[T]: ...
+
+
+class TokenSpecBase(TokenSpec[T]):
+
+
     @classmethod
     def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional["TokenSpec[T]"]: 
-        c = CallWith(cls.create, *args, **kwargs)
-        if c.missing_args:
-            return None
-        if c.missing_kwargs:
-            return None
-        return c()
+        for sub in all_subclasses(cls):
+            c = CallWith(sub.create, *args, **kwargs)
+            if c.missing_args or c.missing_kwargs:
+                continue
+            return c()
+        return None
+    
+    def _config_defaults(self) -> Dict[str, Any]:
+        if not is_dataclass(self):
+            return {}
+        return {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+            if f.metadata.get("is_config", False)
+        }
+
+    def _extract_config_kwargs(
+        self, kwargs: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        defaults = self._config_defaults()
+        config = {k: kwargs[k] for k in defaults if k in kwargs}
+        params = {k: v for k, v in kwargs.items() if k not in defaults}
+        return defaults | config, params
+
+    def _resolve_tag_kwargs(
+        self, params: Dict[str, Any]
+    ) -> Tuple[frozenset[Tag], Dict[str, Any]]:
+        remaining = dict(params)
+        tags: frozenset[Tag] = frozenset()
+        tag_callable = getattr(self, "tag", None)
+        if callable(tag_callable):
+            tags = tag_callable(**remaining)  # type: ignore[misc]
+        if not tags and "tag" in remaining:
+            raw = remaining.pop("tag")
+            if isinstance(raw, (set, frozenset)):
+                tags = frozenset(raw)
+            else:
+                tags = frozenset([raw])
+        return tags, remaining
+
+    def normalise_kwargs(
+        self, kwargs: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], frozenset[Tag]]:
+        config, params = self._extract_config_kwargs(kwargs)
+        tags, params = self._resolve_tag_kwargs(params)
+        return config, params, tags
+
 
     
 
@@ -391,20 +489,18 @@ class ExtLexer(LexerProtocol[T]):
     tkspec: TokenSpec[T]
     rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)
 
+    def tags(self) -> frozenset[str|None]:
+        return frozenset(self.rules.keys())
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> "ExtLexer[T]":
-        raise NotImplementedError("ExtLexer cannot be constructed from syntax directly; use create or another method")
+    def create(cls, **kwargs: Any) -> Optional["ExtLexer[T]"]:
+        tkspec = kwargs.pop("tkspec", None)
+        if not isinstance(tkspec, TokenSpec):
+            return None
+        ret = cls(tkspec = tkspec)
+        ret.register(**kwargs)
+        return ret
     
-    @classmethod
-    def bind(cls, tkspec: TokenSpec[T]) -> Type[ExtLexer[T]]:
-        class BoundLexer(ExtLexer[Any]):
-            @classmethod
-            def from_kwargs(cls, **kwargs: Any) -> "ExtLexer[T]":
-                ret = cls(tkspec = tkspec)
-                ret.register(**kwargs)
-                return ret
-        return BoundLexer
     
     def clone(self) -> "ExtLexer[T]":
         return replace(self, rules=dict(self.rules))
@@ -434,14 +530,14 @@ class ExtLexer(LexerProtocol[T]):
     def candidate(self) -> Either[Any, None | LexerResult[T]]:
         return Left("External lexer cannot provide candidates")
 
-    def match(self, tags: frozenset[Tag], item: T, index: int) -> Either[Any, None | LexerResult[T]]:
+    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> Either[Any, None | LexerResult[T]]:
         for tag in tags:
             if tag in self.rules and self.rules[tag].predicate(item):
                 return Right(LexerResult(tag=tag, start=index, end=index + 1, value=item))            
         return Left(f"External lexer has no rule for token at index {index}: {item!r}")
         
 
-    def varify(self, tag: frozenset[Tag], value: Any) -> bool:
+    def varify(self, tag: frozenset[Tag | None], value: Any) -> bool:
         for t in tag:
             rule = self.rules.get(t)
             if rule is not None:
@@ -449,7 +545,7 @@ class ExtLexer(LexerProtocol[T]):
                     return True
         return False
 
-    def gen(self, tag: Tag, rng: random.Random) -> Any:
+    def gen(self, tag: Tag | None, rng: random.Random) -> Any:
         rule = self.rules.get(tag)
         if rule is None or rule.generator is None:
             raise SyncraftError(

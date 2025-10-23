@@ -1,14 +1,12 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable, Literal,
-    Generic, Generator, Callable, Type, Mapping, Union
+    Generic, Generator, Type, Union
 )
 from syncraft.lexer import (
-    Lexer,
+    LexerBase,
     LexerResult,
-    LexerProtocol,
-    ExtLexer,
-    TokenSpec,
+    LexerProtocol
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.constraint import FrozenDict
@@ -18,15 +16,13 @@ from syncraft.algebra import (
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
 
-from syncraft.syntax import Syntax, RunnerProtocol, FactorySpec
+from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.input import Input, StreamCursor
 
 from syncraft.ast import Token, AST, SyncraftError
 from syncraft.constraint import Bindable
 import re
-from syncraft.charset import CodeUniverse
-from syncraft.fa import FABuilder
-from syncraft.token import Structured
+
 from pathlib import Path
 import io
 import asyncio
@@ -193,13 +189,6 @@ class ParserState(Bindable, Generic[T]):
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
 
-    @classmethod
-    def token(
-        cls,
-
-        **kwargs: Any,
-    ) -> Algebra[T, ParserState[T]]:
-        return cls.lex(**kwargs)
 
     @classmethod
     def lex(cls, 
@@ -213,8 +202,12 @@ class Parser(Algebra[T, ParserState[T]]):
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
-            lexer = cache.lexer
-            ntag = lexer.tag(**kwargs)
+            
+            lexer = lexer_class.create(**kwargs) if lexer_class is not None else LexerBase.from_kwargs(**kwargs)
+            if lexer is None:
+                raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
+
+            ntags = lexer.tags()
             while True:
                 if state.ended():
                     match lexer.candidate():
@@ -223,19 +216,19 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = Token(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name or str(ntag)))
+                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name or str(ntags)))
                         case _:
-                            err = Error(message=f"Cannot match token at end of input, expect {ntag}", this=lex_run, state=state)
+                            err = Error(message=f"Cannot match token at end of input, expect {ntags}", this=lex_run, state=state)
                             return (yield from cache.return_value(Left(err), state, name='EOF'))
                 elif state.pending():
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
                     state = tmp
                 else:
-                    match lexer.match(ntag, state.current(), state.abs_index()):
+                    match lexer.match(ntags, state.current(), state.abs_index()):
                         case Left(err_msg):
-                            err = Error(message=f"{err_msg}, expect {ntag}", this=lex_run, state=state)            
-                            return (yield from cache.return_value(Left(err), state, name=name or str(ntag)))
+                            err = Error(message=f"{err_msg}, expect {ntags}", this=lex_run, state=state)            
+                            return (yield from cache.return_value(Left(err), state, name=name or str(ntags)))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
@@ -243,7 +236,7 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = Token(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name or str(ntag)))
+                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name or str(ntags)))
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
 
@@ -260,15 +253,16 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
     def __post_init__(self):    
         assert self.input is not None, "Input must be provided to Runner"
         self.cursor = StreamCursor(self.input, chunk_size=self.chunk_size)
+    
     def bootstrap(self, 
                   syntax: Syntax[Any, ParserState[T]], 
                   alg_cls: Type[Algebra[Any, ParserState[T]]],
                   cache: Optional[Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]] = None
                   ) -> Tuple[Algebra[Any, ParserState[T]], Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]], ParserState[T]]:
-        
-        parser = syntax(alg_cls)
+
         cache = cache or Cache()
         buffer, final = self.cursor.initial_buffer()
+        parser = syntax(alg_cls, payload_kind=self.input.payload_kind)
         initial_state = ParserState(input=buffer, index=0, base=0, final=final)
         return parser, cache, initial_state
     

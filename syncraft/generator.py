@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
-    List, Mapping, Generator as PyGenerator, cast, Type, Literal
+    List, Set, Generator as PyGenerator, cast, Type
 )
 
 import importlib
@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, Error, YieldChannelType, SendChannelType
 )
-from syncraft.lexer import ExtLexer, Lexer, LexerProtocol, TokenSpec
+from syncraft.lexer import LexerBase, Lexer, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
@@ -378,13 +378,6 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
         return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
     
-    @classmethod
-    def token(
-        cls,
-
-        **kwargs: Any,
-    ) -> Algebra[ParseResult[T], GenState[T]]:
-        return cls.lex(**kwargs)
 
         
     @classmethod
@@ -399,11 +392,13 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
-            lexer = cache.lexer
-            tags = lexer.tag(**kwargs)
+            lexer = lexer_class.create(**kwargs) if lexer_class is not None else LexerBase.from_kwargs(**kwargs)
+            if lexer is None:
+                raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
+            ntags = lexer.tags()
 
             if input.pruned:
-                tag = input.rng("lex_tag").choice(tuple(tags))
+                tag = input.rng("lex_tag").choice(tuple(ntags))
                 input = input.fork(tag=tag)
                 generated = lexer.gen(tag, input.rng())
                 if (
@@ -423,20 +418,20 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tag)))
             else:
                 current = input.ast
-                if not lexer.varify(tags, current):
+                if not lexer.varify(ntags, current):
                     return (yield from cache.return_value(
                         Left(
                             Error(
                                 None,
-                                message=f"Expected token tag {tags}, but got {current}.",
+                                message=f"Expected token tag {ntags}, but got {current}.",
                                 state=input,
                             )
                         ),
                         input,
-                        name=str(tags),
+                        name=str(ntags),
                     ))
                 parsed_value = cast(ParseResult[T], current)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tags)))
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(ntags)))
 
         return cls(lex_run, _name=name or "lex(...)") 
 
@@ -464,7 +459,7 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
                   cache: Optional[Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]] = None
                   ) -> Tuple[Algebra[ParseResult[T], GenState[T]], Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]], GenState[T]]:
         
-        generator = syntax(alg_cls)
+        generator = syntax(alg_cls, syntax = syntax, lexer_class=self.lexer_class)
         initial_cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]] = cache or Cache()
         initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
 

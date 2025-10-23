@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import keyword
 import re
 import threading
@@ -9,9 +8,9 @@ from weakref import WeakValueDictionary
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Mapping
+    Type, List, Dict, Set, Iterator, ClassVar, Protocol
 )
-from dataclasses import dataclass, field, replace, is_dataclass, fields
+from dataclasses import dataclass, field, replace
 from functools import reduce
 
 from syncraft.algebra import Algebra, Error, Either, Left, Right, SYNCRAFT_CONFIG_KEY, SYNCRAFT_TRANSFORM_KEY
@@ -19,10 +18,10 @@ from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from syncraft.utils import CallWith
-from syncraft.token import TokenSpec
+
 from syncraft.fa import FABuilder
 
-_FACTORY_META_KEY = "__factory_meta__"
+
 
 
 def valid_name(name: str) -> bool:
@@ -674,128 +673,24 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def factory(cls, name: str, **kwargs: Any) -> Syntax[Any, Any]:
-        meta_payload = kwargs.pop(_FACTORY_META_KEY, None)
-        meta_dict: FrozenDict[str, Any] = (
-            FrozenDict(meta_payload)
-            if isinstance(meta_payload, Mapping)
-            else FrozenDict()
-        )
+        
         def factory_run(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
             method = getattr(acls, name, None)
             if method is None or not callable(method):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
-        return cls(factory_run, spec=FactorySpec(name=name, kwargs=FrozenDict(kwargs), metadata=meta_dict))
+        return cls(factory_run, spec=FactorySpec(name=name, kwargs=FrozenDict(kwargs)))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
-        meta = cls._build_token_metadata(kwargs)
-        return cls.factory('token', **{_FACTORY_META_KEY: meta} | kwargs)
+        return cls.factory('lex', **kwargs)
 
     @classmethod
     def lex(cls, **kwargs: FABuilder) -> Syntax[Any, Any]:
         return cls.factory('lex', **kwargs)
 
-    @staticmethod
-    def _build_token_metadata(kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
-        meta: Dict[str, Any] = {}
-        literal_value = kwargs.get("text")
-        if isinstance(literal_value, str):
-            meta["literal_kind"] = "text"
-            meta["literal_value"] = literal_value
-        elif isinstance(literal_value, bytes):
-            meta["literal_kind"] = "bytes"
-            meta["literal_value"] = literal_value
 
-        specs: Dict[str, Any] = {}
-        for key, value in kwargs.items():
-            descriptor = Syntax._encode_token_spec(value)
-            if descriptor is not None:
-                specs[key] = descriptor
-
-        if specs:
-            meta["token_specs"] = Syntax._freeze_metadata(specs)
-
-        token_type = kwargs.get("token_type")
-        if token_type is not None:
-            meta["token_type"] = token_type
-
-        return Syntax._freeze_metadata(meta)
-
-    @staticmethod
-    def _freeze_metadata(value: Any) -> Any:
-        if isinstance(value, FrozenDict):
-            return value
-        if isinstance(value, dict):
-            return FrozenDict({k: Syntax._freeze_metadata(v) for k, v in value.items()})
-        if isinstance(value, list):
-            return tuple(Syntax._freeze_metadata(v) for v in value)
-        if isinstance(value, tuple):
-            return tuple(Syntax._freeze_metadata(v) for v in value)
-        if isinstance(value, set):
-            return frozenset(Syntax._freeze_metadata(v) for v in value)
-        return value
-
-    @staticmethod
-    def _encode_metadata_value(value: Any) -> Optional[Any]:
-        if value is None or isinstance(value, (str, bytes, int, float, bool)):
-            return value
-        if isinstance(value, Enum):
-            return ("enum", value.__class__.__module__, value.__class__.__qualname__, value.name)
-        if isinstance(value, re.Pattern):
-            return ("regex", value.pattern, value.flags)
-        if isinstance(value, tuple):
-            encoded = tuple(Syntax._encode_metadata_value(v) for v in value)
-            if any(v is None for v in encoded):
-                return None
-            return ("tuple", encoded)
-        if isinstance(value, list):
-            encoded = tuple(Syntax._encode_metadata_value(v) for v in value)
-            if any(v is None for v in encoded):
-                return None
-            return ("list", encoded)
-        if isinstance(value, set):
-            encoded_elements = []
-            for item in value:
-                encoded_item = Syntax._encode_metadata_value(item)
-                if encoded_item is None:
-                    return None
-                encoded_elements.append(encoded_item)
-            encoded = tuple(sorted(encoded_elements, key=repr))
-            return ("set", encoded)
-        if isinstance(value, dict):
-            encoded_items = []
-            for k, v in value.items():
-                encoded_v = Syntax._encode_metadata_value(v)
-                if encoded_v is None:
-                    return None
-                encoded_items.append((k, encoded_v))
-            return ("dict", tuple(encoded_items))
-        if inspect.isclass(value) or inspect.isfunction(value) or inspect.ismethod(value):
-            return ("callable", value.__module__, value.__qualname__)
-        return None
-
-    @staticmethod
-    def _encode_token_spec(value: Any) -> Optional[Any]:
-        if not isinstance(value, TokenSpec):
-            return None
-
-        descriptor: Dict[str, Any] = {
-            "module": value.__class__.__module__,
-            "qualname": value.__class__.__qualname__,
-        }
-
-        if is_dataclass(value) and not isinstance(value, type):
-            entries: List[Tuple[str, Any]] = []
-            for field in fields(value):
-                encoded = Syntax._encode_metadata_value(getattr(value, field.name))
-                if encoded is None:
-                    return None
-                entries.append((field.name, encoded))
-            descriptor["dataclass"] = tuple(entries)
-
-        return Syntax._freeze_metadata(descriptor)
 
     @classmethod
     def literal(cls, lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
@@ -854,12 +749,6 @@ class Syntax(Generic[A, S]):
                 init = visitor(node, init)
         return init
     
-
-# class PayloadKind(Enum):
-#     TEXT = 'text'
-#     TOKEN = 'token'
-#     BINARY = 'binary'
-
 class RunnerProtocol(Protocol, Generic[A, S]):
     def bootstrap(self, 
                   syntax: Syntax[A, S],
