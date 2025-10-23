@@ -146,7 +146,7 @@ class LexerBase(LexerProtocol[C]):
         return None
 
 @dataclass
-class Lexer(LexerProtocol[C], Generic[C]):
+class Lexer(LexerBase[C]):
     universe: CodeUniverse[C]
     modes: Dict[str | None, Mode[C]] 
     actions: Dict[Tag | None, ModeAction]
@@ -485,7 +485,7 @@ class ExtRule(Generic[T]):
     generator: Callable[[Any, random.Random], T]
 
 @dataclass
-class ExtLexer(LexerProtocol[T]):
+class ExtLexer(LexerBase[T]):
     tkspec: TokenSpec[T]
     rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)
 

@@ -4,13 +4,13 @@ from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
-from syncraft.lexer import Cache
+from syncraft.cache import Cache
 
 import re
 import pytest
-from syncraft.lexer import ExtLexer
+
 from .test_utils import token_multiset
-from syncraft.token import Structured
+
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
 literal = S.literal

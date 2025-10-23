@@ -1,12 +1,9 @@
-import pytest
 from syncraft.syntax import Syntax
-from syncraft.lexer import ExtLexer
+
 from syncraft.parser import parse_word
 from syncraft.generator import validate, generate_with
 from syncraft.algebra import Error
-from syncraft.lexer import Cache
-from syncraft.ast import Token
-from syncraft.token import Structured
+from syncraft.cache import Cache
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
 def tok(text: str):

@@ -384,18 +384,17 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     def lex(cls,
             *,
             lexer_class: Type[LexerProtocol] | None = None,
-            name: str | None = None,
             **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
+        lexer = lexer_class.create(**kwargs) if lexer_class is not None else LexerBase.from_kwargs(**kwargs)
+        if lexer is None:
+            raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
+        ntags = lexer.tags()
         
         def lex_run(input: GenState[T], 
                     cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
-            lexer = lexer_class.create(**kwargs) if lexer_class is not None else LexerBase.from_kwargs(**kwargs)
-            if lexer is None:
-                raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
-            ntags = lexer.tags()
 
             if input.pruned:
                 tag = input.rng("lex_tag").choice(tuple(ntags))
@@ -433,7 +432,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 parsed_value = cast(ParseResult[T], current)
                 return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(ntags)))
 
-        return cls(lex_run, _name=name or "lex(...)") 
+        return cls(lex_run, _name=f"lex({ntags})") 
 
 
 

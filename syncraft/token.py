@@ -4,6 +4,7 @@ import random
 from typing import Any, Callable, Iterable, TypeVar, Hashable
 import re
 from enum import Enum
+from syncraft.ast import Token
 from syncraft.utils import CallWith
 from syncraft.lexer import TokenSpecBase
 from dataclasses import dataclass, field
@@ -54,8 +55,9 @@ class Scalar(TokenSpecBase[T]):
 
     @classmethod
     def create(cls,
-                pattern: str | re.Pattern[str],
                 *,
+                pattern: str | re.Pattern[str],
+
                 constructor: Callable[..., T] = str, # type: ignore
                 flags: int | None = None) -> Scalar[T]:
         compiled = re.compile(pattern, flags or 0) if isinstance(pattern, str) else pattern
@@ -98,8 +100,8 @@ class Structured(TokenSpecBase[T]):
     tag: None | Callable[..., frozenset[Tag]] = field(default=None)
     @classmethod
     def create(cls, 
-               constructor: Callable[..., T],
                *,
+               constructor: Callable[..., T] = Token,
                case_sensitive: bool = True,
                strict: bool = False,
                tag: Tag | Iterable[Tag] | None | Callable[..., frozenset[Tag]] = None) -> Structured[T]:

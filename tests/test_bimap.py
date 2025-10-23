@@ -5,11 +5,10 @@ from syncraft.algebra import Error
 from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from syncraft.syntax import Syntax
-from syncraft.lexer import Cache, ExtLexer
-from syncraft.token import Structured
+from syncraft.cache import Cache
 
 
-# literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
+
 literal = Syntax.literal
 
 def from_string(string: str) -> Token:
