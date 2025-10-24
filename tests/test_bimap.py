@@ -280,7 +280,12 @@ def test_optional():
     v2, _ = ast2.bimap()
     assert v2 == Marked(name='a', value=from_string('a'))
 
-
+def test_nothing():
+    assert bool(Nothing()) is False, "Nothing should evaluate to False in boolean context"
+    assert Nothing() is Nothing(), "Nothing should be a singleton"
+    assert str(Nothing()) == "Nothing", "String representation of Nothing should be 'Nothing'"
+    assert isinstance(Nothing(), Nothing), "Nothing should be instance of Nothing class"
+    assert Nothing is Nothing(), "Nothing class should be the same as itself"
 
 def test_many_optional():
     A = literal("a")

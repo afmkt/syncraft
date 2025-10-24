@@ -8,18 +8,17 @@ from syncraft.regex import (
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
 from syncraft.ast import Token
-from rich import print
+# from rich import print
 
 
 
 
 
 def test1():
-    """Test parsing of simple character classes."""
     data = "[abc]"
     print(data)
-    # result = parse_regex(char_class, data)
-    # print(data, result)
+    result = parse_regex(char_class, data)
+    print(data, result)
 
 
 def test_character_classes_negated():
@@ -328,4 +327,8 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test1()
+    assert bool(Nothing()) is False, "Nothing should evaluate to False in boolean context"
+    assert Nothing() is Nothing(), "Nothing should be a singleton"
+    assert str(Nothing()) == "Nothing", "String representation of Nothing should be 'Nothing'"
+    assert isinstance(Nothing(), Nothing), "Nothing should be instance of Nothing class"
+    assert Nothing is Nothing(), "Nothing class should be the same as itself"

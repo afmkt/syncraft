@@ -250,18 +250,27 @@ class AST:
         v, _ = self.bimap()
         return v
 
+
+class MetaNothing(type):
+    def __instancecheck__(cls, instance: Any) -> bool:
+        return instance is cls or super().__instancecheck__(instance)
+    def __str__(cls)->str:
+        return "Nothing"
+    def __repr__(cls)->str:
+        return cls.__str__()
+    def __bool__(cls)->bool:
+        return False
 @dataclass(frozen=True)
-class Nothing(AST):
+class Nothing(AST, metaclass=MetaNothing):
     """Singleton sentinel representing the absence of a value in the AST."""
-    _instance = None
+    def __call__(self)-> Nothing:
+        return self
+    def __new__(cls):
+        return cls
     def __bool__(self)->bool:
         return False
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(Nothing, cls).__new__(cls)
-        return cls._instance
     def __str__(self)->str:
-        return self.__class__.__name__
+        return "Nothing"
     def __repr__(self)->str:
         return self.__str__()
 
