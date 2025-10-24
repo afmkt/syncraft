@@ -35,6 +35,7 @@ uv sync --group dev
 ```
 
 TODO
+- [ ]  regex.py a subset of Python re
 - [ ]  Visualization (railroad diagrams + AST).
 - [ ]  Interactive dev (Jupyter).
 - [ ]  Semantic layer (datalog + unification).

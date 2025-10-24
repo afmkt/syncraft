@@ -1,63 +1,25 @@
 from __future__ import annotations
+from syncraft.ast import Nothing
 from syncraft.regex import (
-    parse_regex, 
+    parse_regex, S, B,
     literal, atom, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
+    braced_quantifier,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
 from syncraft.ast import Token
 from rich import print
 
 
-def test_dot_atom():
-    """Test parsing of dot (.) atom."""
-    print(1)
-    result = parse_regex(atom, ".")
-    print(2)
-    assert isinstance(result, DotAtom)
 
 
-def test_quantifiers():
-    """Test parsing of quantifiers."""
-    test_cases = [
-        ("a?", Quantifier(minimum=0, maximum=1, greedy=True)),
-        ("a*", Quantifier(minimum=0, maximum=None, greedy=True)),
-        ("a+", Quantifier(minimum=1, maximum=None, greedy=True)),
-        ("a{3}", Quantifier(minimum=3, maximum=3, greedy=True)),
-        ("a{3,}", Quantifier(minimum=3, maximum=None, greedy=True)),
-        ("a{3,5}", Quantifier(minimum=3, maximum=5, greedy=True)),
-        ("a??", Quantifier(minimum=0, maximum=1, greedy=False)),
-        ("a*?", Quantifier(minimum=0, maximum=None, greedy=False)),
-        ("a+?", Quantifier(minimum=1, maximum=None, greedy=False)),
-        ("a{3}?", Quantifier(minimum=3, maximum=3, greedy=False)),
-        ("a{3,}?", Quantifier(minimum=3, maximum=None, greedy=False)),
-        ("a{3,5}?", Quantifier(minimum=3, maximum=5, greedy=False)),
-    ]
 
-    for pattern, expected_quantifier in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        b = result.branches[0]
-        assert len(b.pieces) == 1
-        p = b.pieces[0]
-        assert isinstance(p.atom, LiteralAtom)
-        assert p.atom.text == "a"
-        assert p.quantifier == expected_quantifier
-
-
-def test_character_classes_simple():
+def test1():
     """Test parsing of simple character classes."""
-    result = parse_regex(literal, "[abc]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 3
-    assert p.atom.items == ("a", "b", "c")
+    data = "[abc]"
+    print(data)
+    # result = parse_regex(char_class, data)
+    # print(data, result)
 
 
 def test_character_classes_negated():
@@ -366,4 +328,4 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test_dot_atom()
+    test1()

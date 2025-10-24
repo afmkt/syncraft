@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-
+from syncraft.ast import AST, Nothing
 
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
@@ -271,7 +271,7 @@ class_item = range | class_atom
 # class_class_items = leading_rsquare? class_item { class_item } ;
 class_class_items = ~leading_rsquare + class_item.many(at_least=1)
 # char_class        = "[" [ "^" ] class_class_items "]" ;
-char_class = lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare
+char_class = lsquare >> (~caret).map(lambda t: t is not Nothing()).mark('negated') + class_class_items.mark('items') // rsquare
 
 
 class GroupKind(Enum):
@@ -358,9 +358,11 @@ class Quantifier:
 # - {n} → minimum=n, maximum=n
 # - {n,} → minimum=n, maximum=None
 # - {n,m} → minimum=n, maximum=m
-braced_quantifier = ((lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n.mapped[0], maximum=n.mapped[0])) | 
-                     (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t.mapped[0], maximum=None)) | 
-                     (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier))
+braced_quantifier = S.choice(
+    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n.mapped, maximum=n.mapped)),
+    (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t.mapped, maximum=None)),
+    (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier)
+)
 
 
 # quantifier        = "?" | "*" | "+" | braced_quantifier [ "?" ] ;
@@ -368,10 +370,11 @@ braced_quantifier = ((lbrace >> number // rbrace).map(lambda n: Quantifier(minim
 # - * → minimum=0, maximum=None
 # - + → minimum=1, maximum=None
 # - braced_quantifier followed by ? → same as braced_quantifier but greedy=False
-quantifier = (question.map(lambda _: Quantifier(minimum=0, maximum=1)) | 
-              star.map(lambda _: Quantifier(minimum=0, maximum=None)) | 
-              plus.map(lambda _: Quantifier(minimum=1, maximum=None)) | 
-              (braced_quantifier + ~question).map(lambda t: replace(t.mapped[0], greedy=bool(t.mapped[1]))) )
+quantifier = (S.choice(
+    question.map(lambda _: Quantifier(minimum=0, maximum=1)),
+    star.map(lambda _: Quantifier(minimum=0, maximum=None)),
+    plus.map(lambda _: Quantifier(minimum=1, maximum=None)),
+    braced_quantifier) + ~question).map(lambda t: replace(t.mapped[0], greedy=t.mapped[1] is Nothing())) 
 
 
 @dataclass(frozen=True)
@@ -437,7 +440,10 @@ def parse_regex(syntax: Syntax[Any, Any], pattern: str) -> Any:
     from syncraft.parser import parse_string
     result, s = parse_string(syntax, pattern)
     if s:
-        return result.mapped
+        if isinstance(result, AST):
+            return result.mapped
+        else:
+            return result
     else:
         return result
 

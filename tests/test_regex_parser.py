@@ -3,7 +3,7 @@ from syncraft.regex import (
     parse_regex, 
     literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece
 )
 
 
@@ -116,6 +116,7 @@ def test_quantifiers():
         ("a{3}", Quantifier(minimum=3, maximum=3, greedy=True)),
         ("a{3,}", Quantifier(minimum=3, maximum=None, greedy=True)),
         ("a{3,5}", Quantifier(minimum=3, maximum=5, greedy=True)),
+
         ("a??", Quantifier(minimum=0, maximum=1, greedy=False)),
         ("a*?", Quantifier(minimum=0, maximum=None, greedy=False)),
         ("a+?", Quantifier(minimum=1, maximum=None, greedy=False)),
@@ -125,16 +126,11 @@ def test_quantifiers():
     ]
 
     for pattern, expected_quantifier in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        b = result.branches[0]
-        assert len(b.pieces) == 1
-        p = b.pieces[0]
-        assert isinstance(p.atom, LiteralAtom)
-        assert p.atom.text == "a"
-        assert p.quantifier == expected_quantifier
-
+        result = parse_regex(piece, pattern)
+        assert isinstance(result, Piece)
+        assert result.quantifier == expected_quantifier, f"Failed for pattern: {pattern}, got {result.quantifier}, expected {expected_quantifier}"
+        assert result.atom == LiteralAtom(text="a"), f"Failed for pattern: {pattern}, got atom {result.atom}, expected LiteralAtom(text='a')"
+        
 
 def test_character_classes_simple():
     """Test parsing of simple character classes."""
