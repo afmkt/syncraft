@@ -209,19 +209,18 @@ class CharSet(Generic[C]):
     # Internal sentinel codepoints for anchors (not part of any CodeUniverse interval)
     START_CP: ClassVar[int] = -1
     END_CP: ClassVar[int] = -2
-    predicate: Callable[[int], bool] = field(repr=False)
+
     interval: Tuple[Tuple[int, int], ...]
     universe: CodeUniverse
 
     @staticmethod
     @lru_cache(maxsize=4096)  
     def _build(universe: CodeUniverse, codepoints: Tuple[int, ...]) -> 'CharSet':
-        cs_frozen: frozenset[int] = frozenset(codepoints)
+
         intv: Tuple[Tuple[int, int], ...] = tuple((c, c) for c in codepoints)
-        def _pred(c: int, _cs: frozenset[int] = cs_frozen) -> bool:
-            return c in _cs
+
         return CharSet(
-            predicate=_pred,
+
             interval=intv,
             universe=universe
         )
@@ -349,7 +348,7 @@ class CharSet(Generic[C]):
     def from_interval(cls, intv: Sequence[Tuple[int, int]], universe: CodeUniverse) -> CharSet[C]:
         merged = tuple(cls.merge_intervals(intv))
         return cls(
-            predicate=lambda c: any(start <= c <= end for start, end in merged), 
+
             interval=merged,
             universe=universe)
 
@@ -376,14 +375,14 @@ class CharSet(Generic[C]):
     @classmethod
     def any(cls, universe: CodeUniverse) -> CharSet[C]:
         return cls(
-            predicate=lambda c: True, 
+
             interval=universe.interval,
             universe=universe)
     
     @classmethod
     def none(cls, universe: CodeUniverse) -> CharSet[C]:
         return cls(
-            predicate=lambda c: False, 
+
             interval=tuple(),
             universe=universe)
 
@@ -398,20 +397,18 @@ class CharSet(Generic[C]):
                 return True
         return False
 
-    def matches_interval(self, cc: C) -> bool:
+
+    def matches(self, cc: C) -> bool:
         c = self.universe.code2int(cc)
         return any(start <= c <= end for start, end in self.interval)
-
-    def matches(self, c: C) -> bool:
-        return self.predicate(self.universe.code2int(c))
+    
         
     def __call__(self, c: C) -> bool:
-        assert self.matches(c) == self.matches_interval(c)
+
         return self.matches(c)
 
     def __contains__(self, c: C) -> bool:
-        assert self.matches(c) == self.matches_interval(c)
-        return self.matches_interval(c)
+        return self.matches(c)
         
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, CharSet):
@@ -433,7 +430,7 @@ class CharSet(Generic[C]):
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offender=other.universe, expect=self.universe)
         intv = tuple(self.merge_intervals(list(self.interval) + list(other.interval)))
         return CharSet(
-            lambda c: self.predicate(c) or other.predicate(c), 
+            
             intv,
             universe=self.universe)
     def __or__(self, other: CharSet[C]) -> CharSet[C]:
@@ -451,7 +448,7 @@ class CharSet(Generic[C]):
         intv = tuple(self.intersect_interval(list(self.interval), list(other.interval)))
         
         return CharSet(
-            lambda c: self.predicate(c) and other.predicate(c), 
+
             intv,
             universe=self.universe)
     def __and__(self, other: CharSet[C]) -> CharSet[C]:
@@ -468,7 +465,7 @@ class CharSet(Generic[C]):
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.universe} and {other.universe}", offender=other.universe, expect=self.universe)
         intv = tuple(self.difference_interval(list(self.interval), list(other.interval)))
         return CharSet(
-            lambda c: self.predicate(c) and not other.predicate(c), 
+
             intv,
             universe=self.universe)
     def __sub__(self, other: CharSet[C]) -> CharSet[C]:
@@ -480,7 +477,7 @@ class CharSet(Generic[C]):
             return CharSet.any(universe=self.universe)
         intv = tuple(self.difference_interval(list(self.universe.interval), list(self.interval)))
         return CharSet(
-            lambda c: not self.predicate(c), 
+
             intv,
             universe=self.universe)
     

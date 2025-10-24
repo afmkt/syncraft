@@ -97,7 +97,7 @@ def test_shorthands():
         (r"\S", ShorthandKind.NOT_SPACE),
     ]
     for pattern, expected_kind in test_cases:
-        result = parse_regex(shorthand, pattern)
+        result = parse_regex(shorthand.to(ShorthandAtom), pattern)
         assert result.kind == expected_kind
 
 
@@ -134,75 +134,87 @@ def test_quantifiers():
 
 def test_character_classes_simple():
     """Test parsing of simple character classes."""
-    result = parse_regex(char_class, "[abc]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 3
-    assert p.atom.items == ("a", "b", "c")
+    result = parse_regex(atom, "[]abc]")
+    assert isinstance(result, CharClassAtom)
+    assert not result.negated
+    assert set(result.items) == {"]", "a", "b", "c"}
+    result = parse_regex(atom, "[a]bc]")
+    assert isinstance(result, CharClassAtom)
+    assert not result.negated
+    assert set(result.items) == {"a"}
+
+
 
 
 def test_character_classes_negated():
     """Test parsing of negated character classes."""
-    result = parse_regex(char_class, "[^abc]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert p.atom.negated
-    assert len(p.atom.items) == 3
-    assert p.atom.items == ("a", "b", "c")
+    result = parse_regex(atom, "[^abc]")
+    assert isinstance(result, CharClassAtom)
+    assert result.negated
+    assert set(result.items) == {"a", "b", "c"} 
 
+    result = parse_regex(atom, "[^]abc]")
+    assert isinstance(result, CharClassAtom)
+    assert result.negated
+    assert set(result.items) == {"]", "a", "b", "c"} 
+
+    result = parse_regex(atom, "[^a]bc]")
+    assert isinstance(result, CharClassAtom)
+    assert result.negated
+    assert set(result.items) == {"a"} 
 
 def test_character_classes_with_ranges():
     """Test parsing of character classes with ranges."""
-    result = parse_regex(literal, "[a-zA-Z0-9]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 3
-    assert p.atom.items[0] == CharRange(start="a", end="z")
-    assert p.atom.items[1] == CharRange(start="A", end="Z")
-    assert p.atom.items[2] == CharRange(start="0", end="9")
+    result = parse_regex(atom, "[a-zA-Z0-9]")
+    assert isinstance(result, CharClassAtom)
+    assert not result.negated
+    assert len(result.items) == 3
+    assert result.items[0] == CharRange(start="a", end="z")
+    assert result.items[1] == CharRange(start="A", end="Z")
+    assert result.items[2] == CharRange(start="0", end="9")
+    result = parse_regex(atom, "[^a-zA-Z0-9]")
+    assert isinstance(result, CharClassAtom)
+    assert result.negated
+    assert len(result.items) == 3
+    assert result.items[0] == CharRange(start="a", end="z")
+    assert result.items[1] == CharRange(start="A", end="Z")
+    assert result.items[2] == CharRange(start="0", end="9")
 
 
 def test_character_classes_with_escaped_chars():
     """Test parsing of character classes with escaped characters."""
-    result = parse_regex(literal, r"[\[\]\-\.\\]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 4
-    assert p.atom.items == ("[", "]", "-", "\\")
+    result = parse_regex(atom, r"[\[\]\-\.\\]")
+
+    assert isinstance(result, CharClassAtom)
+    assert not result.negated
+    assert len(result.items) == 5
+    assert set(result.items) == {"[", "]", "-", ".", "\\"}
+
+    result = parse_regex(atom, r"[^\[\]\-\.\\]")
+    assert isinstance(result, CharClassAtom)
+    assert result.negated
+    assert len(result.items) == 5
+    assert set(result.items) == {"[", "]", "-", ".", "\\"}
+
 
 
 def test_character_classes_with_shorthands():
     """Test parsing of character classes containing shorthands."""
-    result = parse_regex(literal, r"[\d\s\w]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 3
-    # Note: shorthands in character classes are treated as literal atoms
-    assert p.atom.items == (r"\d", r"\s", r"\w")
+    result = parse_regex(atom, r"[\d\s\w]")
+    assert isinstance(result, CharClassAtom)
+    assert not result.negated
+    assert len(result.items) == 3
+    assert result.items[0] == ShorthandAtom(kind=ShorthandKind.DIGIT)
+    assert result.items[1] == ShorthandAtom(kind=ShorthandKind.SPACE)
+    assert result.items[2] == ShorthandAtom(kind=ShorthandKind.WORD)
+    
+    result = parse_regex(atom, r"[^\d\s\w]")
+    assert isinstance(result, CharClassAtom)
+    assert result.negated
+    assert len(result.items) == 3
+    assert result.items[0] == ShorthandAtom(kind=ShorthandKind.DIGIT)
+    assert result.items[1] == ShorthandAtom(kind=ShorthandKind.SPACE)
+    assert result.items[2] == ShorthandAtom(kind=ShorthandKind.WORD)
 
 
 def test_groups_capture():

@@ -441,8 +441,7 @@ class Collect(Generic[A, E], AST):
 
 
         b, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value) 
-        if isinstance(self.value, Then):
-            assert isinstance(b, tuple), "Expected tuple from Then bimap"
+        if isinstance(b, tuple):
             index: List[str | int] = []
             named_count = 0
             for i, v in enumerate(b):

@@ -13,101 +13,10 @@ from rich import print
 
 
 
-def test_character_classes_simple():
-    """Test parsing of simple character classes."""
-    result = parse_regex(char_class, "[abc]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 3
-    assert p.atom.items == ("a", "b", "c")
-
-
-
-def test_character_classes_negated():
-    """Test parsing of negated character classes."""
-    result = parse_regex(char_class, "[^abc]")
-    print(result)
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert p.atom.negated
-    assert len(p.atom.items) == 3
-    assert p.atom.items == ("a", "b", "c")
-
-
-def test_character_classes_with_ranges():
-    """Test parsing of character classes with ranges."""
-    result = parse_regex(literal, "[a-zA-Z0-9]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 3
-    assert p.atom.items[0] == CharRange(start="a", end="z")
-    assert p.atom.items[1] == CharRange(start="A", end="Z")
-    assert p.atom.items[2] == CharRange(start="0", end="9")
-
-
-def test_character_classes_with_escaped_chars():
-    """Test parsing of character classes with escaped characters."""
-    result = parse_regex(literal, r"[\[\]\-\.\\]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 4
-    assert p.atom.items == ("[", "]", "-", "\\")
-
-
-def test_character_classes_with_shorthands():
-    """Test parsing of character classes containing shorthands."""
-    result = parse_regex(literal, r"[\d\s\w]")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, CharClassAtom)
-    assert not p.atom.negated
-    assert len(p.atom.items) == 3
-    # Note: shorthands in character classes are treated as literal atoms
-    assert p.atom.items == (r"\d", r"\s", r"\w")
-
-
 def test_groups_capture():
     """Test parsing of capturing groups."""
-    result = parse_regex(literal, "(abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.CAPTURE
-    assert p.atom.name is None
-    assert isinstance(p.atom.pattern, Regex)
-    # Check the inner pattern
-    inner_branch = p.atom.pattern.branches[0]
-    assert len(inner_branch.pieces) == 3
-    for i, char in enumerate("abc"):
-        inner_piece = inner_branch.pieces[i]
-        assert isinstance(inner_piece.atom, LiteralAtom)
-        assert inner_piece.atom.text == char
-
+    result = parse_regex(group, "(abc)")
+    print(result)
 
 def test_groups_non_capture():
     """Test parsing of non-capturing groups."""
@@ -335,4 +244,4 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test_character_classes_simple()
+    test_groups_capture()

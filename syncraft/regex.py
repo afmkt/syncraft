@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-from syncraft.ast import AST, Nothing
+from syncraft.ast import AST, Token
 
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
@@ -202,7 +202,7 @@ class ShorthandAtom:
     kind: ShorthandKind
 
 # shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
-shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text)).to(ShorthandAtom)
+shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text))
 
 # category_name     = unicode_letter { unicode_letter } ;
 category_name = unicode_letter + unicode_letter.many()
@@ -245,11 +245,12 @@ class UnicodeCategoryAtom:
 
 # class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
 class_atom = S.choice(class_literal,
-                    shorthand,
+                    shorthand.to(ShorthandAtom),
+                    escaped_metachar,
                     control_escape,
                     unicode_escape,
                     unicode_category_escape.to(UnicodeCategoryAtom),
-                    escaped_class_meta).map(lambda t: t.text)
+                    escaped_class_meta).map(lambda t: t.text if isinstance(t, Token) else t)
 
 
 @dataclass(frozen=True)
@@ -263,15 +264,15 @@ class CharClassAtom:
 
 
 # range             = class_atom "-" class_atom ;
-range = (class_atom.mark('start') // minus >> class_atom.mark('end')).to(CharRange)
+range = (class_atom.mark('start') // minus + class_atom.mark('end')).to(CharRange)
 
 # class_item = range | class_atom ;
 class_item = range | class_atom
 
 # class_class_items = leading_rsquare? class_item { class_item } ;
-class_class_items = ~leading_rsquare + class_item.many(at_least=1)
+class_class_items = (~leading_rsquare + class_item.many(at_least=1)).map(lambda t: (t[1] + [']']) if t[0] else t[1])
 # char_class        = "[" [ "^" ] class_class_items "]" ;
-char_class = lsquare >> (~caret).map(lambda t: t is not Nothing).mark('negated') + class_class_items.mark('items') // rsquare
+char_class = lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare
 
 
 class GroupKind(Enum):
@@ -374,7 +375,7 @@ quantifier = (S.choice(
     question.map(lambda _: Quantifier(minimum=0, maximum=1)),
     star.map(lambda _: Quantifier(minimum=0, maximum=None)),
     plus.map(lambda _: Quantifier(minimum=1, maximum=None)),
-    braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=t[1] is Nothing)) 
+    braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1])) 
 
 
 @dataclass(frozen=True)
@@ -399,7 +400,7 @@ atom = S.choice(
         group.to(GroupAtom),
         dot.to(DotAtom),
         anchor.to(AnchorAtom),
-        shorthand,
+        shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
         char_class.to(CharClassAtom),
         )
