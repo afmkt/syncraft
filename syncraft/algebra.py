@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Type, Generator, Union
+    Type, Generator, Union, Hashable
 )
 from syncraft.ast import AST
 from dataclasses import dataclass, replace
@@ -61,23 +61,18 @@ SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S, Either[Any, Tuple[A, S]]]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
-    _name: str | Callable[[], str]
+    _name: Hashable | None = None
     
     def config(self) -> dict[str, Any]:
         cfg = getattr(self, SYNCRAFT_CONFIG_KEY, {})
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
     def named(self, name: str) -> Algebra[A, S]:
-        return replace(self, _name=name)
+        return replace(self)
 
     @property
     def name(self) -> str:
-        if isinstance(self._name, str):
-            return self._name
-        elif callable(self._name):
-            return self._name()
-        else:
-            return self.__class__.__name__
+        return str(self._name)
         
     def __repr__(self) -> str:
         return self.name
@@ -104,8 +99,12 @@ class Algebra(Generic[A, S]):
             if cache is None:
                 return (yield from self.run_f(input, cache))
             else:
-                return (yield from cache.exec(self.run_f, input))
-
+                result = (yield from cache.exec(self.run_f, input))
+                match result:
+                    case Left(Error() as e):
+                        return Left(e.push(this=self, state=input))
+                    case _:
+                        return result
         except LeftRecursionError as e:
             if e.offender is self.run_f  or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")
@@ -133,7 +132,7 @@ class Algebra(Generic[A, S]):
                     return Right((Lazy(value), state))
                 case _:
                     raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
-        return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
+        return cls(algebra_lazy_run)
     
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:
@@ -147,7 +146,7 @@ class Algebra(Generic[A, S]):
                 state=input
             )), input, name=cls.__name__ + '.fail'))
 
-        return cls(fail_run, _name=cls.__name__ + '.fail')
+        return cls(fail_run)
     
     @classmethod
     def success(cls, value: Any) -> Algebra[Any, S]:
@@ -156,7 +155,7 @@ class Algebra(Generic[A, S]):
                                                                               SendChannelType, 
                                                                               Either[Any, Tuple[A, S]]]:
             return (yield from cache.return_value(Right((value, input)), input, name=cls.__name__ + '.success'))
-        return cls(success_run, _name=cls.__name__ + '.success')
+        return cls(success_run)
     
     
     def cut(self) -> Algebra[A, S]:
@@ -313,7 +312,7 @@ class Algebra(Generic[A, S]):
                             return Left(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
-        alg = replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
+        alg = replace(self, run_f=or_else_run) # type: ignore
         from typing import cast as _cast
         return _cast(Algebra[Choice[A, B], S], alg)
         
@@ -322,15 +321,8 @@ class Algebra(Generic[A, S]):
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
-            return other.map(combine, raw=True)
-        pattern = re.compile(r'\s')
-        self_name = self.name.strip() 
-        self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
-        other_name = other.name.strip()
-        other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
-        name = f"{self_name} + {other_name}"
-        
-        return self.flat_map(then_both_f).named(name)
+            return other.map(combine, raw=True)        
+        return self.flat_map(then_both_f)
         
 
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
@@ -338,29 +330,15 @@ class Algebra(Generic[A, S]):
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
             return other.map(combine, raw=True)
-        pattern = re.compile(r'\s')
-        self_name = self.name.strip() 
-        self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
-        other_name = other.name.strip()
-        other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
-        name = f"{self_name} // {other_name}"
-        
-        return self.flat_map(then_left_f).named(name)
+        return self.flat_map(then_left_f)
         
 
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
-            return other.map(combine, raw=True)
-        pattern = re.compile(r'\s')
-        self_name = self.name.strip() 
-        self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
-        other_name = other.name.strip()
-        other_name = f"({other_name})" if bool(pattern.search(other_name)) else other_name
-        name = f"{self_name} >> {other_name}"
-        
-        return self.flat_map(then_right_f).named(name)
+            return other.map(combine, raw=True)        
+        return self.flat_map(then_right_f)
         
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
@@ -401,7 +379,7 @@ class Algebra(Generic[A, S]):
                             state=current_input
                         )) 
             return Right((Many(value=tuple(ret)), current_input))
-        return replace(self, run_f=many_run, _name=f'*({self.name})') # type: ignore
+        return replace(self, run_f=many_run) # type: ignore
 
     
 

@@ -41,7 +41,7 @@ class Finder(Generator[T], Generic[T]):
                                                                                            SendChannelType,
                                                                                            Either[Any, Tuple[Any, GenState[T]]]]:
             return (yield from (cache.return_value(Right((input.ast, input)), input, name=cls.__name__ + '.anything')))
-        return cls(anything_run, _name=cls.__name__ + '.anything')
+        return cls(anything_run)
 
 
 

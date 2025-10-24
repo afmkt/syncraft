@@ -3,7 +3,7 @@ from syncraft.ast import Nothing
 from syncraft.regex import (
     parse_regex, S, B,
     literal, atom, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
-    braced_quantifier, lsquare, rsquare, caret, class_item, leading_rsquare,
+    braced_quantifier, lsquare, rsquare, caret, class_item, leading_rsquare, rparen, lparen,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
@@ -13,14 +13,11 @@ from rich import print
 
 
 
-def test_groups_capture():
-    """Test parsing of capturing groups."""
-    result = parse_regex(group, "(abc)")
-    print(result)
 
 def test_groups_non_capture():
     """Test parsing of non-capturing groups."""
-    result = parse_regex(literal, "(?:abc)")
+    result = parse_regex(group, "(?:abc)")
+    print(result)
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -244,4 +241,4 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test_groups_capture()
+    test_groups_non_capture()

@@ -3,7 +3,7 @@ from syncraft.regex import (
     parse_regex, 
     literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
 
 
@@ -219,24 +219,16 @@ def test_character_classes_with_shorthands():
 
 def test_groups_capture():
     """Test parsing of capturing groups."""
-    result = parse_regex(literal, "(abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.CAPTURE
-    assert p.atom.name is None
-    assert isinstance(p.atom.pattern, Regex)
-    # Check the inner pattern
-    inner_branch = p.atom.pattern.branches[0]
-    assert len(inner_branch.pieces) == 3
+    result = parse_regex(atom, "(abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.CAPTURE
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
     for i, char in enumerate("abc"):
-        inner_piece = inner_branch.pieces[i]
-        assert isinstance(inner_piece.atom, LiteralAtom)
-        assert inner_piece.atom.text == char
-
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 def test_groups_non_capture():
     """Test parsing of non-capturing groups."""

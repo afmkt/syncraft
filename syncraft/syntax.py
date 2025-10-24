@@ -384,7 +384,9 @@ class Syntax(Generic[A, S]):
                        spec = ManySpec(spec=self.spec, at_least=at_least, at_most=at_most)
                        )
 
-    def debug(self, on_fail: Optional[Callable[[Algebra[A, S], Any, S], None]] = None, on_success: Optional[Callable[[Algebra[A, S], A, S], None]] = None) -> Syntax[A, S]:
+    def debug(self, 
+              on_fail: Optional[Callable[[Algebra[A, S], Any, S], None]] = None, 
+              on_success: Optional[Callable[[Algebra[A, S], A, S], None]] = None) -> Syntax[A, S]:
 
         def on_succeed(alg: Algebra[A, S], input: S, result: Right[Tuple[A, S]]) -> Either[Any, Tuple[A, S]]:
             if callable(on_success):
@@ -487,7 +489,7 @@ class Syntax(Generic[A, S]):
         """
         return self.sep_by(sep=sep).between(left=open, right=close)
 
-    def optional(self, default:Optional[B]=None) -> Syntax[Choice[A, Optional[Nothing | B]], S]:
+    def optional(self) -> Syntax[Choice[A, Optional[Nothing | B]], S]:
         """Make this syntax optional.
 
         Returns a Choice of the value or Nothing when absent.
@@ -495,7 +497,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice of value or Nothing.
         """
-        return (self | self.success(default if default is not None else Nothing())) # type: ignore
+        return (self | self.success(Nothing())) # type: ignore
         
 
     def cut(self) -> Syntax[A, S]:

@@ -9,7 +9,7 @@ from syncraft.ast import AST, Token
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
-
+from syncraft.dev import debug
 
 r"""
 regex             = branch { "|" branch } ;
@@ -324,15 +324,15 @@ def _group_body() -> Syntax[Any, Any]:
                               + branch.mark('pattern') 
                               // rparen)
     return S.choice(
-                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
-                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)),
-                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
-                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)),
-                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)),
-                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)),
-                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)),
-                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)),
-                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t))
+                # plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
+                debug(noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)), msg="Parsing non-capturing group"),
+                # named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
+                # lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)),
+                # negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)),
+                # lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)),
+                # negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)),
+                # inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)),
+                # inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t))
             )
 
 
@@ -397,7 +397,7 @@ class DotAtom:
 # atom              = literal | char_class | group | anchor | dot | shorthand ;
 atom = S.choice(
         literal.map(lambda x: x.text).mark('text').to(LiteralAtom),
-        group.to(GroupAtom),
+        group,
         dot.to(DotAtom),
         anchor.to(AnchorAtom),
         shorthand.to(ShorthandAtom),

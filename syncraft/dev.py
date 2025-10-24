@@ -3,6 +3,7 @@ import builtins
 import io
 from typing import Tuple, Any, Set, Optional, List, Dict, Mapping
 from syncraft.syntax import (
+    Syntax,
     SyntaxSpec,
     LazySpec,
     ThenSpec,
@@ -12,8 +13,16 @@ from syncraft.syntax import (
 )
 from syncraft.ast import ThenKind
 from syncraft.algebra import Error
+from rich import print
 
-
+def debug(syntax: Syntax[Any, Any], *, msg: str = "") -> Syntax[Any, Any]:
+    def on_fail(rule:Any, err: Any, state: Any) -> None:
+        print(f"[red]Syntax Debug Fail:[/red] {msg}")
+        print(f"  Rule: {rule}")
+        print(f"  State: {state}")
+        rich_error(err)
+    return syntax.debug(on_fail = on_fail)
+    
 
 def rich_error(err: Error)->None:
     try:

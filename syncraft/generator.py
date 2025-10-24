@@ -265,7 +265,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         state=input.inject(x)
                     )) 
                 return Right((Many(value=tuple(ret)), input))
-        return replace(self, run_f=many_run, _name=f"many({self.name})")  # type: ignore
+        return replace(self, run_f=many_run)  # type: ignore
     
  
     def or_else(self, # type: ignore
@@ -342,7 +342,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 input.inject(input.ast.value), 
                                 input.inject(input.ast.value))
                     return result
-        return replace(self, run_f=or_else_run, _name=f"({self.name} | {other.name})") # type: ignore
+        return replace(self, run_f=or_else_run) # type: ignore
 
 
     @classmethod
@@ -376,7 +376,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         return Right((Lazy(value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
-        return cls(algebra_lazy_run, _name=lambda: ".lazy(...)")
+        return cls(algebra_lazy_run)
     
 
         
@@ -393,7 +393,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         if lexer is None:
             raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
         ntags = lexer.tags()
-        
+        name = ','.join(str(tag) for tag in ntags)
         def lex_run(input: GenState[T], 
                     cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]) -> PyGenerator[
                               YieldChannelType, 
@@ -418,25 +418,25 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             expect="str, bytes, or tuple",
                         )
                 parsed_value = cast(ParseResult[T], generated)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(tag)))
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
             else:
                 current = input.ast
                 if not lexer.varify(ntags, current):
                     return (yield from cache.return_value(
                         Left(
                             Error(
-                                None,
-                                message=f"Expected token tag {ntags}, but got {current}.",
+                                this=lex_run,
+                                message=f"Expected token tag {name}, but got {current}.",
                                 state=input,
                             )
                         ),
                         input,
-                        name=str(ntags),
+                        name=name,
                     ))
                 parsed_value = cast(ParseResult[T], current)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=str(ntags)))
+                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
 
-        return cls(lex_run, _name=f"lex({ntags})") 
+        return cls(lex_run) 
 
 
 
