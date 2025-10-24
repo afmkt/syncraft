@@ -202,7 +202,7 @@ class ShorthandAtom:
     kind: ShorthandKind
 
 # shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
-shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.mapped.text)).to(ShorthandAtom)
+shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text)).to(ShorthandAtom)
 
 # category_name     = unicode_letter { unicode_letter } ;
 category_name = unicode_letter + unicode_letter.many()
@@ -213,7 +213,7 @@ unicode_category_escape = (
 )
 
 # unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
-unicode_name = (unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()).map(lambda t: ''.join([t.mapped[0].text] + [c.text for c in t.mapped[1]]))
+unicode_name = (unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]]))
 # name_continue     = unicode_letter | unicode_digit | "_" ;
 name_continue = unicode_letter | unicode_digit | underscore
 # name_start        = unicode_letter | "_" ;
@@ -221,10 +221,10 @@ name_start = unicode_letter | underscore
 # name              = name_start { name_continue } ;
 name = name_start + name_continue.many()
 # unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
-unicode_escape = ((escaped_x >> hex_pair).map(lambda t: chr(int(t.mapped, 16))) | 
-                  (escaped_u >> hex_quad).map(lambda t: chr(int(t.mapped, 16))) | 
-                  (escaped_U >> hex_octa).map(lambda t: chr(int(t.mapped, 16))) | 
-                  ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t.mapped)))
+unicode_escape = ((escaped_x >> hex_pair).map(lambda t: chr(int(t, 16))) | 
+                  (escaped_u >> hex_quad).map(lambda t: chr(int(t, 16))) | 
+                  (escaped_U >> hex_octa).map(lambda t: chr(int(t, 16))) | 
+                  ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t)))
 # escaped_metachar  = "\\" meta_char ;
 escaped_metachar = backslash >> meta_char 
 # escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
@@ -249,7 +249,7 @@ class_atom = S.choice(class_literal,
                     control_escape,
                     unicode_escape,
                     unicode_category_escape.to(UnicodeCategoryAtom),
-                    escaped_class_meta).map(lambda t: t.mapped.text)
+                    escaped_class_meta).map(lambda t: t.text)
 
 
 @dataclass(frozen=True)
@@ -271,7 +271,7 @@ class_item = range | class_atom
 # class_class_items = leading_rsquare? class_item { class_item } ;
 class_class_items = ~leading_rsquare + class_item.many(at_least=1)
 # char_class        = "[" [ "^" ] class_class_items "]" ;
-char_class = lsquare >> (~caret).map(lambda t: t is not Nothing()).mark('negated') + class_class_items.mark('items') // rsquare
+char_class = lsquare >> (~caret).map(lambda t: t is not Nothing).mark('negated') + class_class_items.mark('items') // rsquare
 
 
 class GroupKind(Enum):
@@ -346,7 +346,7 @@ group = S.lazy(_group_body)
 # - \B → NOT_WORD_BOUNDARY
 anchor = (caret | 
           dollar | 
-          boundary_escape).map(lambda t: AnchorKind.from_literal(t.mapped.text)).mark('kind')
+          boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind')
 
 @dataclass(frozen=True)
 class Quantifier:
@@ -359,8 +359,8 @@ class Quantifier:
 # - {n,} → minimum=n, maximum=None
 # - {n,m} → minimum=n, maximum=m
 braced_quantifier = S.choice(
-    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n.mapped, maximum=n.mapped)),
-    (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t.mapped, maximum=None)),
+    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n, maximum=n)),
+    (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t, maximum=None)),
     (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier)
 )
 
@@ -374,7 +374,7 @@ quantifier = (S.choice(
     question.map(lambda _: Quantifier(minimum=0, maximum=1)),
     star.map(lambda _: Quantifier(minimum=0, maximum=None)),
     plus.map(lambda _: Quantifier(minimum=1, maximum=None)),
-    braced_quantifier) + ~question).map(lambda t: replace(t.mapped[0], greedy=t.mapped[1] is Nothing())) 
+    braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=t[1] is Nothing)) 
 
 
 @dataclass(frozen=True)
@@ -395,7 +395,7 @@ class DotAtom:
 
 # atom              = literal | char_class | group | anchor | dot | shorthand ;
 atom = S.choice(
-        literal.map(lambda x: x.mapped.text).mark('text').to(LiteralAtom),
+        literal.map(lambda x: x.text).mark('text').to(LiteralAtom),
         group.to(GroupAtom),
         dot.to(DotAtom),
         anchor.to(AnchorAtom),

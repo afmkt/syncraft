@@ -281,6 +281,7 @@ def test_optional():
     assert v2 == Marked(name='a', value=from_string('a'))
 
 def test_nothing():
+    assert bool(Nothing) is False, "Nothing should evaluate to False in boolean context"
     assert bool(Nothing()) is False, "Nothing should evaluate to False in boolean context"
     assert Nothing() is Nothing(), "Nothing should be a singleton"
     assert str(Nothing()) == "Nothing", "String representation of Nothing should be 'Nothing'"

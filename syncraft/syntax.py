@@ -284,7 +284,7 @@ class Syntax(Generic[A, S]):
         
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).named(name))
     ######################################################## value transformation ########################################################
-    def map(self, f: Callable[[A], B]) -> Syntax[B, S]:
+    def map(self, f: Callable[[Any], B],*, raw:bool = False) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
 
         Args:
@@ -293,7 +293,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with the same resulting state.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f)) # type: ignore
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, raw=raw)) # type: ignore
 
     def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
         return self.spec.walk(max_depth=max_depth)

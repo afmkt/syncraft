@@ -158,7 +158,7 @@ def test_left_recursion_variants()->None:
     assert counts1.get('n', 0) == 3
     assert counts1.get('+', 0) == 2
     # Variant 2: nested right growth
-    a_tok = literal('a').map(lambda x: x.text).named('a')
+    a_tok = literal('a').map(lambda x: x.text, raw=True).named('a')
     Expr1 = lazy(lambda: (Expr1 + a_tok) | a_tok).named('Expr1')
     v2, _ = parse_word(Expr1, 'a a a a', cache=Cache())
     ast2, _ = v2.bimap()
@@ -166,7 +166,7 @@ def test_left_recursion_variants()->None:
 
 
 def test_indirect_left_recursion()->None:
-    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text), raw=True)
     PLUS = token(text='+')
     STAR = token(text='*')
     A = lazy(lambda: (B >> PLUS >> A) | B)
@@ -204,7 +204,7 @@ def test_indirect_left_recursion_2()->None:
         ( )
         1 * ( 2 + )
     """
-    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text), raw=True)
     PLUS = token(text='+')
     STAR = token(text='*')
     LPAREN = token(text='(')
@@ -319,7 +319,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     assert str(right_term[2]) == 't.3'
 
     # Mapped variant
-    NUMBER_M = NUMBER.map(lambda t: int(t.text))
+    NUMBER_M = NUMBER.map(lambda t: int(t.text), raw=True)
     ExprM = lazy(lambda: (ExprM + PLUS + TermM) | TermM)  # type: ignore[name-defined]
     TermM = lazy(lambda: (TermM + STAR + FactorM) | FactorM)  # type: ignore[name-defined]
     FactorM = lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
@@ -389,7 +389,7 @@ def test_non_recursive_map_preserves_shape()->None:
     assert str(right_tok) == 't.34'
 
     # Mapped version
-    NUM_M = NUM.map(lambda t: int(t.text))
+    NUM_M = NUM.map(lambda t: int(t.text), raw=True)
     PairM = NUM_M + PLUS + NUM_M
     v2,_ = parse_word(PairM, '12 + 34', cache=Cache())
     ast2,_ = v2.bimap()
@@ -425,7 +425,7 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         assert str(raw[2]) == 't.3'
 
         # Mapped version
-        NUM_M = NUM.map(lambda t: int(t.text))
+        NUM_M = NUM.map(lambda t: int(t.text), raw=True)
         ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
         v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=Cache())
         mapped,_ = v2.bimap()
@@ -644,11 +644,11 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
 
 
 def test_multi_recursion()->None:
-    a = literal('a').map(lambda x: x.text).named('a')
-    b = literal('b').map(lambda x: x.text).named('b')
-    c = literal('c').map(lambda x: x.text).named('c')
-    x = literal('x').map(lambda x: x.text).named('x')
-    y = literal('y').map(lambda x: x.text).named('y')
+    a = literal('a').map(lambda x: x.text, raw=True).named('a')
+    b = literal('b').map(lambda x: x.text, raw=True).named('b')
+    c = literal('c').map(lambda x: x.text, raw=True).named('c')
+    x = literal('x').map(lambda x: x.text, raw=True).named('x')
+    y = literal('y').map(lambda x: x.text, raw=True).named('y')
     z = literal('z').map(lambda x: x.text).named('z')
     A = lazy(lambda: (B + x) | a).named('A')
     B = lazy(lambda: (C + y) | b).named('B')

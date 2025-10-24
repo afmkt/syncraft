@@ -257,7 +257,7 @@ class MetaNothing(type):
     def __str__(cls)->str:
         return "Nothing"
     def __repr__(cls)->str:
-        return cls.__str__()
+        return "Nothing"
     def __bool__(cls)->bool:
         return False
 @dataclass(frozen=True)
@@ -272,7 +272,7 @@ class Nothing(AST, metaclass=MetaNothing):
     def __str__(self)->str:
         return "Nothing"
     def __repr__(self)->str:
-        return self.__str__()
+        return "Nothing"
 
 
 @dataclass(frozen=True)

@@ -134,7 +134,7 @@ def test_quantifiers():
 
 def test_character_classes_simple():
     """Test parsing of simple character classes."""
-    result = parse_regex(literal, "[abc]")
+    result = parse_regex(char_class, "[abc]")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -148,7 +148,7 @@ def test_character_classes_simple():
 
 def test_character_classes_negated():
     """Test parsing of negated character classes."""
-    result = parse_regex(literal, "[^abc]")
+    result = parse_regex(char_class, "[^abc]")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]

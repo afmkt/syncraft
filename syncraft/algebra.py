@@ -3,7 +3,7 @@ from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
     Type, Generator, Union
 )
-
+from syncraft.ast import AST
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
@@ -230,14 +230,19 @@ class Algebra(Generic[A, S]):
 
 
 ######################################################## fundamental combinators ############################################    
-    def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
+    def map(self, f: Callable[[A], B], *, raw:bool) -> Algebra[B, S]:
         def map_run(input: S, 
                     cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                           SendChannelType, 
                                                                           Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
-                return Right((f(parsed.value[0]), parsed.value[1]))            
+                ast, s = parsed.value
+                if not raw and isinstance(ast, AST):
+                    data:Any = ast.mapped
+                else:
+                    data = ast 
+                return Right((f(data), s))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
         alg = replace(self, run_f=map_run) # type: ignore
@@ -246,7 +251,7 @@ class Algebra(Generic[A, S]):
 
         
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
-        return self.map(f).map_state(lambda s: s.map(i))
+        return self.map(f, raw=True).map_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, 
@@ -317,7 +322,7 @@ class Algebra(Generic[A, S]):
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
-            return other.map(combine)
+            return other.map(combine, raw=True)
         pattern = re.compile(r'\s')
         self_name = self.name.strip() 
         self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
@@ -332,7 +337,7 @@ class Algebra(Generic[A, S]):
         def then_left_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
-            return other.map(combine)
+            return other.map(combine, raw=True)
         pattern = re.compile(r'\s')
         self_name = self.name.strip() 
         self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name
@@ -347,7 +352,7 @@ class Algebra(Generic[A, S]):
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
-            return other.map(combine)
+            return other.map(combine, raw=True)
         pattern = re.compile(r'\s')
         self_name = self.name.strip() 
         self_name = f"({self_name})" if bool(pattern.search(self_name)) else self_name

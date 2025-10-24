@@ -3,27 +3,35 @@ from syncraft.ast import Nothing
 from syncraft.regex import (
     parse_regex, S, B,
     literal, atom, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
-    braced_quantifier,
+    braced_quantifier, lsquare, rsquare, caret, class_item, leading_rsquare,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
 from syncraft.ast import Token
-# from rich import print
+from rich import print
 
 
 
 
+def test_character_classes_simple():
+    """Test parsing of simple character classes."""
+    result = parse_regex(char_class, "[abc]")
+    assert isinstance(result, Regex)
+    assert len(result.branches) == 1
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, CharClassAtom)
+    assert not p.atom.negated
+    assert len(p.atom.items) == 3
+    assert p.atom.items == ("a", "b", "c")
 
-def test1():
-    data = "[abc]"
-    print(data)
-    result = parse_regex(char_class, data)
-    print(data, result)
 
 
 def test_character_classes_negated():
     """Test parsing of negated character classes."""
-    result = parse_regex(literal, "[^abc]")
+    result = parse_regex(char_class, "[^abc]")
+    print(result)
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -327,8 +335,4 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    assert bool(Nothing()) is False, "Nothing should evaluate to False in boolean context"
-    assert Nothing() is Nothing(), "Nothing should be a singleton"
-    assert str(Nothing()) == "Nothing", "String representation of Nothing should be 'Nothing'"
-    assert isinstance(Nothing(), Nothing), "Nothing should be instance of Nothing class"
-    assert Nothing is Nothing(), "Nothing class should be the same as itself"
+    test_character_classes_simple()
