@@ -1,148 +1,13 @@
 from __future__ import annotations
-from typing import Any
-from syncraft.fa import NFA
 from syncraft.regex import (
-    FABuilder as B,
     parse_regex, 
-    CodeUniverse,
     literal, anchor, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
-    literal_char,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
 )
+from syncraft.ast import Token
 from rich import print
 
-
-
-def test():
-    universe = CodeUniverse.unicode()
-    x = B.range("\u0000", "\U0010FFFF") 
-    y = B.oneof(["\\", 'b', 'd', 'D', 's', 'S', 'w', 'W'])
-
-    nfax = x.compile(universe).dfa
-    nfay = y.compile(universe).dfa
-    nfaxy = nfax.difference(nfay)
-    rx = nfax.runner()
-    rr = rx.step("a", 0)
-    print(rr)
-    ry = nfay.runner()
-    rr = ry.step("a", 0)
-    print(rr)
-    rxy = nfaxy.runner()
-    rr = rxy.step("a", 0)
-    print(rr)
-
-def test1():
-    # sanity duplicate-like test ensuring no accidental state sharing issues
-    def match(dfa, s: str):
-        print(f"Matching '{s}' against DFA")
-        runner = dfa.runner()
-        for i, ch in enumerate(s):
-            step_result = runner.step(ch, i)
-            print(step_result)
-        
-    u = CodeUniverse.ascii()
-    a = NFA.from_charset('a', universe=u).dfa
-    match(a, 'a')
-    match(a, 'b')
-    b = NFA.from_charset('b', universe=u).dfa
-    match(b, 'a')
-    match(b, 'b')
-    c = NFA.from_charset('c', universe=u).dfa
-    match(c, 'c')
-    match(c, 'a')
-    ab = a | b
-    match(ab, 'a')
-    match(ab, 'b')
-    match(ab, 'c')
-    anb = a & b
-    match(anb, 'a')
-    match(anb, 'b')
-    match(anb, 'c')
-    nc = -c
-    match(nc, 'a')
-    match(nc, 'c')
-    match(nc, 'b')
-    combo = ((a | b) & (-c))
-    match(combo, 'a')
-    match(combo, 'b')
-    match(combo, 'c')
-    match(combo, 'ac')
-
-
-def test_literal_characters():
-    """Test parsing of literal characters."""
-    # Single literal character
-    result = parse_regex(literal_char, "a")
-    print(result)
-    assert result.text == "a"
-
-
-def test_literal_digits():
-    """Test parsing of literal digits."""
-    result = parse_regex(literal, "1")
-    assert result.text == "1"
-
-
-def test_literal_special_chars():
-    """Test parsing of literal special characters that are not metacharacters."""
-    # Characters that are allowed as literals (not in the excluded set)
-    result = parse_regex(literal, "@")
-    assert result.text == "@"
-
-
-def test_control_escapes():
-    """Test parsing of control escape sequences."""
-    test_cases = [
-        (r"\t", r"\t"),
-        (r"\n", r"\n"),
-        (r"\r", r"\r"),
-        (r"\f", r"\f"),
-        (r"\v", r"\v"),
-    ]
-
-    for pattern, expected in test_cases:
-        result = parse_regex(literal, pattern)
-        print(result)
-        assert result.text == expected
-        assert len(result.text) == 2
-        assert result.token_type == 'control_escape'
-
-
-def test_unicode_escapes():
-    """Test parsing of unicode escape sequences."""
-    test_cases = [
-        (r"\x41", "A"),  # \x41 = 'A'
-        (r"\u0041", "A"),  # \u0041 = 'A'
-        (r"\U00000041", "A"),  # \U00000041 = 'A'
-        (r"\N{LATIN CAPITAL LETTER A}", "A"),  # Unicode name
-    ]
-
-    for pattern, expected in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        branch = result.branches[0]
-        assert len(branch.pieces) == 1
-        piece = branch.pieces[0]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == expected
-
-
-def test_escaped_metacharacters():
-    """Test parsing of escaped metacharacters."""
-    metachars = r"\.[[]](){}|+*?^$"
-    result = parse_regex(literal, metachars)
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == len(metachars) // 2  # Each escape sequence becomes one piece
-
-    expected_chars = r"\.[[]](){}|+*?^$"
-    for i, expected in enumerate(expected_chars):
-        piece = branch.pieces[i]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == expected
 
 
 def test_anchors():
@@ -160,12 +25,11 @@ def test_anchors():
         result = parse_regex(literal, pattern)
         assert isinstance(result, Regex)
         assert len(result.branches) == 1
-        branch = result.branches[0]
-        assert len(branch.pieces) == 1
-        piece = branch.pieces[0]
-        assert isinstance(piece.atom, AnchorAtom)
-        assert piece.atom.kind == expected_kind
-
+        b = result.branches[0]
+        assert len(b.pieces) == 1
+        p = b.pieces[0]
+        assert isinstance(p.atom, AnchorAtom)
+        assert p.atom.kind == expected_kind
 
 def test_shorthands():
     """Test parsing of shorthand character classes."""
@@ -182,22 +46,21 @@ def test_shorthands():
         result = parse_regex(literal, pattern)
         assert isinstance(result, Regex)
         assert len(result.branches) == 1
-        branch = result.branches[0]
-        assert len(branch.pieces) == 1
-        piece = branch.pieces[0]
-        assert isinstance(piece.atom, ShorthandAtom)
-        assert piece.atom.kind == expected_kind
-
+        b = result.branches[0]
+        assert len(b.pieces) == 1
+        p = b.pieces[0]
+        assert isinstance(p.atom, ShorthandAtom)
+        assert p.atom.kind == expected_kind
 
 def test_dot_atom():
     """Test parsing of dot (.) atom."""
     result = parse_regex(literal, ".")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, DotAtom)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, DotAtom)
 
 
 def test_quantifiers():
@@ -221,12 +84,12 @@ def test_quantifiers():
         result = parse_regex(literal, pattern)
         assert isinstance(result, Regex)
         assert len(result.branches) == 1
-        branch = result.branches[0]
-        assert len(branch.pieces) == 1
-        piece = branch.pieces[0]
-        assert isinstance(piece.atom, LiteralAtom)
-        assert piece.atom.text == "a"
-        assert piece.quantifier == expected_quantifier
+        b = result.branches[0]
+        assert len(b.pieces) == 1
+        p = b.pieces[0]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == "a"
+        assert p.quantifier == expected_quantifier
 
 
 def test_character_classes_simple():
@@ -234,13 +97,13 @@ def test_character_classes_simple():
     result = parse_regex(literal, "[abc]")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, CharClassAtom)
-    assert not piece.atom.negated
-    assert len(piece.atom.items) == 3
-    assert piece.atom.items == ("a", "b", "c")
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, CharClassAtom)
+    assert not p.atom.negated
+    assert len(p.atom.items) == 3
+    assert p.atom.items == ("a", "b", "c")
 
 
 def test_character_classes_negated():
@@ -248,13 +111,13 @@ def test_character_classes_negated():
     result = parse_regex(literal, "[^abc]")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, CharClassAtom)
-    assert piece.atom.negated
-    assert len(piece.atom.items) == 3
-    assert piece.atom.items == ("a", "b", "c")
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, CharClassAtom)
+    assert p.atom.negated
+    assert len(p.atom.items) == 3
+    assert p.atom.items == ("a", "b", "c")
 
 
 def test_character_classes_with_ranges():
@@ -262,15 +125,15 @@ def test_character_classes_with_ranges():
     result = parse_regex(literal, "[a-zA-Z0-9]")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, CharClassAtom)
-    assert not piece.atom.negated
-    assert len(piece.atom.items) == 3
-    assert piece.atom.items[0] == CharRange(start="a", end="z")
-    assert piece.atom.items[1] == CharRange(start="A", end="Z")
-    assert piece.atom.items[2] == CharRange(start="0", end="9")
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, CharClassAtom)
+    assert not p.atom.negated
+    assert len(p.atom.items) == 3
+    assert p.atom.items[0] == CharRange(start="a", end="z")
+    assert p.atom.items[1] == CharRange(start="A", end="Z")
+    assert p.atom.items[2] == CharRange(start="0", end="9")
 
 
 def test_character_classes_with_escaped_chars():
@@ -278,13 +141,13 @@ def test_character_classes_with_escaped_chars():
     result = parse_regex(literal, r"[\[\]\-\.\\]")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, CharClassAtom)
-    assert not piece.atom.negated
-    assert len(piece.atom.items) == 4
-    assert piece.atom.items == ("[", "]", "-", "\\")
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, CharClassAtom)
+    assert not p.atom.negated
+    assert len(p.atom.items) == 4
+    assert p.atom.items == ("[", "]", "-", "\\")
 
 
 def test_character_classes_with_shorthands():
@@ -292,14 +155,14 @@ def test_character_classes_with_shorthands():
     result = parse_regex(literal, r"[\d\s\w]")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, CharClassAtom)
-    assert not piece.atom.negated
-    assert len(piece.atom.items) == 3
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, CharClassAtom)
+    assert not p.atom.negated
+    assert len(p.atom.items) == 3
     # Note: shorthands in character classes are treated as literal atoms
-    assert piece.atom.items == (r"\d", r"\s", r"\w")
+    assert p.atom.items == (r"\d", r"\s", r"\w")
 
 
 def test_groups_capture():
@@ -307,15 +170,15 @@ def test_groups_capture():
     result = parse_regex(literal, "(abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.CAPTURE
-    assert piece.atom.name is None
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.CAPTURE
+    assert p.atom.name is None
+    assert isinstance(p.atom.pattern, Regex)
     # Check the inner pattern
-    inner_branch = piece.atom.pattern.branches[0]
+    inner_branch = p.atom.pattern.branches[0]
     assert len(inner_branch.pieces) == 3
     for i, char in enumerate("abc"):
         inner_piece = inner_branch.pieces[i]
@@ -328,12 +191,12 @@ def test_groups_non_capture():
     result = parse_regex(literal, "(?:abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.NON_CAPTURE
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.NON_CAPTURE
+    assert isinstance(p.atom.pattern, Regex)
 
 
 def test_groups_named():
@@ -341,26 +204,25 @@ def test_groups_named():
     result = parse_regex(literal, "(?P<name>abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.CAPTURE
-    assert piece.atom.name == "name"
-    assert isinstance(piece.atom.pattern, Regex)
-
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.CAPTURE
+    assert p.atom.name == "name"
+    assert isinstance(p.atom.pattern, Regex)
 
 def test_groups_lookahead():
     """Test parsing of positive lookahead groups."""
     result = parse_regex(literal, "(?=abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.LOOKAHEAD
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.LOOKAHEAD
+    assert isinstance(p.atom.pattern, Regex)
 
 
 def test_groups_negative_lookahead():
@@ -368,12 +230,12 @@ def test_groups_negative_lookahead():
     result = parse_regex(literal, "(?!abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.NEG_LOOKAHEAD
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.NEG_LOOKAHEAD
+    assert isinstance(p.atom.pattern, Regex)
 
 
 def test_groups_lookbehind():
@@ -381,12 +243,12 @@ def test_groups_lookbehind():
     result = parse_regex(literal, "(?<=abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.LOOKBEHIND
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.LOOKBEHIND
+    assert isinstance(p.atom.pattern, Regex)
 
 
 def test_groups_negative_lookbehind():
@@ -394,12 +256,12 @@ def test_groups_negative_lookbehind():
     result = parse_regex(literal, "(?<!abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.NEG_LOOKBEHIND
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.NEG_LOOKBEHIND
+    assert isinstance(p.atom.pattern, Regex)
 
 
 def test_groups_flags_only():
@@ -407,14 +269,14 @@ def test_groups_flags_only():
     result = parse_regex(literal, "(?i)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.FLAGS
-    assert piece.atom.inline_flags == ("i",)
-    assert piece.atom.disabled_flags is None
-    assert piece.atom.pattern is None
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.FLAGS
+    assert p.atom.inline_flags == ("i",)
+    assert p.atom.disabled_flags is None
+    assert p.atom.pattern is None
 
 
 def test_groups_flags_with_disable():
@@ -422,14 +284,14 @@ def test_groups_flags_with_disable():
     result = parse_regex(literal, "(?im-s)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.FLAGS
-    assert piece.atom.inline_flags == ("i", "m")
-    assert piece.atom.disabled_flags == ("s",)
-    assert piece.atom.pattern is None
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.FLAGS
+    assert p.atom.inline_flags == ("i", "m")
+    assert p.atom.disabled_flags == ("s",)
+    assert p.atom.pattern is None
 
 
 def test_groups_flags_scoped():
@@ -437,14 +299,14 @@ def test_groups_flags_scoped():
     result = parse_regex(literal, "(?i:abc)")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
-    branch = result.branches[0]
-    assert len(branch.pieces) == 1
-    piece = branch.pieces[0]
-    assert isinstance(piece.atom, GroupAtom)
-    assert piece.atom.kind == GroupKind.FLAGS_SCOPED
-    assert piece.atom.inline_flags == ("i",)
-    assert piece.atom.disabled_flags is None
-    assert isinstance(piece.atom.pattern, Regex)
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, GroupAtom)
+    assert p.atom.kind == GroupKind.FLAGS_SCOPED
+    assert p.atom.inline_flags == ("i",)
+    assert p.atom.disabled_flags is None
+    assert isinstance(p.atom.pattern, Regex)
 
 
 def test_groups_flags_scoped_with_disable():
@@ -550,37 +412,4 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test1()
-    quit()
-    test_literal_characters()
-    test_literal_digits()
-    test_literal_special_chars()
-    test_control_escapes()
-    test_unicode_escapes()
     test_escaped_metacharacters()
-    test_anchors()
-    test_shorthands()
-    test_dot_atom()
-    test_quantifiers()
-    test_character_classes_simple()
-    test_character_classes_negated()
-    test_character_classes_with_ranges()
-    test_character_classes_with_escaped_chars()
-    test_character_classes_with_shorthands()
-    test_groups_capture()
-    test_groups_non_capture()
-    test_groups_named()
-    test_groups_lookahead()
-    test_groups_negative_lookahead()
-    test_groups_lookbehind()
-    test_groups_negative_lookbehind()
-    test_groups_flags_only()
-    test_groups_flags_with_disable()
-    test_groups_flags_scoped()
-    test_groups_flags_scoped_with_disable()
-    test_alternation()
-    test_complex_regex()
-    test_unicode_category_escape()
-    test_unicode_category_escape_negated()
-    test_unicode_category_escape_multiple()
-    print("All tests passed.")

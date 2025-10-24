@@ -3,12 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
-
+import unicodedata
 
 
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
-from syncraft.lexer import Lexer
 from syncraft.syntax import Syntax
 
 
@@ -208,7 +207,7 @@ unicode_category_escape = (
 )
 
 # unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
-unicode_name = unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()
+unicode_name = (unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()).map(lambda t: ''.join([t.mapped[0].text] + [c.text for c in t.mapped[1]]))
 # name_continue     = unicode_letter | unicode_digit | "_" ;
 name_continue = unicode_letter | unicode_digit | underscore
 # name_start        = unicode_letter | "_" ;
@@ -216,10 +215,10 @@ name_start = unicode_letter | underscore
 # name              = name_start { name_continue } ;
 name = name_start + name_continue.many()
 # unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
-unicode_escape = ((escaped_x + hex_pair).mark('escaped_x') | 
-                  (escaped_u + hex_quad).mark('escaped_u') | 
-                  (escaped_U + hex_octa).mark('escaped_U') | 
-                  (escaped_N + unicode_name).mark('escaped_N') // rbrace)
+unicode_escape = ((escaped_x >> hex_pair).map(lambda t: chr(int(t.mapped, 16))) | 
+                  (escaped_u >> hex_quad).map(lambda t: chr(int(t.mapped, 16))) | 
+                  (escaped_U >> hex_octa).map(lambda t: chr(int(t.mapped, 16))) | 
+                  ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t.mapped)))
 # escaped_metachar  = "\\" meta_char ;
 escaped_metachar = backslash >> meta_char 
 # escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
@@ -431,8 +430,6 @@ def parse_regex(syntax: Syntax[Any, Any], pattern: str) -> Any:
     from syncraft.parser import parse_string
     result, s = parse_string(syntax, pattern)
     if s:
-        from rich import print
-        print(result)
         return result.mapped
     else:
         return result
