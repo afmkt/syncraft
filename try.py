@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any
+from syncraft.fa import NFA
 from syncraft.regex import (
     FABuilder as B,
     parse_regex, 
@@ -11,14 +12,16 @@ from syncraft.regex import (
 )
 from rich import print
 
+
+
 def test():
     universe = CodeUniverse.unicode()
     x = B.range("\u0000", "\U0010FFFF") 
-    y = B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"])
+    y = B.oneof(["\\", 'b', 'd', 'D', 's', 'S', 'w', 'W'])
 
-    nfax = x.compile(universe)
-    nfay = y.compile(universe)
-    nfaxy = (x - y).compile(universe)
+    nfax = x.compile(universe).dfa
+    nfay = y.compile(universe).dfa
+    nfaxy = nfax.difference(nfay)
     rx = nfax.runner()
     rr = rx.step("a", 0)
     print(rr)
@@ -29,7 +32,44 @@ def test():
     rr = rxy.step("a", 0)
     print(rr)
 
-    
+def test1():
+    # sanity duplicate-like test ensuring no accidental state sharing issues
+    def match(dfa, s: str):
+        print(f"Matching '{s}' against DFA")
+        runner = dfa.runner()
+        for i, ch in enumerate(s):
+            step_result = runner.step(ch, i)
+            print(step_result)
+        
+    u = CodeUniverse.ascii()
+    a = NFA.from_charset('a', universe=u).dfa
+    match(a, 'a')
+    match(a, 'b')
+    b = NFA.from_charset('b', universe=u).dfa
+    match(b, 'a')
+    match(b, 'b')
+    c = NFA.from_charset('c', universe=u).dfa
+    match(c, 'c')
+    match(c, 'a')
+    ab = a | b
+    match(ab, 'a')
+    match(ab, 'b')
+    match(ab, 'c')
+    anb = a & b
+    match(anb, 'a')
+    match(anb, 'b')
+    match(anb, 'c')
+    nc = -c
+    match(nc, 'a')
+    match(nc, 'c')
+    match(nc, 'b')
+    combo = ((a | b) & (-c))
+    match(combo, 'a')
+    match(combo, 'b')
+    match(combo, 'c')
+    match(combo, 'ac')
+
+
 def test_literal_characters():
     """Test parsing of literal characters."""
     # Single literal character
@@ -510,7 +550,7 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test()
+    test1()
     quit()
     test_literal_characters()
     test_literal_digits()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List,
-    Callable, Dict, Sequence, Union, Iterator
+    Callable, Dict, Sequence, Union, Iterator, Literal
 )
 
 from dataclasses import dataclass, field, replace
@@ -358,41 +358,28 @@ class DFA(Generic[C]):
         return replace(self, accept=FrozenDict({a: frozenset({tag}) for a in self.accept}))
         
     @property
-    def complement(self) -> DFA[C]:
+    def any(self) -> DFA[C]:
         universe = self.universe
-        # Make a copy of transitions and add a sink for missing chars
-        transitions: dict[FAState, dict[CharSet[C], FAState]] = {s: dict(t) for s, t in self.transitions.items()}
-        sink = FAState()
-        for s, trans in transitions.items():
-            # union of all existing intervals in this state
-            covered: CharSet[C] = CharSet.none(universe)
-            for cs in trans.keys():
-                covered |= cs
-            missing = -covered
-            if missing.interval:  # any uncovered chars
-                trans[missing] = sink
-        # sink transitions to itself on any char
-        transitions[sink] = {CharSet.any(universe): sink}
-
-        # flip accepting states
-        all_states = set(transitions.keys())
-        new_accept: dict[FAState, frozenset[Tag]] = {s: frozenset() for s in all_states if s not in self.accept}
-
-        # freeze everything
-        frozen_trans: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({s: FrozenDict(t) for s, t in transitions.items()})
-        frozen_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict(new_accept)
+        # Single state DFA accepting everything
+        s = FAState()
+        transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({s: FrozenDict({CharSet.any(universe): s})})
+        accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({s: frozenset()})
         return DFA(
             universe=universe,
-            init=self.init,
-            accept=frozen_accept,
-            transitions=frozen_trans
+            init=s,
+            accept=accept,
+            transitions=transitions
         )
+    @property
+    def complement(self) -> DFA[C]:
+        return self.any.difference(self)
     
     def __neg__(self) -> DFA[C]:
         return self.complement
                        
 
     def _product(self, other: "DFA[C]", 
+                 op: Literal['intersection', 'union', 'difference'],
                  accept_func: Callable[[Tuple[bool, frozenset[Tag]], Tuple[bool, frozenset[Tag]]], Tuple[bool, frozenset[Tag]]]) -> "DFA[C]":
         if self.universe != other.universe:
             raise MixedUniverseError("Cannot combine DFAs with different universes",
@@ -419,17 +406,24 @@ class DFA(Generic[C]):
             trans2: dict[CharSet[C], FAState] = dict(other.transitions.get(s2, {}))
 
             # collect all intervals from both transition maps and partition them
-            intvs: List[Tuple[int, int]] = []
+            lintvs: List[Tuple[int, int]] = []
+            rintvs: List[Tuple[int, int]] = []
             for cs in trans1.keys():
-                intvs.extend(cs.interval)
+                lintvs.extend(cs.interval)
             for cs in trans2.keys():
-                intvs.extend(cs.interval)
+                rintvs.extend(cs.interval)
 
             # If there are no intervals on either side, we leave transitions empty.
-            if not intvs:
+            if not lintvs and not rintvs:
                 transitions[new_state] = {}
             else:
-                pieces = CharSet.partition_charsets(intvs)
+                match op:
+                    case 'intersection':
+                        pieces = CharSet.intersect_interval(lintvs, rintvs)
+                    case 'union':
+                        pieces = CharSet.partition_charsets(lintvs + rintvs)
+                    case 'difference':
+                        pieces = CharSet.difference_interval(lintvs, rintvs)
                 next_trans: dict[CharSet[C], FAState] = {}
 
                 for p in pieces:
@@ -490,7 +484,7 @@ class DFA(Generic[C]):
             accepts = a[0] and b[0]
             tags = a[1] | b[1] if accepts else frozenset()
             return (accepts, tags)
-        return self._product(other, accept_func)    
+        return self._product(other, 'intersection', accept_func)    
     def __and__(self, other: DFA[C]) -> DFA[C]:
         return self.intersection(other)
 
@@ -499,16 +493,17 @@ class DFA(Generic[C]):
             accepts = a[0] or b[0]
             tags = a[1] | b[1] if accepts else frozenset()
             return (accepts, tags)
-        return self._product(other, accept_func)
+        return self._product(other,'union', accept_func)
     def __or__(self, other: DFA[C]) -> DFA[C]:
         return self.union(other)
     
     def difference(self, other: DFA[C]) -> DFA[C]:
+        # return self.intersection(other.complement)
         def accept_func(a: Tuple[bool, frozenset[Tag]], b: Tuple[bool, frozenset[Tag]]) -> Tuple[bool, frozenset[Tag]]:
             accepts = a[0] and not b[0]
-            tags = a[1] if accepts else frozenset()
+            tags = a[1] - b[1]
             return (accepts, tags)
-        return self._product(other, accept_func)
+        return self._product(other,'difference', accept_func)
     def __sub__(self, other: DFA[C]) -> DFA[C]:
         return self.difference(other)
     
