@@ -107,24 +107,7 @@ class AnchorKind(Enum):
             r"\b": cls.WORD_BOUNDARY,
             r"\B": cls.NOT_WORD_BOUNDARY,
         }[literal]
-
-class ShorthandKind(Enum):
-    DIGIT = auto()
-    NOT_DIGIT = auto()
-    WORD = auto()
-    NOT_WORD = auto()
-    SPACE = auto()
-    NOT_SPACE = auto()
-    @classmethod
-    def from_literal(cls, literal: str) -> ShorthandKind:        
-        return {
-            r"\d": cls.DIGIT,
-            r"\D": cls.NOT_DIGIT,
-            r"\w": cls.WORD,
-            r"\W": cls.NOT_WORD,
-            r"\s": cls.SPACE,
-            r"\S": cls.NOT_SPACE,
-        }[literal]
+    
 
 
 
@@ -195,8 +178,31 @@ hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_
 meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
 # control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" ;
 control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"]))
+
+class ShorthandKind(Enum):
+    DIGIT = auto()
+    NOT_DIGIT = auto()
+    WORD = auto()
+    NOT_WORD = auto()
+    SPACE = auto()
+    NOT_SPACE = auto()
+    @classmethod
+    def from_literal(cls, literal: str) -> ShorthandKind:        
+        return {
+            r"\d": cls.DIGIT,
+            r"\D": cls.NOT_DIGIT,
+            r"\w": cls.WORD,
+            r"\W": cls.NOT_WORD,
+            r"\s": cls.SPACE,
+            r"\S": cls.NOT_SPACE,
+        }[literal]
+
+@dataclass(frozen=True)
+class ShorthandAtom:
+    kind: ShorthandKind
+
 # shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
-shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"]))
+shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.mapped.text)).to(ShorthandAtom)
 
 # category_name     = unicode_letter { unicode_letter } ;
 category_name = unicode_letter + unicode_letter.many()
@@ -238,12 +244,12 @@ class UnicodeCategoryAtom:
 
 
 # class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
-class_atom = (class_literal | 
-              shorthand | 
-              control_escape | 
-              unicode_escape | 
-              unicode_category_escape.to(UnicodeCategoryAtom)  |
-              escaped_class_meta).map(lambda t: t.mapped.text)
+class_atom = S.choice(class_literal,
+                    shorthand,
+                    control_escape,
+                    unicode_escape,
+                    unicode_category_escape.to(UnicodeCategoryAtom),
+                    escaped_class_meta).map(lambda t: t.mapped.text)
 
 
 @dataclass(frozen=True)
@@ -316,15 +322,17 @@ def _group_body() -> Syntax[Any, Any]:
                               + colon 
                               + branch.mark('pattern') 
                               // rparen)
-    return (plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)) | 
-            noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)) | 
-            named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)) | 
-            lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)) | 
-            negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)) | 
-            lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)) | 
-            negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)) | 
-            inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)) | 
-            inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t)))
+    return S.choice(
+                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
+                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)),
+                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
+                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)),
+                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)),
+                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)),
+                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)),
+                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)),
+                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t))
+            )
 
 
 group = S.lazy(_group_body)
@@ -371,9 +379,6 @@ class LiteralAtom:
     text: str
 
 
-@dataclass(frozen=True)
-class ShorthandAtom:
-    kind: ShorthandKind
 
 
 @dataclass(frozen=True)
@@ -386,13 +391,15 @@ class DotAtom:
 
 
 # atom              = literal | char_class | group | anchor | dot | shorthand ;
-atom = (literal.map(lambda x: x.mapped.text).mark('text').to(LiteralAtom) | 
-        char_class.to(CharClassAtom) | 
-        group.to(GroupAtom) | 
-        anchor.to(AnchorAtom) | 
-        dot.to(DotAtom) | 
-        unicode_category_escape.to(UnicodeCategoryAtom) |
-        shorthand.map(lambda t: ShorthandKind.from_literal(t.mapped.text)).mark('kind').to(ShorthandAtom) )
+atom = S.choice(
+        literal.map(lambda x: x.mapped.text).mark('text').to(LiteralAtom),
+        group.to(GroupAtom),
+        dot.to(DotAtom),
+        anchor.to(AnchorAtom),
+        shorthand,
+        unicode_category_escape.to(UnicodeCategoryAtom),
+        char_class.to(CharClassAtom),
+        )
 
 
 @dataclass(frozen=True)

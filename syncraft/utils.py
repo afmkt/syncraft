@@ -167,16 +167,16 @@ class CallWith:
         self.missing_kwargs = set()
         for param in params:
             if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
-                if arg_index < num_args:
-                    args.append(general_args[arg_index])
-                    arg_index += 1
-                elif param.name in general_kwargs:
-                    args.append(general_kwargs[param.name])
-                    consumed_kwargs.add(param.name)
-                elif param.default is not inspect.Parameter.empty:
-                    args.append(param.default)
-                else:
-                    if param.name != 'self':  # Skip 'self' for instance methods
+                if param.name != 'self':
+                    if arg_index < num_args:
+                        args.append(general_args[arg_index])
+                        arg_index += 1
+                    elif param.name in general_kwargs:
+                        args.append(general_kwargs[param.name])
+                        consumed_kwargs.add(param.name)
+                    elif param.default is not inspect.Parameter.empty:
+                        args.append(param.default)
+                    else:
                         self.missing_args.add(param.name)
                         # raise TypeError(f"Missing required positional argument: {param.name}")
 

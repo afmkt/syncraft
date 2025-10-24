@@ -1,7 +1,7 @@
 from __future__ import annotations
 from syncraft.regex import (
     parse_regex, 
-    literal, anchor, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
+    literal, atom, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
 )
@@ -9,58 +9,12 @@ from syncraft.ast import Token
 from rich import print
 
 
-
-def test_anchors():
-    """Test parsing of anchor atoms."""
-    test_cases = [
-        ("^", AnchorKind.LINE_START),
-        ("$", AnchorKind.LINE_END),
-        (r"\A", AnchorKind.ABSOLUTE_START),
-        (r"\Z", AnchorKind.ABSOLUTE_END),
-        (r"\b", AnchorKind.WORD_BOUNDARY),
-        (r"\B", AnchorKind.NOT_WORD_BOUNDARY),
-    ]
-
-    for pattern, expected_kind in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        b = result.branches[0]
-        assert len(b.pieces) == 1
-        p = b.pieces[0]
-        assert isinstance(p.atom, AnchorAtom)
-        assert p.atom.kind == expected_kind
-
-def test_shorthands():
-    """Test parsing of shorthand character classes."""
-    test_cases = [
-        (r"\d", ShorthandKind.DIGIT),
-        (r"\D", ShorthandKind.NOT_DIGIT),
-        (r"\w", ShorthandKind.WORD),
-        (r"\W", ShorthandKind.NOT_WORD),
-        (r"\s", ShorthandKind.SPACE),
-        (r"\S", ShorthandKind.NOT_SPACE),
-    ]
-
-    for pattern, expected_kind in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        b = result.branches[0]
-        assert len(b.pieces) == 1
-        p = b.pieces[0]
-        assert isinstance(p.atom, ShorthandAtom)
-        assert p.atom.kind == expected_kind
-
 def test_dot_atom():
     """Test parsing of dot (.) atom."""
-    result = parse_regex(literal, ".")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, DotAtom)
+    print(1)
+    result = parse_regex(atom, ".")
+    print(2)
+    assert isinstance(result, DotAtom)
 
 
 def test_quantifiers():
@@ -412,4 +366,4 @@ def test_unicode_category_escape_multiple():
 
 
 if __name__ == "__main__":
-    test_escaped_metacharacters()
+    test_dot_atom()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import keyword
 import re
 import threading
-from enum import Enum
+import math
 from weakref import WeakValueDictionary
 
 from typing import (
@@ -42,7 +42,11 @@ class SyntaxSpec:
         lazy_cache: Optional[Dict[int, "SyntaxSpec"]] = None,
     ) -> Tuple["SyntaxSpec", ...]:
         return ()
-
+    
+    @property    
+    def complexity(self) -> float:
+        return 0
+    
     def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, "SyntaxSpec"]]:
         lazy_cache: Dict[int, SyntaxSpec] = {}
         visited: Set[int] = set()
@@ -87,6 +91,11 @@ class SyntaxSpec:
 class LazySpec(SyntaxSpec):
     spec: Callable[[], SyntaxSpec]
 
+    @property    
+    def complexity(self) -> float:
+        return math.inf
+
+
     def _children(
         self,
         *,
@@ -110,7 +119,10 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
     right: SyntaxSpec
-
+    @property
+    def complexity(self) -> float:
+        return 1 + self.left.complexity + self.right.complexity
+    
     def _children(
         self,
         *,
@@ -122,6 +134,10 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
 class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
+
+    @property
+    def complexity(self) -> float:
+        return 1 + self.left.complexity + (self.right.complexity / 2)
 
     def _children(
         self,
@@ -135,7 +151,13 @@ class ManySpec(SyntaxSpec, Generic[A]):
     spec: SyntaxSpec
     at_least: int
     at_most: Optional[int]
-
+    @property
+    def complexity(self) -> float:
+        if self.at_most is None:
+            return 1 + self.spec.complexity * (self.at_least + 1)        
+        else:
+            return 1 + self.spec.complexity * ((self.at_least + self.at_most) // 2)
+    
     def _children(
         self,
         *,
@@ -148,7 +170,9 @@ class ManySpec(SyntaxSpec, Generic[A]):
 @dataclass(frozen=True)
 class FactorySpec(SyntaxSpec):
     name: str
-
+    @property
+    def complexity(self) -> float:
+        return 1
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     metadata: FrozenDict[str, Any] = field(default_factory=FrozenDict)
 
@@ -652,8 +676,8 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-
-        return reduce(lambda a, b: a | b, parsers) if len(parsers) > 0 else cls.success(Nothing())
+        sorted_parsers = sorted(parsers, key=lambda p: p.spec.complexity)
+        return reduce(lambda a, b: a | b, sorted_parsers) if len(sorted_parsers) > 0 else cls.success(Nothing())
 
 
     @classmethod

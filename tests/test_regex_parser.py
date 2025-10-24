@@ -1,7 +1,7 @@
 from __future__ import annotations
 from syncraft.regex import (
     parse_regex, 
-    literal, anchor, shorthand, dot, quantifier, char_class, group, piece, branch, regex,
+    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex
 )
@@ -82,14 +82,9 @@ def test_anchors():
     ]
 
     for pattern, expected_kind in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        b = result.branches[0]
-        assert len(b.pieces) == 1
-        p = b.pieces[0]
-        assert isinstance(p.atom, AnchorAtom)
-        assert p.atom.kind == expected_kind
+        result = parse_regex(anchor, pattern)
+        assert result.value == expected_kind
+
 
 def test_shorthands():
     """Test parsing of shorthand character classes."""
@@ -101,26 +96,15 @@ def test_shorthands():
         (r"\s", ShorthandKind.SPACE),
         (r"\S", ShorthandKind.NOT_SPACE),
     ]
-
     for pattern, expected_kind in test_cases:
-        result = parse_regex(literal, pattern)
-        assert isinstance(result, Regex)
-        assert len(result.branches) == 1
-        b = result.branches[0]
-        assert len(b.pieces) == 1
-        p = b.pieces[0]
-        assert isinstance(p.atom, ShorthandAtom)
-        assert p.atom.kind == expected_kind
+        result = parse_regex(shorthand, pattern)
+        assert result.kind == expected_kind
+
 
 def test_dot_atom():
     """Test parsing of dot (.) atom."""
-    result = parse_regex(literal, ".")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, DotAtom)
+    result = parse_regex(atom, ".")
+    assert isinstance(result, DotAtom)
 
 
 def test_quantifiers():

@@ -10,7 +10,7 @@ from functools import cached_property
 
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
-
+from syncraft.utils import CallWith
 
 class SyncraftError(Exception):
     def __init__(self, message: str, offender: Any, expect: Any = None, **kwargs: Any) -> None:
@@ -430,43 +430,66 @@ class Collect(Generic[A, E], AST):
         field of the dataclass is used.
         """
 
-        def inv_one_positional(e: E) -> B:
-            if not is_dataclass(e):
-                raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")
-            named_dict = shallow_dict(e)
-            return named_dict[fields(e)[0].name]
 
         b, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value) 
         if isinstance(self.value, Then):
-            if isinstance(b, tuple):
-                index: List[str | int] = []
-                named_count = 0
-                for i, v in enumerate(b):
-                    if isinstance(v, Marked):
-                        index.append(v.name)
-                        named_count += 1
+            assert isinstance(b, tuple), "Expected tuple from Then bimap"
+            index: List[str | int] = []
+            named_count = 0
+            for i, v in enumerate(b):
+                if isinstance(v, Marked):
+                    index.append(v.name)
+                    named_count += 1
+                else:
+                    index.append(i - named_count)
+            named = {v.name: v.value for v in b if isinstance(v, Marked)}
+            unnamed = [v for v in b if not isinstance(v, Marked)]
+            ret: E = self.collector(*unnamed, **named)
+            def invf(e: E) -> Tuple[Any, ...]:
+                if not is_dataclass(e):
+                    raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")
+                named_dict = shallow_dict(e)     
+                unnamed = []           
+                for f in fields(e):
+                    if f.name not in named:
+                        unnamed.append(named_dict[f.name])
+                tmp = []
+                for x in index:
+                    if isinstance(x, str):
+                        tmp.append(Marked(name=x, value=named_dict[x]))
                     else:
-                        index.append(i - named_count)
-                named = {v.name: v.value for v in b if isinstance(v, Marked)}
-                unnamed = [v for v in b if not isinstance(v, Marked)]
-                ret: E = self.collector(*unnamed, **named)
-                def invf(e: E) -> Tuple[Any, ...]:
+                        tmp.append(unnamed[x])
+                return tuple(tmp)
+            return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore
+        elif isinstance(b, Marked):
+            named = {b.name: b.value}
+            ret1: E = self.collector(**named)
+            def invf1(e: E) -> Marked:
+                if not is_dataclass(e):
+                    raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")
+                named_dict = shallow_dict(e)     
+                return Marked(name=fields(e)[0].name, value=named_dict[fields(e)[0].name])
+            return ret1, lambda e: replace(self, value=inner_f(invf1(e))) # type: ignore
+        else:
+            def build_inv(d:B):
+                def inv_one_positional(e: E) -> B:
                     if not is_dataclass(e):
                         raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")
-                    named_dict = shallow_dict(e)     
-                    unnamed = []           
-                    for f in fields(e):
-                        if f.name not in named:
-                            unnamed.append(named_dict[f.name])
-                    tmp = []
-                    for x in index:
-                        if isinstance(x, str):
-                            tmp.append(Marked(name=x, value=named_dict[x]))
-                        else:
-                            tmp.append(unnamed[x])
-                    return tuple(tmp)
-                return ret, lambda e: replace(self, value=inner_f(invf(e))) # type: ignore                
-        return self.collector(b), lambda e: replace(self, value=inner_f(inv_one_positional(e))) # type: ignore
+                    if len(fields(e)) == 1:
+                        return d
+                    else:
+                        named_dict = shallow_dict(e)
+                        return named_dict[fields(e)[0].name]
+            c = CallWith(self.collector, b)
+            if c.missing_args or c.missing_kwargs:
+                raise SyncraftError("Collector cannot be called with provided arguments", offender=self.collector, expect="callable with matching signature")
+            
+            if c.unused_args:
+                inv_first = build_inv(c.unused_args[0])
+            else:
+                inv_first = build_inv(b)  # type: ignore
+            ret3 = c()
+            return ret3, lambda e: replace(self, value=inner_f(inv_first(e))) # type: ignore
     
 
 
