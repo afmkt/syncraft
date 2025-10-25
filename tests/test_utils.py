@@ -8,7 +8,7 @@ import re
 
 def iter_tokens(ast: Any) -> Iterable[str]:
     if isinstance(ast, Token):
-        yield ast.text
+        yield ast.text # type: ignore
     elif isinstance(ast, (tuple, list)):
         for x in ast:
             yield from iter_tokens(x)
@@ -35,7 +35,7 @@ __all__ = ['iter_tokens', 'token_multiset']
 
 
 def parse_with_state(syntax, sql: str):
-    from syncraft.lexer import Cache
+    from syncraft.cache import Cache
     return parse_word(syntax, sql, cache=Cache())
 
 __all__.append('parse_with_state')

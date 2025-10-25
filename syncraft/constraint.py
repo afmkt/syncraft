@@ -87,6 +87,11 @@ class Bindable:
     """
     binding: Binding = field(default_factory=Binding)
 
+    @property
+    def cache_key(self) -> int:
+        """Return a hashable cache key representing this instance."""
+        return hash(self)
+
     def map(self, f: Callable[[Any], Any])->Self: 
         """Optionally transform the underlying value (no-op by default)."""
         return self

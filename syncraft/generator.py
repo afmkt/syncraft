@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
-    List, Set, Generator as PyGenerator, cast, Type
+    List, Generator as PyGenerator, cast, Type
 )
 
 import importlib
 import random
-import re
+
 from functools import cached_property
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
@@ -23,12 +23,12 @@ from syncraft.ast import (
     Then, ThenKind, SyncraftError
 )
 from syncraft.constraint import FrozenDict
-from syncraft.charset import CodeUniverse
+
 from syncraft.fa import FABuilder
-from syncraft.syntax import Syntax, RunnerProtocol, Incomplete, FactorySpec
+from syncraft.syntax import Syntax, RunnerProtocol, Incomplete
 
 from syncraft.constraint import Bindable
-from syncraft.token import Structured
+
 
 
 S = TypeVar('S', bound=Bindable)
@@ -40,21 +40,10 @@ B = TypeVar('B')
 
 @dataclass(frozen=True)
 class GenState(Bindable, Generic[T]):
-    """Lightweight state passed between generator combinators.
-
-    Holds the current AST focus (or ``None`` when pruned), a flag controlling
-    whether traversals are allowed to access pruned branches, and a deterministic
-    seed for randomized generation paths.
-
-    Attributes:
-        ast: The current AST node or ``None`` if the branch is pruned.
-        restore_pruned: When true, allows navigation into branches that would
-            normally be considered pruned by the AST structure.
-        seed: Integer seed used to derive reproducible random choices.
-    """
     ast: Optional[ParseResult[T]] = None
     restore_pruned: bool = False
     seed: int = 0
+
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
         """Return a copy with ``ast`` replaced by ``f(ast)``.
 

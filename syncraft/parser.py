@@ -47,6 +47,10 @@ class ParserState(Bindable, Generic[T]):
     safe_base: int = 0
     choice_depth: int = 0
 
+    @property
+    def cache_key(self) -> int:
+        return self.base + self.index
+
     def enter(self) -> ParserState[T]:
         return replace(self, choice_depth=self.choice_depth + 1)
     
