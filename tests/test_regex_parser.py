@@ -232,145 +232,143 @@ def test_groups_capture():
 
 def test_groups_non_capture():
     """Test parsing of non-capturing groups."""
-    result = parse_regex(literal, "(?:abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.NON_CAPTURE
-    assert isinstance(p.atom.pattern, Regex)
+    result = parse_regex(group, "(?:abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.NON_CAPTURE
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 
 def test_groups_named():
     """Test parsing of named capturing groups."""
-    result = parse_regex(literal, "(?P<name>abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.CAPTURE
-    assert p.atom.name == "name"
-    assert isinstance(p.atom.pattern, Regex)
+    result = parse_regex(group, "(?P<name>abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.CAPTURE
+    assert result.name == "name"
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
+
 
 def test_groups_lookahead():
     """Test parsing of positive lookahead groups."""
-    result = parse_regex(literal, "(?=abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.LOOKAHEAD
-    assert isinstance(p.atom.pattern, Regex)
-
+    result = parse_regex(group, "(?=abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.LOOKAHEAD
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 def test_groups_negative_lookahead():
     """Test parsing of negative lookahead groups."""
-    result = parse_regex(literal, "(?!abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.NEG_LOOKAHEAD
-    assert isinstance(p.atom.pattern, Regex)
+    result = parse_regex(group, "(?!abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.NEG_LOOKAHEAD
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 
 def test_groups_lookbehind():
     """Test parsing of positive lookbehind groups."""
-    result = parse_regex(literal, "(?<=abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.LOOKBEHIND
-    assert isinstance(p.atom.pattern, Regex)
+    result = parse_regex(group, "(?<=abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.LOOKBEHIND
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 
 def test_groups_negative_lookbehind():
     """Test parsing of negative lookbehind groups."""
-    result = parse_regex(literal, "(?<!abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.NEG_LOOKBEHIND
-    assert isinstance(p.atom.pattern, Regex)
+    result = parse_regex(group, "(?<!abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.NEG_LOOKBEHIND
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 
 def test_groups_flags_only():
     """Test parsing of flag-only groups."""
-    result = parse_regex(literal, "(?i)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.FLAGS
-    assert p.atom.inline_flags == ("i",)
-    assert p.atom.disabled_flags is None
-    assert p.atom.pattern is None
+    result = parse_regex(group, "(?i)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.FLAGS
+    assert result.inline_flags == ("i",)
+    assert result.disabled_flags is None
+    assert result.pattern is None
+
 
 
 def test_groups_flags_with_disable():
     """Test parsing of flag groups with disabled flags."""
-    result = parse_regex(literal, "(?im-s)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.FLAGS
-    assert p.atom.inline_flags == ("i", "m")
-    assert p.atom.disabled_flags == ("s",)
-    assert p.atom.pattern is None
+    result = parse_regex(group, "(?im-s)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.FLAGS
+    assert result.inline_flags == ("i", "m")
+    assert result.disabled_flags == ("s",)
+    assert result.pattern is None
 
 
 def test_groups_flags_scoped():
     """Test parsing of scoped flag groups."""
-    result = parse_regex(literal, "(?i:abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.FLAGS_SCOPED
-    assert p.atom.inline_flags == ("i",)
-    assert p.atom.disabled_flags is None
-    assert isinstance(p.atom.pattern, Regex)
+    result = parse_regex(group, "(?i:abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.FLAGS_SCOPED
+    assert result.inline_flags == ("i",)
+    assert result.disabled_flags is None
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 
 def test_groups_flags_scoped_with_disable():
     """Test parsing of scoped flag groups with disabled flags."""
-    result = parse_regex(literal, "(?im-s:abc)")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, GroupAtom)
-    assert p.atom.kind == GroupKind.FLAGS_SCOPED
-    assert p.atom.inline_flags == ("i", "m")
-    assert p.atom.disabled_flags == ("s",)
-    assert isinstance(p.atom.pattern, Regex)
-
+    result = parse_regex(group, "(?im-s:abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.FLAGS_SCOPED
+    assert result.inline_flags == ("i", "m")
+    assert result.disabled_flags == ("s",)
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 def test_alternation():
     """Test parsing of alternation (OR) expressions."""
-    result = parse_regex(literal, "abc|def|ghi")
+    result = parse_regex(regex, "abc|def|ghi")
     assert isinstance(result, Regex)
     assert len(result.branches) == 3
 
@@ -402,7 +400,7 @@ def test_alternation():
 def test_complex_regex():
     """Test parsing of a complex regex combining multiple grammar rules."""
     pattern = r"^(\w+)\s+(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
-    result = parse_regex(literal, pattern)
+    result = parse_regex(regex, pattern)
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -418,7 +416,7 @@ def test_complex_regex():
 
 def test_unicode_category_escape():
     """Test parsing of unicode category escapes."""
-    result = parse_regex(literal, r"\p{L}")
+    result = parse_regex(regex, r"\p{L}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -431,7 +429,7 @@ def test_unicode_category_escape():
 
 def test_unicode_category_escape_negated():
     """Test parsing of negated unicode category escapes."""
-    result = parse_regex(literal, r"\P{L}")
+    result = parse_regex(regex, r"\P{L}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -444,7 +442,7 @@ def test_unicode_category_escape_negated():
 
 def test_unicode_category_escape_multiple():
     """Test parsing of unicode category escapes with multiple categories."""
-    result = parse_regex(literal, r"\p{LuLl}")
+    result = parse_regex(regex, r"\p{LuLl}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]

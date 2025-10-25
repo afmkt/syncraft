@@ -36,7 +36,7 @@ def rich_error(err: Error)->None:
             leaf_map = {
                 key: getattr(leaf, key)
                 for key in dir(leaf)
-                if not key.startswith('_') and hasattr(leaf, key)
+                if not key.startswith('_') and hasattr(leaf, key) and not callable(getattr(leaf, key))
             }
         tbl = RichTable(title="Parser Error", show_lines=True)
         tbl.add_column("Leaf Parser Field", style="blue")

@@ -171,7 +171,7 @@ class Lexer(LexerBase[C]):
             acc: Set[FABuilder[Any]] = set()
             for k, v in kwargs.items():
                 if isinstance(v, FABuilder):
-                    if v.tag is None and k != '_':
+                    if v.tag is None:
                         acc.add(v.tagged(k))
                     else:
                         acc.add(v)                    

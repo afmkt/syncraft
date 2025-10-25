@@ -4,13 +4,13 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-from syncraft.ast import AST, Token
+from syncraft.ast import AST, Token, Nothing
 
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
 from syncraft.dev import debug
-
+from rich import print
 r"""
 regex             = branch { "|" branch } ;
 branch            = piece { piece } ;
@@ -117,8 +117,7 @@ B = FABuilder[str]
 S = Syntax.config(universe=CodeUniverse.unicode())
 # number            = digit { digit } ;
 number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text))
-# flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
-flag = S.lex(flag=B.oneof(["a", "i", "L", "m", "s", "u", "x"]))
+
 # dot               = "." ;
 dot = S.lex(dot=B.lit("."))
 or_ = S.lex(or_=B.lit("|"))
@@ -151,17 +150,17 @@ escaped_x = S.lex(escaped_x=B.lit("\\x"))
 escaped_u = S.lex(escaped_u=B.lit("\\u")) 
 escaped_U = S.lex(escaped_U=B.lit("\\U")) 
 escaped_N = S.lex(escaped_N=B.lit("\\N{"))
-escaped_p = S.lex(escaped_p=B.lit("\\p{"))
-escaped_P = S.lex(escaped_P=B.lit("\\P{"))
+escaped_p = S.lex(escaped_p=B.lit("\\p{")).named('escaped_p')
+escaped_P = S.lex(escaped_P=B.lit("\\P{")).named('escaped_P')
 underscore = S.lex(underscore=B.lit("_"))
 space = S.lex(space=B.lit(" "))
 hyphen = S.lex(hyphen=B.lit("-"))
 # unicode_scalar    = any code point U+0000..U+10FFFF ;
 unicode_scalar = S.lex(unicode_scalar=B.range("\u0000", "\U0010FFFF"))
 # unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
-unicode_letter = S.lex(unicode_letter=B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]))
+unicode_letter = S.lex(unicode_letter=B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"])).named('unicode_letter')
 # unicode_digit     = code point with Unicode category Nd ;
-unicode_digit = S.lex(unicode_digit=B.unicode_category(["Nd"]))
+# unicode_digit = S.lex(unicode_digit=B.oneof(["Nd"]))
 # class_literal     = unicode_scalar - {"\\", "]"} ;
 class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "]"]))
 # literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
@@ -213,20 +212,20 @@ unicode_category_escape = (
 )
 
 # unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
-unicode_name = (unicode_letter + (unicode_letter | unicode_digit | underscore | space | hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]]))
+unicode_name = (unicode_letter + (unicode_letter | underscore | space | hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]]))
 # name_continue     = unicode_letter | unicode_digit | "_" ;
-name_continue = unicode_letter | unicode_digit | underscore
+name_continue = unicode_letter | underscore
 # name_start        = unicode_letter | "_" ;
 name_start = unicode_letter | underscore
 # name              = name_start { name_continue } ;
-name = name_start + name_continue.many()
+name = (name_start + name_continue.many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]]))
 # unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
-unicode_escape = ((escaped_x >> hex_pair).map(lambda t: chr(int(t, 16))) | 
-                  (escaped_u >> hex_quad).map(lambda t: chr(int(t, 16))) | 
-                  (escaped_U >> hex_octa).map(lambda t: chr(int(t, 16))) | 
-                  ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t)))
+unicode_escape = ((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16))) | 
+                  (escaped_u >> hex_quad).map(lambda t: chr(int(t[0], 16))) | 
+                  (escaped_U >> hex_octa).map(lambda t: chr(int(t[0], 16))) | 
+                  ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t[0])))
 # escaped_metachar  = "\\" meta_char ;
-escaped_metachar = backslash >> meta_char 
+escaped_metachar = (backslash >> meta_char).map(lambda t: t[0])
 # escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
 escaped_literal   = control_escape | unicode_escape | escaped_metachar 
 # literal           = escaped_literal | literal_char ;
@@ -234,7 +233,7 @@ literal = escaped_literal | literal_char
 # class_meta_char   = "-" | "]" | "\\" ;
 class_meta_char = minus | rsquare | backslash 
 # escaped_class_meta= "\\" class_meta_char ;
-escaped_class_meta= backslash >> class_meta_char 
+escaped_class_meta= (backslash >> class_meta_char).map(lambda t: t[0])
 
 
 @dataclass(frozen=True)
@@ -270,7 +269,7 @@ range = (class_atom.mark('start') // minus + class_atom.mark('end')).to(CharRang
 class_item = range | class_atom
 
 # class_class_items = leading_rsquare? class_item { class_item } ;
-class_class_items = (~leading_rsquare + class_item.many(at_least=1)).map(lambda t: (t[1] + [']']) if t[0] else t[1])
+class_class_items = (~leading_rsquare + class_item.many()).map(lambda t: (t[1] + [']']) if t[0] else t[1])
 # char_class        = "[" [ "^" ] class_class_items "]" ;
 char_class = lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare
 
@@ -293,46 +292,47 @@ class GroupAtom:
     inline_flags: Optional[Tuple[str, ...]] = None
     disabled_flags: Optional[Tuple[str, ...]] = None
 
-
+# flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
+flag = S.lex(flag=B.oneof(["a", "i", "L", "m", "s", "u", "x"]))
 # flag_seq          = flag { flag } ;
-flag_seq = flag.many(at_least=1)
+flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts))
 # inline_flags      = flag_seq [ "-" flag_seq ] ;
-inline_flags = flag_seq.mark('inline_flags') + ~(minus >> flag_seq.mark('disabled_flags'))
+inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda t: t[0] if t is not Nothing else None).mark('disabled_flags')
 
 
 def _group_body() -> Syntax[Any, Any]:
     # group = "(" branch ")"
     plain = lparen >> branch.mark('pattern') // rparen
     # group = "(?:" branch ")"
-    noncapturing = S.lex(_=B.lit("(?:" )) >> branch.mark('pattern') // rparen
+    noncapturing = (S.lex(_=B.lit("(?:" )) >> branch.mark('pattern') // rparen)
     # group = "(?P<" name ">" branch ")"
-    named = S.lex(_=B.lit("(?P<")) >> name.mark('name') // greater >> branch.mark('pattern') // rparen
+    named = S.lex(gp_named=B.lit("(?P<")) >> name.mark('name') // greater + branch.mark('pattern') // rparen
     # group = "(?=" branch ")"
-    lookahead = S.lex(_=B.lit("(?=" )) >> branch.mark('pattern') // rparen
+    lookahead = S.lex(gp_lookahead=B.lit("(?=" )) >> branch.mark('pattern') // rparen
     # group = "(?!" branch ")"
-    negative_lookahead = S.lex(_=B.lit("(?!" )) >> branch.mark('pattern') // rparen
+    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!" )) >> branch.mark('pattern') // rparen
     # group = "(?<=" branch ")"
-    lookbehind = S.lex(_=B.lit("(?<=" )) >> branch.mark('pattern') // rparen
+    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=" )) >> branch.mark('pattern') // rparen
     # group = "(?<!" branch ")"
-    negative_lookbehind = S.lex(_=B.lit("(?<!" )) >> branch.mark('pattern') // rparen
+    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )) >> branch.mark('pattern') // rparen
     # group = "(?" inline_flags ")"
-    inline_flag_only = S.lex(_=B.lit("(?")) >> inline_flags // rparen
+    inline_flag_only = S.lex(gp_inline_flags=B.lit("(?")) >> inline_flags // rparen
     # group = "(?" inline_flags ":" branch ")"
-    inline_flag_with_colon = (S.lex(_=B.lit("(?")) 
+    inline_flag_with_colon = (S.lex(gp_inline_flags_colon=B.lit("(?")) 
                               >> inline_flags
-                              + colon 
+                              // colon 
                               + branch.mark('pattern') 
                               // rparen)
     return S.choice(
-                # plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
-                debug(noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)), msg="Parsing non-capturing group"),
-                # named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
-                # lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)),
-                # negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)),
-                # lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)),
-                # negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)),
-                # inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)),
-                # inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t))
+                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
+                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)),
+                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
+                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)),
+                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)),
+                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)),
+                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)),
+                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)),
+                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t))
             )
 
 
@@ -360,8 +360,8 @@ class Quantifier:
 # - {n,} → minimum=n, maximum=None
 # - {n,m} → minimum=n, maximum=m
 braced_quantifier = S.choice(
-    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n, maximum=n)),
-    (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t, maximum=None)),
+    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])),
+    (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t[0], maximum=None)),
     (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier)
 )
 
@@ -396,14 +396,14 @@ class DotAtom:
 
 # atom              = literal | char_class | group | anchor | dot | shorthand ;
 atom = S.choice(
-        literal.map(lambda x: x.text).mark('text').to(LiteralAtom),
-        group,
-        dot.to(DotAtom),
-        anchor.to(AnchorAtom),
-        shorthand.to(ShorthandAtom),
-        unicode_category_escape.to(UnicodeCategoryAtom),
-        char_class.to(CharClassAtom),
-        )
+        literal.map(lambda x: x.text).mark('text').to(LiteralAtom).named('literal'),
+        group.named('group'),
+        dot.to(DotAtom).named('dot'),
+        anchor.to(AnchorAtom).named('anchor'),
+        shorthand.to(ShorthandAtom).named('shorthand'),
+        unicode_category_escape.to(UnicodeCategoryAtom).named('unicode_category_escape'),
+        char_class.to(CharClassAtom).named('char_class'),
+        ).named('atom')
 
 
 @dataclass(frozen=True)
@@ -418,14 +418,14 @@ class Piece:
     quantifier: Optional[Quantifier] = None
 
 # piece             = atom [ quantifier ] ;
-piece = (atom.mark('atom') + (~quantifier).mark('quantifier')).to(Piece)
+piece = (atom.mark('atom') + (~quantifier).mark('quantifier')).to(Piece).named('piece')
 
 @dataclass(frozen=True)
 class Branch:
     pieces: Tuple[Piece, ...]
 
 # branch            = piece { piece } ;
-branch = piece.many().mark('pieces').to(Branch)
+branch = piece.many().mark('pieces').to(Branch).named('branch')
 
 @dataclass(frozen=True)
 class Regex:
@@ -437,12 +437,15 @@ regex = branch.sep_by(or_).mark('branches').to(Regex)
 
 
 
-def parse_regex(syntax: Syntax[Any, Any], pattern: str) -> Any:
+def parse_regex(syntax: Syntax[Any, Any], 
+                pattern: str, 
+                *, 
+                raw:bool=False) -> Any:
     from syncraft.parser import parse_string
     result, s = parse_string(syntax, pattern)
     if s:
         if isinstance(result, AST):
-            return result.mapped
+            return result if raw else result.mapped 
         else:
             return result
     else:

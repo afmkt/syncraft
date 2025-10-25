@@ -306,6 +306,9 @@ class ChoiceKind(Enum):
     LEFT = 'left'
     RIGHT = 'right'
 
+ChoiceKind.__str__ = lambda self: self.value   # type: ignore
+ChoiceKind.__repr__ = lambda self: self.value  # type: ignore
+
 @dataclass(frozen=True)
 class Choice(Generic[A, B], AST):
     """Represent a binary alternative between left and right values.
@@ -352,7 +355,9 @@ class ThenKind(Enum):
     BOTH = '+'
     LEFT = '//'
     RIGHT = '>>'
-    
+
+ThenKind.__str__ = lambda self: self.value   # type: ignore
+ThenKind.__repr__ = lambda self: self.value  # type: ignore    
 @dataclass(eq=True, frozen=True)
 class Then(Generic[A, B], AST):
     """Pair two values with a composition kind (both, left, or right).
@@ -385,27 +390,47 @@ class Then(Generic[A, B], AST):
           mapped right values. The inverse expects a tuple whose length equals
           ``left.arity() + right.arity()`` and reconstructs the structure.
         """
-        def need_wrap(x: Any) -> bool:
-            return not (isinstance(x, Then) and x.kind == ThenKind.BOTH)
+        left_size = self.left.arity() if isinstance(self.left, Then) else 1
+        right_size = self.right.arity() if isinstance(self.right, Then) else 1
         match self.kind:
             case ThenKind.LEFT:
                 lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
-                return lb, lambda c: replace(self, left=cast(A, linv(c)))
+                def invl(c: Any) -> Then[A, B]:
+                    return replace(self, left=cast(A, linv(c)))
+                def invl0(c: Any) -> Then[A, B]:
+                    return replace(self, left=cast(A, linv(c[0])))
+                
+                if isinstance(self.left, Then):
+                    return lb, invl
+                else:
+                    return (lb,), invl0
             case ThenKind.RIGHT:
                 rb, rinv = self.right.bimap(r) if isinstance(self.right, AST) else r(self.right)
-                return rb, lambda c: replace(self, right=cast(B, rinv(c)))
+                def invr(c: Any) -> Then[A, B]:
+                    return replace(self, right=cast(B, rinv(c)))
+                
+                def invr0(c: Any) -> Then[A, B]:
+                    return replace(self, right=cast(B, rinv(c[0])))
+                if isinstance(self.right, Then):
+                    return rb, invr
+                else:
+                    return (rb,), invr0
             case ThenKind.BOTH:
                 lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
                 rb, rinv = self.right.bimap(r) if isinstance(self.right, AST) else r(self.right)
-                left_v = (lb,) if need_wrap(self.left) else lb
-                right_v = (rb,) if need_wrap(self.right) else rb
+                if isinstance(self.left, Then):
+                    left_v = lb
+                else:   
+                    left_v = (lb,)
+                if isinstance(self.right, Then):
+                    right_v = rb
+                else:   
+                    right_v = (rb,)
                 def invf(b: Tuple[C, ...]) -> Then[A, B]:
-                    left_size = self.left.arity() if isinstance(self.left, Then) else 1
-                    right_size = self.right.arity() if isinstance(self.right, Then) else 1
                     lraw: Tuple[Any, ...] = b[:left_size]
                     rraw: Tuple[Any, ...] = b[left_size:left_size + right_size]
-                    lraw = lraw[0] if left_size == 1 else lraw
-                    rraw = rraw[0] if right_size == 1 else rraw
+                    lraw = lraw[0] if not isinstance(self.left, Then) else lraw
+                    rraw = rraw[0] if not isinstance(self.right, Then) else rraw
                     la = linv(lraw)
                     ra = rinv(rraw)
                     return replace(self, left=cast(A, la), right=cast(B, ra))
@@ -438,7 +463,7 @@ class Collect(Generic[A, E], AST):
         collector's dataclass fields. For single-argument collectors, the first
         field of the dataclass is used.
         """
-
+        from rich import print
 
         b, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value) 
         if isinstance(b, tuple):
@@ -488,6 +513,8 @@ class Collect(Generic[A, E], AST):
                     else:
                         named_dict = shallow_dict(e)
                         return named_dict[fields(e)[0].name]
+                return inv_one_positional
+            
             c = CallWith(self.collector, b)
             if c.missing_args or c.missing_kwargs:
                 raise SyncraftError("Collector cannot be called with provided arguments", offender=self.collector, expect="callable with matching signature")

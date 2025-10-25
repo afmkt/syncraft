@@ -202,7 +202,7 @@ class Parser(Algebra[T, ParserState[T]]):
         if lexer is None:
             raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
         ntags = lexer.tags()
-        name = ','.join([str(tag) for tag in ntags])
+        name = f"{','.join([str(tag) for tag in ntags])}"
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
                               YieldChannelType, 
@@ -228,8 +228,16 @@ class Parser(Algebra[T, ParserState[T]]):
                 else:
                     match lexer.match(ntags, state.current(), state.abs_index()):
                         case Left(err_msg):
-                            err = Error(message=f"{err_msg}, expect {name}", this=lex_run, state=state)            
-                            return (yield from cache.return_value(Left(err), state, name=name))
+                            match lexer.candidate():
+                                case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
+                                    if lexeme is None:
+                                        token = Token(text=state.slice(start, end), token_type=tag)
+                                    else:
+                                        token = lexeme
+                                    return (yield from cache.return_value(Right((token, state.advance())), state, name=name))
+                                case _:
+                                    err = Error(message=f"{err_msg}, expect {name}", this=lex_run, state=state)            
+                                    return (yield from cache.return_value(Left(err), state, name=name))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):

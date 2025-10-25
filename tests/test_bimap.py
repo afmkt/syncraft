@@ -296,3 +296,25 @@ def test_many_optional():
     ast2, inv = ast1.bimap()
     assert Many(value=(Choice(kind=None, value=from_string('a')), Choice(kind=None, value=from_string('a')))) == inv(ast2)
 
+
+def test_grouping():
+    A = literal("a").named("A")
+    B = literal("b").named("B")
+    C = literal("c").named("C")
+    D = literal("d").named("D")
+    s = (A + B) // D + C
+    print(s)
+    ast, _ = parse_word(s, "a b d c")    
+    print(ast)
+    x, inv = ast.bimap()
+    print(x)
+    assert inv(x) == ast
+
+    s1 = A + (B // D) + C
+    print(s1)
+    ast1, _ = parse_word(s1, "a b d c")
+    print(ast1)
+    y, inv = ast1.bimap()
+    print(y)
+    assert inv(y) == ast1
+    assert x == y, "Grouping in 'then' operations should not affect parsing results"

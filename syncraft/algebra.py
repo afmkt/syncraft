@@ -8,13 +8,6 @@ from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
-import re
-
-
-
-
-
-
 
 
 S = TypeVar('S', bound=Bindable)    
@@ -43,7 +36,7 @@ class Error:
         return Error(
             this=this,
             error=error,
-            message=message or str(error),
+            message=message,
             state=state,
             previous=self
         )
@@ -54,6 +47,12 @@ class Error:
             lst.append(current)
             current = current.previous
         return lst
+    @property
+    def deepest(self) -> Error:
+        current: Error = self
+        while current.previous is not None:
+            current = current.previous
+        return current
 
 YieldChannelType = Incomplete[S] 
 SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
@@ -67,22 +66,14 @@ class Algebra(Generic[A, S]):
         cfg = getattr(self, SYNCRAFT_CONFIG_KEY, {})
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
-    def named(self, name: str) -> Algebra[A, S]:
-        return replace(self)
+    def named(self, name: Hashable) -> Algebra[A, S]:
+        return replace(self, _name=name)
 
     @property
-    def name(self) -> str:
+    def name(self) -> str:    
         return str(self._name)
-        
-    def __repr__(self) -> str:
-        return self.name
     
-    def __str__(self) -> str:
-        return self.__repr__()
-
-
-
-
+    
     def __call__(self, 
                  input: S, 
                  cache: Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 

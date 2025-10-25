@@ -460,6 +460,7 @@ class Cache(Generic[A, Ret]):
         cache_key = self._cache_key(key)
         existing = cache_bucket.get(cache_key)
         if existing is not None and not isinstance(existing, InProgress):
+            print("Cache hit:", f.__name__, "at", cache_key, "->", existing)
             return existing
         if isinstance(existing, InProgress):
             # Forced recompute path (growth iteration) bypasses normal early return.

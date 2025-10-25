@@ -36,13 +36,16 @@ D = TypeVar('D')  # Result type for else branch
 S = TypeVar('S', bound=Bindable)  # State type
 @dataclass(frozen=True)
 class SyntaxSpec:
+    def named(self, name: str) -> SyntaxSpec:
+        return self
+    
     def _children(
         self,
         *,
         lazy_cache: Optional[Dict[int, "SyntaxSpec"]] = None,
     ) -> Tuple["SyntaxSpec", ...]:
         return ()
-    
+
     @property    
     def complexity(self) -> float:
         return 0
@@ -90,7 +93,17 @@ class SyntaxSpec:
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec):
     spec: Callable[[], SyntaxSpec]
-
+    name: Optional[str] = None
+    def named(self, name: str) -> SyntaxSpec:
+        return replace(self, name=name)
+    
+    def __str__(self) -> str:
+        if self.name:
+            return self.name
+        return "lazy(...)" 
+    def __repr__(self) -> str:
+        return super().__repr__()
+    
     @property    
     def complexity(self) -> float:
         return math.inf
@@ -119,6 +132,23 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
     right: SyntaxSpec
+    name: Optional[str] = None
+    def named(self, name: str) -> SyntaxSpec:
+        return replace(self, name=name)
+    
+    def __str__(self) -> str:
+        if self.name:
+            return self.name
+        match self.kind:
+            case ThenKind.LEFT:
+                return f"({str(self.left)} // {str(self.right)})" 
+            case ThenKind.RIGHT:
+                return f"({str(self.left)} >> {str(self.right)})" 
+            case _:
+                return f"({str(self.left)} + {str(self.right)})"
+    def __repr__(self) -> str:
+        return super().__repr__()
+
     @property
     def complexity(self) -> float:
         return 1 + self.left.complexity + self.right.complexity
@@ -134,6 +164,16 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
 class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
+    name: Optional[str] = None
+    def named(self, name: str) -> SyntaxSpec:
+        return replace(self, name=name)
+    
+    def __str__(self) -> str:
+        if self.name:
+            return self.name
+        return f"({str(self.left)} | {str(self.right)})" 
+    def __repr__(self) -> str:
+        return super().__repr__()
 
     @property
     def complexity(self) -> float:
@@ -151,6 +191,17 @@ class ManySpec(SyntaxSpec, Generic[A]):
     spec: SyntaxSpec
     at_least: int
     at_most: Optional[int]
+    name: Optional[str] = None
+    def named(self, name: str) -> SyntaxSpec:
+        return replace(self, name=name)
+    
+    def __str__(self) -> str:
+        if self.name:
+            return self.name
+        return f"*({str(self.spec)})" 
+    def __repr__(self) -> str:
+        return super().__repr__()
+
     @property
     def complexity(self) -> float:
         if self.at_most is None:
@@ -170,15 +221,23 @@ class ManySpec(SyntaxSpec, Generic[A]):
 @dataclass(frozen=True)
 class FactorySpec(SyntaxSpec):
     name: str
+    kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
+    sname: Optional[str] = None
+    def named(self, name: str) -> SyntaxSpec:
+        return replace(self, sname=name)
+    
+    def __str__(self) -> str:
+        if self.sname:
+            return self.sname
+        ret = f"{', '.join(f'{k}={v}' for k,v in self.kwargs.items())}"
+        return f"{self.name}({ret})" if ret != '' else self.name
+    def __repr__(self) -> str:
+        return super().__repr__()
+
     @property
     def complexity(self) -> float:
         return 1
-    kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-    metadata: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-
-
-
-
+    
 @dataclass
 class LazyState(Generic[A, S]):
     # thunk returns a Syntax[A, S]
@@ -255,6 +314,11 @@ class Syntax(Generic[A, S]):
     spec: SyntaxSpec = field(repr=False)
     _lazy_facade_cache: ClassVar[WeakValueDictionary[Callable[..., Any], Syntax[Any, Any]]] = WeakValueDictionary()
     
+    def __str__(self) -> str:
+        return str(self.spec)
+    
+    def __repr__(self) -> str:
+        return self.__str__()
     
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
@@ -277,12 +341,11 @@ class Syntax(Generic[A, S]):
         trans: None | Callable[[Type[Any]], Type[Any]] = getattr(self.__class__, SYNCRAFT_TRANSFORM_KEY, None)
         alg = alg if not callable(trans) else trans(alg)
         cfg = getattr(alg, SYNCRAFT_CONFIG_KEY, {})
-        return self.alg_f(alg, **(cfg | global_kwargs))
-    
-        
+        return self.alg_f(alg, **(cfg | global_kwargs)).named(self)
+            
     def named(self, name: str) -> Syntax[A, S]:
-        
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).named(name))
+        return replace(self, spec=self.spec.named(name))
+
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[Any], B],*, raw:bool = False) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
@@ -413,7 +476,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing nested Then with all parts.
         """
-        return left >> self // right
+        return (left >> self // right)
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
         """Parse one or more items separated by sep.
@@ -497,7 +560,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice of value or Nothing.
         """
-        return (self | self.success(Nothing())) # type: ignore
+        return (self | self.success(Nothing()))  # type: ignore
         
 
     def cut(self) -> Syntax[A, S]:
@@ -547,7 +610,7 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_both(other(cls, **global_kwargs)), # type: ignore
-                       spec=ThenSpec(kind=ThenKind.BOTH, left=self.spec, right=other.spec))  
+                       spec=ThenSpec(kind=ThenKind.BOTH, left=self.spec, right=other.spec))
 
 
     def __radd__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -568,7 +631,7 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_right(other(cls, **global_kwargs)),  # type: ignore
-                       spec=ThenSpec(kind=ThenKind.RIGHT, left=self.spec, right=other.spec)) 
+                       spec=ThenSpec(kind=ThenKind.RIGHT, left=self.spec, right=other.spec))
         
 
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -589,7 +652,7 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)), # type: ignore
-                       spec=ChoiceSpec(left=self.spec, right=other.spec)) 
+                       spec=ChoiceSpec(left=self.spec, right=other.spec))
         
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:

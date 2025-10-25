@@ -555,12 +555,6 @@ def test_indirect_left_recursion_5()->None:
     assert counts.get('c', 0) >= 1
 
 
-def test_direct_left_recursion_collapse()->None:
-    """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == 't.a'
 
 
 # ---------------- New tests for multi-head & identity diagnostics ----------------
@@ -605,9 +599,15 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
     S1 = lazy(lambda: (S1 >> S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
     ast, _ = v.bimap()
+    assert str(ast) == '((((t.a,),),),)'
+
+
+def test_direct_left_recursion_collapse()->None:
+    """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
+    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    v, _ = parse_word(S1, 'a', cache=Cache())
+    ast, _ = v.bimap()
     assert str(ast) == 't.a'
-
-
 
 
 def test_direct_left_recursion_growth_still_collapses()->None:
@@ -615,7 +615,7 @@ def test_direct_left_recursion_growth_still_collapses()->None:
     S1 = lazy(lambda: (S1 >> S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a', cache=Cache())
     ast, _ = v.bimap()
-    assert str(ast) == 't.a'
+    assert str(ast) == '((t.a,),)'
 
 
 def test_indirect_multi_head_cycle_parses_successfully():
@@ -639,7 +639,7 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
     input_text = 'a ' + ' + a' * 120
     v, s = parse_word(T, input_text, cache=Cache())
     ast, _ = v.bimap()
-    assert str(ast) == 't.a'
+    assert str(ast) == '(t.a,)'
 
 
 
