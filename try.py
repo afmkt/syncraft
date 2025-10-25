@@ -1,7 +1,7 @@
 from __future__ import annotations
 from syncraft.ast import Token
 from syncraft.regex import (
-    parse_regex, unicode_category_escape, unicode_letter,
+    parse_regex, unicode_category_escape, unicode_letter,unicode_escape,
     literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
@@ -9,54 +9,36 @@ from syncraft.regex import (
 
 from rich import print
 
-def test_unicode_letter():
-    """Test parsing of unicode letters."""
-    result = parse_regex(unicode_letter, "Lu")
-    print(result)
-    assert isinstance(result, Token)
-    
-
-def test_unicode_category_escape():
-    """Test parsing of unicode category escapes."""
-    result = parse_regex(unicode_category_escape, r"\p{L}")
-    print(result)
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, UnicodeCategoryAtom)
-    assert not p.atom.negated
-    assert p.atom.categories == ("Lu",)
+def test_groups_named():
+    """Test parsing of named capturing groups."""
+    result = parse_regex(group, "(?P<name>abc)")
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.CAPTURE
+    assert result.name == "name"
+    assert isinstance(result.pattern, Branch)
+    assert len(result.pattern.pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 
-def test_unicode_category_escape_negated():
-    """Test parsing of negated unicode category escapes."""
-    result = parse_regex(regex, r"\P{Lm}")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, UnicodeCategoryAtom)
-    assert p.atom.negated
-    assert p.atom.categories == ("Lm",)
+def test_unicode_escapes():
+    """Test parsing of unicode escape sequences."""
+    test_cases = [
+        # (r"\x41", "A"),  # \x41 = 'A'
+        # (r"\u0041", "A"),  # \u0041 = 'A'
+        # (r"\U00000041", "A"),  # \U00000041 = 'A'
+        (r"\N{LATIN CAPITAL LETTER A}", "A"),  # Unicode name
+    ]
 
-
-def test_unicode_category_escape_multiple():
-    """Test parsing of unicode category escapes with multiple categories."""
-    result = parse_regex(regex, r"\p{LuLl}")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, UnicodeCategoryAtom)
-    assert not p.atom.negated
-    assert p.atom.categories == ("Lu", "Ll")
+    for pattern, expected in test_cases:
+        result = parse_regex(unicode_escape, pattern)
+        print(result)
+        assert result == expected
 
 if __name__ == "__main__":
-    test_unicode_letter()
-    # test_unicode_category_escape()
-    # test_unicode_category_escape_negated()
-    # test_unicode_category_escape_multiple()
+    
+    test_unicode_escapes()
+    

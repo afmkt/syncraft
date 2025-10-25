@@ -158,9 +158,10 @@ hyphen = S.lex(hyphen=B.lit("-"))
 # unicode_scalar    = any code point U+0000..U+10FFFF ;
 unicode_scalar = S.lex(unicode_scalar=B.range("\u0000", "\U0010FFFF"))
 # unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
-unicode_letter = S.lex(unicode_letter=B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"])).named('unicode_letter')
+unicode_category = S.lex(unicode_category=B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"])).named('unicode_category')
+unicode_letter = S.lex(unicode_letter=B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]))
 # unicode_digit     = code point with Unicode category Nd ;
-# unicode_digit = S.lex(unicode_digit=B.oneof(["Nd"]))
+unicode_digit = S.lex(unicode_digit=B.unicode_category(["Nd"]))
 # class_literal     = unicode_scalar - {"\\", "]"} ;
 class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "]"]))
 # literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
@@ -204,10 +205,11 @@ class ShorthandAtom:
 shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text))
 
 # category_name     = unicode_letter { unicode_letter } ;
-category_name = unicode_letter + unicode_letter.many()
+category_name = unicode_category.many().map(lambda ts: tuple(t.text for t in ts))
 # unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
 unicode_category_escape = (
-    (escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace) |
+    (escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace) 
+     |
     (escaped_P.map(lambda _: True).mark('negated') + category_name.mark('categories') // rbrace)
 )
 

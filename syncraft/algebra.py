@@ -236,8 +236,7 @@ class Algebra(Generic[A, S]):
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
         alg = replace(self, run_f=map_run) # type: ignore
-        from typing import cast as _cast
-        return _cast(Algebra[B, S], alg)
+        return cast(Algebra[B, S], alg)
 
         
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:

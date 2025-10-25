@@ -1210,7 +1210,7 @@ class FABuilder(Generic[C]):
     at_most: Optional[int] = None
     skip: bool = False  # if true, do not include this in the final automaton (used for whitespace, comments, etc)
     priority: int = 0  # higher number means higher priority
-    non_greedy: bool = True  # when true, first match wins instead of maximal munch
+    non_greedy: bool = False  # when true, first match wins instead of maximal munch
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
 
     # ---- Factory entry points ----
@@ -1277,7 +1277,7 @@ class FABuilder(Generic[C]):
                 tag: Optional[Tag] = None,
                 skip: bool = False, 
                 priority: int = 0,
-                non_greedy: bool = True,
+                non_greedy: bool = False,
                 action: Optional[ModeAction] = None) -> "FABuilder[C]":
         return cls(
             kind=_NodeKind.LITERAL,
@@ -1367,9 +1367,9 @@ class FABuilder(Generic[C]):
             if len(chars) > 0:
                 if isinstance(chars[0], (str, bytes)):
                     if not all(len(c) == 1 for c in chars): # type: ignore
-                        return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars]) # type: ignore
+                        return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars]).with_non_greedy(non_greedy).skipped(skip).tagged(tag).act(action).prioritized(priority) # type: ignore
                     else:
-                        return cls.oneof("".join(chars)) # type: ignore
+                        return cls.oneof("".join(chars)).with_non_greedy(non_greedy).skipped(skip).tagged(tag).act(action).prioritized(priority) # type: ignore
         return cls(
             kind=_NodeKind.ONEOF,
             text=chars,
