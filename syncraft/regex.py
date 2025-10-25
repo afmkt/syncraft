@@ -159,13 +159,13 @@ hyphen = S.lex(hyphen=B.lit("-"))
 unicode_scalar = S.lex(unicode_scalar=B.range("\u0000", "\U0010FFFF"))
 # unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
 unicode_category = S.lex(unicode_category=B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"])).named('unicode_category')
-unicode_letter = S.lex(unicode_letter=B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]))
+unicode_letter = S.lex(unicode_letter=B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"])).named('unicode_letter')
 # unicode_digit     = code point with Unicode category Nd ;
-unicode_digit = S.lex(unicode_digit=B.unicode_category(["Nd"]))
+unicode_digit = S.lex(unicode_digit=B.unicode_category(["Nd"])).named('unicode_digit')
 # class_literal     = unicode_scalar - {"\\", "]"} ;
-class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "]"]))
+class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "]"])).named('class_literal')
 # literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
-literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
+literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"])).named('literal_char')
 
 # hex_octa          = hex_quad hex_quad ;
 hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text)
