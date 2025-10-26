@@ -417,7 +417,7 @@ class TokenSpecBase(TokenSpec[T]):
     @classmethod
     def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional["TokenSpec[T]"]: 
         all = all_subclasses(cls)
-        assert all, "No subclasses of TokenSpecBase found"
+        assert all, "No subclasses of TokenSpecBase found. Please import token modules to register TokenSpec subclasses."
         for sub in all_subclasses(cls):
             c = CallWith(sub.create, *args, **kwargs)
             if c.missing_args or c.missing_kwargs:
