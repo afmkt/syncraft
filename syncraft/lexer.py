@@ -124,6 +124,7 @@ class LexerBase(LexerProtocol[C]):
             return {**kwargs, 'universe': kwargs.pop('universe', universe)}
         elif payload_kind in ('token',):
             tkspec: Optional[TokenSpec[Any]]  = TokenSpecBase.from_kwargs(**kwargs)
+            assert tkspec is not None, f"TokenSpec could not be infered from the given parameters {kwargs}."
             return {**kwargs, 'tkspec': kwargs.pop('tkspec', tkspec)}
         else:
             raise SyncraftError(
@@ -415,6 +416,8 @@ class TokenSpecBase(TokenSpec[T]):
 
     @classmethod
     def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional["TokenSpec[T]"]: 
+        all = all_subclasses(cls)
+        assert all, "No subclasses of TokenSpecBase found"
         for sub in all_subclasses(cls):
             c = CallWith(sub.create, *args, **kwargs)
             if c.missing_args or c.missing_kwargs:

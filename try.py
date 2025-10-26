@@ -9,6 +9,11 @@ from typing import Any, Iterable
 import re
 import pytest
 
+# load subclasses for TokenSpecBase.from_kwargs
+from syncraft.lexer import Lexer, ExtLexer
+from syncraft.token import TokenMatcher, Scalar, Structured
+
+
 
 
 

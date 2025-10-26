@@ -98,6 +98,7 @@ class Structured(TokenSpecBase[T]):
     case_sensitive: bool = field(default=True, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
     tag: None | Callable[..., frozenset[Tag]] = field(default=None)
+    
     @classmethod
     def create(cls, 
                *,
