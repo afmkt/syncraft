@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple
+from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple, Literal
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from syncraft.utils import callable_str
@@ -12,6 +12,7 @@ L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
 S = TypeVar('S', bound=Bindable)
 
+@dataclass(frozen=True)
 class Either(Generic[L, R]):
     def __bool__(self) -> bool:
         return isinstance(self, Right)
@@ -460,7 +461,7 @@ class Cache(Generic[A, Ret]):
         cache_key = self._cache_key(key)
         existing = cache_bucket.get(cache_key)
         if existing is not None and not isinstance(existing, InProgress):
-            print("Cache hit:", f.__name__, "at", cache_key, "->", existing)
+            object.__setattr__(existing, "cache_hit", True)
             return existing
         if isinstance(existing, InProgress):
             # Forced recompute path (growth iteration) bypasses normal early return.

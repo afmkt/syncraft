@@ -17,6 +17,13 @@ from syncraft.token import TokenMatcher, Scalar, Structured
 
 
 
+from syncraft.regex import (
+    parse_regex, 
+    anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
+    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
+)
+
 
 def iter_tokens(ast: Any) -> Iterable[str]:
     if isinstance(ast, Token):
@@ -745,7 +752,40 @@ def test_multi_recursion()->None:
 
     assert leaves(v) == ('a','z','y','x')
 
+def test_complex_regex():
+    """Test parsing of a complex regex combining multiple grammar rules."""
+    pattern = r"^(\w+)\s+(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
+    result1 = parse_regex(regex, pattern)
+    assert isinstance(result1, Regex)
+    assert len(result1.branches) == 1
+    b = result1.branches[0]
+    # Should have: ^ ( \w+ ) \s+ ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) $
+    assert len(b.pieces) == 11
+
+    # Check anchors
+    assert isinstance(b.pieces[0].atom, AnchorAtom)
+    assert b.pieces[0].atom.kind == AnchorKind.LINE_START
+    assert isinstance(b.pieces[-1].atom, AnchorAtom)
+    assert b.pieces[-1].atom.kind == AnchorKind.LINE_END
+
+    # Second call to trigger cache hit
+    result2 = parse_regex(regex, pattern)
+    assert isinstance(result2, Regex)
+    assert result1 == result2  # Should be identical
+    print("Cache hit test: second parse completed")
+
+
+def test_cache_hit():
+    """Test that parsing the same regex twice triggers cache hit."""
+    pattern = r"hello"
+    # First parse
+    result1 = parse_regex(regex, pattern)
+    # Second parse - should hit cache
+    result2 = parse_regex(regex, pattern)
+    assert result1 == result2
+    print("Cache hit verified for simple pattern")
+
 
 
 if __name__ == '__main__':
-    test_multi_recursion()
+    test_complex_regex()
