@@ -442,7 +442,7 @@ regex = branch.sep_by(or_).mark('branches').to(Regex)
 def parse_regex(syntax: Syntax[Any, Any], 
                 pattern: str, 
                 *, 
-                raw:bool=False) -> Any:
+                raw:bool=False) -> Regex | Any:
     from syncraft.parser import parse_string
     result, s = parse_string(syntax, pattern)
     if s:
