@@ -457,15 +457,6 @@ def parse(data: str, *, raw:bool=False) -> Any:
         else:
             return result
     raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
-        
-    # result, s = parse_string(data)
-    # if s:
-    #     if isinstance(result, AST):
-    #         return result if raw else result.mapped 
-    #     else:
-    #         return result
-    # else:
-    #     return result
 
 def parse_regex(syntax: Syntax[Any, Any], 
                 pattern: str, 
