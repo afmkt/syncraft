@@ -220,17 +220,17 @@ class ManySpec(SyntaxSpec, Generic[A]):
 
 @dataclass(frozen=True)
 class FactorySpec(SyntaxSpec):
-    name: str
+    fname: str
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-    sname: Optional[str] = None
+    name: Optional[str] = None
     def named(self, name: str) -> SyntaxSpec:
-        return replace(self, sname=name)
+        return replace(self, name=name)
     
     def __str__(self) -> str:
-        if self.sname:
-            return self.sname
+        if self.name:
+            return self.name
         ret = f"{', '.join(f'{k}={v}' for k,v in self.kwargs.items())}"
-        return f"{self.name}({ret})" if ret != '' else self.name
+        return f"{self.fname}({ret})" if ret != '' else self.fname
     def __repr__(self) -> str:
         return super().__repr__()
 
@@ -287,9 +287,9 @@ class LazyState(Generic[A, S]):
 
         # guarded path: populate cache under lock
         with self._lock:
-            existing = self._cached_algebras.get(key)
-            if existing is not None:
-                return existing
+            # existing = self._cached_algebras.get(key)
+            # if existing is not None:
+            #     return existing
             resolved_syntax = self.cached
             def algebra_lazy_f() -> Algebra[A, S]:
                 return resolved_syntax(alg, **global_kwargs)
@@ -762,7 +762,7 @@ class Syntax(Generic[A, S]):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
-        return cls(factory_run, spec=FactorySpec(name=name, kwargs=FrozenDict(kwargs)))
+        return cls(factory_run, spec=FactorySpec(fname=name, kwargs=FrozenDict(kwargs)))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
@@ -806,7 +806,7 @@ class Syntax(Generic[A, S]):
                 inner = _rehydrate(cls, spec.spec, cache)
                 syntax = inner.many(at_least=spec.at_least, at_most=spec.at_most)
             elif isinstance(spec, FactorySpec):
-                syntax = cls.factory(spec.name, **spec.kwargs)
+                syntax = cls.factory(spec.fname, **spec.kwargs)
             else:  # pragma: no cover - defensive guard
                 raise AssertionError(f"Unsupported SyntaxSpec node: {spec!r}")
             cache[spec] = syntax

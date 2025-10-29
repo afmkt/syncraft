@@ -158,7 +158,7 @@ def syntax2svg(
 
     def spec_label(node: SyntaxSpec) -> str:
         if isinstance(node, FactorySpec):
-            return node.name
+            return node.fname
         if isinstance(node, ThenSpec):
             return f"Then({node.kind.name.lower()})"
         if isinstance(node, ChoiceSpec):
@@ -199,7 +199,7 @@ def syntax2svg(
         label_parts: List[str] = []
         if kwargs:
             label_parts.extend(f"{key}={shorten(value)}" for key, value in sorted(kwargs.items()))
-        label = spec.name if not label_parts else f"{spec.name}({', '.join(label_parts)})"
+        label = spec.fname if not label_parts else f"{spec.fname}({', '.join(label_parts)})"
         if NonTerminal is not None:
             return NonTerminal(label)
         return Terminal(label)

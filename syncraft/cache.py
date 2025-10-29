@@ -359,8 +359,6 @@ class Cache(Generic[A, Ret]):
             return (yield from self._handle_reentry(existing, key))
         # Step 3: seed new head
         head = InProgress(f=f, key=key, cache_key=cache_key)
-        if f not in self._canonical:
-            self._canonical[f] = f
         cache_bucket[cache_key] = head
         self._lr_stack.append(head)
         # Register head for potential cross-position revisits (agenda scheduling)
@@ -381,10 +379,10 @@ class Cache(Generic[A, Ret]):
     def _canonicalize(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]]):
         rule_id = getattr(f, '_rule_id', None)
         if rule_id is not None:
-            for existing_f, rep in self._canonical.items():
-                if getattr(existing_f, '_rule_id', None) is rule_id:
-                    return rep
-            self._canonical[f] = f
+            retf = self._canonical.get(rule_id, None)
+            if retf is not None:
+                return retf
+            self._canonical[rule_id] = f
         return f
 
     def _handle_reentry(self, entry: InProgress[A, Ret], key: A) -> Generator[Any, Any, Ret]:

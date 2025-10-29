@@ -22,7 +22,7 @@ from syncraft.constraint import FrozenDict
 
 
 def token_spec(label: str) -> FactorySpec:
-    return FactorySpec(name="token", kwargs=FrozenDict({"text": label}))
+    return FactorySpec(fname="token", kwargs=FrozenDict({"text": label}))
 
 
 def test_syntax2svg_simple_sequence():

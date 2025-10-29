@@ -69,6 +69,7 @@ class Algebra(Generic[A, S]):
     def named(self, name: Hashable) -> Algebra[A, S]:
         return replace(self, _name=name)
 
+
     @property
     def name(self) -> str:    
         return str(self._name)
