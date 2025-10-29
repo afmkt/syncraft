@@ -128,7 +128,7 @@ class LeftRecursionError(SyncraftError):
 # ---------------------------------------------------------------------------
     
 Args = TypeVar('Args', bound=Hashable)
-A = TypeVar('A')
+A = TypeVar('A', bound=Bindable)
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 
@@ -236,6 +236,7 @@ class InProgress(Generic[A, Ret]):
 @dataclass
 class Cache(Generic[A, Ret]):
     cache: dict[Callable[..., Any], Dict[int, Ret | InProgress[A, Ret]]] = field(default_factory=dict)
+
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     _lr_stack: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)  # active in-progress chain
     _canonical: Dict[Callable[..., Any], Callable[..., Any]] = field(default_factory=dict, init=False, repr=False)
@@ -333,27 +334,6 @@ class Cache(Generic[A, Ret]):
         # Provisional is a subclass of Right and should be considered success.
         return isinstance(ret, Right)
 
-    # -------- Generic position helpers (no structural assumptions about state) --------
-    def _start_key(self, s: A) -> Hashable:
-        # Prefer caller-provided mapping; else try using the state itself; if unhashable, use id(s)
-        try:
-            hash(s)  # type: ignore[arg-type]
-            return cast(Hashable, s)
-        except Exception:
-            return id(s)
-
-    def _cache_key(self, key: A) -> int:
-        start_key = self._start_key(key)
-        if isinstance(start_key, int):
-            return start_key
-        base = getattr(start_key, "base", None)
-        index = getattr(start_key, "index", None)
-        if isinstance(base, int) and isinstance(index, int):
-            # ParserState implements __hash__ to reflect absolute input position.
-            position = hash(start_key)
-            return position if position >= 0 else base + index
-        # Fallback: assign a stable id for hashable, non-integer keys; unhashable keys already became ints via _start_key.
-        return self._key_registry.assign(start_key)
 
     def _extract_next_state(self, ret: Ret) -> Optional[A]:
         if isinstance(ret, Right):
@@ -458,7 +438,7 @@ class Cache(Generic[A, Ret]):
         f = self._canonicalize(f)
         # Step 2: fetch or initialize entry
         cache_bucket = self.cache.setdefault(f, {})
-        cache_key = self._cache_key(key)
+        cache_key = key.cache_key #   self._cache_key(key)
         existing = cache_bucket.get(cache_key)
         if existing is not None and not isinstance(existing, InProgress):
             object.__setattr__(existing, "cache_hit", True)
@@ -485,7 +465,7 @@ class Cache(Generic[A, Ret]):
         cache_bucket[cache_key] = head
         self._lr_stack.append(head)
         # Register head for potential cross-position revisits (agenda scheduling)
-        start_key = self._start_key(key)
+        start_key = key.cache_key # self._start_key(key)
         self._heads_by_start.setdefault(start_key, []).append(head)
         try:
             # Opportunistic co-seeding: if this rule is an Expr-like head referencing another lazy head
@@ -536,10 +516,11 @@ class Cache(Generic[A, Ret]):
             # that share the same starting key (as defined by _start_key). This captures
             # mutually left-recursive heads (multi-head). We assume stack order = call order;
             # earliest becomes leader.
-            start_key = self._start_key(key)
+            start_key = key.cache_key # self._start_key(key)
             candidate_frames: list[InProgress[A, Ret]] = [
                 frame for frame in self._lr_stack
-                if frame.seeding and self._start_key(frame.key) == start_key
+                # if frame.seeding and self._start_key(frame.key) == start_key
+                if frame.seeding and frame.key.cache_key == start_key
             ]
             # Limit group to canonical rule heads (functions tagged with _rule_id) to avoid
             # mixing in internal combinator frames (or_else_run / flat_map_run / etc) which
@@ -601,7 +582,7 @@ class Cache(Generic[A, Ret]):
         # If truly no left recursion (no head detected in its group (or no group) and this frame not head)
         if not head.head and not group_has_left_recursion:
             # Finalize immediately: replace cache entry with seed result
-            final_key = head.cache_key if head.cache_key is not None else self._cache_key(head.key)
+            final_key = head.cache_key if head.cache_key is not None else head.key.cache_key # self._cache_key(head.key)
             self.cache[head.f][final_key] = seed
             self._lr_stack.pop()
             return seed

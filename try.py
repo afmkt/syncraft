@@ -774,7 +774,6 @@ def test_complex_regex():
     result2 = parse_regex(regex, pattern)
     assert isinstance(result2, Regex)
     assert result1 == result2  # Should be identical
-    print("Cache hit test: second parse completed")
 
 
 def test_cache_hit():

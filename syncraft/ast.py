@@ -463,8 +463,7 @@ class Collect(Generic[A, E], AST):
         collector's dataclass fields. For single-argument collectors, the first
         field of the dataclass is used.
         """
-        from rich import print
-
+        
         b, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value) 
         if isinstance(b, tuple):
             index: List[str | int] = []
