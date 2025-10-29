@@ -6,7 +6,7 @@ from typing import (
 from syncraft.ast import AST
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
-from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
+from syncraft.cache import OrElse, Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
 
@@ -285,23 +285,29 @@ class Algebra(Generic[A, S]):
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
         def or_else_run(input: S, 
                         cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
-                                                                                SendChannelType,                                                                                 Either[Any, Tuple[Choice[A, B], S]]]:
-            inp = input.enter()
-            left = yield from self.run(inp, cache)
-            match left:
-                case Right((value, state)):
-                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), state.leave()))
-                case Left(err):
-                    if isinstance(err, Error) and err.committed:
-                        return Left(replace(err, committed=False))
-                    other_result = yield from other.run(inp, cache)
-                    match other_result:
-                        case Right((other_value, other_state)):
-                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state.leave()))
-                        case Left(other_err):
-                            return Left(other_err)
-                    raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
-            raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
+                                                                                SendChannelType,
+                                                                                Either[Any, Tuple[Choice[A, B], S]]]:
+            cache.alternatives.append(OrElse(or_else=or_else_run, left=self.run_f, right=other.run_f, pos=input.cache_key))
+            try:
+                inp = input.enter()
+                left = yield from self.run(inp, cache)
+                match left:
+                    case Right((value, state)):
+                        return Right((Choice(kind=ChoiceKind.LEFT, value=value), state.leave()))
+                    case Left(err):
+                        if isinstance(err, Error) and err.committed:
+                            return Left(replace(err, committed=False))
+                        other_result = yield from other.run(inp, cache)
+                        match other_result:
+                            case Right((other_value, other_state)):
+                                return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state.leave()))
+                            case Left(other_err):
+                                return Left(other_err)
+                        raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
+                raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
+            finally:
+                cache.alternatives.pop()
+        
         alg = replace(self, run_f=or_else_run) # type: ignore
         from typing import cast as _cast
         return _cast(Algebra[Choice[A, B], S], alg)

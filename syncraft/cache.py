@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple, Literal
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
+from enum import Enum
 from syncraft.utils import callable_str
 from typing import cast
 
@@ -231,12 +232,17 @@ class InProgress(Generic[A, Ret]):
     # removed seeded_choice for Option A approach
 
 
-
+@dataclass(frozen=True)
+class OrElse:
+    or_else: Callable[..., Any]
+    left: Callable[..., Any]
+    right: Callable[..., Any]
+    pos: int
 
 @dataclass
 class Cache(Generic[A, Ret]):
     cache: dict[Callable[..., Any], Dict[int, Ret | InProgress[A, Ret]]] = field(default_factory=dict)
-
+    alternatives: List[OrElse] = field(default_factory=list)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     _lr_stack: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)  # active in-progress chain
     _canonical: Dict[Callable[..., Any], Callable[..., Any]] = field(default_factory=dict, init=False, repr=False)
