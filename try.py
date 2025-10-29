@@ -795,4 +795,4 @@ def test_literal_characters():
 
 
 if __name__ == '__main__':
-    test_literal_characters()
+    test_complex_regex()

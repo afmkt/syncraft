@@ -151,6 +151,14 @@ class LexerCache:
         self.dir = Path(p)
         self.dict : Dict[str, Lexer[Any]] = {}
 
+    def load_all(self) -> None:
+        for file in self.dir.glob("*.lex"):
+            key = file.stem
+            if key not in self.dict:
+                with open(file, "rb") as f:
+                    import pickle
+                    lexer = pickle.load(f)
+                    self.dict[key] = lexer
     
     def load(self, k: Set[FABuilder[Any]], factory: Callable[[], Lexer[Any]]) -> Optional[Lexer[Any]]:
         # return factory()
