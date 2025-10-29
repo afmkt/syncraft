@@ -213,18 +213,19 @@ class Parser(Algebra[T, ParserState[T]]):
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
             lexer.reset()
+            yield from ()
             while True:
                 if state.ended():
                     match lexer.candidate():
+                        
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
                             if lexeme is None:
                                 token = Token(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return (yield from cache.return_value(Right((token, state.advance())), state, name=name))
+                            return Right((token, state.advance())) # type: ignore
                         case _:
-                            err = Error(message=f"Cannot match token at end of input, expect {name}", this=lex_run, state=state)
-                            return (yield from cache.return_value(Left(err), state, name='EOF'))
+                            return Left(Error(message=f"Cannot match token at end of input, expect {name}", this=lex_run, state=state))
                 elif state.pending():
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
@@ -232,8 +233,7 @@ class Parser(Algebra[T, ParserState[T]]):
                 else:
                     match lexer.match(ntags, state.current(), state.abs_index()):
                         case Left(err_msg):
-                            err = Error(message=f"{err_msg}, expect {name}", this=lex_run, state=state)            
-                            return (yield from cache.return_value(Left(err), state, name=name))
+                            return Left(Error(message=f"{err_msg}, expect {name}", this=lex_run, state=state))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
@@ -243,7 +243,7 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = lexeme
                             if end > state.index:
                                 state = state.advance()
-                            return (yield from cache.return_value(Right((token, state)), state, name=name))
+                            return Right((token, state)) # type: ignore
                         case _:
                             raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
 

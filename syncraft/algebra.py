@@ -131,12 +131,12 @@ class Algebra(Generic[A, S]):
                      cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                            SendChannelType, 
                                                                            Either[Any, Tuple[A, S]]]:
-            return (yield from cache.return_value(Left(Error(
+            yield from ()
+            return Left(Error(
                 error=error,
                 this=cls,
                 state=input
-            )), input, name=cls.__name__ + '.fail'))
-
+            ))
         return cls(fail_run)
     
     @classmethod
@@ -145,7 +145,8 @@ class Algebra(Generic[A, S]):
                         cache:Cache[S, Either[Any, Tuple[Any, S]]]) -> Generator[YieldChannelType, 
                                                                               SendChannelType, 
                                                                               Either[Any, Tuple[A, S]]]:
-            return (yield from cache.return_value(Right((value, input)), input, name=cls.__name__ + '.success'))
+            yield from ()
+            return Right((value, input))
         return cls(success_run)
     
     

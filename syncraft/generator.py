@@ -389,6 +389,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                               SendChannelType, 
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             lexer.reset()
+            yield from ()
             if input.pruned:
                 tag = input.rng("lex_tag").choice(tuple(ntags))
                 input = input.fork(tag=tag)
@@ -407,23 +408,19 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             expect="str, bytes, or tuple",
                         )
                 parsed_value = cast(ParseResult[T], generated)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
+                return Right((parsed_value, input))
             else:
                 current = input.ast
                 if not lexer.varify(ntags, current):
-                    return (yield from cache.return_value(
-                        Left(
+                    return Left(
                             Error(
                                 this=lex_run,
                                 message=f"Expected token tag {name}, but got {current}.",
                                 state=input,
                             )
-                        ),
-                        input,
-                        name=name,
-                    ))
+                        )
                 parsed_value = cast(ParseResult[T], current)
-                return (yield from cache.return_value(Right((parsed_value, input)), input, name=name))
+                return Right((parsed_value, input))
 
         return cls(lex_run) 
 

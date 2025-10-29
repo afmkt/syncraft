@@ -223,24 +223,11 @@ class Cache(Generic[A, Ret]):
 
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
-
-    def _call_rule(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], key: A) -> Generator[Any, Any, Ret]:
-        return f(key, self)
     
     def _run_rule(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]], key: A) -> Generator[Any, Any, Ret]:
         result = yield from f(key, self)
         return result
     
-    def flat_cache(self)->List[Tuple[str, str, Any, Any]]:
-        parts:List[Tuple[str, str, Any, Any]] = [('name', 'id', 'position', 'value')]
-        if len(self.cache) > 0:
-            for func, c in self.cache.items():
-                for k, v in c.items():
-                    parts.append((func.__name__, str(hex(id(func))), k, v))
-            return parts
-        else:
-            return []
-
     def __repr__(self) -> str:
         parts = []
         for f, c in self.cache.items():
@@ -252,10 +239,6 @@ class Cache(Generic[A, Ret]):
     def __str__(self) -> str:
         return self.__repr__()
     
-    def __or__(self, other: Cache[A, Ret]) -> Cache[A, Ret]:
-        assert self.cache is other.cache, "There should be only one global cache"
-        return self
-
     def gc(self, min_position: int) -> int:
         """Remove cached entries whose position key is less than ``min_position``.
 
@@ -287,26 +270,10 @@ class Cache(Generic[A, Ret]):
         if self._agenda:
             self._agenda = [ip for ip in self._agenda if (ip.cache_key is None or ip.cache_key >= min_position)]
 
-
-
         return removed
-
-    def return_value(self, v: Ret, s: A, name: str) -> Generator[Any, Any, Ret]:
-        def return_value_f(_: A, cache: Cache[A, Ret]) -> Generator[Any, Any, Ret]:
-            yield from ()
-            return v
-        return_value_f.__name__ = name
-        return (yield from self.exec(return_value_f, s))
     
 
-
-    # ---------- Left recursion recovery helpers ----------
-    def _is_success(self, ret: Ret) -> bool:
-        # Provisional is a subclass of Right and should be considered success.
-        return isinstance(ret, Right)
-
-
-    def _extract_next_state(self, ret: Ret) -> Optional[A]:
+    def _extract_next_state(self, ret: Any) -> Optional[A]:
         if isinstance(ret, Right):
             try:
                 v = ret.value  # type: ignore[assignment]
@@ -341,7 +308,7 @@ class Cache(Generic[A, Ret]):
         """
         if not isinstance(ret, Right):
             return -1
-        nxt = self._extract_next_state(cast(Ret, ret))
+        nxt = self._extract_next_state(ret)
         if nxt is not None:
             cmp_res = self._cmp(key, nxt)
             if cmp_res is not None:
@@ -351,12 +318,12 @@ class Cache(Generic[A, Ret]):
 
     def _improved(self, key: A, old: Optional[Ret], new: Ret) -> bool:
         # Improvement = strictly further end state via ordering (fallback to measure if provided)
-        if not self._is_success(new):
+        if not isinstance(new, Right):
             return False
         new_end = self._extract_next_state(new)
         if new_end is None:
             return False
-        if old is None or not self._is_success(old):
+        if old is None or not isinstance(old, Right):
             cmp0 = self._cmp(key, new_end)
             return cmp0 is not None and cmp0 < 0
         old_end = self._extract_next_state(old)
@@ -364,37 +331,6 @@ class Cache(Generic[A, Ret]):
             return True
         cmp1 = self._cmp(old_end, new_end)
         return cmp1 is not None and cmp1 < 0
-
-    def _struct_metric(self, ret: Ret) -> int:
-        if not isinstance(ret, Right):
-            return 0
-        try:
-            value, _ = ret.value  # type: ignore
-        except Exception:
-            return 0
-        return self._value_size(value)
-
-    def _value_size(self, v: Any) -> int:
-        # Approximate structural richness: count atoms in nested tuples / dataclasses with 'left'/'right'
-        if v is None:
-            return 0
-        if isinstance(v, (str, int, float, bytes)):
-            return 1
-        if isinstance(v, tuple):
-            return 1 + sum(self._value_size(x) for x in v)
-        # Generic object with 'left'/'right'
-        if hasattr(v, 'left') and hasattr(v, 'right'):
-            try:
-                return 1 + self._value_size(getattr(v, 'left')) + self._value_size(getattr(v, 'right'))
-            except Exception:
-                return 1
-        # Choice-like
-        if hasattr(v, 'value') and not isinstance(v, (str, int, float, bytes)):
-            try:
-                return 1 + self._value_size(getattr(v, 'value'))
-            except Exception:
-                return 1
-        return 1
 
     # Context manager helpers for LR growth
     def _enter_lr_growth(self):
