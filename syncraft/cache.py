@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple, Literal
+from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
-from enum import Enum
+
 from syncraft.utils import callable_str
 from typing import cast
 
@@ -133,38 +133,7 @@ A = TypeVar('A', bound=Bindable)
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 
 
-class _KeyIdRegistry:
-    """
-    Tracks stable integer ids for non-numeric start keys so cache 
-    lookups and GC remain deterministic without cluttering ``Cache``.
 
-    """
-
-    __slots__ = ("_ids", "_next")
-
-    def __init__(self) -> None:
-        self._ids: Dict[Hashable, int] = {}
-        self._next: int = 0
-
-    def assign(self, key: Hashable) -> int:
-        existing = self._ids.get(key)
-        if existing is not None:
-            return existing
-        assigned = self._next
-        self._ids[key] = assigned
-        self._next += 1
-        return assigned
-
-    def prune(self, min_position: int) -> None:
-        if not self._ids:
-            if self._next < min_position:
-                self._next = min_position
-            return
-        for original, assigned in list(self._ids.items()):
-            if assigned < min_position:
-                del self._ids[original]
-        if self._next < min_position:
-            self._next = min_position
 
 
 @dataclass
@@ -210,8 +179,7 @@ class InProgress(Generic[A, Ret]):
         f: Parsing function / rule.
         key: The input position key.
         result: Best successful result so far (None until seed done).
-        growing: (Retained for potential diagnostics; not strictly required.)
-        improved: Whether at least one growth iteration improved past the seed.
+
         seeding: True only during the very first (seed) evaluation.
         head: Becomes True if left recursion is detected (a re-entry during seed).
     """
@@ -219,17 +187,15 @@ class InProgress(Generic[A, Ret]):
     key: A
     cache_key: int | None = None
     result: Optional[Ret] = None
-    growing: bool = False
-    improved: bool = False
+
     seeding: bool = True
     head: bool = False
     group: Optional[LRGroup[A, Ret]] = None  # Multi-head group reference (if indirect cycle)
     group_leader: bool = False  # True for first detected member in a cycle slice
     finalized: bool = False  # Unified path: marks that growth completed (group may also mark finalized)
-    probing: bool = False  # True during growth iteration attempts
-    base_only: bool = True  # True during initial base-only seeding phase
+
     seed_result: Optional[Ret] = None  # Preserve original (base) successful seed for single-head growth scenarios
-    # removed seeded_choice for Option A approach
+
 
 
 @dataclass(frozen=True)
@@ -253,8 +219,7 @@ class Cache(Generic[A, Ret]):
     # Heads grouped by a hashable start key (caller-provided mapping or the state itself)
     _heads_by_start: Dict[Hashable, List[InProgress[A, Ret]]] = field(default_factory=dict, init=False, repr=False)
 
-    # next_state is always Right.value[1] on success; distance always falls back to ordering.
-    _key_registry: _KeyIdRegistry = field(default_factory=_KeyIdRegistry, init=False, repr=False)
+
 
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
@@ -322,7 +287,7 @@ class Cache(Generic[A, Ret]):
         if self._agenda:
             self._agenda = [ip for ip in self._agenda if (ip.cache_key is None or ip.cache_key >= min_position)]
 
-        self._key_registry.prune(min_position)
+
 
         return removed
 
@@ -452,17 +417,9 @@ class Cache(Generic[A, Ret]):
         if isinstance(existing, InProgress):
             # Forced recompute path (growth iteration) bypasses normal early return.
             if self._force is existing and not existing.seeding:
-                # If already probing (recursive self-call inside forced recompute), short-circuit to current best.
-                if existing.probing:
-                    return existing.result if existing.result is not None else Left(key)  # type: ignore
-                existing.probing = True
-                self._lr_stack.append(existing)
-                try:
-                    attempt = yield from self._run_rule(f, key)
-                finally:
-                    self._lr_stack.pop()
-                    existing.probing = False
-                return attempt
+                # If already in forced recompute, short-circuit to current best.
+                return existing.result if existing.result is not None else Left(key)  # type: ignore
+                # No probing logic needed
             return (yield from self._handle_reentry(existing, key))
         # Step 3: seed new head
         head = InProgress(f=f, key=key, cache_key=cache_key)
@@ -501,11 +458,7 @@ class Cache(Generic[A, Ret]):
             return self._handle_seeding_reentry(entry, key)
         # Post-seeding
         if entry.group is not None:
-            if entry.probing:
-                # During probing (growth iteration), for single-head groups return the original seed
-                if entry.group and len(entry.group.members) == 1 and entry.seed_result is not None:
-                    return entry.seed_result
-                return entry.result if entry.result is not None else Left(key)  # type: ignore
+
             if entry.group.finalized or entry.finalized:
                 return entry.result if entry.result is not None else Left(key)  # type: ignore
             return entry.result if entry.result is not None else Left(key)  # type: ignore
@@ -570,25 +523,21 @@ class Cache(Generic[A, Ret]):
             if len(group.members) > 1:
                 for m in group.members:
                     m.head = True
-        # If still in base-only phase for this entry (no consumption yet), block the recursive
-        # expansion by returning a sentinel failure; base alternatives may still succeed.
-        if entry.base_only:
-            return Left(("LR_BASE_BLOCK", key))  # type: ignore
+        # base_only logic removed: alternative suppression is now handled by the alternatives stack
         return Left(("LR_SEED", key))  # type: ignore
 
     def _complete_seed(self, head: InProgress[A, Ret], seed: Ret) -> Generator[Any, Any, Ret]:
         head.seeding = False
-        head.base_only = False
+
         if head.group is not None:
             head.group.seeding_remaining -= 1
         # Determine if this member participates in a left-recursive group (directly or indirectly)
         group_has_left_recursion = False
         if head.group is not None:
             group_has_left_recursion = any(m.head for m in head.group.members)
-        # If truly no left recursion (no head detected in its group (or no group) and this frame not head)
+        # If not part of a left-recursive group, finalize immediately
         if not head.head and not group_has_left_recursion:
-            # Finalize immediately: replace cache entry with seed result
-            final_key = head.cache_key if head.cache_key is not None else head.key.cache_key # self._cache_key(head.key)
+            final_key = head.cache_key if head.cache_key is not None else head.key.cache_key
             self.cache[head.f][final_key] = seed
             self._lr_stack.pop()
             return seed
@@ -608,26 +557,22 @@ class Cache(Generic[A, Ret]):
             head.result = cast(Optional[Ret], head.result if (head.result is not None and isinstance(head.result, Right)) else None)
         # Growth phase: only when all seeds complete
         if head.group_leader and not head.group.finalized and head.group.seeding_remaining == 0:
-            # Early multi-head zero-consumption detection: if all members succeeded (Right) with zero consumption
-            # after seeding, classify as no-progress and raise before entering growth.
+            # Early multi-head zero-consumption detection
             if len(head.group.members) > 1:
-                # NEW: Detect pure unproductive mutual cycle (no member produced any successful seed result).
-                # Example: A -> B; B -> A on empty input. All seeds fail because recursion is suppressed
-                # during seeding and there are no base (non-recursive) alternatives. Previous logic required
-                # at least one successful seed (any_success) to classify no-progress, so such grammars silently
-                # failed without a diagnostic. We now raise a LeftRecursionError(reason='no-progress') early.
-                # NOTE: Added to support test 'test_mutual_unproductive_cycle_no_progress' which asserts
-                # that a purely unproductive mutual cycle (A -> B; B -> A) raises reason='no-progress'.
-                # Without this branch such a grammar produced no successful seed and silently failed.
-                no_seed_success = all(
-                    not (m.result is not None and isinstance(m.result, Right))
-                    and not (m.seed_result is not None and isinstance(m.seed_result, Right))
-                    for m in head.group.members
-                )
-                if no_seed_success:
+                all_zero = True
+                any_success = False
+                for m in head.group.members:
+                    sr = m.result if m.result is not None else m.seed_result
+                    if sr is None or not isinstance(sr, Right):
+                        continue
+                    any_success = True
+                    if self._consumed(m.key, cast(Ret, sr)) > 0:
+                        all_zero = False
+                        break
+                if not any_success:
                     raise LeftRecursionError(
                         "Left recursion with no progress (no productive base in mutual cycle)",
-                        offender=offender if (offender := head.f) else head.f,  # type: ignore
+                        offender=head.f,
                         expect="> 0 token consumption via at least one base alternative",
                         iterations=0,
                         seed_consumed=None,
@@ -636,20 +581,11 @@ class Cache(Generic[A, Ret]):
                         limit=self.max_growth_iterations,
                         reason="no-progress"
                     )
-                all_zero = True
-                any_success = False
-                for m in head.group.members:
-                    sr = m.result if m.result is not None else m.seed_result
-                    if sr is None or not isinstance(sr, Right):  # type: ignore
-                        continue
-                    any_success = True
-                    if self._consumed(m.key, sr) > 0:  # type: ignore[arg-type]
-                        all_zero = False
-                        break
+                
                 if any_success and all_zero:
                     raise LeftRecursionError(
                         "Left recursion with no progress (nullable or unproductive mutual cycle)",
-                        offender=offender if (offender := head.f) else head.f,  # type: ignore
+                        offender=head.f,
                         expect="> 0 token consumption",
                         iterations=0,
                         seed_consumed=None,
@@ -660,8 +596,9 @@ class Cache(Generic[A, Ret]):
                     )
             yield from self._grow_group(head.group, offender=head.f)
         self._lr_stack.pop()
-        # May still be None if no base alternative succeeded; growth might not improve (leave as failure)
+
         return head.result if head.result is not None else seed  # type: ignore
+        # (Old unreachable block removed)
 
     def _grow_group(self, group: LRGroup[A, Ret], offender: Any) -> Generator[Any, Any, None]:
         iterations = 0
@@ -669,13 +606,13 @@ class Cache(Generic[A, Ret]):
         if len(members_snapshot) == 1:
             member = members_snapshot[0]
             best = member.result
-            member.probing = True
+
             self._enter_lr_growth()
             seed_end = self._extract_next_state(best) if best is not None else None
             while True:
                 iterations += 1
                 if iterations > self.max_growth_iterations:
-                    member.probing = False
+
                     self._exit_lr_growth()
                     raise LeftRecursionError(
                         "Left recursion growth iteration limit exceeded (single-head)",
@@ -707,7 +644,7 @@ class Cache(Generic[A, Ret]):
                     # Detect unproductive (no-progress) nullable left recursion: zero progress overall.
                     cmp_seed = self._cmp(member.key, seed_end)
                     if cmp_seed is not None and cmp_seed == 0:
-                        member.probing = False
+
                         self._exit_lr_growth()
                         raise LeftRecursionError(
                             "Left recursion with no progress (nullable or unproductive cycle)",
@@ -722,7 +659,7 @@ class Cache(Generic[A, Ret]):
                         )
                     break
                 break
-            member.probing = False
+            
             self._exit_lr_growth()
         else:
             changed = True

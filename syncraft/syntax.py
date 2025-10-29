@@ -297,6 +297,7 @@ class LazyState(Generic[A, S]):
             # --- Patch _rule_id for left-recursion recovery ---
             try:
                 setattr(algebra.run_f, "_rule_id", self.thunk)
+                pass
             except Exception:
                 pass
             self._cached_algebras[key] = algebra

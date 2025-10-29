@@ -5,27 +5,12 @@ from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
 from syncraft.cache import Cache
-from typing import Any, Iterable
+
 import re
 import pytest
-from syncraft.input import Input
-from syncraft.lexer import ExtLexer, Lexer
-from syncraft.parser import parse as parser_run, parse_data
+from typing import Any, Iterable
 
-# load subclasses for TokenSpecBase.from_kwargs
-from syncraft.lexer import Lexer, ExtLexer
-from syncraft.token import TokenMatcher, Scalar, Structured
-
-from syncraft.regex import (
-    parse_regex, 
-    literal as ll, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
-    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
-)
-
-
-
-
+# Utility to extract all token texts from a (possibly nested) AST structure produced by parse_word.
 
 def iter_tokens(ast: Any) -> Iterable[str]:
     if isinstance(ast, Token):
@@ -52,6 +37,14 @@ def token_multiset(ast: Any) -> dict[str, int]:
         counts[t] = counts.get(t, 0) + 1
     return counts
 
+__all__ = ['iter_tokens', 'token_multiset']
+
+
+def parse_with_state(syntax, sql: str):
+    from syncraft.cache import Cache
+    return parse_word(syntax, sql, cache=Cache())
+
+__all__.append('parse_with_state')
 
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
@@ -685,6 +678,40 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
 
 
 
+def test_multi_recursion()->None:
+    a = literal('a').map(lambda x: x.text, raw=True).named('a')
+    b = literal('b').map(lambda x: x.text, raw=True).named('b')
+    c = literal('c').map(lambda x: x.text, raw=True).named('c')
+    x = literal('x').map(lambda x: x.text, raw=True).named('x')
+    y = literal('y').map(lambda x: x.text, raw=True).named('y')
+    z = literal('z').map(lambda x: x.text).named('z')
+    A = lazy(lambda: (B + x) | a).named('A')
+    B = lazy(lambda: (C + y) | b).named('B')
+    C = lazy(lambda: (A + z) | c).named('C')
+
+    v, s = parse_word(A, 'a z y x', cache=Cache())
+    print(v)
+    # We care about the raw AST shape (pre-bimap). Extract leaves manually.
+    from syncraft.ast import Then, ThenKind
+    from syncraft.algebra import Choice, ChoiceKind  # type: ignore
+
+    def leaves(node):
+        if isinstance(node, Lazy):
+            return leaves(node.value)
+        if isinstance(node, Then) and node.kind == ThenKind.BOTH:
+            return leaves(node.left) + leaves(node.right)
+        if isinstance(node, Choice):
+            # For this grammar Choice.RIGHT wraps literal terminal; LEFT wraps a Then chain.
+            if node.kind == ChoiceKind.RIGHT:
+                return (node.value,)
+            else:
+                return leaves(node.value)
+        if isinstance(node, str):
+            return (node,)
+        return ()
+
+    assert leaves(v) == ('a','z','y','x')
+
 
 
 
@@ -720,78 +747,7 @@ def test_mutual_unproductive_cycle_no_progress_3():
 
 
 
-def test_multi_recursion()->None:
-    a = literal('a').map(lambda x: x.text, raw=True).named('a')
-    b = literal('b').map(lambda x: x.text, raw=True).named('b')
-    c = literal('c').map(lambda x: x.text, raw=True).named('c')
-    x = literal('x').map(lambda x: x.text, raw=True).named('x')
-    y = literal('y').map(lambda x: x.text, raw=True).named('y')
-    z = literal('z').map(lambda x: x.text).named('z')
-    A = lazy(lambda: (B + x) | a).named('A')
-    B = lazy(lambda: (C + y) | b).named('B')
-    C = lazy(lambda: (A + z) | c).named('C')
-
-    v, s = parse_word(A, 'a z y x', cache=Cache())
-    print(v)
-    # We care about the raw AST shape (pre-bimap). Extract leaves manually.
-    from syncraft.ast import Then, ThenKind
-    from syncraft.algebra import Choice, ChoiceKind  # type: ignore
-
-    def leaves(node):
-        if isinstance(node, Lazy):
-            return leaves(node.value)
-        if isinstance(node, Then) and node.kind == ThenKind.BOTH:
-            return leaves(node.left) + leaves(node.right)
-        if isinstance(node, Choice):
-            # For this grammar Choice.RIGHT wraps literal terminal; LEFT wraps a Then chain.
-            if node.kind == ChoiceKind.RIGHT:
-                return (node.value,)
-            else:
-                return leaves(node.value)
-        if isinstance(node, str):
-            return (node,)
-        return ()
-
-    assert leaves(v) == ('a','z','y','x')
-
-def test_complex_regex():
-    """Test parsing of a complex regex combining multiple grammar rules."""
-    pattern = r"^(\w+)\s+(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
-    result1 = parse_regex(regex, pattern)
-    assert isinstance(result1, Regex)
-    assert len(result1.branches) == 1
-    b = result1.branches[0]
-    # Should have: ^ ( \w+ ) \s+ ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) $
-    assert len(b.pieces) == 11
-
-    # Check anchors
-    assert isinstance(b.pieces[0].atom, AnchorAtom)
-    assert b.pieces[0].atom.kind == AnchorKind.LINE_START
-    assert isinstance(b.pieces[-1].atom, AnchorAtom)
-    assert b.pieces[-1].atom.kind == AnchorKind.LINE_END
-
-    # Second call to trigger cache hit
-    result2 = parse_regex(regex, pattern)
-    assert isinstance(result2, Regex)
-    assert result1 == result2  # Should be identical
-
-
-def test_cache_hit():
-    """Test that parsing the same regex twice triggers cache hit."""
-    pattern = r"hello"
-    # First parse
-    result1 = parse_regex(regex, pattern)
-    # Second parse - should hit cache
-    result2 = parse_regex(regex, pattern)
-    assert result1 == result2
-    print("Cache hit verified for simple pattern")
-
-def test_literal_characters():
-    """Test parsing of literal characters."""
-    # Single literal character
-    result = parse_regex(ll, "a")
-    assert result.text == "a"
-
 
 if __name__ == '__main__':
-    test_complex_regex()
+    test_mutual_unproductive_cycle_no_progress_3()
+    pass

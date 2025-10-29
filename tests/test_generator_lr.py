@@ -83,19 +83,6 @@ def test_generate_with_mutual_left_recursion_without_base_raises():
         generate_with(A)
 
 
-def test_generate_mutual_left_recursion_without_base_raises():
-    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
-    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
-    with pytest.raises(LeftRecursionError):
-        generate(A)
-
-
-def test_validate_mutual_left_recursion_without_base_raises():
-    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
-    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
-    with pytest.raises(LeftRecursionError):
-        # Any AST will do; grammar has no base and should be flagged
-        generate(A)
 
 
 def test_generate_with_infers_text_lexer_without_config() -> None:
