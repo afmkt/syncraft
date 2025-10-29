@@ -8,21 +8,23 @@ from syncraft.cache import Cache
 from typing import Any, Iterable
 import re
 import pytest
+from syncraft.input import Input
+from syncraft.lexer import ExtLexer, Lexer
+from syncraft.parser import parse as parser_run, parse_data
 
 # load subclasses for TokenSpecBase.from_kwargs
 from syncraft.lexer import Lexer, ExtLexer
 from syncraft.token import TokenMatcher, Scalar, Structured
 
-
-
-
-
 from syncraft.regex import (
     parse_regex, 
-    anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
+    literal as ll, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
+
+
+
 
 
 def iter_tokens(ast: Any) -> Iterable[str]:
@@ -785,7 +787,12 @@ def test_cache_hit():
     assert result1 == result2
     print("Cache hit verified for simple pattern")
 
+def test_literal_characters():
+    """Test parsing of literal characters."""
+    # Single literal character
+    result = parse_regex(ll, "a")
+    assert result.text == "a"
 
 
 if __name__ == '__main__':
-    test_complex_regex()
+    test_literal_characters()

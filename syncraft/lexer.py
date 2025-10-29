@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, replace, is_dataclass
 from enum import Enum
 from typing import (
-    Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, 
+    Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, ClassVar,
     runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING
 )
 if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
@@ -15,7 +15,8 @@ from syncraft.ast import SyncraftError, Token
 from syncraft.cache import Either, Left, Right
 from collections import deque, defaultdict
 import random
-
+from pathlib import Path
+import hashlib
 
 
 C = TypeVar('C', bound=str | int | Enum | Any)
@@ -100,9 +101,10 @@ class LexerProtocol(Protocol, Generic[C]):
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
-class LexerBase(LexerProtocol[C]):
 
 
+
+class LexerBase(LexerProtocol[C]):    
     @classmethod
     def normalise_kwargs(cls, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         payload_kind = kwargs.pop("payload_kind", None)
@@ -144,14 +146,54 @@ class LexerBase(LexerProtocol[C]):
             return c()
         return None
 
+class LexerCache:
+    def __init__(self, p: str | Path) -> None:
+        self.dir = Path(p)
+        self.dict : Dict[str, Lexer[Any]] = {}
+
+    
+    def load(self, k: Set[FABuilder[Any]], factory: Callable[[], Lexer[Any]]) -> Optional[Lexer[Any]]:
+        # return factory()
+        tmp = sorted(str(fb) for fb in k)
+        joined = "\n".join(tmp)
+        key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+        if key in self.dict:
+            return self.dict[key]
+        else:
+            file = self.dir / f"{key}.lex"
+            if file.exists():
+                with open(file, "rb") as f:
+                    import pickle
+                    lexer = pickle.load(f)
+                    self.dict[key] = lexer
+                    return lexer
+            else:
+                lexer = factory()
+                self.dict[key] = lexer
+                self.dir.mkdir(parents=True, exist_ok=True)
+                file = self.dir / f"{key}.lex"
+                with open(file, "wb") as f:
+                    import pickle
+                    pickle.dump(lexer, f)
+                return lexer
+        
+    
+    
+    def clear(self) -> None:
+        self.dict.clear()
+        if self.dir.exists():
+            for file in self.dir.glob("*.lex"):
+                file.unlink()
 @dataclass
 class Lexer(LexerBase[C]):
-    universe: CodeUniverse[C]
+
     modes: Dict[str | None, Mode[C]]     
     actions: Dict[Tag | None, ModeAction]
     default_mode: str | None 
     _stack: deque[Mode[C]] = field(default_factory=deque)
+    cache: ClassVar[LexerCache] = LexerCache(".syncraft/lexer_cache")
 
+    
     def tags(self) -> frozenset[str|None]:
         all_tags: Set[Tag|None] = set()
         for mode in self.modes.values():
@@ -179,7 +221,8 @@ class Lexer(LexerBase[C]):
             return acc
         
         builders = fabuilder(**kwargs)
-        return cls.from_builders(universe, *builders, default_mode=default_mode)
+        return cls.cache.load(builders, lambda: cls.from_builders(universe, *builders, default_mode=default_mode))
+        
             
     @classmethod
     def bind(cls,*, universe: CodeUniverse[C], default_mode:str|None=None) -> Type["Lexer[Any]"]:
@@ -191,10 +234,7 @@ class Lexer(LexerBase[C]):
 
 
     def reset(self) -> None:
-        for m in self.modes.values():
-            m.reset()
-        for m in self._stack:
-            m.reset()
+        self.current_mode.reset()
     
     @property
     def current_mode(self) -> Mode[C]:
@@ -297,7 +337,7 @@ class Lexer(LexerBase[C]):
         for mname, mode_rules in modes.items():
             lexer_modes[mname] = cls.one_mode(universe, *mode_rules)
 
-        lexer = cls(universe=universe, modes=lexer_modes, actions=actions, default_mode=default_mode)
+        lexer = cls(modes=lexer_modes, actions=actions, default_mode=default_mode)
         lexer.push_mode(default_mode)
         return lexer
 

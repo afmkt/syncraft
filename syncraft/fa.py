@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List,
-    Callable, Dict, Sequence, Union, Iterator, Literal
+    Callable, Dict, Sequence, Union, Iterator, Literal, TextIO
 )
 
 from dataclasses import dataclass, field, replace
@@ -95,60 +95,6 @@ class DFA(Generic[C]):
             accept=FrozenDict({t: frozenset(ss) for t, ss in acc_map.items()}),
             transitions=FrozenDict({s: FrozenDict(m) for s,m in trans.items()}))
 
-    def to_dict(self) -> dict:
-        # Serialize DFA to a dict for JSON
-        return {
-            'init': self.init.id,
-            'accept': {s.id: list(tags) for s, tags in self.accept.items()},
-            'transitions': {
-                str(s.id): [
-                    {'interval': cs.interval, 'target': t.id}
-                    for cs, t in trans.items()
-                ]
-                for s, trans in self.transitions.items()
-            },
-            'universe': self.universe.to_dict()
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict, enum_classes: Optional[dict] = None) -> 'DFA':
-        # Reconstruct DFA from dict
-        universe = CodeUniverse.from_dict(d['universe'], enum_classes=enum_classes)
-        id2state = {}
-        def get_state(i):
-            if i not in id2state:
-                id2state[i] = FAState(id=i)
-            return id2state[i]
-        # Accept
-        accept = {get_state(int(sid)): frozenset(tags) for sid, tags in d['accept'].items()}
-        # Transitions
-        transitions = {}
-        for sid, lst in d['transitions'].items():
-            s = get_state(int(sid))
-            trans = {}
-            for item in lst:
-                cs: CharSet[C] = CharSet.from_interval(item['interval'], universe)
-                t = get_state(item['target'])
-                trans[cs] = t
-            transitions[s] = trans
-        return cls(
-            universe=universe,
-            init=get_state(int(d['init'])),
-            accept=FrozenDict(accept),
-            transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()})            
-        )
-
-    def save(self, filename: str) -> None:
-        import json
-        with open(filename, 'w') as f:
-            json.dump(self.to_dict(), f)
-
-    @classmethod
-    def load(cls, filename: str) -> 'DFA':
-        import json
-        with open(filename, 'r') as f:
-            d = json.load(f)
-        return cls.from_dict(d)
     
     @property
     def minimize(self) -> DFA[C]:
