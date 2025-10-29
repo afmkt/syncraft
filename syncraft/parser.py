@@ -51,6 +51,9 @@ class ParserState(Bindable, Generic[T]):
     def cache_key(self) -> int:
         return self.base + self.index
 
+    def unused_cache_key(self) -> int:
+        return self.safe_base
+
     def enter(self) -> ParserState[T]:
         return replace(self, choice_depth=self.choice_depth + 1)
     
@@ -264,14 +267,12 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
     def bootstrap(self, 
                   syntax: Syntax[Any, ParserState[T]], 
                   alg_cls: Type[Algebra[Any, ParserState[T]]],
-                  cache: Optional[Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]] = None
-                  ) -> Tuple[Algebra[Any, ParserState[T]], Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]], ParserState[T]]:
+                  ) -> Tuple[Algebra[Any, ParserState[T]], ParserState[T]]:
 
-        cache = cache or Cache()
         buffer, final = self.cursor.initial_buffer()
         parser = syntax(alg_cls, payload_kind=self.input.payload_kind)
         initial_state = ParserState(input=buffer, index=0, base=0, final=final)
-        return parser, cache, initial_state
+        return parser, initial_state
     
     def resume(self, request: Incomplete[ParserState[T]]) -> ParserState[T]:
         state = request.state

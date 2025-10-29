@@ -44,6 +44,9 @@ class GenState(Bindable, Generic[T]):
     restore_pruned: bool = False
     seed: int = 0
 
+    def unused_cache_key(self) -> int:
+        return 0
+
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
         """Return a copy with ``ast`` replaced by ``f(ast)``.
 
@@ -434,25 +437,16 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     restore_pruned: bool = False
     lexer_class: Type[LexerProtocol] | None = None
 
-    @staticmethod
-    def _load_symbol(module_name: str, qualname: str) -> Any:
-        module = importlib.import_module(module_name)
-        attr: Any = module
-        for part in qualname.split('.'):
-            attr = getattr(attr, part)
-        return attr
     
     def bootstrap(self, 
                   syntax: Syntax[ParseResult[T], GenState[T]], 
                   alg_cls: Type[Algebra[ParseResult[T], GenState[T]]],
-                  cache: Optional[Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]]] = None
-                  ) -> Tuple[Algebra[ParseResult[T], GenState[T]], Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]], GenState[T]]:
+                  ) -> Tuple[Algebra[ParseResult[T], GenState[T]], GenState[T]]:
         
         generator = syntax(alg_cls, syntax = syntax, lexer_class=self.lexer_class)
-        initial_cache: Cache[GenState[T], Either[Any, Tuple[ParseResult[T], GenState[T]]]] = cache or Cache()
         initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
 
-        return generator, initial_cache, initial_state
+        return generator, initial_state
     
     def resume(self, request: Incomplete[S]) -> S:
         raise SyncraftError("Generator does not support resuming from Incomplete states.", offender=request, expect="Not Incomplete")

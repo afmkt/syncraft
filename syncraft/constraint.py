@@ -92,6 +92,9 @@ class Bindable:
         """Return a hashable cache key representing this instance."""
         return hash(self)
 
+    def unused_cache_key(self) -> int:
+        raise NotImplementedError("unused_cache_key is not implemented for this class.")
+
     def map(self, f: Callable[[Any], Any])->Self: 
         """Optionally transform the underlying value (no-op by default)."""
         return self

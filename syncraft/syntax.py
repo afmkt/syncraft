@@ -824,8 +824,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
     def bootstrap(self, 
                   syntax: Syntax[A, S],
                   alg_cls: Type[Algebra[A, S]],
-                  cache: Optional[Cache[S, Either[Any, Tuple[A, S]]]] = None                
-                  ) -> Tuple[Algebra[A, S], Cache[S, Either[Any, Tuple[A, S]]], S]: ...
+                  ) -> Tuple[Algebra[A, S], S]: ...
 
     def resume(self, request: Incomplete[S]) -> S: ...
 
@@ -837,13 +836,16 @@ class RunnerProtocol(Protocol, Generic[A, S]):
                  alg_cls: Type[Algebra[A, S]],
                  cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | S]:
         ret = None
-        parser, gen_cache, state = self.bootstrap(syntax=syntax, alg_cls=alg_cls, cache=cache)  
+        parser, state = self.bootstrap(syntax=syntax, alg_cls=alg_cls)  
+        gen_cache = cache or Cache()
+        assert gen_cache is not None
         parser_gen = parser.run(state, cache=gen_cache)
         try:
             result = next(parser_gen)
             while True:
                 if isinstance(result, Incomplete):
                     pending_state = self.resume(result)
+                    gen_cache.gc(pending_state.unused_cache_key())                    
                     result = parser_gen.send(pending_state)
                 else:
                     raise AssertionError("Unexpected yield from algebra: expected Incomplete")  # pragma: no cover
