@@ -15,7 +15,7 @@ A = TypeVar('A')  # Result type
 B = TypeVar('B')  # Mapped result type
 
 SYNCRAFT_CONFIG_KEY = "__syncraft_config__"
-SYNCRAFT_TRANSFORM_KEY = "__syncraft_transform__"
+
 
 
 @dataclass(frozen=True)
