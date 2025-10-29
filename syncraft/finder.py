@@ -57,7 +57,7 @@ def anything(syntax: Syntax[Any, Any]) -> Syntax[Any, Any]:
 def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any])-> bool:
     from syncraft.generator import Runner
     runner = Runner(ast = data, seed=0, restore_pruned=True)
-    ast, _ = runner(syntax=s, alg_cls=Finder)
+    ast, _ = runner(syntax=s, alg_cls=Finder, cursor=None)
     match ast:
         case Left(_):
             return False

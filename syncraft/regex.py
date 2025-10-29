@@ -4,11 +4,14 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-from syncraft.ast import AST, Token, Nothing
+from syncraft.ast import AST, Token, Nothing, SyncraftError
 
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
+from syncraft.parser import parse_string, parser
+from syncraft.input import StreamCursor
+
 from syncraft.dev import debug
 from rich import print
 r"""
@@ -435,15 +438,39 @@ class Regex:
 
 
 # regex             = branch { "|" branch } ;
-regex = branch.sep_by(or_).mark('branches').to(Regex)
+regex_syntax = branch.sep_by(or_).mark('branches').to(Regex)
 
 
+regex_parser = parser(syntax=regex_syntax, payload_kind='text')
+
+
+def parse(data: str, *, raw:bool=False) -> Any:
+    from syncraft.parser import Runner
+    runner: Runner[Any] = Runner()
+    cursor = StreamCursor.from_data(data)
+    for result, s in runner.run(regex_parser, cursor):
+        if s:
+            if isinstance(result, AST):
+                return result if raw else result.mapped 
+            else:
+                return result
+        else:
+            return result
+    raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
+        
+    # result, s = parse_string(data)
+    # if s:
+    #     if isinstance(result, AST):
+    #         return result if raw else result.mapped 
+    #     else:
+    #         return result
+    # else:
+    #     return result
 
 def parse_regex(syntax: Syntax[Any, Any], 
                 pattern: str, 
                 *, 
-                raw:bool=False) -> Regex | Any:
-    from syncraft.parser import parse_string
+                raw:bool=False) -> Any:
     result, s = parse_string(syntax, pattern)
     if s:
         if isinstance(result, AST):

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, Iterator, Literal, Optional, TypeVar, Sequence, AsyncIterator, Union, Literal, cast, Tuple, overload
+from typing import Generic, Iterator, Literal, Optional, TypeVar, Sequence, AsyncIterator, Union, Any, cast, Tuple, overload
 import io
 import asyncio
 import codecs
@@ -95,6 +95,24 @@ class Input(Generic[T]):
             return Input.from_stream(fb, blocksize=blocksize, mode="binary")
         else:
             raise ValueError(f"Unknown mode: {mode}")
+
+    @staticmethod
+    @overload
+    def from_stream(
+        source: asyncio.StreamReader,
+        blocksize: int = 4096,
+        mode: Literal['text'] = 'text',
+        encoding: str = "utf-8"
+    ) -> Input[str]: ...
+
+    @staticmethod
+    @overload
+    def from_stream(
+        source: asyncio.StreamReader,
+        blocksize: int = 4096,
+        mode: Literal['binary'] = 'binary',
+        encoding: str = "utf-8"
+    ) -> Input[bytes]: ...
 
     @staticmethod
     @overload
@@ -298,9 +316,109 @@ class StreamCursor(Generic[T]):
 
     Guarantees that every chunk yielded before EOF has content and that
     callers receive consistent container types (str, bytes, or tuple[T,...]).
-    """
 
-    def __init__(self, source: Input[T], *, chunk_size: Optional[int] = None) -> None:
+    """
+    @classmethod
+    @overload
+    def from_data(cls, data: str, chunk_size:int=4096) -> StreamCursor[str]: ...
+
+    @classmethod
+    @overload
+    def from_data(cls, data: bytes, chunk_size:int=4096) -> StreamCursor[bytes]: ...
+
+    @classmethod
+    @overload
+    def from_data(cls, data: Sequence[T], chunk_size:int=4096) -> StreamCursor[T]: ...
+
+    @classmethod
+    @overload
+    def from_data(cls, data: Iterator[T], chunk_size:int=4096) -> StreamCursor[T]: ...
+
+    @classmethod
+    @overload
+    def from_data(cls, data: AsyncIterator[T], chunk_size:int=4096) -> StreamCursor[T]: ...
+    
+
+    @classmethod
+    def from_data(cls, 
+                  data: Union[str, bytes, Sequence[T], Iterator[T], AsyncIterator[T]],
+                  chunk_size: int = 4096
+                  ) -> StreamCursor[str] | StreamCursor[bytes] | StreamCursor[T]:
+        input_source = Input.from_data(data)
+        return cls(input_source, chunk_size=chunk_size)
+
+    @classmethod
+    @overload
+    def from_path(cls,
+                  path: Union[str, Path],
+                  mode: Literal['text'],
+                  chunk_size: int = 4096) -> StreamCursor[str]: ...
+    
+    @classmethod
+    @overload
+    def from_path(cls,
+                  path: Union[str, Path],
+                  mode: Literal['binary'],
+                  chunk_size: int = 4096) -> StreamCursor[bytes]: ...
+
+    @classmethod
+    def from_path(cls, 
+                  path: Union[str, Path], 
+                  mode: Literal['text', 'binary'],
+                  chunk_size: int = 4096) -> StreamCursor[str] | StreamCursor[bytes]:
+        input_source = Input.from_path(path, mode=mode, blocksize=chunk_size)
+        return cls(input_source, chunk_size=chunk_size) # type: ignore
+    
+    @classmethod
+    @overload
+    def from_stream(cls,
+                    source: asyncio.StreamReader,
+                    chunk_size: int = 4096,
+                    mode: Literal['text'] = 'text',
+                    encoding: str = "utf-8"
+                    ) -> StreamCursor[str]: ...
+
+    @classmethod
+    @overload
+    def from_stream(cls,
+                    source: asyncio.StreamReader,
+                    chunk_size: int = 4096,
+                    mode: Literal['binary'] = 'binary',
+                    encoding: str = "utf-8"
+                    ) -> StreamCursor[bytes]: ...
+
+    @classmethod
+    @overload
+    def from_stream(cls,
+                    source: io.TextIOBase,
+                    chunk_size: int = 4096,
+                    mode: Literal['text'] = 'text',
+                    encoding: str = "utf-8"
+                    ) -> StreamCursor[str]: ...
+    
+    @classmethod
+    @overload
+    def from_stream(cls,
+                    source: io.BufferedIOBase,
+                    chunk_size: int = 4096,
+                    mode: Literal['binary'] = 'binary',
+                    encoding: str = "utf-8"
+                    ) -> StreamCursor[bytes]: ...
+
+    @classmethod
+    def from_stream(cls,
+                    source: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
+                    chunk_size: int = 4096,
+                    mode: Literal['text', 'binary'] = 'text',
+                    encoding: str = "utf-8"
+                    ) -> StreamCursor[str] | StreamCursor[bytes]:
+        input_source = Input.from_stream(source,  # type: ignore
+                                         blocksize=chunk_size, 
+                                         mode=mode,  # type: ignore
+                                         encoding=encoding)
+        return cls(input_source, chunk_size=chunk_size) # type: ignore
+
+    def __init__(self, source: Input[Any], *, chunk_size: Optional[int] = None) -> None:
         self.source = source
         self.chunk_size = chunk_size
         if isinstance(source, StringInput):
@@ -314,17 +432,15 @@ class StreamCursor(Generic[T]):
     def payload_kind(self) -> PayloadKind:
         return self.source.payload_kind
 
-    def initial_buffer(self) -> tuple[str | bytes | Tuple[T, ...], bool]:
+
+    def next_chunk(self) -> tuple[str | bytes | Tuple[T, ...], bool]:
         if self.source.eof:
             return self._empty, True
         chunk = self._read()
         normalized = self._normalize(chunk)
         return normalized, self.source.eof
 
-    def next_chunk(self) -> tuple[str | bytes | Tuple[T, ...], bool]:
-        chunk = self._read()
-        normalized = self._normalize(chunk)
-        return normalized, self.source.eof
+
 
 
 

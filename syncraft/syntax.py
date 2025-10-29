@@ -7,8 +7,8 @@ import math
 from weakref import WeakValueDictionary
 
 from typing import (
-    Optional, Any, TypeVar, Generic, Callable, Tuple, cast,
-    Type, List, Dict, Set, Iterator, ClassVar, Protocol
+    Optional, Any, TypeVar, Generic, Callable, Tuple, cast, 
+    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
@@ -18,7 +18,7 @@ from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from syncraft.utils import CallWith
-
+from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import FABuilder
 
 
@@ -821,46 +821,63 @@ class Syntax(Generic[A, S]):
         return init
     
 class RunnerProtocol(Protocol, Generic[A, S]):
-    def bootstrap(self, 
-                  syntax: Syntax[A, S],
-                  alg_cls: Type[Algebra[A, S]],
-                  ) -> Tuple[Algebra[A, S], S]: ...
+    def algebra(self, 
+                syntax: Syntax[A, S],
+                alg_cls: Type[Algebra[A, S]],
+                payload_kind: Optional[PayloadKind]) -> Algebra[A, S]: ...
 
-    def resume(self, request: Incomplete[S]) -> S: ...
+    def resume(self, previous: Optional[S], cursor: Optional[StreamCursor[Any]]) -> S: ...
 
     def finalize(self, result: Optional[Tuple[Any, None | S]]) -> None: 
         return
 
+    def run(self, 
+            parser: Algebra[A, S], 
+            cursor: Optional[StreamCursor[Any]],
+            cache: Optional[Cache[Any, Any]] = None,
+            once: bool=True) -> Generator[Tuple[Any, None | S], None, None]: 
+        while True:
+            ret = None
+            state = self.resume(None, cursor)
+            gen_cache: Cache[Any, Any] = cache or Cache()
+            parser_gen = parser.run(state, cache=gen_cache)
+            try:
+                result = next(parser_gen)
+                while True:
+                    if isinstance(result, Incomplete):
+                        pending_state = self.resume(result.state, cursor)
+                        gen_cache.gc(pending_state.unused_cache_key())                    
+                        result = parser_gen.send(pending_state)
+                    else:
+                        raise AssertionError("Unexpected yield from algebra: expected Incomplete")  # pragma: no cover
+            except StopIteration as e:
+                result = e.value
+                if isinstance(result, Right):
+                    ret = result.value
+                elif isinstance(result, Left):
+                    ret = result.value, None
+                else:
+                    ret = Error(this=result, message="Algebra returned data that is not Left or Right"), None
+            finally:
+                self.finalize(ret)
+            yield ret  # type: ignore
+            if once:
+                break
+                
+                
+
+
     def __call__(self, 
                  syntax: Syntax[A, S], 
                  alg_cls: Type[Algebra[A, S]],
+                 cursor: Optional[StreamCursor[Any]],
                  cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | S]:
-        ret = None
-        parser, state = self.bootstrap(syntax=syntax, alg_cls=alg_cls)  
-        gen_cache = cache or Cache()
-        assert gen_cache is not None
-        parser_gen = parser.run(state, cache=gen_cache)
-        try:
-            result = next(parser_gen)
-            while True:
-                if isinstance(result, Incomplete):
-                    pending_state = self.resume(result)
-                    gen_cache.gc(pending_state.unused_cache_key())                    
-                    result = parser_gen.send(pending_state)
-                else:
-                    raise AssertionError("Unexpected yield from algebra: expected Incomplete")  # pragma: no cover
-            
-        except StopIteration as e:
-            result = e.value
-            if isinstance(result, Right):
-                ret = result.value
-            elif isinstance(result, Left):
-                ret = result.value, None
-            else:
-                ret = Error(this=result, message="Algebra returned data that is not Left or Right"), None
-        finally:
-            self.finalize(ret)
-        return ret # type: ignore
+        parser = self.algebra(syntax=syntax, alg_cls=alg_cls, payload_kind=cursor.payload_kind if cursor else None)  
+        for ret in self.run(parser, cursor, cache, once=True):
+            return ret
+        raise SyncraftError("Runner did not yield any results", offender=self, expect="at least one result")
+        
+
 
 
 

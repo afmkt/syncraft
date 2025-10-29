@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from functools import total_ordering
 
 from syncraft.syntax import Syntax, RunnerProtocol
-from syncraft.input import Input, StreamCursor
+from syncraft.input import Input, StreamCursor, PayloadKind
 
 from syncraft.ast import Token, AST, SyncraftError
 from syncraft.constraint import Bindable
@@ -256,40 +256,38 @@ class Parser(Algebra[T, ParserState[T]]):
 
 @dataclass
 class Runner(RunnerProtocol[Any, ParserState[T]]):
-    input : Input[T] 
-    chunk_size: int = 4096
-    cursor : StreamCursor[T] = field(init=False, repr=False, compare=False, hash=False)
-    
-    def __post_init__(self):    
-        assert self.input is not None, "Input must be provided to Runner"
-        self.cursor = StreamCursor(self.input, chunk_size=self.chunk_size)
-    
-    def bootstrap(self, 
-                  syntax: Syntax[Any, ParserState[T]], 
-                  alg_cls: Type[Algebra[Any, ParserState[T]]],
-                  ) -> Tuple[Algebra[Any, ParserState[T]], ParserState[T]]:
+    def algebra(self, 
+                syntax: Syntax[Any, ParserState[T]], 
+                alg_cls: Type[Algebra[Any, ParserState[T]]],
+                payload_kind: Optional[PayloadKind]=None) -> Algebra[Any, ParserState[T]]:
 
-        buffer, final = self.cursor.initial_buffer()
-        parser = syntax(alg_cls, payload_kind=self.input.payload_kind)
-        initial_state = ParserState(input=buffer, index=0, base=0, final=final)
-        return parser, initial_state
+        return syntax(alg_cls, payload_kind=payload_kind)
     
-    def resume(self, request: Incomplete[ParserState[T]]) -> ParserState[T]:
-        state = request.state
-        if state.final:
-            raise SyncraftError("Cannot resume parser: input is final", offender=state, expect="not final")
-        chunk, final = self.cursor.next_chunk()
-        return state.extend(chunk, final=final)
+    def resume(self, request: Optional[ParserState[T]], cursor: Optional[StreamCursor[T]]) -> ParserState[T]:
+        assert cursor is not None, "Cursor must be provided to resume Parser"
+        if request is not None:
+            if request.final:
+                raise SyncraftError("Cannot resume parser: input is final", offender=request, expect="not final")
+            chunk, final = cursor.next_chunk()
+            return request.extend(chunk, final=final)
+        else:
+            buffer, final = cursor.next_chunk()
+            return ParserState(input=buffer, index=0, base=0, final=final)
 
         
 
+def parser(syntax: Syntax[Any, Any], payload_kind: PayloadKind) -> Algebra[Any, Any]:
+    runner: Runner[Any] = Runner()
+    return runner.algebra(syntax=syntax, alg_cls=Parser, payload_kind=payload_kind)
+
+
 def parse(syntax: Syntax[Any, Any],
-          data: Input[Any],
+          cursor: StreamCursor[Any],
           *,
           cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, Any]:
-    runner = Runner(input=data)
-    return runner(syntax=syntax, alg_cls=Parser, cache=cache)
+    runner: Runner[T] = Runner()
+    return runner(syntax=syntax, alg_cls=Parser, cursor=cursor, cache=cache)
 
 
 
@@ -307,7 +305,7 @@ def parse_data(syntax: Syntax[Any, Any],
           *,
           cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    input : Input[T] = Input.from_data(data)
+    input : StreamCursor[T] = StreamCursor.from_data(data)
     v, s = parse(syntax, input, cache=cache)
     if s is not None:
         return v, s.binding.bound()
@@ -320,7 +318,7 @@ def parse_string(syntax: Syntax[Any, Any],
                  *,
                  cache: None | Cache[ParserState[str], Either[Any, Tuple[Any, ParserState[str]]]] = None
                  ) -> Tuple[Any, None | ParserState[str]]:
-    input : Input[str] = Input.from_data(data)
+    input : StreamCursor[str] = StreamCursor.from_data(data)
     return parse(syntax, input, cache=cache)
 
 def parse_bytes(syntax: Syntax[Any, Any],
@@ -328,7 +326,7 @@ def parse_bytes(syntax: Syntax[Any, Any],
                 *,
                 cache: None | Cache[ParserState[bytes], Either[Any, Tuple[Any, ParserState[bytes]]]] = None
                 ) -> Tuple[Any, None | ParserState[bytes]]:
-    input : Input[bytes] = Input.from_data(data)
+    input : StreamCursor[bytes] = StreamCursor.from_data(data)
     return parse(syntax, input, cache=cache)
 
 def parse_file(syntax: Syntax[Any, Any],
@@ -338,10 +336,10 @@ def parse_file(syntax: Syntax[Any, Any],
                cache: None | Cache[ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
                ) -> Tuple[Any, None | ParserState[str | bytes]]:
     if mode == 'text':        
-        input : Input[str] = Input.from_path(filepath, mode=mode)
+        input : StreamCursor[str] = StreamCursor.from_path(filepath, mode=mode)
         return parse(syntax, input, cache=cache)
     else:
-        inputb : Input[bytes] = Input.from_path(filepath, mode=mode)
+        inputb : StreamCursor[bytes] = StreamCursor.from_path(filepath, mode=mode)
         return parse(syntax, inputb, cache=cache)
 
 def parse_stream(syntax: Syntax[Any, Any],
@@ -350,5 +348,5 @@ def parse_stream(syntax: Syntax[Any, Any],
                  mode: Literal['text', 'binary'] = 'text', 
                  cache: None | Cache[ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
                  ) -> Tuple[Any, None | ParserState[str | bytes]]:
-    input : Input[str | bytes] = Input.from_stream(stream, mode=mode) # type: ignore
+    input : StreamCursor[str | bytes] = StreamCursor.from_stream(stream, mode=mode) # type: ignore
     return parse(syntax, input, cache=cache)

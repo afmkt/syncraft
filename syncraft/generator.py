@@ -5,7 +5,7 @@ from typing import (
     List, Generator as PyGenerator, cast, Type
 )
 
-import importlib
+
 import random
 
 from functools import cached_property
@@ -28,7 +28,7 @@ from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax, RunnerProtocol, Incomplete
 
 from syncraft.constraint import Bindable
-
+from syncraft.input import StreamCursor, PayloadKind
 
 
 S = TypeVar('S', bound=Bindable)
@@ -438,17 +438,17 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     lexer_class: Type[LexerProtocol] | None = None
 
     
-    def bootstrap(self, 
+    def algebra(self, 
                   syntax: Syntax[ParseResult[T], GenState[T]], 
                   alg_cls: Type[Algebra[ParseResult[T], GenState[T]]],
-                  ) -> Tuple[Algebra[ParseResult[T], GenState[T]], GenState[T]]:
+                  payload_kind: Optional[PayloadKind]=None
+                  ) -> Algebra[ParseResult[T], GenState[T]]:
         
-        generator = syntax(alg_cls, syntax = syntax, lexer_class=self.lexer_class)
-        initial_state: GenState[T] = GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
-
-        return generator, initial_state
+        return syntax(alg_cls, syntax = syntax, lexer_class=self.lexer_class)
     
-    def resume(self, request: Incomplete[S]) -> S:
+    def resume(self, request: Optional[GenState[T]], cursor: Optional[StreamCursor[Any]]) -> GenState[T]:
+        if request is None:
+            return GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
         raise SyncraftError("Generator does not support resuming from Incomplete states.", offender=request, expect="Not Incomplete")
 
     
@@ -462,7 +462,7 @@ def generate_with(
     
     runner = Runner(ast=data, seed=seed, restore_pruned=restore_pruned, lexer_class=lexer_class)
 
-    v, s = runner(syntax=syntax, alg_cls=Generator)
+    v, s = runner(syntax=syntax, alg_cls=Generator, cursor=None)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -476,7 +476,7 @@ def validate(
     
     runner = Runner(ast=data, seed=0, restore_pruned=True)
     
-    v, s = runner(syntax=syntax, alg_cls=Generator)
+    v, s = runner(syntax=syntax, alg_cls=Generator, cursor=None)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -487,7 +487,7 @@ def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     
     runner = Runner(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
     
-    v, s = runner(syntax=syntax, alg_cls=Generator)
+    v, s = runner(syntax=syntax, alg_cls=Generator, cursor=None)
     if s is not None:
         return v, s.binding.bound()
     else:

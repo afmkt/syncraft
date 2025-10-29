@@ -1,7 +1,7 @@
 from __future__ import annotations
 from syncraft.regex import (
-    parse_regex, 
-    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
+    parse_regex, parse,
+    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex_syntax,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
@@ -366,9 +366,131 @@ def test_groups_flags_scoped_with_disable():
         assert p.atom.text == char
         assert not p.quantifier
 
-def test_alternation():
+# def test_alternation():
+#     """Test parsing of alternation (OR) expressions."""
+#     result = parse_regex(regex_syntax, "abc|def|ghi")
+#     assert isinstance(result, Regex)
+#     assert len(result.branches) == 3
+
+#     # Check first branch
+#     branch1 = result.branches[0]
+#     assert len(branch1.pieces) == 3
+#     for i, char in enumerate("abc"):
+#         p = branch1.pieces[i]
+#         assert isinstance(p.atom, LiteralAtom)
+#         assert p.atom.text == char
+
+#     # Check second branch
+#     branch2 = result.branches[1]
+#     assert len(branch2.pieces) == 3
+#     for i, char in enumerate("def"):
+#         p = branch2.pieces[i]
+#         assert isinstance(p.atom, LiteralAtom)
+#         assert p.atom.text == char
+
+#     # Check third branch
+#     branch3 = result.branches[2]
+#     assert len(branch3.pieces) == 3
+#     for i, char in enumerate("ghi"):
+#         p = branch3.pieces[i]
+#         assert isinstance(p.atom, LiteralAtom)
+#         assert p.atom.text == char
+
+
+# def test_complex_regex():
+#     """Test parsing of a complex regex combining multiple grammar rules."""
+#     pattern = r"^(\w+)\s+(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
+#     result = parse_regex(regex_syntax, pattern)
+#     assert isinstance(result, Regex)
+#     assert len(result.branches) == 1
+#     b = result.branches[0]
+#     # Should have: ^ ( \w+ ) \s+ ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) \. ( \d{1,3} ) $
+#     assert len(b.pieces) == 11
+
+#     # Check anchors
+#     assert isinstance(b.pieces[0].atom, AnchorAtom)
+#     assert b.pieces[0].atom.kind == AnchorKind.LINE_START
+#     assert isinstance(b.pieces[-1].atom, AnchorAtom)
+#     assert b.pieces[-1].atom.kind == AnchorKind.LINE_END
+
+
+# def test_unicode_category_escape():
+#     """Test parsing of unicode category escapes."""
+#     result = parse_regex(regex_syntax, r"\p{L}")
+#     assert isinstance(result, Regex)
+#     assert len(result.branches) == 1
+#     b = result.branches[0]
+#     assert len(b.pieces) == 1
+#     p = b.pieces[0]
+#     assert isinstance(p.atom, UnicodeCategoryAtom)
+#     assert not p.atom.negated
+#     assert p.atom.categories == ("L",)
+
+
+# def test_unicode_category_escape_negated():
+#     """Test parsing of negated unicode category escapes."""
+#     result = parse_regex(regex_syntax, r"\P{L}")
+#     assert isinstance(result, Regex)
+#     assert len(result.branches) == 1
+#     b = result.branches[0]
+#     assert len(b.pieces) == 1
+#     p = b.pieces[0]
+#     assert isinstance(p.atom, UnicodeCategoryAtom)
+#     assert p.atom.negated
+#     assert p.atom.categories == ("L",)
+
+
+# def test_unicode_category_escape_multiple():
+#     """Test parsing of unicode category escapes with multiple categories."""
+#     result = parse_regex(regex_syntax, r"\p{LuLl}")
+#     assert isinstance(result, Regex)
+#     assert len(result.branches) == 1
+#     b = result.branches[0]
+#     assert len(b.pieces) == 1
+#     p = b.pieces[0]
+#     assert isinstance(p.atom, UnicodeCategoryAtom)
+#     assert not p.atom.negated
+#     assert p.atom.categories == ("Lu", "Ll")
+
+
+def test_regex():
+    result = parse(r"\p{LuLl}")
+    assert isinstance(result, Regex)
+    assert len(result.branches) == 1
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, UnicodeCategoryAtom)
+    assert not p.atom.negated
+    assert p.atom.categories == ("Lu", "Ll")
+
+def test_regex_negated():
+    result = parse(r"\P{LuLl}")
+    assert isinstance(result, Regex)
+    assert len(result.branches) == 1
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, UnicodeCategoryAtom)
+    assert p.atom.negated
+    assert p.atom.categories == ("Lu", "Ll")
+
+def test_regex_complex():
+    result = parse(r"\p{L}")
+    assert isinstance(result, Regex)
+    assert len(result.branches) == 1
+    b = result.branches[0]
+    assert len(b.pieces) == 1
+    p = b.pieces[0]
+    assert isinstance(p.atom, UnicodeCategoryAtom)
+    assert not p.atom.negated
+    assert p.atom.categories == ("L",)
+
+
+
+def test_regex_alternation():
     """Test parsing of alternation (OR) expressions."""
-    result = parse_regex(regex, "abc|def|ghi")
+    result = parse( "abc|def|ghi")
     assert isinstance(result, Regex)
     assert len(result.branches) == 3
 
@@ -397,10 +519,10 @@ def test_alternation():
         assert p.atom.text == char
 
 
-def test_complex_regex():
+def test_regex_complex_regex():
     """Test parsing of a complex regex combining multiple grammar rules."""
     pattern = r"^(\w+)\s+(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
-    result = parse_regex(regex, pattern)
+    result = parse(pattern)
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -414,9 +536,9 @@ def test_complex_regex():
     assert b.pieces[-1].atom.kind == AnchorKind.LINE_END
 
 
-def test_unicode_category_escape():
+def test_regex_unicode_category_escape():
     """Test parsing of unicode category escapes."""
-    result = parse_regex(regex, r"\p{L}")
+    result = parse(r"\p{L}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -425,29 +547,4 @@ def test_unicode_category_escape():
     assert isinstance(p.atom, UnicodeCategoryAtom)
     assert not p.atom.negated
     assert p.atom.categories == ("L",)
-
-
-def test_unicode_category_escape_negated():
-    """Test parsing of negated unicode category escapes."""
-    result = parse_regex(regex, r"\P{L}")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, UnicodeCategoryAtom)
-    assert p.atom.negated
-    assert p.atom.categories == ("L",)
-
-
-def test_unicode_category_escape_multiple():
-    """Test parsing of unicode category escapes with multiple categories."""
-    result = parse_regex(regex, r"\p{LuLl}")
-    assert isinstance(result, Regex)
-    assert len(result.branches) == 1
-    b = result.branches[0]
-    assert len(b.pieces) == 1
-    p = b.pieces[0]
-    assert isinstance(p.atom, UnicodeCategoryAtom)
-    assert not p.atom.negated
-    assert p.atom.categories == ("Lu", "Ll")
+    
