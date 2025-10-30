@@ -767,5 +767,5 @@ def test_dot_atom():
 
 
 if __name__ == '__main__':
-    test_recursion()
+    test_dot_atom()
     pass

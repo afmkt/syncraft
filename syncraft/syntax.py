@@ -243,6 +243,7 @@ class LazyState(Generic[A, S]):
     # cached resolved Syntax; excluded from comparisons
     _cached_syntax: Optional[Syntax[A, S]] = field(default=None, init=False, repr=False, compare=False)
     # cache algebras per (alg, kwargs_key). excluded from comparisons
+    _inner_algebras_cache: Dict[Tuple[Type[Algebra[Any, Any]], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
     _algebras_cache: Dict[Tuple[Type[Algebra[Any, Any]], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     @property
@@ -279,14 +280,18 @@ class LazyState(Generic[A, S]):
             return existing
 
         def algebra_lazy_f() -> Algebra[A, S]:
-            return self.cached(alg_cls, **global_kwargs)
+            if key in self._inner_algebras_cache:
+                return self._inner_algebras_cache[key]
+            ret = self.cached(alg_cls, **global_kwargs)
+            self._inner_algebras_cache[key] = ret
+            return ret
         algebra = alg_cls.lazy(algebra_lazy_f)
         # --- Patch _rule_id for left-recursion recovery ---
-        try:
-            setattr(algebra.run_f, "_rule_id", self.thunk)
-            pass
-        except Exception:
-            pass
+        # try:
+        #     setattr(algebra.run_f, "_rule_id", self.thunk)
+        #     pass
+        # except Exception:
+        #     pass
         self._algebras_cache[key] = algebra
         return algebra
         
