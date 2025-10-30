@@ -116,7 +116,7 @@ class Algebra(Generic[A, S]):
                                                                                          Either[Any, Tuple[Any, S]]]:
             # Defer acquiring the underlying algebra until invocation time.
             alg = thunk()
-            cache.enter(algebra_lazy_run, input.cache_key, inner_algebra=alg.run_f)
+            cache.enter(algebra_lazy_run, input, inner=alg.run_f)
             try:
                 result = (yield from alg.run(input, cache))
                 match result:
@@ -293,7 +293,7 @@ class Algebra(Generic[A, S]):
                         cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType,
                                                                                 Either[Any, Tuple[Choice[A, B], S]]]:
-            cache.enter(or_else_run, pos=input.cache_key, left=self.run_f, right=other.run_f)            
+            cache.enter(or_else_run, input, left=self.run_f, right=other.run_f)
             try:
                 inp = input.enter()
                 left = yield from self.run(inp, cache)

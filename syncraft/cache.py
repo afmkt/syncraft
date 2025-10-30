@@ -199,18 +199,18 @@ class InProgress(Generic[A, Ret]):
 
 
 @dataclass(frozen=True)
-class OrElseFrame:
+class OrElseFrame(Generic[A]):
     func: Callable[..., Any]
-    pos: int
+    state: A
     left: Callable[..., Any]
     right: Callable[..., Any]
     
 
 @dataclass(frozen=True)
-class LazyFrame:
+class LazyFrame(Generic[A]):
     func: Callable[..., Any]
-    pos: int
-    inner_algebra: Callable[..., Any]
+    state: A
+    inner: Callable[..., Any]
 
 @dataclass
 class Cache(Generic[A, Ret]):
@@ -225,25 +225,23 @@ class Cache(Generic[A, Ret]):
 
     def enter(self, 
               func: Callable[..., Any], 
-              pos: int, 
-              *, 
+              state: A, 
+              *,
               left: Optional[Callable[..., Any]] = None,
               right: Optional[Callable[..., Any]] = None,
-              inner_algebra: Optional[Callable[..., Any]] = None
-              ) -> None:
-        if left is not None and right is not None:
-            frame: OrElseFrame | LazyFrame = OrElseFrame(func=func, left=left, right=right, pos=pos)
-            self.key_frames.append(frame)
-        elif inner_algebra is not None:
-            frame = LazyFrame(func=func, inner_algebra=inner_algebra, pos=pos)
-            self.key_frames.append(frame)
+              inner: Optional[Callable[..., Any]] = None) -> None:
+        if right is not None and left is not None:
+            frame: OrElseFrame | LazyFrame = OrElseFrame(func=func, left=left, right=right, state=state)
+        elif inner is not None:
+            frame = LazyFrame(func=func, state=state, inner=inner)
         else:
-            raise SyncraftError("Either left/right or inner_algebra must be provided", offender={'func': func, 'pos': pos})
+            raise SyncraftError("Cache.enter requires either both left and right, or inner.", offender=(func, state))
+        self.key_frames.append(frame)
         
     def leave(self) -> None:
         if self.key_frames:
             self.key_frames.pop()
-            
+
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
     
