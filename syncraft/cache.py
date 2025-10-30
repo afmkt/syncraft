@@ -211,10 +211,7 @@ class Cache(Generic[A, Ret]):
     alternatives: List[OrElse] = field(default_factory=list)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     _lr_stack: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)  # active in-progress chain
-    _canonical: Dict[Callable[..., Any], Callable[..., Any]] = field(default_factory=dict, init=False, repr=False)
-    _lr_growth_depth: int = 0  # Scoped flag depth counter for exploratory choice evaluation
     _force: Optional[InProgress[A, Ret]] = None  # Entry scheduled for forced recompute during growth
-    _lr_version: int = 0  # Monotonic counter incremented on any improvement (nested or local)
     _agenda: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)
     # Heads grouped by a hashable start key (caller-provided mapping or the state itself)
     _heads_by_start: Dict[Hashable, List[InProgress[A, Ret]]] = field(default_factory=dict, init=False, repr=False)
@@ -332,20 +329,13 @@ class Cache(Generic[A, Ret]):
         cmp1 = self._cmp(old_end, new_end)
         return cmp1 is not None and cmp1 < 0
 
-    # Context manager helpers for LR growth
-    def _enter_lr_growth(self):
-        self._lr_growth_depth += 1
-    def _exit_lr_growth(self):
-        self._lr_growth_depth -= 1
 
     def exec(self,
             f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]],
             key: A) -> Generator[Any, Any, Ret]:
-        # Step 1: canonicalize function identity
-        f = self._canonicalize(f)
         # Step 2: fetch or initialize entry
         cache_bucket = self.cache.setdefault(f, {})
-        cache_key = key.cache_key #   self._cache_key(key)
+        cache_key = key.cache_key 
         existing = cache_bucket.get(cache_key)
         if existing is not None and not isinstance(existing, InProgress):
             object.__setattr__(existing, "cache_hit", True)
@@ -375,15 +365,6 @@ class Cache(Generic[A, Ret]):
         # Step 4: finalize or prepare for growth
         return (yield from self._complete_seed(head, seed))
 
-    # --------------------- Helper Methods (Refactor) ---------------------
-    def _canonicalize(self, f: Callable[[A, Cache[A, Ret]], Generator[Any, Any, Ret]]):
-        rule_id = getattr(f, '_rule_id', None)
-        if rule_id is not None:
-            retf = self._canonical.get(rule_id, None)
-            if retf is not None:
-                return retf
-            self._canonical[rule_id] = f
-        return f
 
     def _handle_reentry(self, entry: InProgress[A, Ret], key: A) -> Generator[Any, Any, Ret]:
         # Make this a generator-friendly helper (even if we don't currently yield diagnostic info)
@@ -541,13 +522,12 @@ class Cache(Generic[A, Ret]):
             member = members_snapshot[0]
             best = member.result
 
-            self._enter_lr_growth()
             seed_end = self._extract_next_state(best) if best is not None else None
             while True:
                 iterations += 1
                 if iterations > self.max_growth_iterations:
 
-                    self._exit_lr_growth()
+                    
                     raise LeftRecursionError(
                         "Left recursion growth iteration limit exceeded (single-head)",
                         offender=offender,
@@ -569,7 +549,6 @@ class Cache(Generic[A, Ret]):
                 if self._improved(member.key, best, attempt):
                     best = attempt
                     member.result = best
-                    self._lr_version += 1
                     self._propagate_improvement(member)
                     continue
                 # Early collapse: if no improvement and best end did not move past seed end, stop.
@@ -579,7 +558,7 @@ class Cache(Generic[A, Ret]):
                     cmp_seed = self._cmp(member.key, seed_end)
                     if cmp_seed is not None and cmp_seed == 0:
 
-                        self._exit_lr_growth()
+                        
                         raise LeftRecursionError(
                             "Left recursion with no progress (nullable or unproductive cycle)",
                             offender=offender,
@@ -594,15 +573,13 @@ class Cache(Generic[A, Ret]):
                     break
                 break
             
-            self._exit_lr_growth()
         else:
             changed = True
-            self._enter_lr_growth()
+            
             while changed:
                 changed = False
                 iterations += 1
                 if iterations > self.max_growth_iterations:
-                    self._exit_lr_growth()
                     # Capture representative metrics from first member that has a result
                     sample = next((m for m in group.members if m.result is not None), None)
                     seed_c = self._consumed(sample.key, sample.seed_result) if (sample and sample.seed_result) else None  # type: ignore
@@ -630,7 +607,6 @@ class Cache(Generic[A, Ret]):
                         self._force = None
                     if self._improved(member.key, member.result, attempt):
                         member.result = cast(Ret, attempt)
-                        self._lr_version += 1
                         # Propagate improvement to earlier heads
                         self._propagate_improvement(member)
                         changed = True
@@ -655,7 +631,7 @@ class Cache(Generic[A, Ret]):
                             all_non_positive = False
                             break
                     if any_success and all_non_positive:
-                        self._exit_lr_growth()
+                        
                         seed_c = None
                         best_c = None
                         raise LeftRecursionError(
@@ -669,7 +645,7 @@ class Cache(Generic[A, Ret]):
                             limit=self.max_growth_iterations,
                             reason="no-progress"
                         )
-            self._exit_lr_growth()
+            
             # Fallback classification: if group finalized growth without improvement and all successes are non-positive by ordering.
             any_success_fb = False
             any_positive_fb = False
@@ -779,7 +755,6 @@ class Cache(Generic[A, Ret]):
             if self._improved(head.key, old, attempt):
                 head.result = attempt
                 head.finalized = True
-                self._lr_version += 1
                 self._propagate_improvement(head)
             else:
                 head.finalized = True
@@ -812,7 +787,6 @@ class Cache(Generic[A, Ret]):
                     if self._improved(head.key, old, attempt):
                         head.result = attempt
                         head.finalized = True
-                        self._lr_version += 1
                         changed = True
                         # Improvement recorded; propagation handled by subsequent passes.
                     else:
