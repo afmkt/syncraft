@@ -1,53 +1,12 @@
 from __future__ import annotations
-from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Tuple
-from dataclasses import dataclass, fields, is_dataclass
+from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Generic, TypeVar, Optional
+from dataclasses import dataclass
 import inspect
 import functools
 import types
-from rich.console import Console
-from rich import box
-import os
-from enum import Enum
-
-class TablePrinter:
-    def __init__(self)->None:
-        self._delta = True
-        self.data: Dict[str, set[Tuple[Any, ...]]] = dict()
-    @property
-    def delta(self) -> bool:
-        return self._delta
-    
-    @delta.setter
-    def delta(self, value: bool) -> None:
-        self._delta = value
-
-    def print(self, name: str, title: str, *args: Any)->None:
-        if len(args) == 0:
-            return
-        if name not in self.data or not self.delta:
-            debug_table(*args, title=title)
-            self.data[name] = set(args[1:])
-        else:
-            old_data = self.data[name]
-            new_data = set(args[1:])
-            deleted = old_data - new_data
-            added = new_data - old_data
-            if len(deleted) > 0:
-                debug_table(*([args[0]] + list(deleted)), title=f"{title} - [bold green]Deleted[/bold green]")
-            if len(added) > 0:
-                debug_table(*([args[0]] + list(added)), title=f"{title} - [bold green]Added[/bold green]")
-            self.data[name] = new_data
-
-
-        
-
-
-
-class ENV_VARS(Enum):
-    SYNCRAFT_DEBUG = "SYNCRAFT_DEBUG"
-
-def set_debug(value:bool = True)->None:
-    os.environ[ENV_VARS.SYNCRAFT_DEBUG.value] = "yes" if value else "no"
+import collections.abc
+import threading
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
 
 def callable_str(obj:Any)->str:
@@ -56,48 +15,7 @@ def callable_str(obj:Any)->str:
     else:
         return f"<{obj.__class__.__name__} instance @ {hex(id(obj))}>"
 
-def debug_print(*args: Any) -> None:
-    if str(os.getenv(ENV_VARS.SYNCRAFT_DEBUG.value)).lower() in ("1", "true", "yes"):
-        # Console().print('\n', markup=False)
-        Console().print(*args, markup=False)
 
-def debug_table(*args: Any, title: None | str = None) -> None:
-    if str(os.getenv(ENV_VARS.SYNCRAFT_DEBUG.value)).lower() in ("1", "true", "yes"):
-        from rich.table import Table
-        if len(args) == 0:
-            return
-        if is_dataclass(args[0]):
-            table = Table(show_header=True, 
-                          header_style="bold magenta", 
-                          box=box.DOUBLE_EDGE, 
-                          show_lines=True, 
-                          title=title, 
-                          title_style="yellow",
-                          title_justify="left")
-            for f in fields(args[0]):
-                table.add_column(f.name)        
-            for inst in args:
-                row = [str(getattr(inst, f.name)) for f in fields(inst)]
-                table.add_row(*row)
-            Console().print(table, markup=False)
-        else:
-            table = Table(show_header=True, 
-                          header_style="bold magenta", 
-                          box=box.DOUBLE_EDGE, 
-                          show_lines=True, 
-                          title=title,
-                          title_style="yellow",
-                          title_justify="left")
-            max_len = max(len(a) for a in args)
-            for i in range(max_len):
-                table.add_column(f"{args[0][i] if i < len(args[0]) else ''}")
-            for inst in args[1:]:
-                if isinstance(inst, (list, tuple)):
-                    row = [str(a) for a in inst]
-                else:
-                    row = [str(inst)]
-                table.add_row(*row) 
-            Console().print(table, markup=False)
 
 class CallWith:
     cache: Dict[Callable[...,Any], inspect.Signature] = dict()
@@ -226,6 +144,167 @@ class CallWith:
         return self.func(*self.args, **self.kwargs)
 
 
+K = TypeVar('K', bound=Hashable)
+V = TypeVar('V', bound=Any)
+class ThreadLocalWeakKeyDict(threading.local, Generic[K, V]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.store: WeakKeyDictionary[K, V] = WeakKeyDictionary()
+
+    def __getitem__(self, key: K) -> V:
+        return self.store[key]
+
+    def __contains__(self, key: K) -> bool:
+        return key in self.store
+
+    def __setitem__(self, key: K, value: V) -> None:
+        self.store[key] = value
+
+    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+        return self.store.get(key, default)
+    
+    def items(self):
+        return self.store.items()
+    
+    def keys(self):
+        return self.store.keys()
+    
+    def values(self):
+        return self.store.values()
+    
+    def update(self, other: collections.abc.Mapping[K, V]) -> None:
+        self.store.update(other)
+    
+    def __ior__(self, other: collections.abc.Mapping[K, V]) -> ThreadLocalWeakKeyDict:
+        self.store |= other
+        return self
+
+    def __delitem__(self, key: K) -> None:
+        del self.store[key]
+
+    def __bool__(self) -> bool:
+        return bool(self.store)
+        
+    def __iter__(self):
+        return iter(self.store)
+
+    def __len__(self):
+        return len(self.store)
+
+    def __eq__(self, other):
+        if isinstance(other, collections.abc.Mapping):
+            return self.store == other
+        return NotImplemented
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.store})"
+
+
+class ThreadLocalWeakValueDict(threading.local, Generic[K, V]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.store: WeakValueDictionary[K, V] = WeakValueDictionary()
+
+    def __getitem__(self, key: K) -> V:
+        return self.store[key]
+
+    def __contains__(self, key: K) -> bool:
+        return key in self.store
+
+    def __setitem__(self, key: K, value: V) -> None:
+        self.store[key] = value
+
+    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+        return self.store.get(key, default)
+    
+    def items(self):
+        return self.store.items()
+    
+    def keys(self):
+        return self.store.keys()
+    
+    def values(self):
+        return self.store.values()
+
+    def update(self, other: collections.abc.Mapping[K, V]) -> None:
+        self.store.update(other)
+
+    def __ior__(self, other: collections.abc.Mapping[K, V]) -> ThreadLocalWeakValueDict:
+        self.store |= other
+        return self
+
+    def __delitem__(self, key: K) -> None:
+        del self.store[key]
+
+    def __bool__(self) -> bool:
+        return bool(self.store)
+        
+    def __iter__(self):
+        return iter(self.store)
+
+    def __len__(self):
+        return len(self.store)
+
+    def __eq__(self, other):
+        if isinstance(other, collections.abc.Mapping):
+            return self.store == other
+        return NotImplemented
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.store})"
+
+class ThreadLocalDict(threading.local, Generic[K, V]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.store: Dict[K, V] = {}
+
+    def __getitem__(self, key: K) -> V:
+        return self.store[key]
+
+    def __contains__(self, key: K) -> bool:
+        return key in self.store
+
+    def __setitem__(self, key: K, value: V) -> None:
+        self.store[key] = value
+
+    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+        return self.store.get(key, default)
+    
+    def items(self):
+        return self.store.items()
+    
+    def keys(self):
+        return self.store.keys()
+    
+    def values(self):
+        return self.store.values()
+
+    def update(self, other: collections.abc.Mapping[K, V]) -> None:
+        self.store.update(other)
+
+    def __ior__(self, other: collections.abc.Mapping[K, V]) -> ThreadLocalDict:
+        self.store |= other
+        return self
+
+    def __delitem__(self, key: K) -> None:
+        del self.store[key]
+
+    def __bool__(self) -> bool:
+        return bool(self.store)
+        
+    def __iter__(self):
+        return iter(self.store)
+
+    def __len__(self):
+        return len(self.store)
+
+    def __eq__(self, other):
+        if isinstance(other, collections.abc.Mapping):
+            return self.store == other
+        return NotImplemented
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.store})"
 
 
 Y = TypeVar('Y')

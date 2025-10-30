@@ -5,11 +5,18 @@ from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
 from syncraft.cache import Cache
-
+from syncraft.regex import (
+    parse_regex, parse,
+    
+    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
+)
+import syncraft.fa as fa
 import re
 import pytest
 from typing import Any, Iterable
 
+# fa.forbidden = True  # prevent accidental __str__ use in FAState
 # Utility to extract all token texts from a (possibly nested) AST structure produced by parse_word.
 
 def iter_tokens(ast: Any) -> Iterable[str]:
@@ -746,8 +753,19 @@ def test_mutual_unproductive_cycle_no_progress_3():
     assert exc.value.reason == 'no-progress'
 
 
+def test_dot_atom():
+    """Test parsing of dot (.) atom."""
+    # result = parse_regex(atom, ".")
+    tmp = parse(".")
+    tmp = parse(".")
+    assert isinstance(tmp, Regex)
+    result = tmp.branches[0].pieces[0].atom
+
+    assert isinstance(result, DotAtom)
+
+
 
 
 if __name__ == '__main__':
-    test_mutual_unproductive_cycle_no_progress_3()
+    test_recursion()
     pass
