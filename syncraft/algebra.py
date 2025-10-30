@@ -6,7 +6,7 @@ from typing import (
 from syncraft.ast import AST
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
-from syncraft.cache import OrElse, Cache, LeftRecursionError, Right, Left, Incomplete, Either
+from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
 
@@ -116,14 +116,18 @@ class Algebra(Generic[A, S]):
                                                                                          Either[Any, Tuple[Any, S]]]:
             # Defer acquiring the underlying algebra until invocation time.
             alg = thunk()
-            result = (yield from alg.run(input, cache))
-            match result:
-                case Left(err):
-                    return Left(err)
-                case Right((value, state)):
-                    return Right((Lazy(value), state))
-                case _:
-                    raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
+            cache.enter(algebra_lazy_run, input.cache_key, inner_algebra=alg.run_f)
+            try:
+                result = (yield from alg.run(input, cache))
+                match result:
+                    case Left(err):
+                        return Left(err)
+                    case Right((value, state)):
+                        return Right((Lazy(value), state))
+                    case _:
+                        raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
+            finally:
+                cache.leave()
         return cls(algebra_lazy_run)
     
     @classmethod
@@ -289,7 +293,7 @@ class Algebra(Generic[A, S]):
                         cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType,
                                                                                 Either[Any, Tuple[Choice[A, B], S]]]:
-            cache.alternatives.append(OrElse(or_else=or_else_run, left=self.run_f, right=other.run_f, pos=input.cache_key))
+            cache.enter(or_else_run, pos=input.cache_key, left=self.run_f, right=other.run_f)            
             try:
                 inp = input.enter()
                 left = yield from self.run(inp, cache)
@@ -308,7 +312,7 @@ class Algebra(Generic[A, S]):
                         raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
                 raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
             finally:
-                cache.alternatives.pop()
+                cache.leave()
         
         alg = replace(self, run_f=or_else_run) # type: ignore
         from typing import cast as _cast

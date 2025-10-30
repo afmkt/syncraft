@@ -199,23 +199,16 @@ class InProgress(Generic[A, Ret]):
 
 
 @dataclass(frozen=True)
-class OrElseFrame:
-    func: Callable[..., Any]
-    pos: int
+class OrElse:
+    or_else: Callable[..., Any]
     left: Callable[..., Any]
     right: Callable[..., Any]
-    
-
-@dataclass(frozen=True)
-class LazyFrame:
-    func: Callable[..., Any]
     pos: int
-    inner_algebra: Callable[..., Any]
 
 @dataclass
 class Cache(Generic[A, Ret]):
     cache: dict[Callable[..., Any], Dict[int, Ret | InProgress[A, Ret]]] = field(default_factory=dict)
-    key_frames: List[OrElseFrame | LazyFrame] = field(default_factory=list)
+    alternatives: List[OrElse] = field(default_factory=list)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     _lr_stack: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)  # active in-progress chain
     _force: Optional[InProgress[A, Ret]] = None  # Entry scheduled for forced recompute during growth
@@ -223,27 +216,8 @@ class Cache(Generic[A, Ret]):
     # Heads grouped by a hashable start key (caller-provided mapping or the state itself)
     _heads_by_start: Dict[Hashable, List[InProgress[A, Ret]]] = field(default_factory=dict, init=False, repr=False)
 
-    def enter(self, 
-              func: Callable[..., Any], 
-              pos: int, 
-              *, 
-              left: Optional[Callable[..., Any]] = None,
-              right: Optional[Callable[..., Any]] = None,
-              inner_algebra: Optional[Callable[..., Any]] = None
-              ) -> None:
-        if left is not None and right is not None:
-            frame: OrElseFrame | LazyFrame = OrElseFrame(func=func, left=left, right=right, pos=pos)
-            self.key_frames.append(frame)
-        elif inner_algebra is not None:
-            frame = LazyFrame(func=func, inner_algebra=inner_algebra, pos=pos)
-            self.key_frames.append(frame)
-        else:
-            raise SyncraftError("Either left/right or inner_algebra must be provided", offender={'func': func, 'pos': pos})
-        
-    def leave(self) -> None:
-        if self.key_frames:
-            self.key_frames.pop()
-            
+
+
     def __contains__(self, f: Callable[..., Generator[Any, Any, Ret]]) -> bool:
         return f in self.cache
     
