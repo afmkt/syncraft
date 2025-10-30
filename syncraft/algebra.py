@@ -293,8 +293,8 @@ class Algebra(Generic[A, S]):
                         cache:Cache[S, Either[Any, Tuple[A, S]]]) -> Generator[YieldChannelType, 
                                                                                 SendChannelType,
                                                                                 Either[Any, Tuple[Choice[A, B], S]]]:
-            cache.enter(or_else_run, input, left=self.run_f, right=other.run_f)
-            try:
+            # cache.enter(or_else_run, input, left=self.run_f, right=other.run_f)
+            # try:
                 inp = input.enter()
                 left = yield from self.run(inp, cache)
                 match left:
@@ -311,8 +311,8 @@ class Algebra(Generic[A, S]):
                                 return Left(other_err)
                         raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
                 raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
-            finally:
-                cache.leave()
+            # finally:
+            #     cache.leave()
         
         alg = replace(self, run_f=or_else_run) # type: ignore
         from typing import cast as _cast
