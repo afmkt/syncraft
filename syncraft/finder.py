@@ -37,7 +37,7 @@ class Finder(Generator[T], Generic[T]):
             tuple ``(input.ast, input)``.
         """
         def anything_run(input: GenState[T], 
-                         cache:Cache[GenState[T],Either[Any, Tuple[Any, GenState[T]]]]) -> PyGenerator[YieldChannelType ,
+                         cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType ,
                                                                                            SendChannelType,
                                                                                            Either[Any, Tuple[Any, GenState[T]]]]:
             yield from ()
@@ -54,7 +54,7 @@ def anything(syntax: Syntax[Any, Any]) -> Syntax[Any, Any]:
     return syntax.factory('anything')
         
 
-def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any])-> bool:
+def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any])-> bool:
     from syncraft.generator import Runner
     runner = Runner(ast = data, seed=0, restore_pruned=True)
     ast, _ = runner(syntax=s, alg_cls=Finder, cursor=None)
@@ -65,7 +65,7 @@ def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any]
             return True
 
 
-def _find(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any, Any]) -> PyGenerator[ParseResult[Any], None, None]:
+def _find(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any]) -> PyGenerator[ParseResult[Any], None, None]:
     if _matches(s, data, cache):
         yield data
     match data:

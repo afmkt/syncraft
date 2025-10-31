@@ -211,7 +211,7 @@ class Parser(Algebra[T, ParserState[T]]):
         ntags = lexer.tags()
         name = f"{','.join([str(tag) for tag in ntags])}"
         def lex_run(state: ParserState[T], 
-                    cache: Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]]) -> Generator[
+                    cache: Cache[ParserState[T]]) -> Generator[
                               YieldChannelType, 
                               SendChannelType, 
                               Either[Any, Tuple[T, ParserState[T]]]]:
@@ -284,7 +284,7 @@ def parser(syntax: Syntax[Any, Any], payload_kind: PayloadKind) -> Algebra[Any, 
 def parse(syntax: Syntax[Any, Any],
           cursor: StreamCursor[Any],
           *,
-          cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
+          cache: None | Cache[ParserState[T]] = None
           ) -> Tuple[Any, Any]:
     runner: Runner[T] = Runner()
     return runner(syntax=syntax, alg_cls=Parser, cursor=cursor, cache=cache)
@@ -294,7 +294,7 @@ def parse(syntax: Syntax[Any, Any],
 def parse_word(syntax: Syntax[Any, Any], 
                data: str, 
                *, 
-               cache: None| Cache[Any, Any] = None
+               cache: None| Cache[Any] = None
                ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     tokens: List[Token]  = [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens, cache=cache)
@@ -303,7 +303,7 @@ def parse_word(syntax: Syntax[Any, Any],
 def parse_data(syntax: Syntax[Any, Any], 
           data: List[T],
           *,
-          cache: None | Cache[ParserState[T], Either[Any, Tuple[Any, ParserState[T]]]] = None
+          cache: None | Cache[ParserState[T]] = None
           ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
     input : StreamCursor[T] = StreamCursor.from_data(data)
     v, s = parse(syntax, input, cache=cache)
@@ -316,7 +316,7 @@ def parse_data(syntax: Syntax[Any, Any],
 def parse_string(syntax: Syntax[Any, Any],
                  data: str,
                  *,
-                 cache: None | Cache[ParserState[str], Either[Any, Tuple[Any, ParserState[str]]]] = None
+                 cache: None | Cache[ParserState[str]] = None
                  ) -> Tuple[Any, None | ParserState[str]]:
     input : StreamCursor[str] = StreamCursor.from_data(data)
     return parse(syntax, input, cache=cache)
@@ -324,7 +324,7 @@ def parse_string(syntax: Syntax[Any, Any],
 def parse_bytes(syntax: Syntax[Any, Any],
                 data: bytes,
                 *,
-                cache: None | Cache[ParserState[bytes], Either[Any, Tuple[Any, ParserState[bytes]]]] = None
+                cache: None | Cache[ParserState[bytes]] = None
                 ) -> Tuple[Any, None | ParserState[bytes]]:
     input : StreamCursor[bytes] = StreamCursor.from_data(data)
     return parse(syntax, input, cache=cache)
@@ -333,7 +333,7 @@ def parse_file(syntax: Syntax[Any, Any],
                filepath: str | Path,
                *,
                mode: Literal['text', 'binary'] = 'text', 
-               cache: None | Cache[ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
+               cache: None | Cache[ParserState[str | bytes]] = None
                ) -> Tuple[Any, None | ParserState[str | bytes]]:
     if mode == 'text':        
         input : StreamCursor[str] = StreamCursor.from_path(filepath, mode=mode)
@@ -346,7 +346,7 @@ def parse_stream(syntax: Syntax[Any, Any],
                  stream: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
                  *,
                  mode: Literal['text', 'binary'] = 'text', 
-                 cache: None | Cache[ParserState[str | bytes], Either[Any, Tuple[Any, ParserState[str | bytes]]]] = None
+                 cache: None | Cache[ParserState[str | bytes]] = None
                  ) -> Tuple[Any, None | ParserState[str | bytes]]:
     input : StreamCursor[str | bytes] = StreamCursor.from_stream(stream, mode=mode) # type: ignore
     return parse(syntax, input, cache=cache)

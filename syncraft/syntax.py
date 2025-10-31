@@ -826,12 +826,12 @@ class RunnerProtocol(Protocol, Generic[A, S]):
     def run(self, 
             parser: Algebra[A, S], 
             cursor: Optional[StreamCursor[Any]],
-            cache: Optional[Cache[Any, Any]] = None,
+            cache: Optional[Cache[Any]] = None,
             once: bool=True) -> Generator[Tuple[Any, None | S], None, None]: 
         while True:
             ret = None
             state = self.resume(None, cursor)
-            gen_cache: Cache[Any, Any] = cache or Cache()
+            gen_cache: Cache[Any] = cache or Cache()
             parser_gen = parser.run(state, cache=gen_cache)
             try:
                 result = next(parser_gen)
@@ -863,7 +863,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
                  syntax: Syntax[A, S], 
                  alg_cls: Type[Algebra[A, S]],
                  cursor: Optional[StreamCursor[Any]],
-                 cache: Optional[Cache[Any, Any]] = None) -> Tuple[Any, None | S]:
+                 cache: Optional[Cache[Any]] = None) -> Tuple[Any, None | S]:
         parser = self.algebra(syntax=syntax, alg_cls=alg_cls, payload_kind=cursor.payload_kind if cursor else None)  
         for ret in self.run(parser, cursor, cache, once=True):
             return ret
