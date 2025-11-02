@@ -219,7 +219,8 @@ class Cache(Generic[S]):
         cache_bucket = self.cache.setdefault(f, {})
         cache_key = key.cache_key 
         existing = cache_bucket.get(cache_key)
-        print(f"Cache exec for {callable_str(f)} at {cache_key}: existing={existing}")
+        print(f"Rule: {callable_str(f)} at {cache_key}: existing={existing}")
+        print(f"Key: {key}")
         if existing is not None and not isinstance(existing, InProgress):
             # cache hit
             object.__setattr__(existing, "cache_hit", True)

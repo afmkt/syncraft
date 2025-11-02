@@ -63,8 +63,8 @@ def from_string(string: str) -> Token:
     return Token(text=string)
 
 def test():
-    A = lazy(lambda: (A >> B) | literal('a')).named('A')
-    B = lazy(lambda: (B >> A) | literal('b')).named('B')
+    A = lazy(lambda: (A >> B) | literal('a').named('a')).named('A')
+    B = lazy(lambda: (B >> A) | literal('b').named('b')).named('B')
     v, _ = parse_word(A, 'a b a b a b', cache=Cache())
     ast, _ = v.bimap()
     print(ast)
