@@ -67,6 +67,7 @@ class Algebra(Generic[A, S]):
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
     def named(self, name: Hashable) -> Algebra[A, S]:
+        object.__setattr__(self.run_f, '__rule_name__', name)
         return replace(self, _name=name)
 
 
@@ -115,17 +116,15 @@ class Algebra(Generic[A, S]):
                                                                                          SendChannelType,
                                                                                          Either[Any, Tuple[Any, S]]]:
             # Defer acquiring the underlying algebra until invocation time.
-            alg = thunk()
-            cache.enter(algebra_lazy_run, input, inner=alg.run_f)
+            cache.enter(algebra_lazy_run)
             try:
+                alg = thunk()
                 result = (yield from alg.run(input, cache))
                 match result:
-                    case Left(err):
-                        return Left(err)
                     case Right((value, state)):
                         return Right((Lazy(value), state))
                     case _:
-                        raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
+                        return result
             finally:
                 cache.leave()
         return cls(algebra_lazy_run)

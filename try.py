@@ -62,6 +62,14 @@ lazy = S.lazy
 def from_string(string: str) -> Token:
     return Token(text=string)
 
+def test():
+    A = lazy(lambda: (A >> B) | literal('a')).named('A')
+    B = lazy(lambda: (B >> A) | literal('b')).named('B')
+    v, _ = parse_word(A, 'a b a b a b', cache=Cache())
+    ast, _ = v.bimap()
+    print(ast)
+    assert str(ast) == '((((t.a,), (t.b,)), (t.a,), (t.b,)), (t.a,), (t.b,))'
+
 
 def test_direct_left_recursion_unproductive_now_productive()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -102,6 +110,7 @@ def test_iteration_cap_metrics_single_head():
 
 
 if __name__ == '__main__':
+    test()
     test_direct_left_recursion_unproductive_now_productive()
     test_direct_left_recursion_collapse()
     test_direct_left_recursion_growth_still_collapses()

@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Hashable, Generic, Callable, Any, Generator, List, Optional, Tuple, cast
+from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
-
+from rich import print
 from syncraft.utils import callable_str
 
 
@@ -97,21 +97,26 @@ class InProgress(Generic[S]):
     rule: Rule
     start_key: int
     result: Optional[Ret] 
-    seeding: bool
-
-    def grow(self, new_result: Ret) -> bool:
+    def grow(self, rule: Rule, cache_key: int, new_result: Ret) -> bool:
+        assert rule is self.rule, f"Rule mismatch during grow: {rule} != {self.rule}"
+        assert cache_key == self.start_key, f"Cache key mismatch during grow: {cache_key} != {self.start_key}"
         if isinstance(new_result, Right):
-            new_state = new_result.state            
-            if new_state is not None:
-                old_state = self.state
-                old_cache_key = old_state.cache_key if old_state is not None else -1
-                new_cache_key = new_state.cache_key
-                if new_cache_key > old_cache_key:
-                    self.result = new_result # type: ignore
-                    self.seeding = False
-                    return True
+            new_state = new_result.state   
+            assert new_state is not None, "New state is None during grow"         
+            new_cache_key = new_state.cache_key
+            old_state = self.state
+            if old_state is None or new_cache_key > old_state.cache_key:
+                self.result = new_result # type: ignore
+                return True
         return False
     
+    def __str__(self) -> str:
+        return f"InProgress(rule={callable_str(self.rule)}, start_key={self.start_key}, result={self.result})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+    
+
     @property
     def state(self) -> Optional[S]:
         if self.result is not None:
@@ -129,12 +134,20 @@ class Group(Generic[S]):
             raise SyncraftError("Group has no heads", offender=self)
         return self.heads[0]
     
+    def __contains__(self, rule: Rule) -> bool:
+        return any(rule is head.rule for head in self.heads)
+
 
 @dataclass(frozen=True)
-class LazyFrame(Generic[S]):
-    func: Rule
-    state: S
-    inner: Optional[Rule]
+class LazyFrame:
+    rule: Rule
+
+    def __str__(self) -> str:
+        return f"LazyFrame(rule={callable_str(self.rule)})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+
 
 @dataclass
 class Cache(Generic[S]):
@@ -143,12 +156,8 @@ class Cache(Generic[S]):
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     group: Optional[Group[S]] = None
 
-    def enter(self, 
-              func: Rule, 
-              state: S, 
-              *,
-              inner: Optional[Rule] = None) -> None:
-        frame = LazyFrame(func=func, state=state, inner=inner)
+    def enter(self, rule: Rule) -> None:
+        frame = LazyFrame(rule=rule)
         self.key_frames.append(frame)
         
     def leave(self) -> None:
@@ -172,7 +181,6 @@ class Cache(Generic[S]):
     
     def gc(self, min_position: int) -> int:
 
-
         if min_position < 0:
             min_position = 0
 
@@ -189,23 +197,18 @@ class Cache(Generic[S]):
     
     def init_group(self, rule: Rule, key: S) -> Group[S]:
         cache_key = key.cache_key 
-        cnt: int = 0
+
         heads: List[InProgress[S]] = []
         for lazy_frame in self.key_frames[::-1]:
-            f = lazy_frame.func
-            state = lazy_frame.state
+            f = lazy_frame.rule
             cache_bucket = self.cache.get(f, {})
             existing = cache_bucket.get(cache_key)
             assert isinstance(existing, InProgress), f"Expected InProgress for {callable_str(f)} at {cache_key}, got {existing}"
             assert existing.start_key == cache_key, f"Start key mismatch for {callable_str(f)} at {cache_key}: {existing.start_key} != {cache_key}"
             assert existing.rule == f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
-            assert existing.seeding, f"Expected seeding InProgress for {callable_str(f)} at {cache_key}, got non-seeding"
-            assert state.cache_key == cache_key, f"State cache key mismatch for {callable_str(f)} at {cache_key}: {state.cache_key} != {cache_key}"
             heads.append(existing)
             if f == rule:
-                cnt += 1
-                if cnt >= 2:
-                    break
+                break
         group = Group(heads=heads)
         self.group = group
         return group
@@ -216,33 +219,44 @@ class Cache(Generic[S]):
         cache_bucket = self.cache.setdefault(f, {})
         cache_key = key.cache_key 
         existing = cache_bucket.get(cache_key)
+        print(f"Cache exec for {callable_str(f)} at {cache_key}: existing={existing}")
         if existing is not None and not isinstance(existing, InProgress):
             # cache hit
             object.__setattr__(existing, "cache_hit", True)
             return existing
         
         if isinstance(existing, InProgress):
-            if existing.seeding:
-                # re-entry during seeding: handle left recursion
-                # Short-circuit to indicate seeding in progress
-                # This signals the failure of the current alternative, allowing or_else to try right branch.
+            if existing.start_key == cache_key:
+                assert existing.rule == f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
                 self.init_group(f, key)
                 return Left(('SEEDING', key))  # type: ignore
-        # Step 3: seed new head
-        head : InProgress[S] = InProgress(rule=f, start_key=cache_key, seeding=True, result=None)
-        cache_bucket[cache_key] = head
-        # Register head for potential cross-position revisits (agenda scheduling)
-        start_key: int = key.cache_key # self._start_key(key)
-        try:
-            # Opportunistic co-seeding: if this rule is an Expr-like head referencing another lazy head
-            # at the same starting position (e.g., Expr vs Term), ensure both are seeded so they will be grouped.
-            seed = yield from self.run_rule(f, key)
-        except Exception as e:
-            cache_bucket.pop(cache_key, None)
-            raise e
-        # Step 4: finalize or prepare for growth
-        return (yield from self._complete_seed(head, seed))
-    
+        cache_bucket[cache_key] = InProgress(rule=f, start_key=cache_key, result=None)
+        seed = yield from self.run_rule(f, key)
+        seed = yield from self.install_seed(f, seed, key, cache_bucket)
+        return seed
+
+    def install_seed(self,
+                     f: Rule,
+                     seed: Ret,
+                     state: S,
+                     cache_bucket: Dict[int, Ret | InProgress[S]]
+                     ) -> Generator[Any, Any, Ret]:
+        cache_key = state.cache_key
+        existing = cache_bucket.get(cache_key)
+        if not isinstance(existing, InProgress):
+            raise SyncraftError(f"Expected InProgress for {callable_str(f)} at {cache_key}, got {existing}", offender=existing)
+        else:
+            assert existing.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
+            if self.group is None or existing.rule not in self.group:
+                match seed:
+                    case Left(('SEEDING', _)):
+                        pass
+                    case _:
+                        cache_bucket[cache_key] = seed  # type: ignore
+            else:
+                while existing.grow(f, cache_key, seed):
+                    seed = yield from self.run_rule(f, state)
+            return seed
 
 
 
