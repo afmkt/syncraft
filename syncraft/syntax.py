@@ -285,13 +285,7 @@ class LazyState(Generic[A, S]):
             ret = self.cached(alg_cls, **global_kwargs)
             self._inner_algebras_cache[key] = ret
             return ret
-        algebra = alg_cls.lazy(algebra_lazy_f)
-        # --- Patch _rule_id for left-recursion recovery ---
-        # try:
-        #     setattr(algebra.run_f, "_rule_id", self.thunk)
-        #     pass
-        # except Exception:
-        #     pass
+        algebra = alg_cls.lazy(algebra_lazy_f).mark_lazy()
         self._algebras_cache[key] = algebra
         return algebra
         

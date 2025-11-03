@@ -56,12 +56,28 @@ class Error:
 
 YieldChannelType = Incomplete[S] 
 SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
+
+
+
+
 @dataclass(frozen=True)        
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
     _name: Hashable | None = None
     
+
+    
+    @staticmethod
+    def _mark_lazy(func: Callable[..., Any]) -> Callable[..., Any]:
+        object.__setattr__(func, 'is_lazy', True)
+        return func
+
+    def mark_lazy(self) -> Algebra[A, S]:
+        Algebra._mark_lazy(self.run_f)
+        return self
+        
+
     def config(self) -> dict[str, Any]:
         cfg = getattr(self, SYNCRAFT_CONFIG_KEY, {})
         return dict(cfg) if isinstance(cfg, Mapping) else {}
@@ -113,20 +129,15 @@ class Algebra(Generic[A, S]):
     def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
         def algebra_lazy_run(input: S,
                              cache: Cache[S]) -> Generator[YieldChannelType,
-                                                                                         SendChannelType,
-                                                                                         Either[Any, Tuple[Any, S]]]:
-            # Defer acquiring the underlying algebra until invocation time.
-            cache.enter(algebra_lazy_run)
-            try:
-                alg = thunk()
-                result = (yield from alg.run(input, cache))
-                match result:
-                    case Right((value, state)):
-                        return Right((Lazy(value), state))
-                    case _:
-                        return result
-            finally:
-                cache.leave()
+                                                            SendChannelType,
+                                                            Either[Any, Tuple[Any, S]]]:
+            alg = thunk()
+            result = (yield from alg.run(input, cache))
+            match result:
+                case Right((value, state)):
+                    return Right((Lazy(value), state))
+                case _:
+                    return result
         return cls(algebra_lazy_run)
     
     @classmethod

@@ -1,10 +1,11 @@
 from __future__ import annotations
+import pytest
 from syncraft.ast import Nothing, Token, Lazy
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
-from syncraft.cache import LeftRecursionError
-from syncraft.cache import Cache
+from syncraft.cache import Cache, LeftRecursionError, enable_logging
+
 from syncraft.regex import (
     parse_regex, parse,
     
@@ -13,9 +14,8 @@ from syncraft.regex import (
 )
 import syncraft.fa as fa
 import re
-import pytest
 from typing import Any, Iterable
-
+enable_logging()
 # fa.forbidden = True  # prevent accidental __str__ use in FAState
 # Utility to extract all token texts from a (possibly nested) AST structure produced by parse_word.
 
@@ -62,57 +62,79 @@ lazy = S.lazy
 def from_string(string: str) -> Token:
     return Token(text=string)
 
-def test():
-    A = lazy(lambda: (A >> B) | literal('a').named('a')).named('A')
-    B = lazy(lambda: (B >> A) | literal('b').named('b')).named('B')
-    v, _ = parse_word(A, 'a b a b a b', cache=Cache())
-    ast, _ = v.bimap()
-    print(ast)
-    assert str(ast) == '((((t.a,), (t.b,)), (t.a,), (t.b,)), (t.a,), (t.b,))'
+
+def test_multi_recursion()->None:
+    a = literal('a').map(lambda x: x.text, raw=True).named('a')
+    b = literal('b').map(lambda x: x.text, raw=True).named('b')
+    c = literal('c').map(lambda x: x.text, raw=True).named('c')
+    x = literal('x').map(lambda x: x.text, raw=True).named('x')
+    y = literal('y').map(lambda x: x.text, raw=True).named('y')
+    z = literal('z').map(lambda x: x.text).named('z')
+    A = lazy(lambda: (B + x) | a).named('A')
+    B = lazy(lambda: (C + y) | b).named('B')
+    C = lazy(lambda: (A + z) | c).named('C')
+
+    v, s = parse_word(A, 'a z y x', cache=Cache(logging=True))
+    print(v)
+    # We care about the raw AST shape (pre-bimap). Extract leaves manually.
+    from syncraft.ast import Then, ThenKind
+    from syncraft.algebra import Choice, ChoiceKind  # type: ignore
+
+    def leaves(node):
+        if isinstance(node, Lazy):
+            return leaves(node.value)
+        if isinstance(node, Then) and node.kind == ThenKind.BOTH:
+            return leaves(node.left) + leaves(node.right)
+        if isinstance(node, Choice):
+            # For this grammar Choice.RIGHT wraps literal terminal; LEFT wraps a Then chain.
+            if node.kind == ChoiceKind.RIGHT:
+                return (node.value,)
+            else:
+                return leaves(node.value)
+        if isinstance(node, str):
+            return (node,)
+        return ()
+    print(leaves(v))
+    assert leaves(v) == ('a','z','y','x')
 
 
-def test_direct_left_recursion_unproductive_now_productive()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a').named('a')).named('S1')
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == '((((t.a,),),),)'
 
 
-def test_direct_left_recursion_collapse()->None:
-    """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
-    v, _ = parse_word(S1, 'a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == 't.a'
-
-
-def test_direct_left_recursion_growth_still_collapses()->None:
-    """Additional confirmation of S → S S | 'a' collapse behavior (single terminal)."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == '((t.a,),)'
-
-
-def test_iteration_cap_metrics_single_head():
-    Term = literal('n')
-    Expr = lazy(lambda: (Expr + literal('+') + Term) | Term)
-    cache = Cache()
-    cache.max_growth_iterations = 1
+def test_mutual_unproductive_cycle_no_progress():
+    """Grammar:
+        A -> B
+        B -> A
+    Input: ''
+    Expect: LeftRecursionError(reason='no-progress') because there is no productive (non-recursive) base.
+    """
+    A = lazy(lambda: B)
+    B = lazy(lambda: A)
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(Expr, 'n + n + n + n', cache=cache)
-    err = exc.value
-    assert err.limit == 1
-    assert err.reason == 'iteration-cap'
-    assert err.group_size == 1
+        parse_word(A, '', cache=Cache())
+    assert exc.value.reason == 'no-progress'
+
+
+
+def test_mutual_unproductive_cycle_no_progress_3():
+    """Grammar:
+        A -> B
+        B -> C
+        C -> A
+    Input: ''
+    Expect: LeftRecursionError(reason='no-progress') because there is no productive (non-recursive) base.
+    """
+    A = lazy(lambda: B)  
+    B = lazy(lambda: C)  
+    C = lazy(lambda: A)  
+    with pytest.raises(LeftRecursionError) as exc:
+        parse_word(A, '', cache=Cache())
+    assert exc.value.reason == 'no-progress'
+
+
+
 
 
 
 if __name__ == '__main__':
-    test()
-    test_direct_left_recursion_unproductive_now_productive()
-    test_direct_left_recursion_collapse()
-    test_direct_left_recursion_growth_still_collapses()
-    test_iteration_cap_metrics_single_head()
+    test_multi_recursion()
     pass

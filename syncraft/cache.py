@@ -8,6 +8,14 @@ from syncraft.ast import SyncraftError
 from rich import print
 from syncraft.utils import callable_str
 
+def is_lazy(func: Callable[..., Any]) -> bool:
+    return hasattr(func, 'is_lazy') and func.is_lazy
+
+DEFAULT_LOGGING = False
+
+def enable_logging() -> None:
+    global DEFAULT_LOGGING
+    DEFAULT_LOGGING = True
 
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
@@ -139,9 +147,8 @@ class Group(Generic[S]):
 
 
 @dataclass(frozen=True)
-class LazyFrame:
+class Frame:
     rule: Rule
-
     def __str__(self) -> str:
         return f"LazyFrame(rule={callable_str(self.rule)})"
     
@@ -152,17 +159,26 @@ class LazyFrame:
 @dataclass
 class Cache(Generic[S]):
     cache: dict[Rule, Dict[int, Ret | InProgress[S]]] = field(default_factory=dict)
-    key_frames: List[ LazyFrame] = field(default_factory=list)
+    stack: List[ Frame] = field(default_factory=list)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
-    group: Optional[Group[S]] = None
+    group: Dict[int, Group[S]] = field(default_factory=dict)
+    growing: bool = False
+    logging: bool = field(default_factory=lambda: DEFAULT_LOGGING)
+
+
+    def log(self, *args: Any, **kwargs: Any) -> None:
+        if self.logging:
+            print(f"[Cache]{'    ' * len(self.stack)}", *args, **kwargs)
 
     def enter(self, rule: Rule) -> None:
-        frame = LazyFrame(rule=rule)
-        self.key_frames.append(frame)
+        self.log(f"Enter: {callable_str(rule)}")
+        frame = Frame(rule=rule)
+        self.stack.append(frame)
         
     def leave(self) -> None:
-        if self.key_frames:
-            self.key_frames.pop()
+        if self.stack:
+            self.stack.pop()
+        self.log("Leave")
     
     def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
         result = yield from rule(key, self)
@@ -198,43 +214,68 @@ class Cache(Generic[S]):
     def init_group(self, rule: Rule, key: S) -> Group[S]:
         cache_key = key.cache_key 
 
-        heads: List[InProgress[S]] = []
-        for lazy_frame in self.key_frames[::-1]:
-            f = lazy_frame.rule
-            cache_bucket = self.cache.get(f, {})
+        if cache_key not in self.group:
+            heads: List[InProgress[S]] = []
+            cache_bucket = self.cache.get(rule, {})
             existing = cache_bucket.get(cache_key)
-            assert isinstance(existing, InProgress), f"Expected InProgress for {callable_str(f)} at {cache_key}, got {existing}"
-            assert existing.start_key == cache_key, f"Start key mismatch for {callable_str(f)} at {cache_key}: {existing.start_key} != {cache_key}"
-            assert existing.rule == f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
+            assert isinstance(existing, InProgress), f"Expected InProgress for {callable_str(rule)} at {cache_key}, got {existing}"
             heads.append(existing)
-            if f == rule:
-                break
-        group = Group(heads=heads)
-        self.group = group
+            group = Group(heads=heads)
+            self.group[cache_key] = group
+        else:
+            group = self.group[cache_key]
+            cache_bucket = self.cache.get(rule, {})
+            existing = cache_bucket.get(cache_key)
+            if existing not in group.heads:
+                group.heads.append(existing)
         return group
 
     def exec(self,
             f: Rule,
             key: S) -> Generator[Any, Any, Ret]:
-        cache_bucket = self.cache.setdefault(f, {})
-        cache_key = key.cache_key 
-        existing = cache_bucket.get(cache_key)
-        print(f"Rule: {callable_str(f)} at {cache_key}: existing={existing}")
-        print(f"Key: {key}")
-        if existing is not None and not isinstance(existing, InProgress):
-            # cache hit
-            object.__setattr__(existing, "cache_hit", True)
-            return existing
-        
-        if isinstance(existing, InProgress):
-            if existing.start_key == cache_key:
-                assert existing.rule == f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
-                self.init_group(f, key)
-                return Left(('SEEDING', key))  # type: ignore
-        cache_bucket[cache_key] = InProgress(rule=f, start_key=cache_key, result=None)
-        seed = yield from self.run_rule(f, key)
-        seed = yield from self.install_seed(f, seed, key, cache_bucket)
-        return seed
+        self.enter(f)
+        try:        
+            cache_bucket = self.cache.setdefault(f, {})
+            cache_key = key.cache_key 
+            existing = cache_bucket.get(cache_key)
+            self.log(f"Rule: {callable_str(f)} at {cache_key}: existing={existing}")
+            self.log(f"Key: {key}")
+            if existing is not None and not isinstance(existing, InProgress) and not self.group:
+                self.log(f"Cache hit for {callable_str(f)} at {cache_key}: {existing}")
+                object.__setattr__(existing, "cache_hit", True)
+                return existing
+            
+            if isinstance(existing, InProgress):
+                if existing.start_key == cache_key:
+                    if self.growing and self.group and any(f in g for g in self.group.values()):
+                        if existing.result is not None:
+                            self.log(f"Returning current result for {callable_str(f)} at {cache_key}: {existing.result}")
+                            return existing.result
+                        else:
+                            self.init_group(f, key)
+                            self.log(f"Left recursion detected for {callable_str(f)} at {cache_key}")
+                            return Left(('SEEDING', key))  # type: ignore
+                    else:
+                        self.init_group(f, key)
+                        self.log(f"Left recursion detected for {callable_str(f)} at {cache_key}")
+                        return Left(('SEEDING', key))  # type: ignore
+                else:
+                    raise SyncraftError(f"Unexpected InProgress for {callable_str(f)} at {cache_key} with start_key {existing.start_key}", offender=existing)
+                
+
+            if is_lazy(f):
+                cache_bucket[cache_key] = InProgress(rule=f, start_key=cache_key, result=None)
+                seed = yield from self.run_rule(f, key)
+                seed = yield from self.install_seed(f, seed, key, cache_bucket)
+            else:
+                seed = yield from self.run_rule(f, key)
+                if isinstance(seed, Left):
+                    pass
+                else:
+                    cache_bucket[cache_key] = seed
+            return seed
+        finally:
+            self.leave()
 
     def install_seed(self,
                      f: Rule,
@@ -244,20 +285,49 @@ class Cache(Generic[S]):
                      ) -> Generator[Any, Any, Ret]:
         cache_key = state.cache_key
         existing = cache_bucket.get(cache_key)
-        if not isinstance(existing, InProgress):
-            raise SyncraftError(f"Expected InProgress for {callable_str(f)} at {cache_key}, got {existing}", offender=existing)
-        else:
-            assert existing.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
-            if self.group is None or existing.rule not in self.group:
-                match seed:
-                    case Left(('SEEDING', _)):
-                        pass
-                    case _:
-                        cache_bucket[cache_key] = seed  # type: ignore
+        assert isinstance(existing, InProgress), f"Expected InProgress for {callable_str(f)} at {cache_key}, got {existing}"
+        assert existing.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
+        if not self.group:
+            if isinstance(seed, Left):
+                pass
             else:
-                while existing.grow(f, cache_key, seed):
-                    seed = yield from self.run_rule(f, state)
-            return seed
-
+                cache_bucket[cache_key] = seed  # type: ignore
+        else:
+            group = self.group.get(cache_key)
+            if group is None:
+                if isinstance(seed, Left):
+                    pass
+                else:
+                    cache_bucket[cache_key] = seed  # type: ignore
+            else:
+                if is_lazy(f):
+                    iteration_count = 0
+                    while existing.grow(f, cache_key, seed):
+                        iteration_count += 1
+                        if iteration_count > self.max_growth_iterations:
+                            raise LeftRecursionError(
+                                f"Left recursion iteration cap exceeded for {callable_str(f)} at {cache_key}",
+                                f,
+                                iterations=iteration_count,
+                                limit=self.max_growth_iterations,
+                                reason='iteration-cap',
+                                group_size=len(group.heads)
+                            )
+                        self.log('GROWING: ', callable_str(f), 'at', cache_key, 'from', seed)
+                        self.growing = True
+                        seed = yield from self.run_rule(f, state)
+                        self.growing = False
+                        self.log('to', seed)
+                    result = existing.result if existing.result is not None else seed
+                    cache_bucket[cache_key] = result  # type: ignore
+                    if cache_key in self.group:
+                        del self.group[cache_key]
+                    return result
+                else:
+                    if isinstance(seed, Left):
+                        pass
+                    else:
+                        cache_bucket[cache_key] = seed  # type: ignore
+        return seed
 
 
