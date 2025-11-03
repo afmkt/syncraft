@@ -103,8 +103,13 @@ class LeftRecursionError(SyncraftError):
 @dataclass
 class InProgress(Generic[S]):
     rule: Rule
-    start_key: int
-    result: Optional[Ret] 
+    initial_state: S
+    result: Optional[Ret] = None
+
+    @property
+    def start_key(self) -> int:
+        return self.initial_state.cache_key
+
     def grow(self, rule: Rule, cache_key: int, new_result: Ret) -> bool:
         assert rule is self.rule, f"Rule mismatch during grow: {rule} != {self.rule}"
         assert cache_key == self.start_key, f"Cache key mismatch during grow: {cache_key} != {self.start_key}"
@@ -146,11 +151,12 @@ class Group(Generic[S]):
         return any(rule is head.rule for head in self.heads)
 
 
-@dataclass(frozen=True)
-class Frame:
+@dataclass
+class Frame(Generic[S]):
     rule: Rule
+    head: Optional[InProgress[S]] = None
     def __str__(self) -> str:
-        return f"LazyFrame(rule={callable_str(self.rule)})"
+        return f"LazyFrame(rule={callable_str(self.rule)}, head={self.head})"
     
     def __repr__(self) -> str:
         return self.__str__()
@@ -159,7 +165,7 @@ class Frame:
 @dataclass
 class Cache(Generic[S]):
     cache: dict[Rule, Dict[int, Ret | InProgress[S]]] = field(default_factory=dict)
-    stack: List[ Frame] = field(default_factory=list)
+    stack: List[Frame[S]] = field(default_factory=list)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     group: Dict[int, Group[S]] = field(default_factory=dict)
     growing: bool = False
@@ -172,7 +178,7 @@ class Cache(Generic[S]):
 
     def enter(self, rule: Rule) -> None:
         self.log(f"Enter: {callable_str(rule)}")
-        frame = Frame(rule=rule)
+        frame: Frame[S] = Frame(rule=rule)
         self.stack.append(frame)
         
     def leave(self) -> None:
@@ -210,23 +216,89 @@ class Cache(Generic[S]):
                 del self.cache[f]
 
         return removed
+
+    def _collect_heads(self, cache_key: int) -> List[InProgress[S]]:
+        seen: List[InProgress[S]] = []
+        for frame in reversed(self.stack):
+            head = frame.head
+            if head is None:
+                continue
+            if head.start_key != cache_key:
+                continue
+            if head not in seen:
+                seen.append(head)
+        return list(reversed(seen))
+
+    def _grow_group(self, cache_key: int, group: Group[S], focus: InProgress[S]) -> Generator[Any, Any, Ret]:
+        group_size = len(group.heads)
+        if all(not isinstance(head.result, Right) for head in group.heads):
+            self.group.pop(cache_key, None)
+            raise LeftRecursionError(
+                f"Left recursion detected at {cache_key} but no productive alternative was found",
+                focus.rule,
+                group_size=group_size,
+                reason='no-progress'
+            )
+
+        iteration_count = 0
+        self.growing = True
+        try:
+            improved = True
+            while improved:
+                improved = False
+                for head in group.heads:
+                    attempt = yield from self.run_rule(head.rule, head.initial_state)
+                    if isinstance(attempt, Right) and head.grow(head.rule, cache_key, attempt):
+                        iteration_count += 1
+                        if iteration_count > self.max_growth_iterations:
+                            raise LeftRecursionError(
+                                f"Left recursion iteration cap exceeded for {callable_str(head.rule)} at {cache_key}",
+                                head.rule,
+                                iterations=iteration_count,
+                                limit=self.max_growth_iterations,
+                                reason='iteration-cap',
+                                group_size=group_size
+                            )
+                        improved = True
+        except Exception:
+            self.group.pop(cache_key, None)
+            self.growing = False
+            raise
+        finally:
+            if self.growing:
+                self.growing = False
+
+        for head in group.heads:
+            final = head.result
+            bucket = self.cache.setdefault(head.rule, {})
+            if isinstance(final, Right):
+                bucket[cache_key] = final  # type: ignore
+            else:
+                bucket.pop(cache_key, None)
+
+        self.group.pop(cache_key, None)
+
+        result = focus.result
+        return result if result is not None else Left()
     
     def init_group(self, rule: Rule, key: S) -> Group[S]:
         cache_key = key.cache_key 
 
         if cache_key not in self.group:
-            heads: List[InProgress[S]] = []
             cache_bucket = self.cache.get(rule, {})
             existing = cache_bucket.get(cache_key)
-            assert isinstance(existing, InProgress), f"Expected InProgress for {callable_str(rule)} at {cache_key}, got {existing}"
-            heads.append(existing)
+            if not isinstance(existing, InProgress):
+                raise SyncraftError(f"Expected InProgress for {callable_str(rule)} at {cache_key}, got {existing}", offender=existing)
+            heads = self._collect_heads(cache_key)
+            if existing not in heads:
+                heads.append(existing)
             group = Group(heads=heads)
             self.group[cache_key] = group
         else:
             group = self.group[cache_key]
             cache_bucket = self.cache.get(rule, {})
             existing = cache_bucket.get(cache_key)
-            if existing not in group.heads:
+            if isinstance(existing, InProgress) and existing not in group.heads:
                 group.heads.append(existing)
         return group
 
@@ -264,7 +336,10 @@ class Cache(Generic[S]):
                 
 
             if is_lazy(f):
-                cache_bucket[cache_key] = InProgress(rule=f, start_key=cache_key, result=None)
+                head = InProgress(rule=f, initial_state=key)
+                cache_bucket[cache_key] = head
+                if self.stack:
+                    self.stack[-1].head = head
                 seed = yield from self.run_rule(f, key)
                 seed = yield from self.install_seed(f, seed, key, cache_bucket)
             else:
@@ -287,47 +362,20 @@ class Cache(Generic[S]):
         existing = cache_bucket.get(cache_key)
         assert isinstance(existing, InProgress), f"Expected InProgress for {callable_str(f)} at {cache_key}, got {existing}"
         assert existing.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.rule} != {f}"
-        if not self.group:
+        group = self.group.get(cache_key)
+        if group is None:
             if isinstance(seed, Left):
-                pass
+                cache_bucket.pop(cache_key, None)
             else:
                 cache_bucket[cache_key] = seed  # type: ignore
-        else:
-            group = self.group.get(cache_key)
-            if group is None:
-                if isinstance(seed, Left):
-                    pass
-                else:
-                    cache_bucket[cache_key] = seed  # type: ignore
-            else:
-                if is_lazy(f):
-                    iteration_count = 0
-                    while existing.grow(f, cache_key, seed):
-                        iteration_count += 1
-                        if iteration_count > self.max_growth_iterations:
-                            raise LeftRecursionError(
-                                f"Left recursion iteration cap exceeded for {callable_str(f)} at {cache_key}",
-                                f,
-                                iterations=iteration_count,
-                                limit=self.max_growth_iterations,
-                                reason='iteration-cap',
-                                group_size=len(group.heads)
-                            )
-                        self.log('GROWING: ', callable_str(f), 'at', cache_key, 'from', seed)
-                        self.growing = True
-                        seed = yield from self.run_rule(f, state)
-                        self.growing = False
-                        self.log('to', seed)
-                    result = existing.result if existing.result is not None else seed
-                    cache_bucket[cache_key] = result  # type: ignore
-                    if cache_key in self.group:
-                        del self.group[cache_key]
-                    return result
-                else:
-                    if isinstance(seed, Left):
-                        pass
-                    else:
-                        cache_bucket[cache_key] = seed  # type: ignore
-        return seed
+            return seed
+
+        existing.result = seed
+
+        if any(head.result is None for head in group.heads):
+            return seed
+
+        result = yield from self._grow_group(cache_key, group, existing)
+        return result
 
 
