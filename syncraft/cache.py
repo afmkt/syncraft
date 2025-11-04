@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple
+from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from rich import print
@@ -11,11 +11,6 @@ from syncraft.utils import callable_str
 def is_lazy(func: Callable[..., Any]) -> bool:
     return hasattr(func, 'is_lazy') and func.is_lazy
 
-DEFAULT_LOGGING = False
-
-def enable_logging() -> None:
-    global DEFAULT_LOGGING
-    DEFAULT_LOGGING = True
 
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
@@ -161,19 +156,23 @@ class Frame(Generic[S]):
     def __repr__(self) -> str:
         return self.__str__()
 
-
+def logging(log: bool | Callable[..., Any]) -> None:
+    Cache.DEFAULT_LOGGING = log
 @dataclass
 class Cache(Generic[S]):
+    DEFAULT_LOGGING: ClassVar[bool | Callable[..., Any]] = False
     cache: dict[Rule, Dict[int, Ret | InProgress[S]]] = field(default_factory=dict)
     stack: List[Frame[S]] = field(default_factory=list)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     group: Dict[int, Group[S]] = field(default_factory=dict)
     growing: bool = False
-    logging: bool = field(default_factory=lambda: DEFAULT_LOGGING)
+    logging: bool | Callable[..., Any] = field(default_factory=lambda: Cache.DEFAULT_LOGGING)
 
 
     def log(self, *args: Any, **kwargs: Any) -> None:
-        if self.logging:
+        if callable(self.logging):
+            self.logging(*args, **kwargs)
+        elif self.logging is True:
             print(f"[Cache]{'    ' * len(self.stack)}", *args, **kwargs)
 
     def enter(self, rule: Rule) -> None:
