@@ -26,7 +26,6 @@ from .finder import (
 	anything,
 )
 from .constraint import (
-    FrozenDict,
 	Constraint,
 	Quantifier,
 	forall,
@@ -45,6 +44,11 @@ from .ast import (
 	Marked,
 	Collect,
 )
+from .utils import (
+    FrozenDict,
+    CallWith,
+    
+)
 
 __all__ = [
     # algebra
@@ -57,7 +61,7 @@ __all__ = [
 	# finder
 	"find", "matches", "anything", "Finder",
 	# constraints
-	"Constraint", "Quantifier", "forall", "exists", "FrozenDict",
+	"Constraint", "Quantifier", "forall", "exists", "FrozenDict", "CallWith",
 	# ast
 	"AST", "Token", "Then", "ThenKind", "Choice", "ChoiceKind", "Many", "Marked", "Collect", "Bimap", "Biarrow"
 ]

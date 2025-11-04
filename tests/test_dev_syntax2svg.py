@@ -18,7 +18,7 @@ from syncraft.syntax import (
     LazySpec,
 )
 from syncraft.ast import ThenKind
-from syncraft.constraint import FrozenDict
+from syncraft.utils import FrozenDict
 
 
 def token_spec(label: str) -> FactorySpec:

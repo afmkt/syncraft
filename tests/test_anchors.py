@@ -1,7 +1,7 @@
 from enum import Enum
 from syncraft.charset import CodeUniverse, CharSet
 from syncraft.fa import NFA, FAState
-from syncraft.constraint import FrozenDict
+from syncraft.utils import FrozenDict
 
 
 def test_start_anchor_simple():

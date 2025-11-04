@@ -1,66 +1,18 @@
 from __future__ import annotations
 from typing import (
-    Callable, Generic, Tuple, TypeVar, Optional, Any, Self, 
-    Generator, List, Dict, Hashable
+    Callable, Tuple, Optional, Any, Self, 
+    Generator, List, Dict
 )
 from enum import Enum
 from dataclasses import dataclass, field, replace, is_dataclass, fields
-import collections.abc
+
 from collections import defaultdict
 from itertools import product
 from inspect import Signature
 import inspect
 from syncraft.ast import SyncraftError
-K = TypeVar('K')
-V = TypeVar('V')
-class FrozenDict(collections.abc.Mapping, Generic[K, V]):
-    """An immutable, hashable mapping.
+from syncraft.utils import FrozenDict
 
-    Behaves like a read-only dict and caches its hash, making it suitable as a
-    key in other dictionaries or for set membership. Equality compares the
-    underlying mapping to any other Mapping.
-    """
-    def __init__(self, *args, **kwargs):
-        self._data = dict(*args, **kwargs)
-        self._hash = None
-
-    def __bool__(self)->bool:
-        return bool(self._data)
-
-    def __or__(self, other: collections.abc.Mapping) -> "FrozenDict[K, V]":
-        """Return a new FrozenDict with merged keys (other overrides self)."""
-        merged = dict(self._data)
-        merged.update(other)
-        return FrozenDict(merged)
-
-    def __ror__(self, other: collections.abc.Mapping) -> "FrozenDict[K, V]":
-        """Support other | self."""
-        merged = dict(other)
-        merged.update(self._data)
-        return FrozenDict(merged)
-            
-    def __getitem__(self, key):
-        return self._data[key]
-
-    def __iter__(self):
-        return iter(self._data)
-
-    def __len__(self):
-        return len(self._data)
-        
-    def __hash__(self):
-        if self._hash is None:
-            self._hash = hash(frozenset(self._data.items()))
-        return self._hash
-
-    def __eq__(self, other):
-        if isinstance(other, collections.abc.Mapping):
-            return self._data == other
-        return NotImplemented
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self._data})"
-    
     
 @dataclass(frozen=True)
 class Binding:

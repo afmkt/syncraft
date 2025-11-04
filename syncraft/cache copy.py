@@ -197,18 +197,9 @@ class InProgress(Generic[A, Ret]):
     seed_result: Optional[Ret] = None  # Preserve original (base) successful seed for single-head growth scenarios
 
 
-
-@dataclass(frozen=True)
-class OrElse:
-    or_else: Callable[..., Any]
-    left: Callable[..., Any]
-    right: Callable[..., Any]
-    pos: int
-
 @dataclass
 class Cache(Generic[A, Ret]):
     cache: dict[Callable[..., Any], Dict[int, Ret | InProgress[A, Ret]]] = field(default_factory=dict)
-    alternatives: List[OrElse] = field(default_factory=list)
     max_growth_iterations: int = 256  # Protection against runaway single-head growth
     _lr_stack: List[InProgress[A, Ret]] = field(default_factory=list, init=False, repr=False)  # active in-progress chain
     _force: Optional[InProgress[A, Ret]] = None  # Entry scheduled for forced recompute during growth
@@ -760,10 +751,10 @@ class Cache(Generic[A, Ret]):
                 head.finalized = True
         
     def _global_fixpoint(self, max_passes: int = 64) -> Generator[Any, Any, None]:
-        """Run a global fixed-point over all recorded left-recursive heads.
-
-    This mitigates cross-position dependency gaps where an earlier head (Expr at pos A)
-    depends structurally on improvements in a later-start head (Term at pos B) whose
+        """
+        Run a global fixed-point over all recorded left-recursive heads.
+        This mitigates cross-position dependency gaps where an earlier head (Expr at pos A)
+        depends structurally on improvements in a later-start head (Term at pos B) whose
         growth completed after the earlier head finalized. We re-open finalized heads
         and force recomputation while any consumption improvements occur.
         """

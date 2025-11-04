@@ -13,7 +13,8 @@ from functools import reduce
 
 from syncraft.algebra import Algebra, Error, Either, Left, Right, SYNCRAFT_CONFIG_KEY
 from syncraft.cache import Cache, Incomplete
-from syncraft.constraint import Bindable, FrozenDict
+from syncraft.constraint import Bindable
+from syncraft.utils import FrozenDict
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 from syncraft.utils import CallWith, ThreadLocalWeakValueDict
 from syncraft.input import StreamCursor, PayloadKind

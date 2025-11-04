@@ -1,128 +1,111 @@
-# Left-Recursion Correction Example: 
-* A = (B >> A) | 'a', 
-* B = (A >> B) | 'b', 
-* input: 'a b a b'
+# Left-Recursion Correction Walkthrough
 
-## Notation
-- Stack: Top = most recent call, Bottom = oldest call
-- Cache: Shows entries for (Rule, Position)
-- Group: Mutually left-recursive heads at same position
-- Group Leader: Coordinates growth (bottom-most in group)
+The Syncraft parser runtime performs fixed-point iteration to resolve direct and mutual left recursion. This note explains how the cache, stack, and iteration logic work, using the mutually left-recursive grammar:
 
----
+```
+A = (B >> A) | 'a'
+B = (A >> B) | 'b'
+input  = "a b a b"
+```
 
-## Step-by-Step Walkthrough
+Values such as `Right((value, state))` always store both the semantic value and the updated `ParserState`. For clarity, this document abbreviates them as `Right(value, state)`.
 
-### 1. Start: parse(A, 0)
-Stack:
-- A@0
-Cache:
-- (A, 0): InProgress (seeding)
+## Core Data Structures
+- **Frame stack** – `Cache.stack` tracks active rule calls. Each frame may hold an `InProgress` head when a lazy rule (i.e., a rule marked as left-recursive) begins seeding.
+- **Cache table** – `cache[rule][position]` stores either a finished `Right` result or an `InProgress` head while seeding/growing.
+- **InProgress** – A placeholder created for lazy rules. It records the initial state and the best result found so far. `grow()` updates the stored result if a new attempt consumes more input.
+- **Group** – All `InProgress` heads that share the same starting position (`cache_key`). Groups are discovered lazily by walking the stack and are reused whenever another head at the same position is encountered. Groups allow mutual recursion of arbitrary size.
 
-### 2. Try first alternative of A: (B >> A)
-Stack:
-- B@0
-- A@0
-Cache:
-- (A, 0): InProgress (seeding)
-- (B, 0): InProgress (seeding)
+## Algorithm Overview
+1. **Entry** – When `cache.exec(rule, state)` runs, it looks up `(rule, state.cache_key)`.
+   - If a finished `Right` is present and no group is active, that result is reused immediately.
+   - If an `InProgress` head for the same position exists, the cache registers the current rule in the group and returns `Left(('SEEDING', state))`. This sentinel prevents infinite descent while the seed is still being computed.
+2. **Seeding** – For lazy rules, `exec` installs an `InProgress` head before running the rule body. The rule explores only its base (non-recursive) alternatives because recursive calls bounce back with the seeding sentinel.
+3. **Group formation** – When recursion re-enters a rule at the same position, `_collect_heads` gathers every `InProgress` encountered on the stack with the shared `cache_key`. The order is oldest-to-newest entry; the first element is exposed as `Group.leader`, but every head is treated uniformly during growth.
+4. **Seed installation** – After the initial pass returns, `install_seed` writes the seed result into the `InProgress`. If a group exists and every head now has a seed (Right or Left), the cache starts the growth phase.
+5. **Growth loop** – `_grow_group` iterates across all heads:
+   - Each head reruns its rule using the best results from group members already stored in the cache.
+   - If any attempt returns a `Right` that advances further than the head’s current best state, the head is updated and the loop repeats.
+   - If no head improves, the fixed point is reached. `InProgress` entries are replaced with the best `Right` results; failures remove the cache entry entirely.
+6. **Termination and errors** – If every seed fails, a `LeftRecursionError` (`reason='no-progress'`) is raised. If the group keeps improving beyond `max_growth_iterations`, an error with `reason='iteration-cap'` is raised. Otherwise, the cache hands the caller the final `Right` value.
 
-### 3. Try first alternative of B: (A >> B)
-Stack:
-- A@0   ← left-recursive re-entry
-- B@0
-- A@0
-Cache:
-- (A, 0): InProgress (seeding, on stack twice)
-- (B, 0): InProgress (seeding)
+## Mutual Left Recursion Example
 
-### 4. Left-Recursion Detected
-- Group formed: [A@0, B@0]
-- Group leader: A@0 (bottom-most)
+The trace below highlights how Syncraft handles the `A/B` cycle at the first input position.
 
-### 5. Seeding phase (base cases only)
-- A@0 tries 'a' at pos 0: succeeds, advances to 1
-- B@0 tries 'b' at pos 0: fails, tries (A >> B), but A@0 is in progress, so returns Left
+1. **Initial call**
+   - Stack: `A@0`
+   - Cache: `(A,0) = InProgress(seed=None)`
+2. **A selects `B >> A`**
+   - Stack: `B@0`, `A@0`
+   - Cache: `(B,0) = InProgress(seed=None)`
+3. **B selects `A >> B`**
+   - Stack: `A@0`, `B@0`, `A@0`
+   - Cache: unchanged
+   - The recursive `A@0` hits the existing `InProgress` and returns `Left(('SEEDING', state0))`.
+4. **Seeding succeeds**
+   - `A@0` falls back to `'a'`, yielding `Right('a', state1)`.
+   - `B@0` retries `A >> B`: it now obtains `Right('a', state1)` from `A@0`, then recursively calls itself at index 1.
+5. **Group expansion**
+   - Encountering `B@1` creates another `InProgress` and, through the recursive call to `A@1`, constructs the group `{A@1, B@1}`.
+6. **Growth**
+   - Once all heads have seeds, `_grow_group` iteratively re-invokes each rule in the group. Successful attempts replace standing results whenever they consume more input (i.e., advance to a higher `cache_key`). The process continues breadth-wise across the group until no head improves.
+7. **Finalization**
+   - `cache[(A,0)]` and `cache[(B,0)]` now hold finished `Right` results that advance to the furthest reachable state. The corresponding `InProgress` objects are discarded.
 
-Stack unwinds to:
-- B@0
-- A@0
-Cache:
-- (A, 0): InProgress (result: Right('a', 1))
-- (B, 0): InProgress (result: None)
+This flow repeats independently for each subsequent position (`cache_key`) that participates in left recursion, allowing the parser to handle nested or chained recursive structures.
 
-### 6. Resume B@0: try (A >> B) again
-- Calls parse(A, 0): returns Right('a', 1)
-- Calls parse(B, 1)
-Stack:
-- B@1
-- B@0
-- A@0
-Cache:
-- (A, 0): InProgress (result: Right('a', 1))
-- (B, 0): InProgress (result: None)
-- (B, 1): InProgress (seeding)
+## Complete Procedure Summary
 
-### 7. B@1 tries (A >> B)
-- Calls parse(A, 1)
-Stack:
-- A@1
-- B@1
-- B@0
-- A@0
-Cache:
-- (A, 0): InProgress (result: Right('a', 1))
-- (B, 0): InProgress (result: None)
-- (B, 1): InProgress (seeding)
-- (A, 1): InProgress (seeding)
+```
+function exec(rule, state):
+  cache_key = state.cache_key
+  bucket = cache[rule]
+  entry = bucket.get(cache_key)
 
-### 8. A@1 tries (B >> A)
-- Calls parse(B, 1)
-Stack:
-- B@1 (again)
-- A@1
-- B@1
-- B@0
-- A@0
+  if entry is finished Right and no group in progress:
+    return entry
 
-- Left-recursion detected at B@1 and A@1
-- Group: [A@1, B@1]
-- Group leader: A@1
+  if entry is InProgress:
+    group = init_group(rule, state)
+    return Left(('SEEDING', state))
 
-### ... (Continue recursively for input 'a b a b')
+  if rule is lazy:
+    head = InProgress(rule, state)
+    bucket[cache_key] = head
+    push head onto call stack
+    seed = run_rule(rule, state)
+    return install_seed(rule, seed, state, bucket)
 
----
+  seed = run_rule(rule, state)
+  if seed is Right:
+    bucket[cache_key] = seed
+  return seed
 
-## Growth Phase (Fixed-Point Iteration)
+function install_seed(rule, seed, state, bucket):
+  head = bucket[state.cache_key]  # must be InProgress
+  group = groups.get(state.cache_key)
 
-For each group (e.g., [A@0, B@0]):
-- Group leader (A@0) initiates growth:
-  - Iteratively attempts to improve results for A@0 and B@0
-  - If any member's result improves (consumes more input), repeat
-  - When no further improvement, fixed point is reached
+  head.result = seed
+  if group missing or some head still has no result:
+    if seed is Right: bucket[state.cache_key] = seed
+    else: bucket.pop(cache_key, None)
+    return seed
 
----
+  return grow_group(cache_key, group, head)
 
-## Example Table (at group [A@0, B@0])
+function grow_group(cache_key, group, focus):
+  ensure some head has Right seed else LeftRecursionError
+  repeat until no head improves:
+    for head in group.heads:
+      attempt = run_rule(head.rule, head.initial_state)
+      if attempt is Right and attempt advances further:
+        head.result = attempt
+        improved = true
 
-| Stack (top to bottom) | Group Membership | Group Leader | Cache Entry         | Result                |
-|----------------------|------------------|--------------|---------------------|-----------------------|
-| B@0                  | Yes              | No           | (B, 0): InProgress  | result: Right(...)    |
-| A@0                  | Yes              | Yes ⟵        | (A, 0): InProgress  | result: Right(...)    |
+  replace each InProgress with its best Right
+  delete groups[cache_key]
+  return focus.result or Left()
+```
 
----
-
-## Final State (after fixed point)
-- All InProgress entries for group members have their .result set to the best parse result.
-- The group is finalized.
-- The cache for (A, 0) and (B, 0) contains the InProgress objects with their .result fields set.
-
----
-
-## Notes
-- Each new input position (e.g., 1, 2, 3) forms its own group as recursion continues.
-- The process repeats for each group until the entire input is parsed or no further progress is possible.
-
----
-
-This document illustrates the stack, cache, group, and group leader at each key step of left-recursion correction for the given grammar and input.
+This algorithm naturally supports mutual left recursion because groups aggregate every `InProgress` head encountered at a shared start position, regardless of which rule created it. Each iteration uses the latest results from all group members, so as soon as one head makes progress, the others see the improvement on their next pass.

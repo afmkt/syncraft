@@ -2,7 +2,7 @@ from __future__ import annotations
 import enum
 from syncraft.fa import NFA, DFA
 from syncraft.charset import CodeUniverse
-from syncraft.constraint import FrozenDict
+from syncraft.utils import FrozenDict
 from dataclasses import dataclass
 from typing import Any, List, Tuple
 

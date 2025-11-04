@@ -9,7 +9,7 @@ from syncraft.lexer import (
     LexerProtocol
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
-from syncraft.constraint import FrozenDict
+from syncraft.utils import FrozenDict
 from syncraft.algebra import (
      Error, Algebra, YieldChannelType, SendChannelType
 )

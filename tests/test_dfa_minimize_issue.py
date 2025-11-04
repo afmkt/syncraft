@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from syncraft.fa import DFA, FAState  # type: ignore
 from syncraft.charset import CharSet, CodeUniverse
-from syncraft.constraint import FrozenDict
+from syncraft.utils import FrozenDict
 
 # Reproduction of a known minimization flaw: current DFA.minimize merges states that
 # differ only by which symbol leads to acceptance. Hopcroft refinement should split

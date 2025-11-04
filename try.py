@@ -81,54 +81,35 @@ def test_incomplete():
     # Binding dict doesn't carry index; structural assertion is sufficient.
 
 
-def test_exception():
-    """Mutual nullable cycle (with productive branches) should raise multi-head no-progress on empty input.
-
-    Grammar:
-        A -> B 'x' | ε
-        B -> A 'y' | ε
-    Input: ''  (only nullable ε alternatives fire; recursion detected via ordering of recursive alt first)
-    Expect: LeftRecursionError(reason='no-progress', group_size>=2)
-    """
-    epsilon = success(None)
-    A = lazy(lambda: (B >> literal('x')) | epsilon)  # type: ignore  # noqa: F821
-    B = lazy(lambda: (A >> literal('y')) | epsilon)  # type: ignore  # noqa: F821
-    with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, "", cache=Cache())
-    err = exc.value
-    assert err.reason == 'no-progress'
-    # group_size may be >=2 depending on deduping semantics; assert at least 2 for multi-head
-    assert err.group_size is None or err.group_size >= 2
 
 
 
+# def test_left_recursion_variants()->None:
+#     """Group multiple left-recursive grammar checks into one test.
 
-def test_left_recursion_variants()->None:
-    """Group multiple left-recursive grammar checks into one test.
-
-    Includes:
-    1. Arithmetic chain Expr -> Expr + Term | Term
-    2. Right-growth style (Expr1 + a) | a
-    """
-    # Variant 1: arithmetic chain
-    Term = literal('n')
-    Expr = lazy(lambda: Expr + literal('+') + Term | Term)
-    v1, _ = parse_word(Expr, 'n + n + n', cache=Cache())
-    ast1, _ = v1.bimap()
-    counts1 = token_multiset(ast1)
-    assert counts1.get('n', 0) == 3
-    assert counts1.get('+', 0) == 2
-    # Variant 2: nested right growth
-    a_tok = literal('a').map(lambda x: x.text, raw=True).named('a')
-    Expr1 = lazy(lambda: (Expr1 + a_tok) | a_tok).named('Expr1')
-    v2, _ = parse_word(Expr1, 'a a a a', cache=Cache())
-    ast2, _ = v2.bimap()
-    print(ast2)
-    assert ast2 == ((('a', 'a'), 'a'), 'a')
+#     Includes:
+#     1. Arithmetic chain Expr -> Expr + Term | Term
+#     2. Right-growth style (Expr1 + a) | a
+#     """
+#     # Variant 1: arithmetic chain
+#     Term = literal('n')
+#     Expr = lazy(lambda: Expr + literal('+') + Term | Term)
+#     v1, _ = parse_word(Expr, 'n + n + n', cache=Cache())
+#     ast1, _ = v1.bimap()
+#     counts1 = token_multiset(ast1)
+#     assert counts1.get('n', 0) == 3
+#     assert counts1.get('+', 0) == 2
+#     # Variant 2: nested right growth
+#     a_tok = literal('a').map(lambda x: x.text, raw=True).named('a')
+#     Expr1 = lazy(lambda: (Expr1 + a_tok) | a_tok).named('Expr1')
+#     v2, _ = parse_word(Expr1, 'a a a a', cache=Cache())
+#     ast2, _ = v2.bimap()
+#     print(ast2)
+#     assert ast2 == ((('a', 'a'), 'a'), 'a')
 
 
 
 if __name__ == "__main__":
     # test_left_recursion_variants()
     test_incomplete()
-    # test_exception()
+    

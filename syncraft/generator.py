@@ -22,7 +22,7 @@ from syncraft.ast import (
     Choice, Many, ChoiceKind,
     Then, ThenKind, SyncraftError
 )
-from syncraft.constraint import FrozenDict
+from syncraft.utils import FrozenDict
 
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax, RunnerProtocol, Incomplete

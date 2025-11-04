@@ -12,7 +12,7 @@ from syncraft.algebra import (
 )
 from syncraft.input import PayloadKind
 from collections import deque
-from syncraft.constraint import  FrozenDict
+from syncraft.utils import  FrozenDict
 from syncraft.charset import CharSet, CodeUniverse, MixedUniverseError, CodepointError
 from enum import Enum
 from collections import defaultdict

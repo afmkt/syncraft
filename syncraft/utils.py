@@ -309,6 +309,58 @@ class ThreadLocalDict(threading.local, Generic[K, V]):
         return f"{self.__class__.__name__}({self.store})"
 
 
+class FrozenDict(collections.abc.Mapping, Generic[K, V]):
+    """An immutable, hashable mapping.
+
+    Behaves like a read-only dict and caches its hash, making it suitable as a
+    key in other dictionaries or for set membership. Equality compares the
+    underlying mapping to any other Mapping.
+    """
+    def __init__(self, *args, **kwargs):
+        self._data = dict(*args, **kwargs)
+        self._hash = None
+
+    def __bool__(self)->bool:
+        return bool(self._data)
+
+    def __or__(self, other: collections.abc.Mapping) -> "FrozenDict[K, V]":
+        """Return a new FrozenDict with merged keys (other overrides self)."""
+        merged = dict(self._data)
+        merged.update(other)
+        return FrozenDict(merged)
+
+    def __ror__(self, other: collections.abc.Mapping) -> "FrozenDict[K, V]":
+        """Support other | self."""
+        merged = dict(other)
+        merged.update(self._data)
+        return FrozenDict(merged)
+            
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+        
+    def __hash__(self):
+        if self._hash is None:
+            self._hash = hash(frozenset(self._data.items()))
+        return self._hash
+
+    def __eq__(self, other):
+        if isinstance(other, collections.abc.Mapping):
+            return self._data == other
+        return NotImplemented
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self._data})"
+    
+
+
+
+
 Y = TypeVar('Y')
 Y1 = TypeVar('Y1')
 Y2 = TypeVar('Y2')
