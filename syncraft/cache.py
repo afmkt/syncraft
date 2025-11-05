@@ -163,18 +163,14 @@ class CacheEntry(Generic[S]):
         return None
 
 
-@dataclass
-class CacheRecord(Generic[S]):
-    entries: list[CacheEntry[S]] = field(default_factory=list)
+@dataclass(frozen=True)
+class Group(Generic[S]):
+    members: list[Tuple[Rule, int]] = field(default_factory=list)
+
     @property
-    def group(self) -> list[CacheEntry[S]]:
-        heads: list[CacheEntry[S]] = []
-        for entry in self.entries:
-            if isinstance(entry.payload, InProgress):
-                heads.append(entry)
-        return heads
-    def add(self, entry: CacheEntry[S]) -> None:
-        self.entries.append(entry)
+    def leader(self) -> Tuple[Rule, int]:
+        return self.members[-1]
+
 
 
 def logging(log: bool | Callable[..., Any]) -> None:
@@ -182,34 +178,29 @@ def logging(log: bool | Callable[..., Any]) -> None:
 @dataclass
 class Cache(Generic[S]):
     DEFAULT_LOGGING: ClassVar[bool | Callable[..., Any]] = False
-
+    lazy_stack: list[Tuple[Rule, int]] = field(default_factory=list)
     logging: bool | Callable[..., Any] = field(default_factory=lambda: Cache.DEFAULT_LOGGING)
 
     cache: DefaultDict[Rule, Dict[int, CacheEntry[S]]] = field(default_factory=lambda: defaultdict(dict))
     start2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
     end2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
+    agenda: list[tuple[Rule, int]] = field(default_factory=list)
 
+    group: Optional[Group[S]] = None
     max_revision: int = 256  # Protection against runaway single-head growth
 
-    def entry_at(self, pos: int, start: bool = True) -> List[CacheEntry[S]]:
-        entries: List[CacheEntry[S]] = []
-        if start:
-            rules = self.start2rules[pos]
-            for rule in rules:
-                bucket = self.cache[rule]
-                entry = bucket.get(pos)
-                if entry is not None:
-                    entries.append(entry)
-        else:
-            rules = self.end2rules[pos]
-            for rule in rules:
-                bucket = self.cache[rule]
-                for entry in bucket.values():
-                    end_key = entry.end_key
-                    if end_key == pos:
-                        entries.append(entry)
-        return entries
-
+    def build_group(self, offender: Rule, pos: int) -> Group[S]:
+        """Build group of all InProgress entries at the same position"""
+        members: list[Tuple[Rule, int]] = []
+        
+        # Find all rules with InProgress entries at this position
+        for rule in self.start2rules[pos]:
+            entry = self.cache[rule].get(pos)
+            if entry and isinstance(entry.payload, InProgress):
+                members.append((rule, pos))
+        
+        return Group(members=members)
+    
     def log(self, *args: Any, **kwargs: Any) -> None:
         if callable(self.logging):
             self.logging(*args, **kwargs)
@@ -244,24 +235,129 @@ class Cache(Generic[S]):
     def exec(self,
             f: Rule,
             key: S) -> Generator[Any, Any, Ret]:
-        cache_bucket = self.cache[f]
+        
         cache_key = key.cache_key 
-        existing = cache_bucket.get(cache_key)
-        self.log(f"Rule: {callable_str(f)} at {cache_key}: existing={existing}")
-        if existing is not None:
-            if not isinstance(existing.payload, InProgress):
-                return existing.payload
-            else:
-                assert existing.payload.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.payload.rule} != {f}"
-                if existing.payload.result is not None:
-                    self.log(f"Returning current result for {callable_str(f)} at {cache_key}: {existing.payload.result}")
-                    return existing.payload.result.flags(GROWING=True)
-                self.log(f"Left recursion detected for {callable_str(f)} at {cache_key}")
-                return Left(key).flags(SEEDING=True)  # type: ignore
-        head: InProgress[S] = InProgress(rule=f)
-        entry = CacheEntry(payload=head, state=key)
-        cache_bucket[cache_key] = entry
-        self.start2rules[cache_key].add(f)
-        seed = yield from self.run_rule(f, key)
-        return seed
+        if is_lazy(f):
+            self.lazy_stack.append((f, cache_key))
+        try:
+            cache_bucket = self.cache[f]
+            existing = cache_bucket.get(cache_key)
+            if existing is not None:
+                if not isinstance(existing.payload, InProgress):
+                    return existing.payload
+                else:
+                    assert existing.payload.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.payload.rule} != {f}"
+                    if existing.payload.result is not None:
+                        self.log(f"Returning current result for {callable_str(f)} at {cache_key}: {existing.payload.result}")
+                        return existing.payload.result.flags(SEEDING=True)
+                    else:
+                        self.group = self.build_group(f, cache_key)
+                        return Left().flags(SEEDING=True)  
+            head: InProgress[S] = InProgress(rule=f)
+            entry = CacheEntry(payload=head, state=key)
+            cache_bucket[cache_key] = entry
+            self.start2rules[cache_key].add(f)
+            seed = yield from self.run_rule(f, key)
+            self.install_seed(entry, seed)
+            seed = yield from self.post_process(f, seed)
+            return seed
+        finally:
+            if is_lazy(f):
+                self.lazy_stack.pop()
     
+    def install_seed(self, entry: CacheEntry, seed: Ret) -> None:
+        assert isinstance(entry.payload, InProgress), "install_seed called on non-InProgress payload"
+        if isinstance(seed, Right):
+            state = seed.state
+            assert state is not None, "State is None when installing seed"
+            end_key = state.cache_key
+            self.end2rules[end_key].add(entry.payload.rule)
+            new_payload = entry.payload.grow(entry.payload.rule, entry.start_key, seed)
+            if new_payload.growing:
+                new_entry = replace(entry, payload=new_payload)
+                self.cache[entry.payload.rule][entry.start_key] = new_entry
+
+    def post_process(self, rule: Rule, seed: Ret) -> Generator[Any, Any, Ret]:
+        if self.group and self.group.leader[0] is rule:
+            while True:
+                changed = False
+                for f, pos in self.group.members:
+                    entry = self.cache[f].get(pos)
+                    assert entry is not None, f"No cache entry found for {callable_str(f)} at {pos} during group resolution"
+                    payload = entry.payload
+                    assert isinstance(payload, InProgress), f"Cache entry payload is not InProgress for {callable_str(f)} at {pos} during group resolution"
+                    assert payload.rule is f, f"Cache entry rule is not {callable_str(f)} for {callable_str(f)} at {pos} during group resolution"
+                    new_result = yield from self.run_rule(f, entry.state)  # Use f, not rule
+                    new_payload = payload.grow(f, pos, new_result)  # Use f, not rule
+                    if new_payload.growing:
+                        self.cache[f][pos] = replace(entry, payload=new_payload)
+                        changed = True
+                        # Build agenda when rule improves
+                        if new_payload.result is not None:
+                            self.build_agenda_for_improvement(f, pos, new_payload.result)
+                if not changed:
+                    break
+            
+            # Process cross-position dependencies via agenda
+            yield from self.process_agenda()
+            
+            # Unwrap all InProgress entries in the group to their final results
+            for f, pos in self.group.members:
+                entry = self.cache[f].get(pos)
+                if entry and isinstance(entry.payload, InProgress):
+                    if entry.payload.result is not None:
+                        # Replace InProgress with final result
+                        final_entry = replace(entry, payload=entry.payload.result)
+                        self.cache[f][pos] = final_entry
+                    else:
+                        # No result - remove the entry
+                        del self.cache[f][pos]
+                        self.start2rules[pos].discard(f)
+            
+            # Clear group after both same-position growth and cross-position propagation
+            self.group = None
+            
+            # Agenda is automatically cleared by process_agenda(), but clear any remaining items on error
+            self.agenda.clear()
+            # ?what to return here?
+        
+        return seed
+
+    def build_agenda_for_improvement(self, improved_rule: Rule, improved_pos: int, improved_result: Ret) -> None:
+        """Find rules that could benefit from this improvement and add them to agenda"""
+        if not isinstance(improved_result, Right) or improved_result.state is None:
+            return
+            
+        improved_end = improved_result.state.cache_key
+        
+        # Find rules that ended before this improvement
+        for end_pos in range(improved_end):
+            for rule in self.end2rules.get(end_pos, set()):
+                # Find all start positions for this rule that could benefit
+                for start_pos, entry in self.cache.get(rule, {}).items():
+                    if start_pos < improved_pos and entry.end_key == end_pos:
+                        # This rule ended before the improvement, might benefit
+                        if (rule, start_pos) not in self.agenda:
+                            self.agenda.append((rule, start_pos))
+
+    def process_agenda(self) -> Generator[Any, Any, None]:
+        """Process all agenda items - re-run rules that might benefit from improvements"""
+        while self.agenda:
+            rule, pos = self.agenda.pop(0)
+            
+            # Retrieve state from cache
+            entry = self.cache.get(rule, {}).get(pos)
+            if entry is None:
+                continue  # Entry was already garbage collected or doesn't exist
+            
+            state = entry.state
+            
+            # Clear the old cache entry to force re-computation
+            del self.cache[rule][pos]
+            
+            # Remove from end2rules mapping
+            if entry.end_key is not None:
+                self.end2rules[entry.end_key].discard(rule)
+            
+            # Re-run the rule
+            yield from self.exec(rule, state)

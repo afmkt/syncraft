@@ -3,7 +3,7 @@ from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
     Type, Generator, Union, Hashable
 )
-from syncraft.ast import AST
+from syncraft.ast import AST, Ignore
 from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
@@ -372,7 +372,7 @@ class Algebra(Generic[A, S]):
                     case Right((value, next_input)):
                         if next_input == current_input:
                             break  # No progress, stop to avoid infinite loop
-                        else:
+                        elif value is not Ignore:
                             ret.append(value)
                         current_input = next_input
                         if at_most is not None and len(ret) > at_most:

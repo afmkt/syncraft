@@ -275,6 +275,29 @@ class Nothing(AST, metaclass=MetaNothing):
         return "Nothing"
 
 
+class MetaIgnore(type):
+    def __instancecheck__(cls, instance: Any) -> bool:
+        return instance is cls or super().__instancecheck__(instance)
+    def __str__(cls)->str:
+        return "Ignore"
+    def __repr__(cls)->str:
+        return "Ignore"
+    def __bool__(cls)->bool:
+        return False
+@dataclass(frozen=True)
+class Ignore(AST, metaclass=MetaIgnore):
+    """Singleton sentinel representing the absence of a value in the AST."""
+    def __call__(self)-> Ignore:
+        return self
+    def __new__(cls):
+        return cls
+    def __bool__(self)->bool:
+        return False
+    def __str__(self)->str:
+        return "Ignore"
+    def __repr__(self)->str:
+        return "Ignore"
+
 @dataclass(frozen=True)
 class Lazy(Generic[A], AST):
     value: A

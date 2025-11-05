@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from functools import total_ordering
 
 from syncraft.syntax import Syntax, RunnerProtocol
-from syncraft.input import Input, StreamCursor, PayloadKind
+from syncraft.input import StreamCursor, PayloadKind
 
 from syncraft.ast import Token, AST, SyncraftError
 from syncraft.constraint import Bindable
