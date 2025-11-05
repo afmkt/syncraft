@@ -184,7 +184,6 @@ class Cache(Generic[S]):
     cache: DefaultDict[Rule, Dict[int, CacheEntry[S]]] = field(default_factory=lambda: defaultdict(dict))
     start2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
     end2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
-    agenda: list[tuple[Rule, int]] = field(default_factory=list)
 
     group: Optional[Group[S]] = None
     max_revision: int = 256  # Protection against runaway single-head growth
@@ -279,6 +278,8 @@ class Cache(Generic[S]):
 
     def post_process(self, rule: Rule, seed: Ret) -> Generator[Any, Any, Ret]:
         if self.group and self.group.leader[0] is rule:
+            agenda: list[tuple[Rule, int]] = []  # Local agenda
+            
             while True:
                 changed = False
                 for f, pos in self.group.members:
@@ -294,12 +295,13 @@ class Cache(Generic[S]):
                         changed = True
                         # Build agenda when rule improves
                         if new_payload.result is not None:
-                            self.build_agenda_for_improvement(f, pos, new_payload.result)
+                            new_agenda_items = self.build_agenda_for_improvement(f, pos, new_payload.result)
+                            agenda.extend(new_agenda_items)
                 if not changed:
                     break
             
             # Process cross-position dependencies via agenda
-            yield from self.process_agenda()
+            yield from self.process_agenda(agenda)
             
             # Unwrap all InProgress entries in the group to their final results
             for f, pos in self.group.members:
@@ -318,15 +320,15 @@ class Cache(Generic[S]):
             self.group = None
             
             # Agenda is automatically cleared by process_agenda(), but clear any remaining items on error
-            self.agenda.clear()
-            # ?what to return here?
+            agenda.clear()
         
         return seed
 
-    def build_agenda_for_improvement(self, improved_rule: Rule, improved_pos: int, improved_result: Ret) -> None:
-        """Find rules that could benefit from this improvement and add them to agenda"""
+    def build_agenda_for_improvement(self, improved_rule: Rule, improved_pos: int, improved_result: Ret) -> list[tuple[Rule, int]]:
+        """Find rules that could benefit from this improvement and return agenda items"""
+        agenda: list[tuple[Rule, int]] = []
         if not isinstance(improved_result, Right) or improved_result.state is None:
-            return
+            return agenda
             
         improved_end = improved_result.state.cache_key
         
@@ -337,13 +339,15 @@ class Cache(Generic[S]):
                 for start_pos, entry in self.cache.get(rule, {}).items():
                     if start_pos < improved_pos and entry.end_key == end_pos:
                         # This rule ended before the improvement, might benefit
-                        if (rule, start_pos) not in self.agenda:
-                            self.agenda.append((rule, start_pos))
+                        if (rule, start_pos) not in agenda:
+                            agenda.append((rule, start_pos))
+        
+        return agenda
 
-    def process_agenda(self) -> Generator[Any, Any, None]:
+    def process_agenda(self, agenda: list[tuple[Rule, int]]) -> Generator[Any, Any, None]:
         """Process all agenda items - re-run rules that might benefit from improvements"""
-        while self.agenda:
-            rule, pos = self.agenda.pop(0)
+        while agenda:
+            rule, pos = agenda.pop(0)
             
             # Retrieve state from cache
             entry = self.cache.get(rule, {}).get(pos)

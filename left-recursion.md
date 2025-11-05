@@ -2,11 +2,178 @@
 
 The Syncraft parser runtime performs fixed-point iteration to resolve direct and mutual left recursion. This note explains how the cache, stack, and iteration logic work, using the mutually left-recursive grammar:
 
+````
+
+---
+
+# Cache.py Implementation Design
+
+## Overview
+
+The `cache.py` implementation provides a robust left-recursion correction algorithm that handles both same-position mutual recursion and cross-position dependencies. The design combines stack-based group detection with agenda-driven propagation to ensure complete dependency resolution.
+
+## Key Data Structures
+
+### Core Cache Components
+```python
+@dataclass
+class Cache(Generic[S]):
+    cache: DefaultDict[Rule, Dict[int, CacheEntry[S]]]     # Main memoization cache
+    start2rules: DefaultDict[int, set[Rule]]               # Position → rules that start there
+    end2rules: DefaultDict[int, set[Rule]]                 # Position → rules that end there
+    agenda: list[tuple[Rule, int]]                         # Cross-position dependency queue
+    group: Optional[Group[S]]                              # Current left-recursion group
+    lazy_stack: list[Tuple[Rule, int]]                     # Stack of lazy rule calls
 ```
-A = (B >> A) | 'a'
-B = (A >> B) | 'b'
-input  = "a b a b"
+
+### Cache Entries and Progress Tracking
+```python
+@dataclass
+class CacheEntry(Generic[S]):
+    payload: Ret | InProgress[S]    # Either final result or in-progress computation
+    state: S                        # Parser state when rule started
+    
+@dataclass
+class InProgress(Generic[S]):
+    rule: Rule                      # The rule being computed
+    revision: int = 0               # Number of successful growth attempts
+    growing: bool = False           # Whether latest growth succeeded
+    result: Optional[Ret] = None    # Best result found so far
 ```
+
+### Group Management
+```python
+@dataclass
+class Group(Generic[S]):
+    members: list[Tuple[Rule, int]]  # All rules participating in mutual recursion
+    
+    @property
+    def leader(self) -> Tuple[Rule, int]:
+        return self.members[-1]      # Last rule triggers group processing
+```
+
+## Algorithm Flow
+
+### 1. Entry Point (`exec` method)
+```
+1. Check cache for existing result
+2. If InProgress exists → left recursion detected
+   - Build group of all InProgress at same position
+   - Return Left(SEEDING) to try non-recursive alternatives
+3. If lazy rule → create InProgress entry
+4. Run rule and install seed
+5. Post-process for group growth and cross-position propagation
+```
+
+### 2. Group Detection and Formation
+- **Stack-based detection**: `lazy_stack` tracks active lazy rule calls
+- **Position-based grouping**: `build_group()` finds all `InProgress` entries at same position using `start2rules`
+- **Universal inclusion**: Groups include ALL rules with `InProgress` at position, not just lazy rules
+
+### 3. Same-Position Growth (`post_process` method)
+```
+For each group member:
+    1. Re-run rule with current group state
+    2. Check if result improved (consumes more input)
+    3. If improved:
+       - Update InProgress.result
+       - Increment revision
+       - Set growing = True
+       - Build agenda for cross-position dependencies
+    4. Repeat until no member improves (fixed point)
+```
+
+### 4. Cross-Position Dependency Handling
+- **Agenda building**: When rule improves, scan `end2rules` for rules that ended before improvement
+- **Propagation**: `process_agenda()` re-runs affected rules at earlier positions
+- **Invalidation**: Clear cache entries to force re-computation
+
+### 5. Finalization
+```
+1. Unwrap all InProgress → final results
+2. Clear group
+3. Clear agenda
+4. Update end2rules mappings
+```
+
+## Key Design Innovations
+
+### Stack-Based Multi-Head Detection
+- **Problem**: Traditional approaches miss concurrent parsing attempts at same position
+- **Solution**: Extract all lazy rules between recursive call frames on stack
+- **Benefit**: Natural grouping without separate bookkeeping
+
+### Position-Based Indexing
+- **start2rules**: Fast lookup of all rules beginning at position
+- **end2rules**: Efficient cross-position dependency detection
+- **Benefit**: O(1) access instead of O(cache_size) scanning
+
+### Two-Phase Dependency Resolution
+1. **Same-position phase**: Handle mutual recursion within position using groups
+2. **Cross-position phase**: Handle dependencies across positions using agenda
+- **Benefit**: Clean separation of concerns, guaranteed completeness
+
+### Incremental Growth Tracking
+- **revision counter**: Track improvement attempts per InProgress
+- **growing flag**: Signal when improvements occur
+- **Benefit**: Precise invalidation, efficient agenda building
+
+## Cross-Position Dependency Example
+
+Consider grammar:
+```
+Expr -> Expr '-' Term | Term
+Term -> Term '*' Factor | Factor  
+Factor -> '(' Expr ')' | 'n'
+```
+
+Input: `'n - n * n - n'`
+
+### Problem
+1. `Expr(0)` initially parses `'n - n'` (ends at pos 3)
+2. Later, `Term(2)` grows to parse `'n * n'` (ends at pos 5) 
+3. `Expr(0)` should retry since longer `Term` enables `'n - n * n - n'`
+
+### Solution
+1. **Group growth**: `Term(2)` improves, sets `growing=True`
+2. **Agenda building**: Scan `end2rules[0..4]` for rules ending before pos 5
+3. **Find dependency**: `Expr(0)` ended at pos 3 < 5, add to agenda
+4. **Propagation**: Re-run `Expr(0)` with improved `Term(2)` result
+5. **Complete parse**: `Expr(0)` now consumes full input
+
+## Error Handling
+
+### Non-Productive Recursion Detection
+- **Stack-based**: Detect when recursive call returns to original frame without progress
+- **Iteration limits**: Prevent infinite growth with `max_revision` counter
+- **Progress checking**: Ensure growth advances input position
+
+### Lifecycle Management
+- **Group cleanup**: Set to None after processing completes
+- **Agenda clearing**: Automatic via processing, explicit on errors  
+- **InProgress unwrapping**: Convert to final results after growth
+- **Memory management**: GC operations clean position-based indices
+
+## Performance Characteristics
+
+### Time Complexity
+- **Cache lookup**: O(1) for memoized results
+- **Group formation**: O(rules_at_position) via start2rules
+- **Growth iteration**: O(group_size × growth_iterations)
+- **Cross-position scan**: O(improved_end × avg_rules_per_position)
+
+### Space Complexity  
+- **Cache storage**: O(rules × positions × results)
+- **Position indices**: O(positions × rules_per_position)
+- **Agenda size**: O(cross_position_dependencies)
+
+### Optimizations
+- **Early termination**: Stop growth at first fixed point
+- **Targeted invalidation**: Only clear cache entries that need re-computation
+- **Lazy agenda building**: Only scan positions that actually improved
+- **Position filtering**: GC operations maintain index consistency
+
+This design achieves robust left-recursion handling while maintaining performance through careful indexing and incremental processing strategies.
 
 Values such as `Right((value, state))` always store both the semantic value and the updated `ParserState`. For clarity, this document abbreviates them as `Right(value, state)`.
 
