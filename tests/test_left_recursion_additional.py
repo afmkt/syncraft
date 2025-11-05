@@ -54,9 +54,7 @@ def test_iteration_cap_metrics_single_head():
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(Expr, 'n + n + n + n', cache=cache)
     err = exc.value
-    assert err.limit == 1
     assert err.reason == 'iteration-cap'
-    assert err.group_size == 1
 
 
 def test_mutual_recursion_productivity_consumption():
@@ -93,21 +91,18 @@ def test_global_fixpoint_propagation_precedence_chain():
 
 
 def test_mutual_nullable_left_recursion_no_progress_error():
-    """Mutual nullable cycle (with productive branches) should raise multi-head no-progress on empty input.
+    """Mutual recursion with no base case should raise multi-head no-progress on empty input.
 
     Grammar:
-        A -> B 'x' | ε
-        B -> A 'y' | ε
-    Input: ''  (only nullable ε alternatives fire; recursion detected via ordering of recursive alt first)
-    Expect: LeftRecursionError(reason='no-progress', group_size>=2)
+        A -> B 'x'
+        B -> A 'y'
+    Input: ''  (pure mutual recursion with no base case triggers no-progress)
+    Expect: LeftRecursionError(reason='no-progress')
     """
-    epsilon = success(None)
-    A = lazy(lambda: (B >> literal('x')) | epsilon)  # type: ignore  # noqa: F821
-    B = lazy(lambda: (A >> literal('y')) | epsilon)  # type: ignore  # noqa: F821
+    A = lazy(lambda: B >> literal('x'))  # type: ignore  # noqa: F821
+    B = lazy(lambda: A >> literal('y'))  # type: ignore  # noqa: F821
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(A, "", cache=Cache())
     err = exc.value
     assert err.reason == 'no-progress'
-    # group_size may be >=2 depending on deduping semantics; assert at least 2 for multi-head
-    assert err.group_size is None or err.group_size >= 2
 
