@@ -174,7 +174,7 @@ class LexerCache:
         tmp = sorted(str(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
-        print(f"Loading lexer from from {dir} with key {key}")
+        # print(f"Loading lexer from from {dir} with key {key}")
 
         with self.lock:
             if key in self.dict:
