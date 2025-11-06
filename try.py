@@ -13,7 +13,7 @@ from syncraft.token import Structured
 from rich import print
 import re
 from typing import Any, Iterable
-
+import syncraft.generator as gen
 
 def iter_tokens(ast: Any) -> Iterable[str]:
     if isinstance(ast, Token):
@@ -61,27 +61,40 @@ success = Syntax.success
 
 def t0()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 // S1) | literal('a'))
+    S1 = lazy(lambda: (S1 // S1) | literal('a'), flatten=True)
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == '((((t.a,),),),)'
+    generated, bound = gen.generate_with(S1, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+    print(ast)
+    
+    
+
+
 
 
 def t1()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    S1 = lazy(lambda: (S1 >> S1) | literal('a'), flatten=True)
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == '(t.a,)'
+    generated, bound = gen.generate_with(S1, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+    print(ast)
 
 def t2()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 + S1) | literal('a'))
+    S1 = lazy(lambda: (S1 + S1) | literal('a'), flatten=True)
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == '((((t.a, t.a), t.a), t.a), t.a)'
+    generated, bound = gen.generate_with(S1, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+    print(ast)
 
 if __name__ == "__main__":
     t0()
-    # t1()
-    # t2()
+    t1()
+    t2()

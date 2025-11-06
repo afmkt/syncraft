@@ -272,7 +272,7 @@ def test_combo() -> None:
 
 def test_optional():
     A = literal("a").mark("a")
-    syntax = A.optional()
+    syntax = A.optional
     ast1, bound = parse_word(syntax, "", cache=Cache())
     v1, _ = ast1.bimap()
     assert isinstance(v1, Nothing)
@@ -290,7 +290,7 @@ def test_nothing():
 
 def test_many_optional():
     A = literal("a")
-    syntax = A.optional().many()
+    syntax = A.optional.many()
     ast1, _ = parse_word(syntax, "a a b", cache=Cache())
     # print(ast1)
     ast2, inv = ast1.bimap()

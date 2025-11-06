@@ -236,6 +236,12 @@ class AST:
     Nodes implement ``bimap`` to transform contained values while providing an
     inverse that can reconstruct the original node from transformed output.
     """
+    @property
+    def arity(self)->int:
+        return 1
+    @property
+    def is_then(self)->bool:
+        return False
     def bimap(self, r: Bimap[Any, Any]=Bimap.identity()) -> Tuple[Any, Callable[[Any], Any]]:
         """Apply a bimap to this node, returning a value and an inverse.
 
@@ -249,6 +255,7 @@ class AST:
         """Apply the default bimap and return only the forward value."""
         v, _ = self.bimap()
         return v
+
 
 
 class MetaNothing(type):
@@ -297,18 +304,35 @@ class Ignore(AST, metaclass=MetaIgnore):
         return "Ignore"
     def __repr__(self)->str:
         return "Ignore"
+    
+
 
 @dataclass(frozen=True)
-class Lazy(Generic[A], AST):
+class Lazy(AST, Generic[A]):
     value: A
+    flatten: bool 
+    @property
+    def arity(self)->int:
+        if self.flatten:
+            if isinstance(self.value, AST):
+                return self.value.arity
+        return 1
+    
+    @property
+    def is_then(self) -> bool:
+        if self.flatten: 
+            if isinstance(self.value, AST):
+                return self.value.is_then
+        return False
+    
     def bimap(self, r: Bimap[A, C]=Bimap.identity()) -> Tuple[C, Callable[[C], Lazy[A]]]:
         """Defer to the provided mapping ``r``."""
         v, inv = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
-        return v, lambda b: Lazy(value=inv(b))
+        return v, lambda b: replace(self, value=inv(b))
 
 
 @dataclass(frozen=True)
-class Marked(Generic[A], AST):
+class Marked(AST, Generic[A]):
     """Annotate a AST node with a name.
 
     Used to tag subtrees so they can be collected by name later (e.g., in
@@ -333,13 +357,25 @@ ChoiceKind.__str__ = lambda self: self.value   # type: ignore
 ChoiceKind.__repr__ = lambda self: self.value  # type: ignore
 
 @dataclass(frozen=True)
-class Choice(Generic[A, B], AST):
+class Choice(AST, Generic[A, B]):
     """Represent a binary alternative between left and right values.
 
     ``kind`` indicates which branch was taken, or ``None`` when unknown.
     """
     kind: Optional[ChoiceKind]
     value: Optional[A | B] = None
+    @property
+    def arity(self)->int:
+        if isinstance(self.value, AST):
+            return self.value.arity
+        return 1
+    
+    @property
+    def is_then(self) -> bool:
+        if isinstance(self.value, AST):
+            return self.value.is_then
+        return False
+
     def bimap(self, r: Bimap[A | B, C]=Bimap.identity()) -> Tuple[Optional[C], Callable[[Optional[C]], Choice[A, B]]]:
         """Map over the held value if present; propagate ``None`` otherwise.
 
@@ -354,7 +390,7 @@ class Choice(Generic[A, B], AST):
             return v, lambda c: replace(self, value=inv(c) if c is not None else None, kind=None)
 
 @dataclass(frozen=True)
-class Many(Generic[A], AST):
+class Many(AST, Generic[A]):
     """A finite sequence of values within the AST."""
     value: Tuple[A, ...]
     def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[List[B], Callable[[List[B]], Many[A]]]:
@@ -382,7 +418,7 @@ class ThenKind(Enum):
 ThenKind.__str__ = lambda self: self.value   # type: ignore
 ThenKind.__repr__ = lambda self: self.value  # type: ignore    
 @dataclass(eq=True, frozen=True)
-class Then(Generic[A, B], AST):
+class Then(AST, Generic[A, B]):
     """Pair two values with a composition kind (both, left, or right).
 
     The ``kind`` determines how values are combined.
@@ -392,17 +428,46 @@ class Then(Generic[A, B], AST):
     kind: ThenKind
     left: A
     right: B
+    @property
+    def is_then(self)->bool:
+        return True
+    
+    @property
     def arity(self)->int:
         if self.kind == ThenKind.LEFT:
-            return self.left.arity() if isinstance(self.left, Then) else 1
+            return self.left.arity if isinstance(self.left, AST) else 1
         elif self.kind == ThenKind.RIGHT:
-            return self.right.arity() if isinstance(self.right, Then) else 1
+            return self.right.arity if isinstance(self.right, AST) else 1
         elif self.kind == ThenKind.BOTH:
-            left_arity = self.left.arity() if isinstance(self.left, Then) else 1
-            right_arity = self.right.arity() if isinstance(self.right, Then) else 1
+            left_arity = self.left.arity if isinstance(self.left, AST) else 1
+            right_arity = self.right.arity if isinstance(self.right, AST) else 1
             return left_arity + right_arity
         else:
             return 1
+
+    @property
+    def left_arity(self) -> int:
+        if isinstance(self.left, AST):
+            return self.left.arity
+        return 1
+        
+    @property
+    def right_arity(self) -> int:
+        if isinstance(self.right, AST):
+            return self.right.arity
+        return 1
+    @property
+    def left_is_then(self) -> bool:
+        if isinstance(self.left, AST):
+            return self.left.is_then
+        return False
+    
+    @property
+    def right_is_then(self)->bool:
+        if isinstance(self.right, AST):
+            return self.right.is_then
+        return False
+
 
     def bimap(self, r: Bimap[A | B, Any] = Bimap.identity()) -> Tuple[Any | Tuple[Any, ...], Callable[[Any | Tuple[Any, ...]], Then[A, B]]]:
         """Transform the left/right values according to ``kind``.
@@ -413,8 +478,10 @@ class Then(Generic[A, B], AST):
           mapped right values. The inverse expects a tuple whose length equals
           ``left.arity() + right.arity()`` and reconstructs the structure.
         """
-        left_size = self.left.arity() if isinstance(self.left, Then) else 1
-        right_size = self.right.arity() if isinstance(self.right, Then) else 1
+        # left_size = self.left.arity if isinstance(self.left, Then) else 1
+        # right_size = self.right.arity if isinstance(self.right, Then) else 1
+        left_size = self.left_arity
+        right_size = self.right_arity
         match self.kind:
             case ThenKind.LEFT:
                 lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
@@ -423,7 +490,8 @@ class Then(Generic[A, B], AST):
                 def invl0(c: Any) -> Then[A, B]:
                     return replace(self, left=cast(A, linv(c[0])))
                 
-                if isinstance(self.left, Then):
+                # if isinstance(self.left, Then):
+                if self.left_is_then:
                     return lb, invl
                 else:
                     return (lb,), invl0
@@ -434,26 +502,31 @@ class Then(Generic[A, B], AST):
                 
                 def invr0(c: Any) -> Then[A, B]:
                     return replace(self, right=cast(B, rinv(c[0])))
-                if isinstance(self.right, Then):
+                # if isinstance(self.right, Then):
+                if self.right_is_then:
                     return rb, invr
                 else:
                     return (rb,), invr0
             case ThenKind.BOTH:
                 lb, linv = self.left.bimap(r) if isinstance(self.left, AST) else r(self.left)
                 rb, rinv = self.right.bimap(r) if isinstance(self.right, AST) else r(self.right)
-                if isinstance(self.left, Then):
+                # if isinstance(self.left, Then):
+                if self.left_is_then:
                     left_v = lb
                 else:   
                     left_v = (lb,)
-                if isinstance(self.right, Then):
+                # if isinstance(self.right, Then):
+                if self.right_is_then:
                     right_v = rb
                 else:   
                     right_v = (rb,)
                 def invf(b: Tuple[C, ...]) -> Then[A, B]:
                     lraw: Tuple[Any, ...] = b[:left_size]
                     rraw: Tuple[Any, ...] = b[left_size:left_size + right_size]
-                    lraw = lraw[0] if not isinstance(self.left, Then) else lraw
-                    rraw = rraw[0] if not isinstance(self.right, Then) else rraw
+                    # lraw = lraw[0] if not isinstance(self.left, Then) else lraw
+                    # rraw = rraw[0] if not isinstance(self.right, Then) else rraw
+                    lraw = lraw[0] if not self.left_is_then else lraw
+                    rraw = rraw[0] if not self.right_is_then else rraw
                     la = linv(lraw)
                     ra = rinv(rraw)
                     return replace(self, left=cast(A, la), right=cast(B, ra))
@@ -468,7 +541,7 @@ E = TypeVar("E", bound=DataclassInstance)
 
 Collector = Type[E] | Callable[..., E]
 @dataclass(frozen=True)
-class Collect(Generic[A, E], AST): 
+class Collect(AST, Generic[A, E]):
     """Apply a collector to a value to build a dataclass-like instance.
 
     When the inner value is a ``Then`` and the forward result is a tuple, any

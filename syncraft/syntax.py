@@ -239,6 +239,7 @@ class FactorySpec(SyntaxSpec):
     
 @dataclass
 class LazyState(Generic[A, S]):
+    flatten: bool
     # thunk returns a Syntax[A, S], the original callable passed to Syntax.lazy
     thunk: Callable[[], Syntax[A, S]] | None = field(default = None, repr=False, compare=False)
     # cached resolved Syntax; excluded from comparisons
@@ -286,7 +287,7 @@ class LazyState(Generic[A, S]):
             ret = self.cached(alg_cls, **global_kwargs)
             self._inner_algebras_cache[key] = ret
             return ret
-        algebra = alg_cls.lazy(algebra_lazy_f).flag(is_lazy=True)
+        algebra = alg_cls.lazy(algebra_lazy_f, flatten=self.flatten).flag(is_lazy=True)
         self._algebras_cache[key] = algebra
         return algebra
         
@@ -470,11 +471,9 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax describing a non-empty, separator-delimited list.
         """
-        ret: Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S] = (
-            self + (sep >> self).many().optional()
-        )
+        ret: Syntax[Then[A, Choice[Many[Then[B, A]], Nothing]], S] = self + (sep >> self).many().optional
 
-        def f(a: Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]]) -> Many[A]:
+        def f(a: Then[A, Choice[Many[Then[B, A]], Nothing]]) -> Many[A]:
             match a:
                 case Then(
                     kind=ThenKind.BOTH,
@@ -491,7 +490,7 @@ class Syntax(Generic[A, S]):
                 case _:
                     raise SyncraftError(f"Bad data shape {a}", offender=a, expect="Then(BOTH) with Choice on the right")
 
-        def i(a: Many[A]) -> Then[A, Choice[Many[Then[B | None, A]], Optional[Nothing]]]:
+        def i(a: Many[A]) -> Then[A, Choice[Many[Then[B | None, A]], Nothing]]:
             if not isinstance(a, Many) or len(a.value) < 1:
                 raise SyncraftError(f"sep_by inverse expect Many with at least one element, got {a}", offender=a, expect="Many with at least one element")
             if len(a.value) == 1:
@@ -532,7 +531,8 @@ class Syntax(Generic[A, S]):
         """
         return self.sep_by(sep=sep).between(left=open, right=close)
 
-    def optional(self) -> Syntax[Choice[A, Optional[Nothing | B]], S]:
+    @property
+    def optional(self) -> Syntax[Choice[A, Nothing], S]:
         """Make this syntax optional.
 
         Returns a Choice of the value or Nothing when absent.
@@ -542,7 +542,7 @@ class Syntax(Generic[A, S]):
         """
         return (self | self.success(Nothing()))  # type: ignore
         
-
+    @property
     def cut(self) -> Syntax[A, S]:
         """Commit this branch: on failure, prevent trying alternatives.
 
@@ -552,6 +552,7 @@ class Syntax(Generic[A, S]):
             Syntax that marks downstream failures as committed.
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).cut())
+
 
     ###################################################### operator overloading #############################################
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Then[A, B], S]:
@@ -639,9 +640,9 @@ class Syntax(Generic[A, S]):
 
         return other.__or__(self)
 
-    def __invert__(self) -> Syntax[Choice[A, Optional[Nothing]], S]:
+    def __invert__(self) -> Syntax[Choice[A, Nothing], S]:
         """Syntactic sugar for optional() (tilde operator)."""
-        return self.optional()
+        return self.optional
 
     ######################################################################## data processing combinators #########################################################
     def bind(self, name: Optional[str] = None) -> Syntax[A, S]:
@@ -726,13 +727,13 @@ class Syntax(Generic[A, S]):
 
 
     @classmethod
-    def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+    def lazy(cls, thunk: Callable[[], Syntax[A, S]], flatten: bool = False) -> Syntax[A, S]:
         facade_cache = cls._lazy_facade_cache
         existing = facade_cache.get(thunk)
         if existing is not None:
             return existing  
 
-        helper = LazyState(thunk)
+        helper = LazyState(flatten=flatten, thunk=thunk)
 
         facade = cls(alg_f=lambda acls, **global_kwargs: helper(acls, **global_kwargs), 
                      spec=LazySpec(spec=lambda: helper.cached.spec))

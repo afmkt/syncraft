@@ -125,7 +125,7 @@ class Algebra(Generic[A, S]):
         return cast(typ, self) # type: ignore
         
     @classmethod
-    def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
+    def lazy(cls, thunk: Callable[[], Algebra[A, S]], flatten:bool) -> Algebra[A, S]:
         def algebra_lazy_run(input: S,
                              cache: Cache[S]) -> Generator[YieldChannelType,
                                                             SendChannelType,
@@ -134,7 +134,7 @@ class Algebra(Generic[A, S]):
             result = (yield from alg.run(input, cache))
             match result:
                 case Right((value, state)):
-                    return Right((Lazy(value), state))
+                    return Right((Lazy(value, flatten=flatten), state))
                 case _:
                     return result
         return cls(algebra_lazy_run)

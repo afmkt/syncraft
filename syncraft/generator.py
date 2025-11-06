@@ -338,7 +338,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     @classmethod
-    def lazy(cls, thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]]) -> Algebra[ParseResult[T], GenState[T]]:
+    def lazy(cls, thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]], flatten:bool=False) -> Algebra[ParseResult[T], GenState[T]]:
         def algebra_lazy_run(input: GenState[T],
                              cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType,
                                                                                                                         SendChannelType,
@@ -351,7 +351,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     case Left(err):
                         return Left(err)
                     case Right((value, state)):
-                        return Right((Lazy(value), state))
+                        return Right((Lazy(value, flatten=flatten), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
             else:
@@ -365,7 +365,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     case Left(err):
                         return Left(err)
                     case Right((value, state)):
-                        return Right((Lazy(value), state))
+                        return Right((Lazy(value, flatten=flatten), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
         return cls(algebra_lazy_run)

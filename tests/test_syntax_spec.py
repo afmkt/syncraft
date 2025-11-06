@@ -110,7 +110,7 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     ]
     suffix_choice = suffix_nodes[0] if len(suffix_nodes) == 1 else TestSyntax.choice(*suffix_nodes)
 
-    transformed = base_syntax + suffix_choice.many().optional()
+    transformed = base_syntax + suffix_choice.many().optional
     from syncraft.cache import Cache
 
     original_ast, _ = parse_word(Expr, "n + n + n", cache=Cache())
