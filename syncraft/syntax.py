@@ -320,7 +320,7 @@ class Syntax(Generic[A, S]):
 
 
     def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
-        cfg = getattr(alg, SYNCRAFT_CONFIG_KEY, {})
+        cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
         return self.alg_f(alg, **(cfg | global_kwargs)).named(self)
             
     def named(self, name: str) -> Syntax[A, S]:

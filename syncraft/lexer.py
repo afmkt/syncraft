@@ -174,6 +174,8 @@ class LexerCache:
         tmp = sorted(str(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+        print(f"Loading lexer from from {dir} with key {key}")
+
         with self.lock:
             if key in self.dict:
                 return self.dict[key]
@@ -224,7 +226,7 @@ class Lexer(LexerBase[C]):
             if builtin:
                 path = builtin_cache_path()
             else:
-                path = kwargs.pop("cache_path", None)
+                path = user_cache_path(kwargs.pop("cache_path", None))
 
             acc: Set[FABuilder[Any]] = set()
             for k, v in kwargs.items():
@@ -233,7 +235,7 @@ class Lexer(LexerBase[C]):
                         acc.add(v.tagged(k))
                     else:
                         acc.add(v)                    
-            return acc, user_cache_path(path)
+            return acc, path
         
         builders, dir = fabuilder(**kwargs)
         return cls.cache.load(builders=builders, 
