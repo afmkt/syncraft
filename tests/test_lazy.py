@@ -603,6 +603,20 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
     assert str(ast) == '((((t.a,),),),)'
 
 
+def test_direct_left_recursion_unproductive_now_productive1()->None:
+    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
+    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
+    ast, _ = v.bimap()
+    assert str(ast) == '(t.a,)'
+
+def test_direct_left_recursion_unproductive_now_productive2()->None:
+    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
+    S1 = lazy(lambda: (S1 + S1) | literal('a'))
+    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
+    ast, _ = v.bimap()
+    assert str(ast) == '((((t.a, t.a), t.a), t.a), t.a)'
+
 def test_direct_left_recursion_collapse()->None:
     """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
     S1 = lazy(lambda: (S1 // S1) | literal('a'))
@@ -715,3 +729,11 @@ def test_mutual_unproductive_cycle_no_progress_3():
 
 
 
+def test_complex_non_productive():
+    A = lazy(lambda: B | C).named('A')
+    B = lazy(lambda: C | A).named('B')
+    C = lazy(lambda: B | A).named('C')
+
+    with pytest.raises(LeftRecursionError) as exc:
+        parse_word(A, '', cache=Cache())
+    assert exc.value.reason == 'no-progress'

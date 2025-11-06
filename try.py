@@ -51,47 +51,22 @@ __all__.append('parse_with_state')
 
 
 
-# Reuse the pattern from existing tests: specialize Syntax with a Structured
-# literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
-# token = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).token
-# lazy = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).lazy
-# success = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).success
 logging(True)
 literal = Syntax.literal
 token = Syntax.token
 lazy = Syntax.lazy
 success = Syntax.success
 
-# Note: Syntax.lazy is used to define recursive grammars.
-# NOTE: These tests target newly added diagnostics & edge scenarios for left recursion.
-# If import paths differ, adjust accordingly (assumes existing test helpers).
-def t0()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 // S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    print(v, ast)
-    assert str(ast) == '((((t.a,),),),)'
 
 
+def t3():
+    A = lazy(lambda: B | C).named('A')
+    B = lazy(lambda: C | A).named('B')
+    C = lazy(lambda: B | A).named('C')
 
-def t1()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    print(v, ast)
-    assert str(ast) == '(t.a,)'
-
-def t2()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 + S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    ast, _ = v.bimap()
-    print(v, ast)
-    assert str(ast) == '((((t.a, t.a), t.a), t.a), t.a)'
+    with pytest.raises(LeftRecursionError) as exc:
+        parse_word(A, '', cache=Cache())
+    assert exc.value.reason == 'no-progress'
 
 if __name__ == "__main__":
-    t0()
-    t1()
-    t2()
+    t3()

@@ -334,6 +334,25 @@ class Cache(Generic[S]):
                 if not changed:
                     break
                 iteration_count += 1
+            
+            # Check if we're in a non-productive left-recursive situation:
+            # - We made no progress (iteration_count == 0)  
+            # - All group members still have no result (indicating all choices failed)
+            if iteration_count == 0:
+                all_failed = True
+                for f, pos in current_group.members:
+                    entry = self.cache[f].get(pos)
+                    if entry and isinstance(entry.payload, InProgress):
+                        if entry.payload.result is not None:
+                            all_failed = False
+                            break
+                
+                if all_failed:
+                    raise LeftRecursionError(
+                        "Left recursion detected with non-productive choices",
+                        rule,
+                        reason='no-progress'
+                    )
                 
             group_bak = current_group
             if group_pos is not None and group_pos in self.groups:
