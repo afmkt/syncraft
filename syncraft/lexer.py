@@ -7,7 +7,7 @@ from typing import (
 )
 if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
     from syncraft.syntax import FactorySpec, Syntax
-
+from syncraft.path import builtin_regex_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
@@ -144,23 +144,31 @@ class LexerBase(LexerProtocol[C]):
             return c()
         return None
 
+@dataclass
 class LexerCache:
-    def __init__(self, p: str | Path) -> None:
-        self.dir = Path(p)
-        self.dict : Dict[str, Lexer[Any]] = {}
-        self.lock = threading.RLock()
+    dirs: Set[Path] = field(default_factory=set)
+    builtin_dir: Path = field(default_factory=builtin_regex_cache_path)
+    dict: Dict[str, Lexer[Any]] = field(default_factory=dict)
+    lock: threading.RLock = field(default_factory=threading.RLock)
 
-    def load_all(self) -> None:
-        for file in self.dir.glob("*.lex"):
-            key = file.stem
-            if key not in self.dict:
-                with open(file, "rb") as f:
-                    import pickle
-                    lexer = pickle.load(f)
-                    self.dict[key] = lexer
+    @staticmethod
+    def _load(dir: Path, key: str, factory: Callable[[], Lexer[Any]]) -> Lexer[Any]:
+        file = dir / f"{key}.lex"
+        if file.exists():
+            with open(file, "rb") as f:
+                import pickle
+                lexer = pickle.load(f)
+                return lexer
+        else:
+            lexer = factory()
+            dir.mkdir(parents=True, exist_ok=True)
+            file = dir / f"{key}.lex"
+            with open(file, "wb") as f:
+                import pickle
+                pickle.dump(lexer, f)
+            return lexer
     
     def load(self, k: Set[FABuilder[Any]], factory: Callable[[], Lexer[Any]]) -> Optional[Lexer[Any]]:
-        # return factory()
         tmp = sorted(str(fb) for fb in k)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
@@ -168,30 +176,10 @@ class LexerCache:
             if key in self.dict:
                 return self.dict[key]
             else:
-                file = self.dir / f"{key}.lex"
-                if file.exists():
-                    with open(file, "rb") as f:
-                        import pickle
-                        lexer = pickle.load(f)
-                        self.dict[key] = lexer
-                        return lexer
-                else:
-                    lexer = factory()
-                    self.dict[key] = lexer
-                    self.dir.mkdir(parents=True, exist_ok=True)
-                    file = self.dir / f"{key}.lex"
-                    with open(file, "wb") as f:
-                        import pickle
-                        pickle.dump(lexer, f)
-                    return lexer
-        
+                lexer = self._load(self.builtin_dir, key, factory)
+                self.dict[key] = lexer
+                return lexer    
     
-    
-    def clear(self) -> None:
-        self.dict.clear()
-        if self.dir.exists():
-            for file in self.dir.glob("*.lex"):
-                file.unlink()
 @dataclass
 class Lexer(LexerBase[C]):
 
@@ -199,7 +187,7 @@ class Lexer(LexerBase[C]):
     actions: Dict[Tag | None, ModeAction]
     default_mode: str | None 
     _stack: deque[Mode[C]] = field(default_factory=deque)
-    cache: ClassVar[LexerCache] = LexerCache(".syncraft/lexer_cache")
+    cache: ClassVar[LexerCache] = LexerCache()
 
     
     def tags(self) -> frozenset[str|None]:
