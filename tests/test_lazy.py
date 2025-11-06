@@ -603,6 +603,11 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
     S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
+    generated, bound = gen.generate_with(S1, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     assert str(ast) == '((((t.a,),),),)'
 
@@ -622,6 +627,11 @@ def test_direct_left_recursion_unproductive_now_productive1()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
     S1 = lazy(lambda: (S1 >> S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
+    generated, bound = gen.generate_with(S1, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     assert str(ast) == '(t.a,)'
 
@@ -642,6 +652,11 @@ def test_direct_left_recursion_unproductive_now_productive2()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
     S1 = lazy(lambda: (S1 + S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
+    generated, bound = gen.generate_with(S1, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     assert str(ast) == '((((t.a, t.a), t.a), t.a), t.a)'
 
