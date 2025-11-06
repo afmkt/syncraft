@@ -2,6 +2,7 @@ from __future__ import annotations
 import pytest
 # LeftRecursionError no longer imported; xfail test does not enforce error path.
 from syncraft.syntax import Syntax
+from syncraft.ast import Many
 from syncraft.cache import LeftRecursionError
 from syncraft.lexer import ExtLexer
 from syncraft.parser import parse_word
@@ -64,52 +65,24 @@ success = Syntax.success
 # Note: Syntax.lazy is used to define recursive grammars.
 # NOTE: These tests target newly added diagnostics & edge scenarios for left recursion.
 # If import paths differ, adjust accordingly (assumes existing test helpers).
-
-
-def test_incomplete():
-    """Precedence chain: Expr -> Expr '-' Term | Term; Term -> Term '*' Factor | Factor; Factor -> '(' Expr ')' | 'n'
-    Ensures improvements in deeper nonterminals propagate so Expr consumes full input.
-    """
-    Factor = lazy(lambda: (literal('(') >> Expr >> literal(')')) | literal('n'))  # type: ignore  # noqa: F821
-    Term = lazy(lambda: (Term + literal('*') + Factor) | Factor)
-    Expr = lazy(lambda: (Expr + literal('-') + Term) | Term)
-    v, s = parse_word(Expr, 'n - n * n - n', cache=Cache())
-    ast, end_state = v.bimap()
-    # Ensure multiple 'n' tokens included
-    print(ast)
-    assert str(ast).count('n') >= 4
-    # Binding dict doesn't carry index; structural assertion is sufficient.
+def t0()->None:
+    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
+    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
+    ast, _ = v.bimap()
+    assert str(ast) == '((((t.a,),),),)'
 
 
 
-
-
-# def test_left_recursion_variants()->None:
-#     """Group multiple left-recursive grammar checks into one test.
-
-#     Includes:
-#     1. Arithmetic chain Expr -> Expr + Term | Term
-#     2. Right-growth style (Expr1 + a) | a
-#     """
-#     # Variant 1: arithmetic chain
-#     Term = literal('n')
-#     Expr = lazy(lambda: Expr + literal('+') + Term | Term)
-#     v1, _ = parse_word(Expr, 'n + n + n', cache=Cache())
-#     ast1, _ = v1.bimap()
-#     counts1 = token_multiset(ast1)
-#     assert counts1.get('n', 0) == 3
-#     assert counts1.get('+', 0) == 2
-#     # Variant 2: nested right growth
-#     a_tok = literal('a').map(lambda x: x.text, raw=True).named('a')
-#     Expr1 = lazy(lambda: (Expr1 + a_tok) | a_tok).named('Expr1')
-#     v2, _ = parse_word(Expr1, 'a a a a', cache=Cache())
-#     ast2, _ = v2.bimap()
-#     print(ast2)
-#     assert ast2 == ((('a', 'a'), 'a'), 'a')
+def t1()->None:
+    """Additional confirmation of S → S S | 'a' collapse behavior (single terminal)."""
+    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    v, _ = parse_word(S1, 'a a a', cache=Cache())
+    ast, _ = v.bimap()
+    print(v, ast)
+    assert str(ast) == '((t.a,),)'
 
 
 
 if __name__ == "__main__":
-    # test_left_recursion_variants()
-    test_incomplete()
-    
+    t1()

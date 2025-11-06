@@ -10,12 +10,25 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 
 
 def callable_str(obj:Any)->str:
-    if hasattr(obj, '__rule_name__'):
-        return f"<{obj.__rule_name__} @ {hex(id(obj))}>"
-    elif hasattr(obj, '__name__'):
-        return f"<{obj.__name__} @ {hex(id(obj))}>"
+    if not callable(obj):
+        return repr(obj)
+    original = str(obj)
+    idstr = hex(id(obj))
+    name = obj.__rule_name__ if hasattr(obj, '__rule_name__') else (
+        obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
+    if 'lazy' in original:
+        return f"{idstr} @ LAZY({name})"
+    elif 'flat_map' in original:
+        return f"{idstr} @ THEN({name})"
+    elif 'or_else' in original:
+        return f"{idstr} @ OR_ELSE({name})"
+    elif 'map' in original:
+        return f"{idstr} @ MAP({name})"
+    elif 'lex' in original:
+        return f"{idstr} @ LEX({name})"
     else:
-        return f"<{obj.__class__.__name__} instance @ {hex(id(obj))}>"
+        return f"{idstr} @ {name}"
+    
 
 
 

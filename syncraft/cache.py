@@ -8,9 +8,12 @@ from syncraft.ast import SyncraftError
 from rich import print
 from syncraft.utils import callable_str
 from collections import defaultdict
+
 def is_lazy(func: Callable[..., Any]) -> bool:
     return hasattr(func, 'is_lazy') and func.is_lazy
 
+def is_choice(func: Callable[..., Any]) -> bool:
+    return hasattr(func, 'is_choice') and func.is_choice
 
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
@@ -165,12 +168,12 @@ class CacheEntry(Generic[S]):
 
 @dataclass(frozen=True)
 class Group(Generic[S]):
-    members: list[Tuple[Rule, int]] = field(default_factory=list)
-
-    @property
-    def leader(self) -> Tuple[Rule, int]:
-        return self.members[-1]
-
+    leader: Tuple[Rule, int]
+    members: frozenset[Tuple[Rule, int]] = field(default_factory=frozenset)
+    def __bool__(self) -> bool:
+        assert ((self.leader is None and len(self.members) == 0) or 
+                (self.leader is not None and len(self.members) > 0)), "Group must have either no leader and no members, or one leader and members"
+        return self.leader is not None and len(self.members) > 0
 
 
 def logging(log: bool | Callable[..., Any]) -> None:
@@ -178,14 +181,15 @@ def logging(log: bool | Callable[..., Any]) -> None:
 @dataclass
 class Cache(Generic[S]):
     DEFAULT_LOGGING: ClassVar[bool | Callable[..., Any]] = False
-    lazy_stack: list[Tuple[Rule, int]] = field(default_factory=list)
+
     logging: bool | Callable[..., Any] = field(default_factory=lambda: Cache.DEFAULT_LOGGING)
 
+    stack: list[Tuple[Rule, int]] = field(default_factory=list)
     cache: DefaultDict[Rule, Dict[int, CacheEntry[S]]] = field(default_factory=lambda: defaultdict(dict))
     start2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
     end2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
 
-    group: Optional[Group[S]] = None
+    groups: dict[int, Group[S]] = field(default_factory=dict)  # Groups per position
     max_revision: int = 256  # Protection against runaway single-head growth
 
     @property
@@ -198,17 +202,36 @@ class Cache(Generic[S]):
         """Alias for max_revision to match test interface"""
         self.max_revision = value
 
-    def build_group(self, offender: Rule, pos: int) -> Group[S]:
-        """Build group of all InProgress entries at the same position"""
+
+    def build_group(self, offender: Rule, pos: int) -> None:
         members: list[Tuple[Rule, int]] = []
-        
-        # Find all rules with InProgress entries at this position
+        has_choice = False
+        has_lazy = False
         for rule in self.start2rules[pos]:
             entry = self.cache[rule].get(pos)
             if entry and isinstance(entry.payload, InProgress):
                 members.append((rule, pos))
+                if is_choice(rule):
+                    has_choice = True
+                if is_lazy(rule):
+                    has_lazy = True
+
+        existing_group = self.groups.get(pos)
+        if existing_group is None:
+            if not has_lazy:
+                return None
+            ret: Group[S] = Group(leader=(offender, pos), members=frozenset(members))
+            if not has_choice:
+                raise LeftRecursionError(
+                    "Left recursion detected but no Choice rule found in group",
+                    offender,
+                    reason='no-choice'
+                )            
+        else:
+            ret = replace(existing_group, members=existing_group.members | frozenset(members))
+        self.groups[pos] = ret
         
-        return Group(members=members)
+
     
     def log(self, *args: Any, **kwargs: Any) -> None:
         if callable(self.logging):
@@ -246,46 +269,33 @@ class Cache(Generic[S]):
             key: S) -> Generator[Any, Any, Ret]:
         
         cache_key = key.cache_key 
-        # print(f"[EXEC] Starting exec for {callable_str(f)} at pos {cache_key}")
-        
-        if is_lazy(f):
-            self.lazy_stack.append((f, cache_key))
+        self.stack.append((f, cache_key))
         try:
             cache_bucket = self.cache[f]
             existing = cache_bucket.get(cache_key)
             if existing is not None:
-                # print(f"[EXEC] Found existing entry for {callable_str(f)} at pos {cache_key}: {type(existing.payload).__name__}")
                 if not isinstance(existing.payload, InProgress):
-                    # print(f"[EXEC] Returning cached result: {existing.payload}")
                     return existing.payload
                 else:
                     assert existing.payload.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.payload.rule} != {f}"
                     if existing.payload.result is not None:
-                        # print(f"[EXEC] InProgress has result, returning with SEEDING flag: {existing.payload.result}")
                         return existing.payload.result.flags(SEEDING=True)
                     else:
-                        # print("[EXEC] InProgress has no result, building group and returning Left with SEEDING")
-                        self.group = self.build_group(f, cache_key)
+                        self.build_group(f, cache_key)  # Group is stored in self.groups[cache_key]
                         return Left().flags(SEEDING=True)  
             
-            # print(f"[EXEC] No existing entry, creating new InProgress for {callable_str(f)} at pos {cache_key}")
             head: InProgress[S] = InProgress(rule=f)
             entry = CacheEntry(payload=head, state=key)
             cache_bucket[cache_key] = entry
             self.start2rules[cache_key].add(f)
-            
-            # print(f"[EXEC] Running rule {callable_str(f)} for seeding")
             seed = yield from self.run_rule(f, key)
-            # print(f"[EXEC] Rule {callable_str(f)} seed result: {seed}")
-            
             self.install_seed(entry, seed)
             seed = yield from self.post_process(f, seed)
-            # print(f"[EXEC] Post-process complete for {callable_str(f)}, returning: {seed}")
             return seed
         finally:
-            if is_lazy(f):
-                self.lazy_stack.pop()
-    
+            self.stack.pop()
+
+
     def install_seed(self, entry: CacheEntry, seed: Ret) -> None:
         assert isinstance(entry.payload, InProgress), "install_seed called on non-InProgress payload"
         if isinstance(seed, Right):
@@ -299,17 +309,21 @@ class Cache(Generic[S]):
                 self.cache[entry.payload.rule][entry.start_key] = new_entry
 
     def post_process(self, rule: Rule, seed: Ret) -> Generator[Any, Any, Ret]:
-        if self.group and self.group.leader[0] is rule:
+        # Find the group where this rule is the leader
+        current_group = None
+        group_pos = None
+        for pos, group in self.groups.items():
+            if group.leader[0] is rule:
+                current_group = group
+                group_pos = pos
+                break
+        
+        # Only the leader should drive the growing process
+        if current_group is not None:
             agenda: list[tuple[Rule, int]] = []  # Local agenda
-            current_group = self.group  # Save reference before clearing
-            
-            # Remember the leader's position for final result retrieval
-            leader_pos = current_group.leader[1]
-            
+    
             # Error detection: track iterations and progress
-            iteration_count = 0
-            # has_made_progress = False  # TODO: Re-enable when no-progress detection is refined
-            
+            iteration_count = 0            
             while True:
                 # Check iteration cap before attempting growth
                 if iteration_count >= self.max_revision:
@@ -321,6 +335,7 @@ class Cache(Generic[S]):
                     )
                 
                 changed = False
+                # Process all group members, but handle cross-position dependencies immediately
                 for f, pos in current_group.members:
                     entry = self.cache[f].get(pos)
                     assert entry is not None, f"No cache entry found for {callable_str(f)} at {pos} during group resolution"
@@ -332,36 +347,22 @@ class Cache(Generic[S]):
                     if new_payload.growing:
                         self.cache[f][pos] = replace(entry, payload=new_payload)
                         changed = True
-                        # has_made_progress = True  # TODO: Re-enable when no-progress detection is refined
-                        # Build agenda when rule improves
+                        # has_made_progress = True  
+                        # Build agenda when rule improves 
                         if new_payload.result is not None:
-                            new_agenda_items = self.build_agenda_for_improvement(f, pos, new_payload.result)
+                            new_agenda_items = self.build_agenda(f, pos, new_payload.result)
+                            # Add to agenda for processing after this iteration
                             agenda.extend(new_agenda_items)
-                
                 if not changed:
                     break
-                    
                 iteration_count += 1
-            
-            # TODO: Implement proper no-progress detection 
-            # Current implementation is too aggressive and interferes with base cases
-            # For now, only detect no-progress in very specific scenarios
-            # if not has_made_progress and isinstance(seed, Left):
-            #     raise LeftRecursionError(
-            #         "Left recursion made no progress",
-            #         rule,
-            #         reason='no-progress',
-            #         revision=iteration_count
-            #     )
-            
-            # Clear group before processing agenda to avoid recursive access
-            self.group = None
-            
-            # Process cross-position dependencies via agenda
+                
+            group_bak = current_group
+            if group_pos is not None and group_pos in self.groups:
+                del self.groups[group_pos]  # Remove the group from active groups
             yield from self.process_agenda(agenda)
-            
-            # CRITICAL FIX: After all improvements, return the best result from the lead rule's InProgress entry
-            leader_entry = self.cache.get(rule, {}).get(leader_pos)
+
+            leader_entry = self.cache.get(group_bak.leader[0], {}).get(group_bak.leader[1])
             if leader_entry and isinstance(leader_entry.payload, InProgress):
                 if leader_entry.payload.result is not None:
                     return leader_entry.payload.result
@@ -375,21 +376,17 @@ class Cache(Generic[S]):
         
         return seed
 
-    def build_agenda_for_improvement(self, improved_rule: Rule, improved_pos: int, improved_result: Ret) -> list[tuple[Rule, int]]:
+    def build_agenda(self, improved_rule: Rule, improved_pos: int, improved_result: Ret) -> list[tuple[Rule, int]]:
         """Find rules that could benefit from this improvement and return agenda items"""
         agenda: list[tuple[Rule, int]] = []
         if not isinstance(improved_result, Right) or improved_result.state is None:
             return agenda
             
         improved_end = improved_result.state.cache_key
-        
-        # print(f"[AGENDA] Rule {callable_str(improved_rule)} at pos {improved_pos} improved, ended at {improved_end}")
-        # print(f"[AGENDA] Looking for rules that ended before position {improved_end}")
-        
+                
         # Find rules that ended before this improvement
         for end_pos in range(improved_end):
             rules_at_end = self.end2rules.get(end_pos, set())
-            # print(f"[AGENDA] Position {end_pos} has rules: {[callable_str(r) for r in rules_at_end]}")
             for rule in rules_at_end:
                 # Find all start positions for this rule that could benefit
                 for start_pos, entry in self.cache.get(rule, {}).items():
@@ -400,33 +397,26 @@ class Cache(Generic[S]):
                     if start_pos <= improved_pos and entry.end_key == end_pos:
                         # This rule ended before the improvement, might benefit
                         if (rule, start_pos) not in agenda:
-                            # print(f"[AGENDA] Adding to agenda: {callable_str(rule)} at pos {start_pos} (ended at {end_pos}) might benefit from improvement at {improved_pos}")
                             agenda.append((rule, start_pos))
         
         return agenda
 
     def process_agenda(self, agenda: list[tuple[Rule, int]]) -> Generator[Any, Any, None]:
         """Process all agenda items - re-run rules that might benefit from improvements"""
-        # print(f"[AGENDA] Processing agenda with {len(agenda)} items")
         while agenda:
             rule, pos = agenda.pop(0)
-            # print(f"[AGENDA] Processing: {callable_str(rule)} at pos {pos}")
             
             # Retrieve entry from cache
             entry = self.cache.get(rule, {}).get(pos)
             if entry is None:
-                # print(f"[AGENDA] Skipping - no cache entry for {callable_str(rule)} at pos {pos}")
                 continue  # Entry was already garbage collected or doesn't exist
             
             if not isinstance(entry.payload, InProgress):
-                # print(f"[AGENDA] Skipping - entry is not InProgress for {callable_str(rule)} at pos {pos}")
                 continue  # Entry is already finalized
             
             state = entry.state
             old_result = entry.payload.result
-            
-            # print(f"[AGENDA] Re-running {callable_str(rule)} at pos {pos} - current result: {old_result}")
-            
+                        
             # Re-run the rule WITHOUT clearing the cache entry
             # This allows the rule to see and benefit from existing InProgress improvements
             new_result = yield from self.run_rule(rule, state)
@@ -450,10 +440,5 @@ class Cache(Generic[S]):
                     self.end2rules[new_end].add(rule)
                     
                     # Build new agenda items for this improvement
-                    new_agenda_items = self.build_agenda_for_improvement(rule, pos, new_result)
+                    new_agenda_items = self.build_agenda(rule, pos, new_result)
                     agenda.extend(new_agenda_items)
-                # else:
-                #     print(f"[AGENDA] Rule {callable_str(rule)} at pos {pos} no improvement ({old_end} -> {new_end})")
-            # else:
-            #     print(f"[AGENDA] Rule {callable_str(rule)} at pos {pos} failed to produce valid result: {new_result}")
-        # print("[AGENDA] Finished processing agenda")

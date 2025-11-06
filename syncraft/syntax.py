@@ -286,7 +286,7 @@ class LazyState(Generic[A, S]):
             ret = self.cached(alg_cls, **global_kwargs)
             self._inner_algebras_cache[key] = ret
             return ret
-        algebra = alg_cls.lazy(algebra_lazy_f).mark_lazy()
+        algebra = alg_cls.lazy(algebra_lazy_f).flag(is_lazy=True)
         self._algebras_cache[key] = algebra
         return algebra
         
@@ -631,7 +631,7 @@ class Syntax(Generic[A, S]):
         """
 
         return replace(self, 
-                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)), # type: ignore
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)).flag(is_choice=True), # type: ignore
                        spec=ChoiceSpec(left=self.spec, right=other.spec))
         
 

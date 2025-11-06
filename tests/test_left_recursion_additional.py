@@ -104,5 +104,5 @@ def test_mutual_nullable_left_recursion_no_progress_error():
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(A, "", cache=Cache())
     err = exc.value
-    assert err.reason == 'no-progress'
+    assert err.reason == 'no-choice'
 

@@ -309,6 +309,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     v_raw, _ = parse_word(Expr, '1 + 2 * 3', cache=Cache())
     raw, _ = v_raw.bimap()
     # Raw structural assertions
+    print(raw)
     assert isinstance(raw, tuple) and len(raw) == 3
     left_num, plus_tok, right_term = raw
     assert str(left_num) == 't.1'
@@ -691,7 +692,7 @@ def test_mutual_unproductive_cycle_no_progress():
     B = lazy(lambda: A)
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(A, '', cache=Cache())
-    assert exc.value.reason == 'no-progress'
+    assert exc.value.reason == 'no-choice'
 
 
 
@@ -708,7 +709,7 @@ def test_mutual_unproductive_cycle_no_progress_3():
     C = lazy(lambda: A)  
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(A, '', cache=Cache())
-    assert exc.value.reason == 'no-progress'
+    assert exc.value.reason == 'no-choice'
 
 
 

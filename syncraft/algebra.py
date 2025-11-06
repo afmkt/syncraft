@@ -65,16 +65,15 @@ class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
     _name: Hashable | None = None
-    
 
-    
     @staticmethod
-    def _mark_lazy(func: Callable[..., Any]) -> Callable[..., Any]:
-        object.__setattr__(func, 'is_lazy', True)
+    def _flag(func: Callable[..., Any], **kwargs: Hashable) -> Callable[..., Any]:
+        for key, value in kwargs.items():
+            object.__setattr__(func, key, value)
         return func
 
-    def mark_lazy(self) -> Algebra[A, S]:
-        Algebra._mark_lazy(self.run_f)
+    def flag(self, **kwargs: Hashable) -> Algebra[A, S]:
+        Algebra._flag(self.run_f, **kwargs)
         return self
         
 
@@ -83,7 +82,7 @@ class Algebra(Generic[A, S]):
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
     def named(self, name: Hashable) -> Algebra[A, S]:
-        object.__setattr__(self.run_f, '__rule_name__', name)
+        Algebra._flag(self.run_f, __rule_name__=name)
         return replace(self, _name=name)
 
 
@@ -144,8 +143,8 @@ class Algebra(Generic[A, S]):
     def fail(cls, error: Any) -> Algebra[Any, S]:
         def fail_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                           SendChannelType, 
-                                                                           Either[Any, Tuple[A, S]]]:
+                                                SendChannelType, 
+                                                Either[Any, Tuple[A, S]]]:
             yield from ()
             return Left(Error(
                 error=error,
@@ -301,32 +300,27 @@ class Algebra(Generic[A, S]):
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
         def or_else_run(input: S, 
                         cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                                SendChannelType,
-                                                                                Either[Any, Tuple[Choice[A, B], S]]]:
-            # cache.enter(or_else_run, input, left=self.run_f, right=other.run_f)
-            # try:
-                inp = input.enter()
-                left = yield from self.run(inp, cache)
-                match left:
-                    case Right((value, state)):
-                        return Right((Choice(kind=ChoiceKind.LEFT, value=value), state.leave()))
-                    case Left(err):
-                        if isinstance(err, Error) and err.committed:
-                            return Left(replace(err, committed=False))
-                        other_result = yield from other.run(inp, cache)
-                        match other_result:
-                            case Right((other_value, other_state)):
-                                return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state.leave()))
-                            case Left(other_err):
-                                return Left(other_err)
-                        raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
-                raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
-            # finally:
-            #     cache.leave()
+                                                    SendChannelType,
+                                                    Either[Any, Tuple[Choice[A, B], S]]]:
+            inp = input.enter()
+            left = yield from self.run(inp, cache)
+            match left:
+                case Right((value, state)):
+                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), state.leave()))
+                case Left(err):
+                    if isinstance(err, Error) and err.committed:
+                        return Left(replace(err, committed=False))
+                    other_result = yield from other.run(inp, cache)
+                    match other_result:
+                        case Right((other_value, other_state)):
+                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state.leave()))
+                        case Left(other_err):
+                            return Left(other_err)
+                    raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
+            raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
         
         alg = replace(self, run_f=or_else_run) # type: ignore
-        from typing import cast as _cast
-        return _cast(Algebra[Choice[A, B], S], alg)
+        return cast(Algebra[Choice[A, B], S], alg)
         
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
