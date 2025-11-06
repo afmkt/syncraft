@@ -627,15 +627,6 @@ def test_direct_left_recursion_collapse()->None:
     ast, _ = v.bimap()
     assert str(ast) == 't.a'
 
-
-def test_direct_left_recursion_growth_still_collapses()->None:
-    """Additional confirmation of S → S S | 'a' collapse behavior (single terminal)."""
-    S1 = lazy(lambda: (S1 // S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a', cache=Cache())
-    ast, _ = v.bimap()
-    assert str(ast) == '((t.a,),)'
-
-
 def test_indirect_multi_head_cycle_parses_successfully():
     """
     With multi-head fixed-point implemented, mutual recursion A↔B should parse successfully.

@@ -39,4 +39,4 @@ dev = [
 packages = ["syncraft"]
 
 [tool.setuptools.package-data]
-syncraft = ["grammars/**/*"]
+syncraft = ["cache/**/*"]
