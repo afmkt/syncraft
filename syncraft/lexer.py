@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import (
     Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, ClassVar,
-    runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING
+    runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING, List
 )
 if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
     from syncraft.syntax import FactorySpec, Syntax
@@ -19,6 +19,7 @@ from pathlib import Path
 import hashlib
 import threading
 from syncraft.token import TokenSpec, TokenSpecBase, all_subclasses
+import pickle
 
 
 
@@ -146,40 +147,52 @@ class LexerBase(LexerProtocol[C]):
 
 @dataclass
 class LexerCache:
-    dirs: Set[Path] = field(default_factory=set)
-    builtin_dir: Path = field(default_factory=lambda: builtin_cache_path("regex"))
+
     dict: Dict[str, Lexer[Any]] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
     @staticmethod
-    def _load(dir: Path, key: str, factory: Callable[[], Lexer[Any]]) -> Lexer[Any]:
+    def _load(dir: Path, key: str) -> Optional[Lexer[Any]]:
         file = dir / f"{key}.lex"
         if file.exists():
             with open(file, "rb") as f:
-                import pickle
-                lexer = pickle.load(f)
-                return lexer
-        else:
-            lexer = factory()
-            dir.mkdir(parents=True, exist_ok=True)
-            file = dir / f"{key}.lex"
-            with open(file, "wb") as f:
-                import pickle
-                pickle.dump(lexer, f)
-            return lexer
+                return pickle.load(f)
+        return None
     
-    def load(self, k: Set[FABuilder[Any]], factory: Callable[[], Lexer[Any]]) -> Optional[Lexer[Any]]:
-        tmp = sorted(str(fb) for fb in k)
+    @staticmethod
+    def _save(dir: Path, key: str, lexer: Lexer[Any]) -> None:
+        dir.mkdir(parents=True, exist_ok=True)
+        file = dir / f"{key}.lex"
+        with open(file, "wb") as f:
+            pickle.dump(lexer, f)
+
+    def load(self, 
+             *,
+             builders: Set[FABuilder[Any]], 
+             factory: Callable[[], Lexer[Any]],
+             dir: Path) -> Lexer[Any]:
+        tmp = sorted(str(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
         with self.lock:
             if key in self.dict:
                 return self.dict[key]
             else:
-                lexer = self._load(self.builtin_dir, key, factory)
-                self.dict[key] = lexer
-                return lexer    
-    
+                lexer = self._load(dir, key)
+                if lexer is not None:
+                    self.dict[key] = lexer
+                    return lexer
+                lexer = factory()
+                if lexer is not None:
+                    self.dict[key] = lexer
+                    self._save(dir, key, lexer)
+                    return lexer
+                raise SyncraftError(
+                    "Lexer factory did not produce a lexer",
+                    offender=factory,
+                    expect="a Lexer instance",
+                )
+            
 @dataclass
 class Lexer(LexerBase[C]):
 
@@ -206,7 +219,13 @@ class Lexer(LexerBase[C]):
                universe: CodeUniverse, 
                default_mode:str|None=None,
                **kwargs: Any) -> Optional["Lexer[C]"]:
-        def fabuilder(**kwargs: Any) -> Set[FABuilder[Any]]:
+        def fabuilder(**kwargs: Any) -> Tuple[Set[FABuilder[Any]], Path]:
+            builtin = kwargs.pop("builtin", False)
+            if builtin:
+                path = builtin_cache_path()
+            else:
+                path = kwargs.pop("cache_path", None)
+
             acc: Set[FABuilder[Any]] = set()
             for k, v in kwargs.items():
                 if isinstance(v, FABuilder):
@@ -214,10 +233,12 @@ class Lexer(LexerBase[C]):
                         acc.add(v.tagged(k))
                     else:
                         acc.add(v)                    
-            return acc
+            return acc, user_cache_path(path)
         
-        builders = fabuilder(**kwargs)
-        return cls.cache.load(builders, lambda: cls.from_builders(universe, *builders, default_mode=default_mode))
+        builders, dir = fabuilder(**kwargs)
+        return cls.cache.load(builders=builders, 
+                              factory=lambda: cls.from_builders(universe, *builders, default_mode=default_mode),
+                              dir=dir)
         
             
     @classmethod

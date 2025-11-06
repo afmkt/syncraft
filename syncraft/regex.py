@@ -117,7 +117,7 @@ class AnchorKind(Enum):
 
 
 B = FABuilder[str]
-S = Syntax.config(universe=CodeUniverse.unicode())
+S = Syntax.config(universe=CodeUniverse.unicode(), builtin=True)
 # number            = digit { digit } ;
 number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text))
 
