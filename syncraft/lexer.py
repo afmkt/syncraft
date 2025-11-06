@@ -220,13 +220,14 @@ class Lexer(LexerBase[C]):
                *, 
                universe: CodeUniverse, 
                default_mode:str|None=None,
+               builtin: bool = False,
+               cache_path: str | Path | None = None,
                **kwargs: Any) -> Optional["Lexer[C]"]:
         def fabuilder(**kwargs: Any) -> Tuple[Set[FABuilder[Any]], Path]:
-            builtin = kwargs.pop("builtin", False)
             if builtin:
                 path = builtin_cache_path()
             else:
-                path = user_cache_path(kwargs.pop("cache_path", None))
+                path = user_cache_path(cache_path)
 
             acc: Set[FABuilder[Any]] = set()
             for k, v in kwargs.items():
