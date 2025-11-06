@@ -169,6 +169,8 @@ class Cache(Generic[S]):
 
     groups: dict[int, Group[S]] = field(default_factory=dict)  # Groups per position
     max_revision: int = 256  # Protection against runaway single-head growth
+    max_agenda_size: int = 1000  # Protection against agenda explosion
+    max_agenda_depth: int = 50   # Protection against deep agenda recursion
 
     @property
     def max_growth_iterations(self) -> int:
@@ -299,6 +301,7 @@ class Cache(Generic[S]):
         # Only the leader should drive the growing process
         if current_group is not None:
             agenda: list[tuple[Rule, int]] = []  # Local agenda
+            agenda_set: set[tuple[Rule, int]] = set()  # Deduplication set
     
             # Error detection: track iterations and progress
             iteration_count = 0            
@@ -323,8 +326,11 @@ class Cache(Generic[S]):
 
                         if new_payload.result is not None:
                             new_agenda_items = self.build_agenda(pos, new_payload.result)
-                            # Add to agenda for processing after this iteration
-                            agenda.extend(new_agenda_items)
+                            # Add to agenda with deduplication
+                            for item in new_agenda_items:
+                                if item not in agenda_set:
+                                    agenda_set.add(item)
+                                    agenda.append(item)
                 if not changed:
                     break
                 iteration_count += 1
@@ -346,6 +352,7 @@ class Cache(Generic[S]):
     def build_agenda(self, improved_pos: int, improved_result: Ret) -> list[tuple[Rule, int]]:
         """Find rules that could benefit from this improvement and return agenda items"""
         agenda: list[tuple[Rule, int]] = []
+        agenda_set: set[tuple[Rule, int]] = set()  # O(1) deduplication
         if not isinstance(improved_result, Right) or improved_result.state is None:
             return agenda
             
@@ -363,15 +370,29 @@ class Cache(Generic[S]):
                     # be able to consume more input by incorporating this improvement
                     if start_pos <= improved_pos and entry.end_key == end_pos:
                         # This rule ended before the improvement, might benefit
-                        if (rule, start_pos) not in agenda:
-                            agenda.append((rule, start_pos))
+                        agenda_item = (rule, start_pos)
+                        if agenda_item not in agenda_set:  # O(1) set lookup
+                            agenda_set.add(agenda_item)
+                            agenda.append(agenda_item)
+                            
+                            # Safety limit: prevent agenda explosion
+                            if len(agenda) >= self.max_agenda_size:
+                                return agenda
         
         return agenda
 
     def process_agenda(self, agenda: list[tuple[Rule, int]]) -> Generator[Any, Any, None]:
         """Process all agenda items - re-run rules that might benefit from improvements"""
-        while agenda:
+        depth = 0
+        processed_count = 0
+        
+        while agenda and depth < self.max_agenda_depth:
             rule, pos = agenda.pop(0)
+            processed_count += 1
+            
+            # Safety limit: prevent processing too many items
+            if processed_count > self.max_agenda_size:
+                break
             
             # Retrieve entry from cache
             entry = self.cache.get(rule, {}).get(pos)
@@ -383,6 +404,7 @@ class Cache(Generic[S]):
             
             state = entry.state
             old_result = entry.payload.result
+            agenda_size_before = len(agenda)
                         
             # Re-run the rule WITHOUT clearing the cache entry
             # This allows the rule to see and benefit from existing InProgress improvements
@@ -409,3 +431,7 @@ class Cache(Generic[S]):
                     # Build new agenda items for this improvement
                     new_agenda_items = self.build_agenda(pos, new_result)
                     agenda.extend(new_agenda_items)
+                    
+                    # Increment depth if agenda grew significantly
+                    if len(agenda) > agenda_size_before + 5:
+                        depth += 1
