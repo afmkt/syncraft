@@ -597,7 +597,7 @@ def test_multi_head_identity_in_error()->None:
 
 def test_direct_left_recursion_unproductive_now_productive()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
     ast, _ = v.bimap()
     assert str(ast) == '((((t.a,),),),)'
@@ -605,7 +605,7 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
 
 def test_direct_left_recursion_collapse()->None:
     """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a', cache=Cache())
     ast, _ = v.bimap()
     assert str(ast) == 't.a'
@@ -613,7 +613,7 @@ def test_direct_left_recursion_collapse()->None:
 
 def test_direct_left_recursion_growth_still_collapses()->None:
     """Additional confirmation of S → S S | 'a' collapse behavior (single terminal)."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
+    S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a', cache=Cache())
     ast, _ = v.bimap()
     assert str(ast) == '((t.a,),)'
