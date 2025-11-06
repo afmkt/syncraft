@@ -3,11 +3,12 @@ import pytest
 # LeftRecursionError no longer imported; xfail test does not enforce error path.
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
-from syncraft.lexer import ExtLexer
 from syncraft.parser import parse_word
-from syncraft.cache import Cache
-from syncraft.ast import Token
-from syncraft.token import Structured
+from syncraft.cache import Cache, set_randomization
+
+# Ensure randomization is enabled for these tests
+# This is also handled by conftest.py but we make it explicit here
+set_randomization(True)
 # Reuse the pattern from existing tests: specialize Syntax with a Structured
 # literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
 # token = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).token

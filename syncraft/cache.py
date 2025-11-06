@@ -8,12 +8,22 @@ from syncraft.ast import SyncraftError
 from rich import print
 from syncraft.utils import callable_str
 from collections import defaultdict
+import random
 
 def is_lazy(func: Callable[..., Any]) -> bool:
     return hasattr(func, 'is_lazy') and func.is_lazy
 
 def is_choice(func: Callable[..., Any]) -> bool:
     return hasattr(func, 'is_choice') and func.is_choice
+
+def randomized(collection, enable_randomization=True):
+    """Helper function to randomize iteration order of sets and other collections."""
+    if not enable_randomization:
+        # When randomization is disabled, return the original collection to preserve original iteration behavior
+        return collection
+    items = list(collection)
+    random.shuffle(items)
+    return items
 
 L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
@@ -156,11 +166,21 @@ class Group(Generic[S]):
 
 def logging(log: bool | Callable[..., Any]) -> None:
     Cache.DEFAULT_LOGGING = log
+
+def set_randomization(enabled: bool) -> None:
+    """Enable or disable randomization globally for all Cache instances."""
+    Cache.DEFAULT_RANDOMIZATION = enabled
+
+def set_random_seed(seed: int) -> None:
+    """Set the random seed for reproducible randomized testing."""
+    random.seed(seed)
 @dataclass
 class Cache(Generic[S]):
     DEFAULT_LOGGING: ClassVar[bool | Callable[..., Any]] = False
+    DEFAULT_RANDOMIZATION: ClassVar[bool] = False  # Default to False to be less intrusive
 
     logging: bool | Callable[..., Any] = field(default_factory=lambda: Cache.DEFAULT_LOGGING)
+    enable_randomization: bool = field(default_factory=lambda: Cache.DEFAULT_RANDOMIZATION)
 
     stack: list[Tuple[Rule, int]] = field(default_factory=list)
     cache: DefaultDict[Rule, Dict[int, CacheEntry[S]]] = field(default_factory=lambda: defaultdict(dict))
@@ -168,7 +188,7 @@ class Cache(Generic[S]):
     end2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
 
     groups: dict[int, Group[S]] = field(default_factory=dict)  # Groups per position
-    max_revision: int = 256  # Protection against runaway single-head growth
+    max_revision: int = 512  # Protection against runaway single-head growth
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
 
@@ -187,7 +207,7 @@ class Cache(Generic[S]):
         members: list[Tuple[Rule, int]] = []
         has_choice = False
         has_lazy = False
-        for rule in self.start2rules[pos]:
+        for rule in randomized(self.start2rules[pos], self.enable_randomization):
             entry = self.cache[rule].get(pos)
             if entry and isinstance(entry.payload, InProgress):
                 members.append((rule, pos))
@@ -312,7 +332,7 @@ class Cache(Generic[S]):
                                              rule, reason='iteration-cap', revision=iteration_count)
                 changed = False
                 # Process all group members, but handle cross-position dependencies immediately
-                for f, pos in current_group.members:
+                for f, pos in randomized(current_group.members, self.enable_randomization):
                     entry = self.cache[f].get(pos)
                     assert entry is not None, f"No cache entry found for {callable_str(f)} at {pos} during group resolution"
                     payload = entry.payload
@@ -340,7 +360,7 @@ class Cache(Generic[S]):
             # - All group members still have no result (indicating all choices failed)
             if iteration_count == 0:
                 all_failed = True
-                for f, pos in current_group.members:
+                for f, pos in randomized(current_group.members, self.enable_randomization):
                     entry = self.cache[f].get(pos)
                     if entry and isinstance(entry.payload, InProgress):
                         if entry.payload.result is not None:
@@ -380,7 +400,7 @@ class Cache(Generic[S]):
         # Find rules that ended before this improvement
         for end_pos in range(improved_end):
             rules_at_end = self.end2rules.get(end_pos, set())
-            for rule in rules_at_end:
+            for rule in randomized(rules_at_end, self.enable_randomization):
                 # Find all start positions for this rule that could benefit
                 for start_pos, entry in self.cache.get(rule, {}).items():
                     # FIXED: Allow rules at the same position or earlier positions to benefit

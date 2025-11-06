@@ -5,6 +5,10 @@ from syncraft.constraint import forall
 from syncraft.syntax import Syntax
 import syncraft.generator as gen
 from dataclasses import dataclass
+from syncraft.cache import set_randomization
+
+# Ensure randomization is enabled for these tests
+set_randomization(True)
 
 literal = Syntax.literal
 

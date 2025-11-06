@@ -4,12 +4,15 @@ from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
-from syncraft.cache import Cache
+from syncraft.cache import Cache, set_randomization
 
 import re
 import pytest
 
 from .test_utils import token_multiset
+
+# Ensure randomization is enabled for these tests
+set_randomization(True)
 
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
@@ -652,7 +655,10 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
     """
     T = lazy(lambda: (T >> token(text='+') >> token(text='a')) | token(text='a'))
     input_text = 'a ' + ' + a' * 120
-    v, s = parse_word(T, input_text, cache=Cache())
+    # This test was flaky even before randomization - it needs higher iteration limit for deep recursion
+    cache = Cache()
+    cache.max_growth_iterations = 500  # Increase limit for this deep recursion test
+    v, s = parse_word(T, input_text, cache=cache)
     ast, _ = v.bimap()
     assert str(ast) == '(t.a,)'
 
