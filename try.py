@@ -82,6 +82,16 @@ def t1()->None:
     print(v, ast)
     assert str(ast) == '((t.a,),)'
 
+def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
+    """Iteration cap present; typical large left-recursive chain should parse without hitting cap.
+
+    We assert successful parse for long input of T → T "+" "a" | "a" and single terminal result.
+    """
+    T = lazy(lambda: (T >> token(text='+') >> token(text='a')) | token(text='a'))
+    input_text = 'a ' + ' + a' * 120
+    v, s = parse_word(T, input_text, cache=Cache())
+    ast, _ = v.bimap()
+    assert str(ast) == '(t.a,)'
 
 
 if __name__ == "__main__":

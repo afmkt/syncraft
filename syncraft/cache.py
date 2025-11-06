@@ -23,26 +23,7 @@ S = TypeVar('S', bound=Bindable)
 class Either(Generic[L, R]):
     def __bool__(self) -> bool:
         return isinstance(self, Right)
-
-    def is_flagged(self, **kwargs: bool) -> bool:
-        if isinstance(self, (Left, Right)):
-            flags: Set[str] = set()
-            for k, v in kwargs.items():
-                if v:
-                    flags.add(k)
-            return not self._flags.isdisjoint(flags)
-        raise NotImplementedError("is_flagged method not implemented for this Either subtype")
-
-    def flags(self, *args: str, **kwargs: bool) -> Either[L, R]:
-        if len(args) > 0 and len(kwargs) > 0:
-            raise ValueError("Cannot mix positional and keyword arguments in flags()")
-        if isinstance(self, (Left, Right)):
-            if len(kwargs) == 0:
-                return replace(self, _flags = self._flags | frozenset(args))
-            else:
-                return replace(self, _flags = frozenset(kwargs.keys()))
-        raise NotImplementedError("flags method not implemented for this Either subtype")
-
+    
     @property
     def ok(self) -> bool:
         return isinstance(self, Right)
@@ -53,12 +34,12 @@ Rule = Callable[[S, "Cache[S]"], Generator[Any, Any, Ret]]
 @dataclass(frozen=True)
 class Left(Either[L, Any]):
     value: Optional[L] = None
-    _flags: frozenset[str] = field(default_factory=frozenset)
+
 
 @dataclass(frozen=True)
 class Right(Either[Any, R]):
     value: R
-    _flags: frozenset[str] = field(default_factory=frozenset)
+
     @property
     def state(self)->Optional[Any]:
         if isinstance(self.value, tuple):
@@ -80,7 +61,6 @@ class LeftRecursionError(SyncraftError):
                  **kwargs: Any) -> None:
         super().__init__(message, offender, expect, **kwargs)
         self.stack: List[str] = []
-        self.revision: int | None = kwargs.get('revision')
         self.reason: str | None = kwargs.get('reason')
 
     def push(self, name: str) -> LeftRecursionError:
@@ -89,8 +69,6 @@ class LeftRecursionError(SyncraftError):
 
     def _format_metrics(self) -> str:
         parts: List[str] = []
-        if self.revision is not None:
-            parts.append(f"revision={self.revision}")
         if self.reason:
             parts.append(f"reason={self.reason}")
         return ("; ".join(parts)) if parts else ""
@@ -279,10 +257,10 @@ class Cache(Generic[S]):
                 else:
                     assert existing.payload.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.payload.rule} != {f}"
                     if existing.payload.result is not None:
-                        return existing.payload.result.flags(SEEDING=True)
+                        return existing.payload.result
                     else:
                         self.build_group(f, cache_key)  # Group is stored in self.groups[cache_key]
-                        return Left().flags(SEEDING=True)  
+                        return Left() 
             
             head: InProgress[S] = InProgress(rule=f)
             entry = CacheEntry(payload=head, state=key)
@@ -327,13 +305,8 @@ class Cache(Generic[S]):
             while True:
                 # Check iteration cap before attempting growth
                 if iteration_count >= self.max_revision:
-                    raise LeftRecursionError(
-                        "Left recursion iteration cap exceeded",
-                        rule,
-                        reason='iteration-cap',
-                        revision=iteration_count
-                    )
-                
+                    raise LeftRecursionError("Left recursion iteration cap exceeded",
+                                             rule, reason='iteration-cap', revision=iteration_count)
                 changed = False
                 # Process all group members, but handle cross-position dependencies immediately
                 for f, pos in current_group.members:
@@ -347,10 +320,9 @@ class Cache(Generic[S]):
                     if new_payload.growing:
                         self.cache[f][pos] = replace(entry, payload=new_payload)
                         changed = True
-                        # has_made_progress = True  
-                        # Build agenda when rule improves 
+
                         if new_payload.result is not None:
-                            new_agenda_items = self.build_agenda(f, pos, new_payload.result)
+                            new_agenda_items = self.build_agenda(pos, new_payload.result)
                             # Add to agenda for processing after this iteration
                             agenda.extend(new_agenda_items)
                 if not changed:
@@ -366,17 +338,12 @@ class Cache(Generic[S]):
             if leader_entry and isinstance(leader_entry.payload, InProgress):
                 if leader_entry.payload.result is not None:
                     return leader_entry.payload.result
-            
-            # NOTE: Do NOT unwrap InProgress entries here - keep them in cache
-            # The reentry handler will return the final result from InProgress.result
-            # This matches the old cache behavior and prevents group member reference issues
-            
-            # Agenda is automatically cleared by process_agenda(), but clear any remaining items on error
+
             agenda.clear()
         
         return seed
 
-    def build_agenda(self, improved_rule: Rule, improved_pos: int, improved_result: Ret) -> list[tuple[Rule, int]]:
+    def build_agenda(self, improved_pos: int, improved_result: Ret) -> list[tuple[Rule, int]]:
         """Find rules that could benefit from this improvement and return agenda items"""
         agenda: list[tuple[Rule, int]] = []
         if not isinstance(improved_result, Right) or improved_result.state is None:
@@ -440,5 +407,5 @@ class Cache(Generic[S]):
                     self.end2rules[new_end].add(rule)
                     
                     # Build new agenda items for this improvement
-                    new_agenda_items = self.build_agenda(rule, pos, new_result)
+                    new_agenda_items = self.build_agenda(pos, new_result)
                     agenda.extend(new_agenda_items)
