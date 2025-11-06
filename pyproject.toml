@@ -38,5 +38,5 @@ dev = [
 [tool.setuptools]
 packages = ["syncraft"]
 
-[tool.setuptools.packages-data]
-syncraft = ["grammars/*.lex"]
+[tool.setuptools.package-data]
+syncraft = ["grammars/**/*"]

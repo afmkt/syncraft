@@ -7,7 +7,7 @@ from typing import (
 )
 if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
     from syncraft.syntax import FactorySpec, Syntax
-from syncraft.path import builtin_regex_cache_path, user_cache_path
+from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.charset import CodeUniverse
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
@@ -147,7 +147,7 @@ class LexerBase(LexerProtocol[C]):
 @dataclass
 class LexerCache:
     dirs: Set[Path] = field(default_factory=set)
-    builtin_dir: Path = field(default_factory=builtin_regex_cache_path)
+    builtin_dir: Path = field(default_factory=lambda: builtin_cache_path("regex"))
     dict: Dict[str, Lexer[Any]] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
