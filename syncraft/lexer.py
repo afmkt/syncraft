@@ -307,7 +307,7 @@ class Lexer(LexerBase[C]):
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
-        dfa = combined.dfa
+        dfa = combined.dfa.normalized
         non_greedy_set = frozenset(non_greedy)
         return Mode(
             runner=dfa.runner(non_greedy=non_greedy_set),

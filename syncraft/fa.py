@@ -18,7 +18,7 @@ from enum import Enum
 from collections import defaultdict
 from functools import reduce
 import random
-
+from collections import defaultdict
 Tag = str
 C = TypeVar('C', bound=str | int | Enum | Any)
 
@@ -94,6 +94,26 @@ class DFA(Generic[C]):
             final=self.init,
             accept=FrozenDict({t: frozenset(ss) for t, ss in acc_map.items()}),
             transitions=FrozenDict({s: FrozenDict(m) for s,m in trans.items()}))
+    
+    
+    @property
+    def normalized(self)->DFA[C]:
+        fabuilder = FAState.builder()
+        
+        states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys()) | {self.init}
+        st_map: dict[FAState, FAState] = {k: fabuilder() for k in states}
+        new_universe = self.universe
+        new_init = st_map[self.init]
+        new_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({st_map[s]: v for s, v in self.accept.items()})
+        new_trans: dict[FAState, FrozenDict[CharSet[C], FAState]] = {}
+        for k, v in self.transitions.items():
+            new_trans[st_map[k]] = FrozenDict({cs: st_map[tgt] for cs, tgt in v.items()})
+
+        return DFA(universe=new_universe,
+                   init=new_init, 
+                   accept=new_accept, 
+                   transitions=FrozenDict(new_trans))
+
 
     
     @property
