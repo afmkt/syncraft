@@ -250,7 +250,7 @@ class Algebra(Generic[A, S]):
                 return Right((f(data), s))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        alg = replace(self, run_f=map_run) 
+        alg = replace(self, run_f=map_run) # type: ignore
         return cast(Algebra[B, S], alg)
     
         
