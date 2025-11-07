@@ -238,8 +238,8 @@ class Algebra(Generic[A, S]):
     def map(self, f: Callable[[A], B], *, raw:bool) -> Algebra[B, S]:
         def map_run(input: S, 
                     cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                          SendChannelType, 
-                                                                          Either[Any, Tuple[B, S]]]:
+                                                SendChannelType, 
+                                                Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
                 ast, s = parsed.value
@@ -250,18 +250,18 @@ class Algebra(Generic[A, S]):
                 return Right((f(data), s))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        alg = replace(self, run_f=map_run) # type: ignore
+        alg = replace(self, run_f=map_run) 
         return cast(Algebra[B, S], alg)
-
+    
         
-    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
+    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
         return self.map(f, raw=True).map_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, 
                           cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                                SendChannelType, 
-                                                                                Either[Any, Tuple[A, S]]]:
+                                                    SendChannelType, 
+                                                    Either[Any, Tuple[A, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Left):
                 return Left(f(parsed.value))
@@ -272,8 +272,8 @@ class Algebra(Generic[A, S]):
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Algebra[B, S]:
         def flat_map_run(input: S, 
                          cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                               SendChannelType, 
-                                                                               Either[Any, Tuple[B, S]]]:
+                                                    SendChannelType, 
+                                                    Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
                 result = yield from f(parsed.value[0]).run(parsed.value[1], cache)  
@@ -288,8 +288,8 @@ class Algebra(Generic[A, S]):
         def map_all_f(a : A) -> Algebra[B, S]:
             def map_all_run_f(input:S, 
                               cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                                  SendChannelType, 
-                                                                                  Either[Any, Tuple[B, S]]]:
+                                                        SendChannelType, 
+                                                        Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right(f(a, input))
             return replace(self, run_f=map_all_run_f) # type: ignore
@@ -352,8 +352,8 @@ class Algebra(Generic[A, S]):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
         def many_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                         SendChannelType, 
-                                                                         Either[Any, Tuple[Many[A], S]]]:
+                                                SendChannelType, 
+                                                Either[Any, Tuple[Many[A], S]]]:
             ret: List[A] = []
             current_input = input
             inner_error = None

@@ -2,14 +2,10 @@ from __future__ import annotations
 import pytest
 # LeftRecursionError no longer imported; xfail test does not enforce error path.
 from syncraft.syntax import Syntax
-from syncraft.ast import Many
-from syncraft.cache import LeftRecursionError
-from syncraft.lexer import ExtLexer
+from syncraft.ast import Token
 from syncraft.parser import parse_word
 from syncraft.cache import logging
 from syncraft.cache import Cache
-from syncraft.ast import Token
-from syncraft.token import Structured
 from rich import print
 import re
 from typing import Any, Iterable
@@ -94,7 +90,37 @@ def t2()->None:
     assert ast == back(ast).mapped
     print(ast)
 
+
+
+def test_multi_recursion()->None:
+    NUM = literal(re.compile(r'\d+'))
+    PLUS = literal('+')
+    Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM) 
+    v,_ = parse_word(Expr, '1 + 2 + 3', cache=Cache())
+    generated, bound = gen.generate_with(Expr, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
+    raw,_ = v.bimap()
+    # Raw structure assertions
+    assert isinstance(raw, tuple) and len(raw) == 3
+    assert isinstance(raw[0], tuple) and len(raw[0]) == 3  # left nested
+    assert str(raw[1]) == 't.+'
+    assert str(raw[2]) == 't.3'
+
+    NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  
+    ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M) 
+    v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=Cache())
+    generated, bound = gen.generate_with(ExprM, v2)
+
+    print(generated)
+    assert v2.mapped == generated.mapped
+
+    ast, back = v2.bimap()
+    assert ast == back(ast).mapped
+
+
+
 if __name__ == "__main__":
-    t0()
-    t1()
-    t2()
+    test_multi_recursion()

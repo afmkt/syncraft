@@ -324,7 +324,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     assert str(right_term[2]) == 't.3'
 
     # Mapped variant
-    NUMBER_M = NUMBER.map(lambda t: int(t.text), raw=True)
+    NUMBER_M = NUMBER.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  # type: ignore[name-defined]
     ExprM = lazy(lambda: (ExprM + PLUS + TermM) | TermM)  # type: ignore[name-defined]
     TermM = lazy(lambda: (TermM + STAR + FactorM) | FactorM)  # type: ignore[name-defined]
     FactorM = lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
@@ -422,6 +422,11 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         PLUS = literal('+')
         Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
         v,_ = parse_word(Expr, '1 + 2 + 3', cache=Cache())
+        generated, bound = gen.generate_with(Expr, v)
+        assert v.mapped == generated.mapped
+        ast, back = v.bimap()
+        assert ast == back(ast).mapped
+
         raw,_ = v.bimap()
         # Raw structure assertions
         assert isinstance(raw, tuple) and len(raw) == 3
@@ -430,9 +435,14 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         assert str(raw[2]) == 't.3'
 
         # Mapped version
-        NUM_M = NUM.map(lambda t: int(t.text), raw=True)
+        NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  
         ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
         v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=Cache())
+        generated, bound = gen.generate_with(ExprM, v2)
+        assert v2.mapped == generated.mapped
+        ast, back = v2.bimap()
+        assert ast == back(ast).mapped
+
         mapped,_ = v2.bimap()
         assert isinstance(mapped, tuple) and len(mapped) == 3
         left_nested, mid_op, right_leaf = mapped
@@ -476,6 +486,11 @@ def test_indirect_left_recursion_3()->None:
     List = lazy(lambda: (List >> token(text=',') >> Item) | Item)
     # Now succeeds but current semantics retain only last item; ensure at least 'a' present
     v, s = parse_word(List, 'a , b , a', cache=Cache())
+    generated, bound = gen.generate_with(List, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     counts = token_multiset(ast)
     # Current semantics retains only final item
@@ -518,6 +533,11 @@ def test_indirect_left_recursion_4()->None:
     B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
     # Now succeeds but collapses to first terminal; ensure 'a' present
     v, s = parse_word(A, 'a y b x', cache=Cache())
+    generated, bound = gen.generate_with(A, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     counts = token_multiset(ast)
     assert counts.get('a', 0) >= 1
@@ -555,6 +575,11 @@ def test_indirect_left_recursion_5()->None:
     Chain = lazy(lambda: (Chain >> token(text='->') >> Name) | Name)
     # Now succeeds but retains last element only; ensure 'c' present
     v, s = parse_word(Chain, 'a -> b -> c', cache=Cache())
+    generated, bound = gen.generate_with(Chain, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     counts = token_multiset(ast)
     assert counts.get('c', 0) >= 1
@@ -576,6 +601,11 @@ def test_multi_head_indirect_cycle_fixed_point()->None:
     A = lazy(lambda: (B >> token(text='x')) | token(text='a'))
     B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
     v, s = parse_word(A, 'a y b x', cache=Cache())
+    generated, bound = gen.generate_with(A, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     # Ensure at least starting 'a' present (basic success signal)
     assert 'a' in str(ast)
@@ -595,6 +625,11 @@ def test_multi_head_identity_in_error()->None:
     # Instead we rely on current default path and just assert success (no error). This test placeholder
     # is retained for when public API allows passing cache instance.
     v, s = parse_word(Expr, 'n + n + n', cache=Cache())
+    generated, bound = gen.generate_with(Expr, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     assert str(ast).count('n') >= 3
 
@@ -688,6 +723,11 @@ def test_indirect_multi_head_cycle_parses_successfully():
     A = lazy(lambda: (B >> token(text='x')) | token(text='a'))
     B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
     v, s = parse_word(A, 'a y a y b x', cache=Cache())
+    generated, bound = gen.generate_with(A, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     assert any(t in str(ast) for t in ['a', 'b'])
 
@@ -703,23 +743,33 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
     cache = Cache()
     cache.max_growth_iterations = 500  # Increase limit for this deep recursion test
     v, s = parse_word(T, input_text, cache=cache)
+    generated, bound = gen.generate_with(T, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     ast, _ = v.bimap()
     assert str(ast) == '(t.a,)'
 
 
 
 def test_multi_recursion()->None:
-    a = literal('a').map(lambda x: x.text, raw=True).named('a')
-    b = literal('b').map(lambda x: x.text, raw=True).named('b')
-    c = literal('c').map(lambda x: x.text, raw=True).named('c')
-    x = literal('x').map(lambda x: x.text, raw=True).named('x')
-    y = literal('y').map(lambda x: x.text, raw=True).named('y')
-    z = literal('z').map(lambda x: x.text).named('z')
+    a = literal('a').iso(lambda x: x.text, lambda t: Token(text=t)).named('a')
+    b = literal('b').iso(lambda x: x.text, lambda t: Token(text=t)).named('b')
+    c = literal('c').iso(lambda x: x.text, lambda t: Token(text=t)).named('c')
+    x = literal('x').iso(lambda x: x.text, lambda t: Token(text=t)).named('x')
+    y = literal('y').iso(lambda x: x.text, lambda t: Token(text=t)).named('y')
+    z = literal('z').iso(lambda x: x.text, lambda t: Token(text=t)).named('z')
     A = lazy(lambda: (B + x) | a).named('A')
     B = lazy(lambda: (C + y) | b).named('B')
     C = lazy(lambda: (A + z) | c).named('C')
 
     v, s = parse_word(A, 'a z y x', cache=Cache())
+    generated, bound = gen.generate_with(A, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap()
+    assert ast == back(ast).mapped
+
     print(v)
     # We care about the raw AST shape (pre-bimap). Extract leaves manually.
     from syncraft.ast import Then, ThenKind

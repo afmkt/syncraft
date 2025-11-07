@@ -338,11 +338,13 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
     @classmethod
-    def lazy(cls, thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]], flatten:bool=False) -> Algebra[ParseResult[T], GenState[T]]:
+    def lazy(cls, 
+             thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]], 
+             flatten:bool=False) -> Algebra[ParseResult[T], GenState[T]]:
         def algebra_lazy_run(input: GenState[T],
                              cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType,
-                                                                                                                        SendChannelType,
-                                                                                                                        Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
+                                                                        SendChannelType,
+                                                                        Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             # Defer acquiring the underlying algebra until invocation time.
             alg = thunk()
             if input.pruned:

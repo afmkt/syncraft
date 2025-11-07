@@ -349,7 +349,7 @@ class Syntax(Generic[A, S]):
     ) -> List[Tuple[SyntaxSpec, SyntaxSpec]]:
         return self.spec.build_graph(max_depth=max_depth)
 
-    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
+    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
 
         Applies f to the value and adjusts internal state via inverse i so
@@ -362,8 +362,8 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(f, i)) # type: ignore
-        
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(f, i)) # type: ignore
+
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
         """Map both value and state on success.
@@ -509,7 +509,7 @@ class Syntax(Generic[A, S]):
                     right=Choice(kind=ChoiceKind.LEFT, value=Many(value=tuple(v))),
                 )
 
-        return ret.bimap(f, i)  # type: ignore
+        return ret.iso(f, i)  # type: ignore
 
     def parens(
         self,
@@ -694,7 +694,7 @@ class Syntax(Generic[A, S]):
         def ito_f(c: Collect[A, E]) -> A:
             return c.value if isinstance(c, Collect) else c
 
-        return self.bimap(to_f, ito_f)
+        return self.iso(to_f, ito_f)
 
     def mark(self, name: str) -> Syntax[Marked[A], S]:
 
@@ -709,7 +709,7 @@ class Syntax(Generic[A, S]):
         def imark_s(m: Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m
 
-        return self.bimap(mark_s, imark_s)
+        return self.iso(mark_s, imark_s)
     
     @classmethod
     def fail(cls, error: B) -> Syntax[B, S]:
