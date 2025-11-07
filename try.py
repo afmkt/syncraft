@@ -6,7 +6,7 @@ from syncraft.regex import (
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
-from syncraft.error import Error
+from syncraft.algebra import Error
 import random
 import string
 import re
@@ -16,12 +16,12 @@ import re
 def test_multi_recursion():
     pattern = "((a|b)c(d|e(f|g(h|i(j|k(l|m(n|o(p|q(r|s(t|u(v|w(x|y(z))))))))))))))"
     ok, myerr, err = verify(pattern)
-    assert ok, f"Pattern failed to parse: {pattern}\nMy Error: {myerr}\nRe Error: {err}"
+    assert ok, f"Pattern failed to parse: {pattern}\nRe Error: {err}\nMy Error: {myerr}"
 
 def test_alternation_in_group():
     pattern = "(a|b)"
     ok, myerr, err = verify(pattern)
-    assert ok, f"Pattern failed to parse: {pattern}\nMy Error: {myerr}\nRe Error: {err}"
+    assert ok, f"Pattern failed to parse: {pattern}\nRe Error: {err}\nMy Error: {myerr}"
 
 if __name__ == "__main__":
     test_multi_recursion()

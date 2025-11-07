@@ -11,9 +11,9 @@ from syncraft.lexer import (
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.utils import FrozenDict
 from syncraft.algebra import (
-     Algebra, YieldChannelType, SendChannelType
+     Algebra, YieldChannelType, SendChannelType, Error
 )
-from syncraft.error import Error
+
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
 
@@ -48,6 +48,9 @@ class ParserState(Bindable, Generic[T]):
     safe_base: int = 0
     choice_depth: int = 0
 
+    line: int = 0
+    column: int = 0
+
     @property
     def cache_key(self) -> int:
         return self.base + self.index
@@ -77,18 +80,52 @@ class ParserState(Bindable, Generic[T]):
     def __post_init__(self):
         if isinstance(self.input, list):
             object.__setattr__(self, 'input', tuple(self.input))
+        elif isinstance(self.input, str):
+            if self.line == 0 and self.column == 0:
+                object.__setattr__(self, 'line', 1)
+                object.__setattr__(self, 'column', 1)
         elif not isinstance(self.input, (tuple, str, bytes)):
             raise SyncraftError("Input must be a sequence type", offender=self.input, expect="tuple, str, or bytes")
 
-    def __repr__(self) -> str:
+    @property
+    def str_input(self) -> str:
         indicator = '.'
         indicator = '\u25cf'
         indicator = '\u007c\u25BA'  
-        parts = [f"input=[{' '.join(self.before() + [indicator] + self.after())}]"]
-        if self.ended():
-            parts.append("ended=True")
-        if self.pending():
-            parts.append("pending=True")
+        return f"input=[{' '.join(self.before() + [indicator] + self.after())}]"
+    @property
+    def str_line(self) -> str:
+        if self.line > 0:
+            return f"line={self.line}"
+        return ''
+    
+    @property
+    def str_column(self) -> str:
+        if self.column > 0:
+            return f"column={self.column}"
+        return ''
+    
+    @property
+    def str_ended(self) -> str:
+        if self.ended:
+            return "ended=True"
+        return ''
+    @property
+    def str_pending(self) -> str:
+        if self.pending:
+            return "pending=True"
+        return ''
+
+    def __repr__(self) -> str:
+        parts = [self.str_input]
+        if self.ended:
+            parts.append(self.str_ended)
+        if self.pending:
+            parts.append(self.str_pending)
+        if self.line > 0:
+            parts.append(self.str_line)
+        if self.column > 0:
+            parts.append(self.str_column)
         return f"ParserState({', '.join(parts)})"
 
     def __str__(self) -> str:
@@ -153,6 +190,8 @@ class ParserState(Bindable, Generic[T]):
     def extend(self, more: str | bytes | Tuple[T, ...], *, final: bool = False) -> "ParserState[T]":
         if self.final:
             raise SyncraftError("Cannot concatenate to a final ParserState", offender=self, expect="not final")
+        if not isinstance(self.input, more.__class__):
+            raise SyncraftError("Cannot extend ParserState with different input type", offender=more.__class__, expect=self.input.__class__)
         if self.safe_base > self.base:
             drop = self.safe_base - self.base
             # We cannot drop more than we have buffered
@@ -177,26 +216,32 @@ class ParserState(Bindable, Generic[T]):
     def abs_index(self) -> int:
         return self.base + self.index    
     
-    def current(self)->T:
+    @property
+    def current(self) -> T:
         if self.index >= len(self.input):
             raise SyncraftError("Attempted to access token beyond end of stream", offender=self, expect="index < len(input)")
         return self.input[self.index] # type: ignore
     
-
+    @property
     def pending(self) -> bool:
         return self.index >= len(self.input) and not self.final
-
+    
+    @property
     def ended(self) -> bool:
         return self.index >= len(self.input) and self.final
 
     def advance(self) -> ParserState[T]:
+        if isinstance(self.input, str):
+            if self.current == '\n':
+                return replace(self, index=min(self.index + 1, len(self.input)), line=self.line + 1, column=1)
+            else:
+                return replace(self, index=min(self.index + 1, len(self.input)), column=self.column + 1)
         return replace(self, index=min(self.index + 1, len(self.input)))
             
     
     
 @dataclass(frozen=True)
 class Parser(Algebra[T, ParserState[T]]):
-
 
     @classmethod
     def lex(cls, 
@@ -219,7 +264,7 @@ class Parser(Algebra[T, ParserState[T]]):
             lexer.reset()
             yield from ()
             while True:
-                if state.ended():
+                if state.ended:
                     match lexer.candidate():
                         
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
@@ -230,12 +275,12 @@ class Parser(Algebra[T, ParserState[T]]):
                             return Right((token, state.advance())) # type: ignore
                         case _:
                             return Left(Error(message=f"Cannot match token at end of input, expect {name}", this=lex_run, state=state))
-                elif state.pending():
+                elif state.pending:
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
                     state = tmp
                 else:
-                    match lexer.match(ntags, state.current(), state.abs_index()):
+                    match lexer.match(ntags, state.current, state.abs_index()):
                         case Left(err_msg):
                             return Left(Error(message=f"{err_msg}, expect {name}", this=lex_run, state=state))
                         case Right(None):

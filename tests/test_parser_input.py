@@ -19,7 +19,7 @@ def test_parse_text_input_without_config_infers_lexer() -> None:
 
     assert value == "hi"
     assert state is not None
-    assert state.ended()
+    assert state.ended
 
 
 def test_parse_bytes_input_without_config_infers_lexer() -> None:
@@ -29,7 +29,7 @@ def test_parse_bytes_input_without_config_infers_lexer() -> None:
     
     assert value == b"\x01"
     assert state is not None
-    assert state.ended()
+    assert state.ended
 
 
 def test_parse_token_input_without_config_infers_extlexer() -> None:
@@ -59,7 +59,7 @@ def test_run_with_input_stream_handles_incomplete() -> None:
     )
 
     assert state is not None
-    assert state.ended()
+    assert state.ended
     assert len(value.value) == 2
     assert value.value == ("if", "if")
 
@@ -95,7 +95,7 @@ def test_parse_string_input_with_lexer_bind() -> None:
     assert value.token_type == "WORD"
     assert value.text == "hi"
     assert state is not None
-    assert state.ended()
+    assert state.ended
 
 
 def test_parse_bytes_input_with_lexer_bind() -> None:
@@ -109,5 +109,5 @@ def test_parse_bytes_input_with_lexer_bind() -> None:
     assert isinstance(value.text, bytes)
     assert value.text == b"\x01"
     assert state is not None
-    assert state.ended()
+    assert state.ended
 

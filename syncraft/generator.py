@@ -11,9 +11,9 @@ import random
 from functools import cached_property
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
-    Algebra, YieldChannelType, SendChannelType
+    Algebra, YieldChannelType, SendChannelType, Error
 )
-from syncraft.error import Error
+
 from syncraft.lexer import LexerBase, Lexer, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 
@@ -44,6 +44,14 @@ class GenState(Bindable, Generic[T]):
     ast: Optional[ParseResult[T]] = None
     restore_pruned: bool = False
     seed: int = 0
+
+    def __str__(self) -> str:
+        if isinstance(self.ast, AST):
+            return f"GenState(ast={self.ast.mapped})"
+        else:
+            return f"GenState(ast={self.ast})"
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def unused_cache_key(self) -> int:
         return 0

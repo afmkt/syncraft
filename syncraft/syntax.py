@@ -12,8 +12,7 @@ from dataclasses import dataclass, field, replace
 from functools import reduce
 
 from syncraft.utils import file as get_file, line as get_line, func as get_func
-from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY
-from syncraft.error import Error
+from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
 from syncraft.utils import FrozenDict

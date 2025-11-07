@@ -4,13 +4,14 @@ from typing import (
     Type, Generator, Union, Hashable, TYPE_CHECKING
 )
 from syncraft.ast import AST, Ignore
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
-from syncraft.error import Error
+
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax
+
 
 S = TypeVar('S', bound=Bindable)    
 A = TypeVar('A')  # Result type
@@ -28,14 +29,18 @@ SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
 
 
 
-@dataclass(frozen=True)        
-class Algebra(Generic[A, S]):
-######################################################## shared among all subclasses ########################################################
-    run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
-    syntax: Hashable | None = None
+@dataclass(frozen=True)
+class Error:
+    this: Optional[Any] = None
+    message: Optional[str] = None
+    error: Optional[Any] = None    
+    state: Optional[Any] = None
+    committed: bool = field(default=False)
+    previous: Optional[Error] = field(default=None)
+    depth: int = field(default=0)
 
     @staticmethod
-    def get_syntax(f: Callable[..., Any]) -> Hashable | None:
+    def get_syntax(f: Any) -> Hashable | None:
         if isinstance(f, Algebra):
             return f.syntax
         elif hasattr(f, 'syntax'):
@@ -43,6 +48,58 @@ class Algebra(Generic[A, S]):
         elif isinstance(f, Syntax):
             return f
         return None
+
+    @property
+    def str_this(self) -> str:
+        h = Error.get_syntax(self.this) 
+        spec = h.spec if isinstance(h, Syntax) else str(h)
+        return str(spec)
+
+    @property
+    def str_state(self) -> str:
+        return str(self.state)
+    
+    def __str__(self) -> str:
+        return f"Error(this={self.str_this}, message={self.message}, error={self.error}, state={self.str_state}, depth={self.depth})"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def push(self, 
+            *,
+            this: Optional[Any] = None, 
+            message: Optional[str] = None,
+            error: Optional[Any] = None, 
+            state: Optional[Any] = None) -> Error:
+        new = Error(
+            this=this,
+            error=error,
+            message=message,
+            state=state
+        )
+        return replace(new, previous=self)
+    
+    def to_list(self)->List[Error]:
+        lst: List[Error] = []
+        current: Optional[Error] = self
+        while current is not None:
+            lst.append(replace(current, depth=len(lst)))
+            current = current.previous
+        return lst
+    
+    @property
+    def deepest(self) -> Error:
+        current: Error = self
+        while current.previous is not None:
+            current = current.previous
+        return current
+
+
+@dataclass(frozen=True)        
+class Algebra(Generic[A, S]):
+######################################################## shared among all subclasses ########################################################
+    run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
+    syntax: Hashable | None = None
 
     @staticmethod
     def _flag(func: Callable[..., Any], **kwargs: Hashable) -> Callable[..., Any]:
