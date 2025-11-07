@@ -49,4 +49,5 @@ def test_syntax2svg_handles_direct_recursion():
     svg = syntax2svg(recursive_choice)
 
     assert isinstance(svg, str)
+    print(svg)
     assert "digit" in svg or "Choice" in svg

@@ -28,7 +28,7 @@ def rich_error(err: Error)->None:
     try:
         from rich import print
         from rich.table import Table as RichTable
-        lst = err.to_list()
+        lst = err.list(None)
         leaf: Any = lst[0] if lst else {}
         if isinstance(leaf, Mapping):
             leaf_map: Mapping[str, Any] = leaf
@@ -92,8 +92,9 @@ def syntax2svg(
     from collections import defaultdict
 
     children_map: Dict[SyntaxSpec, List[SyntaxSpec]] = defaultdict(list)
-    for parent, child in syntax.build_graph(max_depth=max_depth):
-        children_map[parent].append(child)
+    for parent, s in syntax.graph(max_depth=max_depth).edges.items():
+        for child in s:
+            children_map[parent].append(child)
 
     # Tarjan's algorithm to detect strongly connected components
     index_counter = [0]

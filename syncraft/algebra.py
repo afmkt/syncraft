@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Type, Generator, Union, Hashable, TYPE_CHECKING
+    Type, Generator, Union, Hashable, TYPE_CHECKING, Dict
 )
 from syncraft.ast import AST, Ignore
 from dataclasses import dataclass, replace, field
@@ -10,7 +10,7 @@ from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, E
 from syncraft.constraint import Bindable
 
 if TYPE_CHECKING:
-    from syncraft.syntax import Syntax
+    from syncraft.syntax import Syntax, SyntaxSpec, Graph
 
 
 S = TypeVar('S', bound=Bindable)    
@@ -37,31 +37,69 @@ class Error:
     state: Optional[Any] = None
     committed: bool = field(default=False)
     previous: Optional[Error] = field(default=None)
-    depth: int = field(default=0)
+    depth: Optional[int] = field(default=None)
+    path_index: Optional[int] = field(default=None)
 
     @staticmethod
-    def get_syntax(f: Any) -> Hashable | None:
+    def get_syntax(f: Any) -> Syntax | None:
         if isinstance(f, Algebra):  # for Algebra subclasses
             return f.syntax
         elif hasattr(f, 'syntax'):     # for Algebra.run_f, set by Algebra._flag
             return getattr(f, 'syntax')
-        elif hasattr(f, 'spec') and hasattr(f, 'alg_f'):  # Duck typing for Syntax
+        elif hasattr(f, 'spec') and hasattr(f, 'alg_f') and f.__class__.__name__ == 'Syntax':  # Duck typing for Syntax
             return f
         return None
 
     @property
-    def str_this(self) -> str:
+    def syntax(self) -> Syntax | None:
         h = Error.get_syntax(self.this) 
-        spec = getattr(h, 'spec', h) if h is not None else str(h)
-        return str(spec)
+        return h
+    
+    @property
+    def graph(self) -> None | Graph[SyntaxSpec]:
+        h = Error.get_syntax(self.this) 
+        if h:
+            return h.graph()
+        return None
+
+    @property
+    def spec(self) -> None | SyntaxSpec:
+        h = Error.get_syntax(self.this) 
+        if h:
+            return h.spec
+        return None
+
+    @property
+    def str_this(self) -> str:
+        spec = self.spec
+        return f"{id(spec)}:{spec}"
 
     @property
     def str_state(self) -> str:
         return str(self.state)
     
-    def __str__(self) -> str:
-        return f"Error(this={self.str_this}, message={self.message}, error={self.error}, state={self.str_state}, depth={self.depth})"
 
+    @property
+    def str_(self) -> str:
+        parts = [f"rule={self.str_this}"]
+        if self.message is not None:
+            parts.append(f"msg={self.message}")
+        if self.error is not None:
+            parts.append(f"err={self.error}")
+        if self.state is not None:
+            parts.append(f"state={self.str_state}")
+        if self.depth is not None:
+            parts.append(f"depth={self.depth}")
+        if self.path_index is not None:
+            parts.append(f"path_index={self.path_index}")
+        indent = "" if self.depth is None else "  " * self.depth
+        return f"{indent}Error({', '.join(parts)})"
+
+    def __str__(self) -> str:
+        stack = self.list(self.graph)
+        return "\n".join(e.str_ for e in stack)
+        
+    
     def __repr__(self) -> str:
         return self.__str__()
 
@@ -79,13 +117,33 @@ class Error:
         )
         return replace(new, previous=self)
     
-    def to_list(self)->List[Error]:
+    @property
+    def naive_list(self) -> List[Error]:
         lst: List[Error] = []
         current: Optional[Error] = self
         while current is not None:
-            lst.append(replace(current, depth=len(lst)))
+            lst.append(replace(current, depth=len(lst), previous=None))
             current = current.previous
         return lst
+
+    def list(self, g: Optional[Graph[SyntaxSpec]] = None)->List[Error]:
+        if g is None:
+            return self.naive_list
+        else:
+            lst: List[Error] = []
+            current: Optional[Error] = self
+            node_index: Dict[SyntaxSpec, int] = {}
+            while current is not None:
+                spec = current.spec
+                if spec is None:
+                    return self.naive_list
+                if spec not in g.edges:
+                    assert spec not in node_index, f"Spec <{str(id(spec))}:{spec}> already indexed"
+                    raise SyncraftError(f"Spec <{str(id(spec))}:{spec}> not found in graph edges", offender=spec, expect="Spec in graph edges")
+                node_index[spec] = len(node_index)                
+                lst.append(replace(current, depth=len(lst), path_index=node_index[spec], previous=None))
+                current = current.previous
+            return lst
     
     @property
     def deepest(self) -> Error:
@@ -99,7 +157,7 @@ class Error:
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
-    syntax: Hashable | None = None
+    syntax: Syntax | None = None
 
     @staticmethod
     def _flag(func: Callable[..., Any], **kwargs: Hashable) -> Callable[..., Any]:
@@ -116,7 +174,7 @@ class Algebra(Generic[A, S]):
         cfg = getattr(self, SYNCRAFT_CONFIG_KEY, {})
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
-    def with_syntax(self, syntax: Hashable) -> Algebra[A, S]:
+    def with_syntax(self, syntax: Syntax[A, S]) -> Algebra[A, S]:
         return replace(self, syntax=syntax).flag(syntax=syntax)
 
 

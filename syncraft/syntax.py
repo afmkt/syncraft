@@ -5,19 +5,20 @@ import re
 import math
 
 from typing import (
-    Optional, Any, TypeVar, Generic, Callable, Tuple, cast, 
+    Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce
 
-from syncraft.utils import file as get_file, line as get_line, func as get_func
+
+from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
-from syncraft.utils import FrozenDict
+
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
-from syncraft.utils import CallWith, ThreadLocalWeakValueDict
+
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import FABuilder
 
@@ -34,34 +35,120 @@ B = TypeVar('B')  # Result type for mapping
 C = TypeVar('C')  # Result type for else branch
 D = TypeVar('D')  # Result type for else branch
 S = TypeVar('S', bound=Bindable)  # State type
+
+N = TypeVar('N', bound=Hashable)  # Node type for graphs
+@dataclass(frozen=True)
+class Graph(Generic[N]):
+    edges: FrozenDict[N, frozenset[N]]
+
+    root: N
+    @classmethod
+    def from_edges(cls, root: N, *edges: Tuple[N, N]) -> Graph[N]:
+
+        e: Dict[N, Set[N]] = {}
+        for parent, child in edges:
+            e.setdefault(parent, set()).add(child)
+            e.setdefault(child, set())
+        return cls(edges=FrozenDict({k: frozenset(v) for k, v in e.items()}), 
+                   
+                   root=root)
+    
+    def __str__(self) -> str:
+        """
+        Generates a human-readable, indented tree representation of the graph
+        starting from the root node.
+        """
+        # Set to track visited nodes to avoid infinite recursion on cycles
+        visited: Set[N] = set()
+        
+        # List to store all lines of the output
+        output_lines: List[str] = [self.__class__.__name__]
+        def node_str(node: N) -> str:
+            if isinstance(node, ThenSpec):
+                return f"{str(id(node))}:{node}:ThenSpec({node.kind})"
+            elif isinstance(node, ChoiceSpec):
+                return f"{str(id(node))}:{node}:ChoiceSpec(|)"
+            else:
+                return f"{str(id(node))}:{node}"
+
+        def _format_node(node: N, prefix: str, is_last_sibling: bool):
+            """
+            Recursive helper function for DFS traversal and formatting.
+            
+            Args:
+                node: The current node being processed.
+                prefix: The indentation string accumulated from parents (e.g., "│   │   ").
+                is_last_sibling: True if this node is the last in its parent's list.
+            """
+            # 1. Check for cycles
+            if node in visited:
+                # Use └── for cycles as well, but only at the end of the line
+                output_lines.append(f"{prefix}└── [CYCLE] {node}")
+                return
+
+            # 2. Mark as visited, determine connector, and add line
+            visited.add(node)
+            connector = "└── " if is_last_sibling else "├── "
+
+            node_display = f"ROOT {node_str(node)}" if node == self.root else f"{node_str(node)}"
+            output_lines.append(f"{prefix}{connector}{node_display}")
+            
+            # 3. Determine the new prefix for the children
+            # If the current node is the last sibling, stop the vertical line (use '    ').
+            # Otherwise, continue the vertical line (use '│   ').
+            new_prefix = prefix + ("    " if is_last_sibling else "│   ")
+            
+            # 4. Process neighbors
+            neighbors = sorted(list(self.edges.get(node, frozenset())), key=lambda x: -len(str(x)))
+            
+            for i, neighbor in enumerate(neighbors):
+                neighbor_is_last = (i == len(neighbors) - 1)
+                
+                # The recursive call uses the new prefix and the neighbor's status
+                _format_node(neighbor, new_prefix, neighbor_is_last)
+        
+        # --- Root Initialization ---
+        
+        # The root is treated as the 'last' child of an imaginary parent (is_last_sibling=True) 
+        # so it gets the initial "└── " connector, matching the visual style.
+        _format_node(self.root, "", True)
+
+        # The root node should not have a connector if it were a pure tree print, 
+        # but since your example started with `└── ROOT regex`, we keep the 
+        # recursive call and the logic should now correctly indent the children 
+        # from that point.
+             
+        return "\n".join(output_lines).strip()
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
 @dataclass(frozen=True)
 class SyntaxSpec:
-    name: Optional[str] 
-    file: Optional[str] 
-    line: Optional[int]
-    func: Optional[str]
+    name: Optional[str] = field(compare=False, hash=False)
+    file: Optional[str] = field(compare=False, hash=False) 
+    line: Optional[int] = field(compare=False, hash=False)
+    func: Optional[str] = field(compare=False, hash=False)
 
-    def named(self, name: str, *, file: None | str, line: None | int, func: None | str) -> SyntaxSpec:
-        return replace(self, name=name, file=file, line=line, func=func)
+    def named(self, name: str, *, file: None | str, line: None | int, func: None | str, _location:bool=True) -> SyntaxSpec:
+        if _location:
+            return replace(self, name=name, file=file, line=line, func=func)
+        else:
+            return replace(self, name=name)
 
-    @classmethod
-    def format(cls, name: str, *, file: None | str, line: None | int, func: None | str) -> str:
-        location_parts: List[str] = []
-        if file is not None:
-            location_parts.append(f"file='{file}'")
-        if line is not None:
-            location_parts.append(f"line={line}")
-        if func is not None:
-            location_parts.append(f"func='{func}'")
-        location_str = ", ".join(location_parts)
-        return f"{name}[{location_str}]" if location_str else name
-    
-    
-    def _children(
-        self,
-        *,
-        lazy_cache: Optional[Dict[int, "SyntaxSpec"]] = None,
-    ) -> Tuple["SyntaxSpec", ...]:
+    def format(self, tmplt: str, *args: Any, **kwargs: Any) -> str:
+        tmp = {}
+        if self.name:
+            tmp['name'] = self.name
+        if self.file:
+            tmp['file'] = self.file
+        if self.line:
+            tmp['line'] = str(self.line)
+        if self.func:
+            tmp['func'] = self.func
+        return tmplt.format(*args, **{**tmp, **kwargs})
+
+    def _children(self, *, lazy_cache: Dict[int, "SyntaxSpec"]) -> Tuple["SyntaxSpec", ...]:
         return ()
 
     @property    
@@ -88,11 +175,15 @@ class SyntaxSpec:
             for child in reversed(node._children(lazy_cache=lazy_cache)):
                 stack.append((depth + 1, child))
 
-    def build_graph(
+    def graph(
         self,
         *,
         max_depth: Optional[int] = None,
-    ) -> List[Tuple["SyntaxSpec", "SyntaxSpec"]]:
+    ) -> Graph["SyntaxSpec"]:
+        """
+        Build a list of edges representing the syntax graph.
+        Each edge is a tuple (parent, child).
+        """
         lazy_cache: Dict[int, SyntaxSpec] = {}
         edges: List[Tuple[SyntaxSpec, SyntaxSpec]] = []
         seen: Set[Tuple[int, int]] = set()
@@ -104,8 +195,8 @@ class SyntaxSpec:
                     continue
                 seen.add(key)
                 edges.append((node, child))
-
-        return edges
+        return Graph.from_edges(self, *edges)
+        
     
 
 @dataclass(frozen=True)
@@ -113,7 +204,7 @@ class LazySpec(SyntaxSpec):
     spec: Callable[[], SyntaxSpec]    
     def __str__(self) -> str:
         name = self.name or "lazy(...)"
-        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+        return self.format("{0}", name)
     
     def __repr__(self) -> str:
         return super().__repr__()
@@ -123,13 +214,7 @@ class LazySpec(SyntaxSpec):
         return math.inf
 
 
-    def _children(
-        self,
-        *,
-        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
-    ) -> Tuple[SyntaxSpec, ...]:
-        if lazy_cache is None:
-            lazy_cache = {}
+    def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         key = id(self)
         if key in lazy_cache:
             return (lazy_cache[key],)
@@ -147,18 +232,24 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
 
+    @classmethod
+    def flatten(cls, node: SyntaxSpec) -> List[SyntaxSpec | ThenKind]:
+        parts = []
+        if isinstance(node, ThenSpec):
+            parts.extend(cls.flatten(node.left))
+            parts.append(node.kind)
+            parts.extend(cls.flatten(node.right))
+        else:
+            parts.append(node)
+        return parts
+
     def __str__(self) -> str:
         if self.name:
-            name = self.name
-        match self.kind:
-            case ThenKind.LEFT:
-                name = f"({str(self.left)} // {str(self.right)})" 
-            case ThenKind.RIGHT:
-                name = f"({str(self.left)} >> {str(self.right)})" 
-            case _:
-                name = f"({str(self.left)} + {str(self.right)})"
-            
-        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+            return self.format("{0}", self.name)
+        else:
+            parts = ThenSpec.flatten(self)
+            return  f"({' '.join(str(n) for n in parts)})"
+
             
     def __repr__(self) -> str:
         return super().__repr__()
@@ -167,11 +258,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     def complexity(self) -> float:
         return 1 + self.left.complexity + self.right.complexity
     
-    def _children(
-        self,
-        *,
-        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
-    ) -> Tuple[SyntaxSpec, ...]:
+    def _children(self,*, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.left, self.right)
 
 @dataclass(frozen=True)
@@ -179,9 +266,27 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
 
+    @classmethod
+    def flatten(cls, node: SyntaxSpec) -> List[SyntaxSpec]:
+        choices = []
+        if isinstance(node, ChoiceSpec):
+            choices.extend(cls.flatten(node.left))
+            choices.extend(cls.flatten(node.right))
+        else:
+            choices.append(node)
+        return choices
+
+
     def __str__(self) -> str:
-        name = self.name or f"({str(self.left)} | {str(self.right)})" 
-        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+        if self.name:
+            return self.name
+        else:
+            choices = ChoiceSpec.flatten(self)
+            if len(choices) == 2:
+                return self.format("({left} | {right})", left=str(choices[0]), right=str(choices[1]))
+            else:
+                inner = " | ".join(str(c) for c in choices)
+                return self.format("({choices})", choices=inner)
 
     def __repr__(self) -> str:
         return super().__repr__()
@@ -190,11 +295,7 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     def complexity(self) -> float:
         return 1 + self.left.complexity + (self.right.complexity / 2)
 
-    def _children(
-        self,
-        *,
-        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
-    ) -> Tuple[SyntaxSpec, ...]:
+    def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.left, self.right)
 
 @dataclass(frozen=True)
@@ -204,8 +305,11 @@ class ManySpec(SyntaxSpec, Generic[A]):
     at_most: Optional[int]
 
     def __str__(self) -> str:
-        name = self.name or f"*({str(self.spec)})"
-        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+        if self.name:
+            return self.name
+        else:
+            return self.format("*({spec})", spec=str(self.spec))
+        
     def __repr__(self) -> str:
         return super().__repr__()
 
@@ -216,11 +320,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
         else:
             return 1 + self.spec.complexity * ((self.at_least + self.at_most) // 2)
     
-    def _children(
-        self,
-        *,
-        lazy_cache: Optional[Dict[int, SyntaxSpec]] = None,
-    ) -> Tuple[SyntaxSpec, ...]:
+    def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.spec,)
 
 
@@ -231,11 +331,11 @@ class FactorySpec(SyntaxSpec):
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
 
     def __str__(self) -> str:
-        if self.name:
-            return self.name
-        ret = f"{', '.join(f'{k}={v}' for k,v in self.kwargs.items())}"
-        name = self.name or f"{self.fname}({ret})" if ret != '' else self.fname
-        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+        if self.name or not self.kwargs:
+            return self.name or self.fname
+        else:
+            args = f"{', '.join(f'{k}={v}' for k,v in self.kwargs.items())}"
+            return self.format("{fname}({args})", fname=self.fname, args=args)
     
     def __repr__(self) -> str:
         return super().__repr__()
@@ -318,10 +418,7 @@ class Syntax(Generic[A, S]):
     
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
-
-
-
-
+    
     @classmethod
     def config(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
         return type(cls.__name__, (cls,), {SYNCRAFT_CONFIG_KEY: attrs})
@@ -331,8 +428,8 @@ class Syntax(Generic[A, S]):
         cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
         return self.alg_f(alg, **(cfg | global_kwargs)).with_syntax(self)
             
-    def named(self, name: str) -> Syntax[A, S]:
-        return replace(self, spec=self.spec.named(name, file=get_file(1), line=get_line(1), func=get_func(1)))
+    def named(self, name: str, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
+        return replace(self, spec=self.spec.named(name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
 
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[Any], B],*, raw:bool = False) -> Syntax[B, S]:
@@ -349,12 +446,12 @@ class Syntax(Generic[A, S]):
     def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
         return self.spec.walk(max_depth=max_depth)
 
-    def build_graph(
+    def graph(
         self,
         *,
         max_depth: Optional[int] = None,
-    ) -> List[Tuple[SyntaxSpec, SyntaxSpec]]:
-        return self.spec.build_graph(max_depth=max_depth)
+    ) -> Graph[SyntaxSpec]:
+        return self.spec.graph(max_depth=max_depth)
 
     def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
@@ -547,7 +644,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Choice of value or Nothing.
         """
-        return (self | self.success(Nothing()))  # type: ignore
+        return (self | self.success(Nothing())).named(f"({str(self.spec)})?", _location=False)
         
     @property
     def cut(self) -> Syntax[A, S]:

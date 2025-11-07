@@ -119,47 +119,47 @@ class AnchorKind(Enum):
 B = FABuilder[str]
 S = Syntax.config(universe=CodeUniverse.unicode(), builtin=True)
 # number            = digit { digit } ;
-number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text))
+number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text)).named('number')
 
 # dot               = "." ;
-dot = S.lex(dot=B.lit("."))
-or_ = S.lex(or_=B.lit("|"))
+dot = S.lex(dot=B.lit(".")).named('"."')
+or_ = S.lex(or_=B.lit("|")).named('"|"')
 # leading_rsquare   = "]" ;
-leading_rsquare   = S.lex(leading_rsquare=B.lit("]")) 
+leading_rsquare   = S.lex(leading_rsquare=B.lit("]")).named('leading_rsquare')
 
-whitespace = S.lex(whitespace=B.oneof([" ", "\t", "\n", "\r", "\f", "\v"]))
-question = S.lex(question=B.lit("?"))
-star = S.lex(star=B.lit("*"))
-plus = S.lex(plus=B.lit("+"))
-lbrace = S.lex(lbrace=B.lit("{"))
-rbrace = S.lex(rbrace=B.lit("}"))
-comma = S.lex(comma=B.lit(","))
-lparen = S.lex(lparen=B.lit("("))
-rparen = S.lex(rparen=B.lit(")"))
-lsquare = S.lex(lsquare=B.lit("["))
-rsquare = S.lex(rsquare=B.lit("]"))
-colon = S.lex(colon=B.lit(":"))
-less = S.lex(less=B.lit("<"))
-greater = S.lex(greater=B.lit(">"))
-equal = S.lex(equal=B.lit("="))
-bang = S.lex(bang=B.lit("!"))
-caret = S.lex(caret=B.lit("^"))
-dollar = S.lex(dollar=B.lit("$"))
-backslash = S.lex(backslash=B.lit("\\"))
-minus = S.lex(minus=B.lit("-"))
+whitespace = S.lex(whitespace=B.oneof([" ", "\t", "\n", "\r", "\f", "\v"])).named('whitespace')
+question = S.lex(question=B.lit("?")).named('"?"')
+star = S.lex(star=B.lit("*")).named('"*"')
+plus = S.lex(plus=B.lit("+")).named('"+"')
+lbrace = S.lex(lbrace=B.lit("{")).named('"{"')
+rbrace = S.lex(rbrace=B.lit("}")).named('"}"')
+comma = S.lex(comma=B.lit(",")).named('","')
+lparen = S.lex(lparen=B.lit("(")).named('"("')
+rparen = S.lex(rparen=B.lit(")")).named('")"')
+lsquare = S.lex(lsquare=B.lit("[")).named('"["')
+rsquare = S.lex(rsquare=B.lit("]")).named('"]"')
+colon = S.lex(colon=B.lit(":")).named('":"')
+less = S.lex(less=B.lit("<")).named('"<"')
+greater = S.lex(greater=B.lit(">")).named('">"')
+equal = S.lex(equal=B.lit("=")).named('"="')
+bang = S.lex(bang=B.lit("!")).named('"!"')
+caret = S.lex(caret=B.lit("^")).named('"^"')
+dollar = S.lex(dollar=B.lit("$")).named('"$"')
+backslash = S.lex(backslash=B.lit("\\")).named('"\\"')
+minus = S.lex(minus=B.lit("-")).named('"-"')
 # boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
-boundary_escape = S.lex(boundary_escape=B.oneof(["\\A", "\\Z", "\\b", "\\B"]))
-escaped_x = S.lex(escaped_x=B.lit("\\x")) 
-escaped_u = S.lex(escaped_u=B.lit("\\u")) 
-escaped_U = S.lex(escaped_U=B.lit("\\U")) 
-escaped_N = S.lex(escaped_N=B.lit("\\N{"))
-escaped_p = S.lex(escaped_p=B.lit("\\p{")).named('escaped_p')
-escaped_P = S.lex(escaped_P=B.lit("\\P{")).named('escaped_P')
-underscore = S.lex(underscore=B.lit("_"))
-space = S.lex(space=B.lit(" "))
-hyphen = S.lex(hyphen=B.lit("-"))
+boundary_escape = S.lex(boundary_escape=B.oneof(["\\A", "\\Z", "\\b", "\\B"])).named('boundary_escape')
+escaped_x = S.lex(escaped_x=B.lit("\\x")).named('"\\x"')
+escaped_u = S.lex(escaped_u=B.lit("\\u")).named('"\\u"')
+escaped_U = S.lex(escaped_U=B.lit("\\U")).named('"\\U"')
+escaped_N = S.lex(escaped_N=B.lit("\\N{")).named('"\\N{"')
+escaped_p = S.lex(escaped_p=B.lit("\\p{")).named('"\\p{"')
+escaped_P = S.lex(escaped_P=B.lit("\\P{")).named('"\\P{"')
+underscore = S.lex(underscore=B.lit("_")).named('"_"')
+space = S.lex(space=B.lit(" ")).named('" "')
+hyphen = S.lex(hyphen=B.lit("-")).named('"-"')
 # unicode_scalar    = any code point U+0000..U+10FFFF ;
-unicode_scalar = S.lex(unicode_scalar=B.range("\u0000", "\U0010FFFF"))
+unicode_scalar = S.lex(unicode_scalar=B.range("\u0000", "\U0010FFFF")).named('unicode_scalar')
 # unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
 unicode_category = S.lex(unicode_category=B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"])).named('unicode_category')
 unicode_letter = S.lex(unicode_letter=B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"])).named('unicode_letter')
@@ -171,16 +171,16 @@ class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["
 literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"])).named('literal_char')
 
 # hex_octa          = hex_quad hex_quad ;
-hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text)
+hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text).named('hex_octa')
 # hex_quad          = hex_digit hex_digit hex_digit hex_digit ;
-hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)).map(lambda tok: tok.text)
+hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)).map(lambda tok: tok.text).named('hex_quad')
 # hex_pair          = hex_digit hex_digit ;
-hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text)
+hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text).named('hex_pair')
 
 # meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}" | "|" | "+" | "*" | "?" | "^" | "$" ;
-meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"]))
+meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"])).named('meta_char')
 # control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" ;
-control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"]))
+control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"])).named('control_escape')
 
 class ShorthandKind(Enum):
     DIGIT = auto()
@@ -205,32 +205,32 @@ class ShorthandAtom:
     kind: ShorthandKind
 
 # shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
-shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text))
+shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text)).named('shorthand')
 
 # category_name     = unicode_letter { unicode_letter } ;
-category_name = unicode_category.many().map(lambda ts: tuple(t.text for t in ts))
+category_name = unicode_category.many().map(lambda ts: tuple(t.text for t in ts)).named('category_name')
 # unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
 unicode_category_escape = (
     (escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace) 
      |
     (escaped_P.map(lambda _: True).mark('negated') + category_name.mark('categories') // rbrace)
-)
+).named('unicode_category_escape')
 
 # unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
-unicode_name = (unicode_letter + (unicode_letter | underscore | space | hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]]))
+unicode_name = (unicode_letter + (unicode_letter | underscore | space | hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])).named('unicode_name')
 # name_continue     = unicode_letter | unicode_digit | "_" ;
 name_continue = unicode_letter | underscore
 # name_start        = unicode_letter | "_" ;
 name_start = unicode_letter | underscore
 # name              = name_start { name_continue } ;
-name = (name_start + name_continue.many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]]))
+name = (name_start + name_continue.many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])).named('name')
 # unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
 unicode_escape = ((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16))) | 
                   (escaped_u >> hex_quad).map(lambda t: chr(int(t[0], 16))) | 
                   (escaped_U >> hex_octa).map(lambda t: chr(int(t[0], 16))) | 
-                  ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t[0])))
+                  ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t[0]))).named('unicode_escape')
 # escaped_metachar  = "\\" meta_char ;
-escaped_metachar = (backslash >> meta_char).map(lambda t: t[0])
+escaped_metachar = (backslash >> meta_char).map(lambda t: t[0]).named('escaped_metachar')
 # escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
 escaped_literal   = control_escape | unicode_escape | escaped_metachar 
 # literal           = escaped_literal | literal_char ;
@@ -254,7 +254,7 @@ class_atom = S.choice(class_literal,
                     control_escape,
                     unicode_escape,
                     unicode_category_escape.to(UnicodeCategoryAtom),
-                    escaped_class_meta).map(lambda t: t.text if isinstance(t, Token) else t)
+                    escaped_class_meta).map(lambda t: t.text if isinstance(t, Token) else t).named('class_atom')
 
 
 @dataclass(frozen=True)
@@ -268,15 +268,15 @@ class CharClassAtom:
 
 
 # range             = class_atom "-" class_atom ;
-range = (class_atom.mark('start') // minus + class_atom.mark('end')).to(CharRange)
+range = (class_atom.mark('start') // minus + class_atom.mark('end')).to(CharRange).named('range')
 
 # class_item = range | class_atom ;
 class_item = range | class_atom
 
 # class_class_items = leading_rsquare? class_item { class_item } ;
-class_class_items = (~leading_rsquare + class_item.many()).map(lambda t: (t[1] + [']']) if t[0] else t[1])
+class_class_items = (~leading_rsquare + class_item.many()).map(lambda t: (t[1] + [']']) if t[0] else t[1]).named('class_class_items')
 # char_class        = "[" [ "^" ] class_class_items "]" ;
-char_class = lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare
+char_class = (lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare).named('char_class')
 
 
 class GroupKind(Enum):
@@ -298,50 +298,50 @@ class GroupAtom:
     disabled_flags: Optional[Tuple[str, ...]] = None
 
 # flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
-flag = S.lex(flag=B.oneof(["a", "i", "L", "m", "s", "u", "x"]))
+flag = S.lex(flag=B.oneof(["a", "i", "L", "m", "s", "u", "x"])).named('flag')
 # flag_seq          = flag { flag } ;
-flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts))
+flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts)).named('flag_seq')
 # inline_flags      = flag_seq [ "-" flag_seq ] ;
-inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda t: t[0] if t is not Nothing else None).mark('disabled_flags')
+inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda t: t[0] if t is not Nothing else None).mark('disabled_flags').named('inline_flags')
 
 
 def _group_body() -> Syntax[Any, Any]:
     # group = "(" branch ")"
     plain = lparen >> branch.mark('pattern') // rparen
     # group = "(?:" branch ")"
-    noncapturing = (S.lex(_=B.lit("(?:" )) >> branch.mark('pattern') // rparen)
+    noncapturing = (S.lex(_=B.lit("(?:" )).named('(?:') >> branch.mark('pattern') // rparen)
     # group = "(?P<" name ">" branch ")"
-    named = S.lex(gp_named=B.lit("(?P<")) >> name.mark('name') // greater + branch.mark('pattern') // rparen
+    named = S.lex(gp_named=B.lit("(?P<")).named('(?P<') >> name.mark('name') // greater + branch.mark('pattern') // rparen
     # group = "(?=" branch ")"
-    lookahead = S.lex(gp_lookahead=B.lit("(?=" )) >> branch.mark('pattern') // rparen
+    lookahead = S.lex(gp_lookahead=B.lit("(?=" )).named('(?=') >> branch.mark('pattern') // rparen
     # group = "(?!" branch ")"
-    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!" )) >> branch.mark('pattern') // rparen
+    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!" )).named('(?!') >> branch.mark('pattern') // rparen
     # group = "(?<=" branch ")"
-    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=" )) >> branch.mark('pattern') // rparen
+    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=" )).named('(?<=') >> branch.mark('pattern') // rparen
     # group = "(?<!" branch ")"
-    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )) >> branch.mark('pattern') // rparen
+    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('(?<!') >> branch.mark('pattern') // rparen
     # group = "(?" inline_flags ")"
-    inline_flag_only = S.lex(gp_inline_flags=B.lit("(?")) >> inline_flags // rparen
+    inline_flag_only = S.lex(gp_inline_flags=B.lit("(?")).named('(?') >> inline_flags // rparen
     # group = "(?" inline_flags ":" branch ")"
-    inline_flag_with_colon = (S.lex(gp_inline_flags_colon=B.lit("(?")) 
+    inline_flag_with_colon = (S.lex(gp_inline_flags_colon=B.lit("(?")).named('(?')
                               >> inline_flags
                               // colon 
                               + branch.mark('pattern') 
                               // rparen)
     return S.choice(
-                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
-                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)),
-                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)),
-                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)),
-                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)),
-                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)),
-                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)),
-                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)),
-                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t))
+                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)).named('plain'),
+                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)).named('noncapturing'),
+                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)).named('named'),
+                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)).named('lookahead'),
+                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)).named('negative_lookahead'),
+                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)).named('lookbehind'),
+                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)).named('negative_lookbehind'),
+                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)).named('inline_flag_only'),
+                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t)).named('inline_flag_with_colon'),
             )
 
 
-group = S.lazy(_group_body)
+group = S.lazy(_group_body).named('group')
 
 # anchor            = "^" | "$" | boundary_escape ;
 # - ^ → LINE_START
@@ -352,7 +352,7 @@ group = S.lazy(_group_body)
 # - \B → NOT_WORD_BOUNDARY
 anchor = (caret | 
           dollar | 
-          boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind')
+          boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind').named('anchor')
 
 @dataclass(frozen=True)
 class Quantifier:
@@ -380,7 +380,7 @@ quantifier = (S.choice(
     question.map(lambda _: Quantifier(minimum=0, maximum=1)),
     star.map(lambda _: Quantifier(minimum=0, maximum=None)),
     plus.map(lambda _: Quantifier(minimum=1, maximum=None)),
-    braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1])) 
+    braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1])).named('quantifier') 
 
 
 @dataclass(frozen=True)
@@ -402,12 +402,12 @@ class DotAtom:
 # atom              = literal | char_class | group | anchor | dot | shorthand ;
 atom = S.choice(
         literal.map(lambda x: x.text).mark('text').to(LiteralAtom).named('literal'),
-        group.named('group'),
-        dot.to(DotAtom).named('dot'),
-        anchor.to(AnchorAtom).named('anchor'),
-        shorthand.to(ShorthandAtom).named('shorthand'),
-        unicode_category_escape.to(UnicodeCategoryAtom).named('unicode_category_escape'),
-        char_class.to(CharClassAtom).named('char_class'),
+        group,
+        dot.to(DotAtom),
+        anchor.to(AnchorAtom),
+        shorthand.to(ShorthandAtom),
+        unicode_category_escape.to(UnicodeCategoryAtom),
+        char_class.to(CharClassAtom),
         ).named('atom')
 
 
@@ -438,7 +438,7 @@ class Regex:
 
 
 # regex             = branch { "|" branch } ;
-regex_syntax = branch.sep_by(or_).mark('branches').to(Regex)
+regex_syntax = branch.sep_by(or_).named('regex').mark('branches').to(Regex)
 
 
 regex_parser = parser(syntax=regex_syntax, payload_kind='text')
