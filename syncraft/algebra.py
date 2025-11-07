@@ -41,18 +41,18 @@ class Error:
 
     @staticmethod
     def get_syntax(f: Any) -> Hashable | None:
-        if isinstance(f, Algebra):
+        if isinstance(f, Algebra):  # for Algebra subclasses
             return f.syntax
-        elif hasattr(f, 'syntax'):
+        elif hasattr(f, 'syntax'):     # for Algebra.run_f, set by Algebra._flag
             return getattr(f, 'syntax')
-        elif isinstance(f, Syntax):
+        elif hasattr(f, 'spec') and hasattr(f, 'alg_f'):  # Duck typing for Syntax
             return f
         return None
 
     @property
     def str_this(self) -> str:
         h = Error.get_syntax(self.this) 
-        spec = h.spec if isinstance(h, Syntax) else str(h)
+        spec = getattr(h, 'spec', h) if h is not None else str(h)
         return str(spec)
 
     @property

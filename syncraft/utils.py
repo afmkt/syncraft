@@ -55,7 +55,8 @@ def func(level: int = 0) -> None | str:
     while level >= 0 and frame is not None:
         level -= 1
         frame = frame.f_back
-    return frame.f_code.co_name if frame is not None else None
+    ret = frame.f_code.co_name if frame is not None else None
+    return ret if ret != '<module>' else None
     
 
 class CallWith:
