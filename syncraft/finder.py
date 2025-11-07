@@ -6,7 +6,7 @@ from typing import (
 
 from dataclasses import dataclass
 from syncraft.algebra import (
-    Algebra, Error, YieldChannelType, SendChannelType
+    Algebra,  YieldChannelType, SendChannelType
 )
 from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect, Lazy, Nothing
 from syncraft.cache import Either, Left, Right

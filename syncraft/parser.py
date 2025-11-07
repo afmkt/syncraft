@@ -11,8 +11,9 @@ from syncraft.lexer import (
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.utils import FrozenDict
 from syncraft.algebra import (
-     Error, Algebra, YieldChannelType, SendChannelType
+     Algebra, YieldChannelType, SendChannelType
 )
+from syncraft.error import Error
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
 

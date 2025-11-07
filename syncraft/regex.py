@@ -5,13 +5,13 @@ from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
 from syncraft.ast import AST, Token, Nothing, SyncraftError
-
+from syncraft.error import Error
 from syncraft.charset import CodeUniverse
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
 from syncraft.input import StreamCursor
-
+import re
 from syncraft.dev import debug
 from rich import print
 r"""
@@ -444,7 +444,7 @@ regex_syntax = branch.sep_by(or_).mark('branches').to(Regex)
 regex_parser = parser(syntax=regex_syntax, payload_kind='text')
 
 
-def parse(data: str, *, raw:bool=False) -> Any:
+def parse(data: str, *, raw:bool=False) -> Regex | Error | Any:
     from syncraft.parser import Runner
     runner: Runner[Any] = Runner()
     cursor = StreamCursor.from_data(data)
@@ -472,3 +472,17 @@ def parse_regex(syntax: Syntax[Any, Any],
         return result
 
 
+def verify(pattern: str) -> Tuple[bool, Any, Any]:
+    myerr = None
+    err = None
+    parsed = parse(pattern)
+    if not isinstance(parsed, Regex):
+        myerr = parsed
+    try:
+        pyparsed = re.compile(pattern)
+    except re.error as e:
+        pyparsed = None
+        err = e
+    ret = (pyparsed is not None and isinstance(parsed, Regex)) or (pyparsed is None and isinstance(parsed, Error))
+    return ret, myerr, err
+    

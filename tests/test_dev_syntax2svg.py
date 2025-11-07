@@ -22,13 +22,13 @@ from syncraft.utils import FrozenDict
 
 
 def token_spec(label: str) -> FactorySpec:
-    return FactorySpec(fname="token", kwargs=FrozenDict({"text": label}))
+    return FactorySpec(fname="token", kwargs=FrozenDict({"text": label}), name=None, file=None, line=None, func=None)
 
 
 def test_syntax2svg_simple_sequence():
     token_a = token_spec("A")
     token_b = token_spec("B")
-    sequence = ThenSpec(kind=ThenKind.BOTH, left=token_a, right=token_b)
+    sequence = ThenSpec(kind=ThenKind.BOTH, left=token_a, right=token_b, name=None, file=None, line=None, func=None)
 
     svg = syntax2svg(sequence)
 
@@ -43,8 +43,8 @@ def test_syntax2svg_handles_direct_recursion():
     def deferred() -> ChoiceSpec:
         return recursive_choice
 
-    lazy = LazySpec(spec=deferred)
-    recursive_choice = ChoiceSpec(left=token_digit, right=lazy)
+    lazy = LazySpec(spec=deferred, name=None, file=None, line=None, func=None)
+    recursive_choice = ChoiceSpec(left=token_digit, right=lazy, name=None, file=None, line=None, func=None)
 
     svg = syntax2svg(recursive_choice)
 

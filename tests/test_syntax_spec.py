@@ -51,7 +51,7 @@ def _strip_left_recursion(alt: SyntaxSpec, root: SyntaxSpec) -> SyntaxSpec:
         return alt.right
     if isinstance(alt.left, ThenSpec):
         new_left = _strip_left_recursion(alt.left, root)
-        return ThenSpec(kind=alt.kind, left=new_left, right=alt.right)
+        return ThenSpec(kind=alt.kind, left=new_left, right=alt.right, name=None, file=None, line=None, func=None)
     raise AssertionError("Unable to strip root from left-recursive branch")
 
 

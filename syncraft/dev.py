@@ -12,7 +12,7 @@ from syncraft.syntax import (
     FactorySpec,
 )
 from syncraft.ast import ThenKind
-from syncraft.algebra import Error
+from syncraft.error import Error
 from rich import print
 
 def debug(syntax: Syntax[Any, Any], *, msg: str = "") -> Syntax[Any, Any]:

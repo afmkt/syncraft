@@ -2,9 +2,12 @@ from .syntax import (
 	Syntax,
     
 )
+from .error import (
+	Error,
+)
 from .algebra import (
     Algebra,
-    Error,
+    
     Left,
     Right,
     Either,

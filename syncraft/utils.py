@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Generic, TypeVar, Optional
+from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional
 from dataclasses import dataclass
 import inspect
 import functools
@@ -7,14 +7,14 @@ import types
 import collections.abc
 import threading
 from weakref import WeakKeyDictionary, WeakValueDictionary
-
+import os
 
 def callable_str(obj:Any)->str:
     if not callable(obj):
         return repr(obj)
     original = str(obj)
     idstr = hex(id(obj))
-    name = obj.__rule_name__ if hasattr(obj, '__rule_name__') else (
+    name = obj.syntax if hasattr(obj, 'syntax') else (
         obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
     if 'lazy' in original:
         return f"{idstr} @ LAZY({name})"
@@ -30,7 +30,33 @@ def callable_str(obj:Any)->str:
         return f"{idstr} @ {name}"
     
 
+def line(level: int = 0) -> None | int:
+    frame = inspect.currentframe()
+    if frame is None:
+        return None
+    while level >= 0 and frame is not None:
+        level -= 1
+        frame = frame.f_back
+    return frame.f_lineno if frame is not None else None
 
+def file(level: int = 0)->None | str:
+    frame = inspect.currentframe()
+    if frame is None:
+        return None
+    while level >= 0 and frame is not None:
+        level -= 1
+        frame = frame.f_back
+    return os.path.basename(frame.f_code.co_filename) if frame is not None else None
+
+def func(level: int = 0) -> None | str:
+    frame = inspect.currentframe()
+    if frame is None:
+        return None
+    while level >= 0 and frame is not None:
+        level -= 1
+        frame = frame.f_back
+    return frame.f_code.co_name if frame is not None else None
+    
 
 class CallWith:
     cache: Dict[Callable[...,Any], inspect.Signature] = dict()

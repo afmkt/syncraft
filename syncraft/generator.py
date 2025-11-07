@@ -11,8 +11,9 @@ import random
 from functools import cached_property
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
-    Algebra, Error, YieldChannelType, SendChannelType
+    Algebra, YieldChannelType, SendChannelType
 )
+from syncraft.error import Error
 from syncraft.lexer import LexerBase, Lexer, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 

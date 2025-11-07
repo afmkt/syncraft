@@ -5,7 +5,7 @@ from syncraft.regex import (
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
-
+from syncraft.algebra import Error
 
 
 
@@ -468,7 +468,7 @@ def test_groups_flags_scoped_with_disable():
 
 
 
-def test_regex():
+def test_regex_comprehensive():
     result = parse(r"\p{LuLl}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1

@@ -1,14 +1,16 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Type, Generator, Union, Hashable
+    Type, Generator, Union, Hashable, TYPE_CHECKING
 )
 from syncraft.ast import AST, Ignore
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
-
+from syncraft.error import Error
+if TYPE_CHECKING:
+    from syncraft.syntax import Syntax
 
 S = TypeVar('S', bound=Bindable)    
 A = TypeVar('A')  # Result type
@@ -18,41 +20,7 @@ SYNCRAFT_CONFIG_KEY = "__syncraft_config__"
 
 
 
-@dataclass(frozen=True)
-class Error:
-    this: Any
-    message: Optional[str] = None
-    error: Optional[Any] = None    
-    state: Optional[Any] = None
-    committed: bool = False
-    previous: Optional[Error] = None
-    
-    def push( self, 
-                *,
-                this: Any, 
-                message: Optional[str] = None,
-                error: Optional[Any] = None, 
-                state: Optional[Any] = None) -> Error:
-        return Error(
-            this=this,
-            error=error,
-            message=message,
-            state=state,
-            previous=self
-        )
-    def to_list(self)->List[Error]:
-        lst = []
-        current: Optional[Error] = self
-        while current is not None:
-            lst.append(current)
-            current = current.previous
-        return lst
-    @property
-    def deepest(self) -> Error:
-        current: Error = self
-        while current.previous is not None:
-            current = current.previous
-        return current
+
 
 YieldChannelType = Incomplete[S] 
 SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
@@ -64,7 +32,17 @@ SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
-    _name: Hashable | None = None
+    syntax: Hashable | None = None
+
+    @staticmethod
+    def get_syntax(f: Callable[..., Any]) -> Hashable | None:
+        if isinstance(f, Algebra):
+            return f.syntax
+        elif hasattr(f, 'syntax'):
+            return getattr(f, 'syntax')
+        elif isinstance(f, Syntax):
+            return f
+        return None
 
     @staticmethod
     def _flag(func: Callable[..., Any], **kwargs: Hashable) -> Callable[..., Any]:
@@ -81,28 +59,27 @@ class Algebra(Generic[A, S]):
         cfg = getattr(self, SYNCRAFT_CONFIG_KEY, {})
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
-    def named(self, name: Hashable) -> Algebra[A, S]:
-        Algebra._flag(self.run_f, __rule_name__=name)
-        return replace(self, _name=name)
+    def with_syntax(self, syntax: Hashable) -> Algebra[A, S]:
+        return replace(self, syntax=syntax).flag(syntax=syntax)
 
 
     @property
     def name(self) -> str:    
-        return str(self._name)
+        return str(self.syntax)
     
     
     def __call__(self, 
                  input: S, 
                  cache: Cache[S]) -> Generator[YieldChannelType, 
-                                                                        SendChannelType, 
-                                                                        Either[Any, Tuple[A, S]]]:
+                                                SendChannelType, 
+                                                Either[Any, Tuple[A, S]]]:
         return self.run(input, cache=cache)
 
     def run(self, 
             input: S, 
             cache: Cache[S]) -> Generator[YieldChannelType, 
-                                                                   SendChannelType, 
-                                                                   Either[Any, Tuple[A, S]]]:
+                                        SendChannelType, 
+                                        Either[Any, Tuple[A, S]]]:
         try:
             if cache is None:
                 return (yield from self.run_f(input, cache))
@@ -117,7 +94,7 @@ class Algebra(Generic[A, S]):
             if e.offender is self.run_f  or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")
             else:
-                e = e.push(self.name)
+                e = e.push(f"{self.name}")
             raise e
         
 
@@ -170,11 +147,8 @@ class Algebra(Generic[A, S]):
                 case Error():
                     return replace(e, committed=True)
                 case _:
-                    return Error(
-                        error=e,
-                        this=self,
-                        committed=True
-                    )
+                    err = Error(error=e, this=self)
+                    return replace(err, committed=True)
         return self.map_error(commit_error)
 
     def on_fail(self, 

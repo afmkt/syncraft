@@ -11,7 +11,9 @@ from typing import (
 from dataclasses import dataclass, field, replace
 from functools import reduce
 
-from syncraft.algebra import Algebra, Error, Either, Left, Right, SYNCRAFT_CONFIG_KEY
+from syncraft.utils import file as get_file, line as get_line, func as get_func
+from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY
+from syncraft.error import Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
 from syncraft.utils import FrozenDict
@@ -35,8 +37,26 @@ D = TypeVar('D')  # Result type for else branch
 S = TypeVar('S', bound=Bindable)  # State type
 @dataclass(frozen=True)
 class SyntaxSpec:
-    def named(self, name: str) -> SyntaxSpec:
-        return self
+    name: Optional[str] 
+    file: Optional[str] 
+    line: Optional[int]
+    func: Optional[str]
+
+    def named(self, name: str, *, file: None | str, line: None | int, func: None | str) -> SyntaxSpec:
+        return replace(self, name=name, file=file, line=line, func=func)
+
+    @classmethod
+    def format(cls, name: str, *, file: None | str, line: None | int, func: None | str) -> str:
+        location_parts: List[str] = []
+        if file is not None:
+            location_parts.append(f"file='{file}'")
+        if line is not None:
+            location_parts.append(f"line={line}")
+        if func is not None:
+            location_parts.append(f"func='{func}'")
+        location_str = ", ".join(location_parts)
+        return f"{name}[{location_str}]" if location_str else name
+    
     
     def _children(
         self,
@@ -91,15 +111,11 @@ class SyntaxSpec:
 
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec):
-    spec: Callable[[], SyntaxSpec]
-    name: Optional[str] = None
-    def named(self, name: str) -> SyntaxSpec:
-        return replace(self, name=name)
-    
+    spec: Callable[[], SyntaxSpec]    
     def __str__(self) -> str:
-        if self.name:
-            return self.name
-        return "lazy(...)" 
+        name = self.name or "lazy(...)"
+        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+    
     def __repr__(self) -> str:
         return super().__repr__()
     
@@ -131,20 +147,20 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
     right: SyntaxSpec
-    name: Optional[str] = None
-    def named(self, name: str) -> SyntaxSpec:
-        return replace(self, name=name)
-    
+
     def __str__(self) -> str:
         if self.name:
-            return self.name
+            name = self.name
         match self.kind:
             case ThenKind.LEFT:
-                return f"({str(self.left)} // {str(self.right)})" 
+                name = f"({str(self.left)} // {str(self.right)})" 
             case ThenKind.RIGHT:
-                return f"({str(self.left)} >> {str(self.right)})" 
+                name = f"({str(self.left)} >> {str(self.right)})" 
             case _:
-                return f"({str(self.left)} + {str(self.right)})"
+                name = f"({str(self.left)} + {str(self.right)})"
+            
+        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+            
     def __repr__(self) -> str:
         return super().__repr__()
 
@@ -163,14 +179,11 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
 class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
-    name: Optional[str] = None
-    def named(self, name: str) -> SyntaxSpec:
-        return replace(self, name=name)
-    
+
     def __str__(self) -> str:
-        if self.name:
-            return self.name
-        return f"({str(self.left)} | {str(self.right)})" 
+        name = self.name or f"({str(self.left)} | {str(self.right)})" 
+        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+
     def __repr__(self) -> str:
         return super().__repr__()
 
@@ -190,14 +203,10 @@ class ManySpec(SyntaxSpec, Generic[A]):
     spec: SyntaxSpec
     at_least: int
     at_most: Optional[int]
-    name: Optional[str] = None
-    def named(self, name: str) -> SyntaxSpec:
-        return replace(self, name=name)
-    
+
     def __str__(self) -> str:
-        if self.name:
-            return self.name
-        return f"*({str(self.spec)})" 
+        name = self.name or f"*({str(self.spec)})"
+        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
     def __repr__(self) -> str:
         return super().__repr__()
 
@@ -221,15 +230,14 @@ class ManySpec(SyntaxSpec, Generic[A]):
 class FactorySpec(SyntaxSpec):
     fname: str
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-    name: Optional[str] = None
-    def named(self, name: str) -> SyntaxSpec:
-        return replace(self, name=name)
-    
+
     def __str__(self) -> str:
         if self.name:
             return self.name
         ret = f"{', '.join(f'{k}={v}' for k,v in self.kwargs.items())}"
-        return f"{self.fname}({ret})" if ret != '' else self.fname
+        name = self.name or f"{self.fname}({ret})" if ret != '' else self.fname
+        return SyntaxSpec.format(name, file=self.file, line=self.line, func=self.func)
+    
     def __repr__(self) -> str:
         return super().__repr__()
 
@@ -322,10 +330,10 @@ class Syntax(Generic[A, S]):
 
     def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
         cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
-        return self.alg_f(alg, **(cfg | global_kwargs)).named(self)
+        return self.alg_f(alg, **(cfg | global_kwargs)).with_syntax(self)
             
     def named(self, name: str) -> Syntax[A, S]:
-        return replace(self, spec=self.spec.named(name))
+        return replace(self, spec=self.spec.named(name, file=get_file(1), line=get_line(1), func=get_func(1)))
 
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[Any], B],*, raw:bool = False) -> Syntax[B, S]:
@@ -425,7 +433,7 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).many(at_least=at_least, at_most=at_most), # type: ignore
-                       spec = ManySpec(spec=self.spec, at_least=at_least, at_most=at_most)
+                       spec = ManySpec(spec=self.spec, at_least=at_least, at_most=at_most, name=None, file=None, line=None, func=None)
                        )
 
     def debug(self, 
@@ -569,7 +577,7 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_left(other(cls, **global_kwargs)), # type: ignore
-                       spec = ThenSpec(kind=ThenKind.LEFT, left=self.spec, right=other.spec)
+                       spec = ThenSpec(kind=ThenKind.LEFT, left=self.spec, right=other.spec, name=None, file=None, line=None, func=None)
                    )
 
 
@@ -591,7 +599,7 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_both(other(cls, **global_kwargs)), # type: ignore
-                       spec=ThenSpec(kind=ThenKind.BOTH, left=self.spec, right=other.spec))
+                       spec=ThenSpec(kind=ThenKind.BOTH, left=self.spec, right=other.spec, name=None, file=None, line=None, func=None))
 
 
     def __radd__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -612,7 +620,7 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_right(other(cls, **global_kwargs)),  # type: ignore
-                       spec=ThenSpec(kind=ThenKind.RIGHT, left=self.spec, right=other.spec))
+                       spec=ThenSpec(kind=ThenKind.RIGHT, left=self.spec, right=other.spec, name=None, file=None, line=None, func=None))
         
 
     def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Then[B, A], S]:
@@ -633,7 +641,7 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)).flag(is_choice=True), # type: ignore
-                       spec=ChoiceSpec(left=self.spec, right=other.spec))
+                       spec=ChoiceSpec(left=self.spec, right=other.spec, name=None, file=None, line=None, func=None))
         
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
@@ -736,7 +744,7 @@ class Syntax(Generic[A, S]):
         helper = LazyState(flatten=flatten, thunk=thunk)
 
         facade = cls(alg_f=lambda acls, **global_kwargs: helper(acls, **global_kwargs), 
-                     spec=LazySpec(spec=lambda: helper.cached.spec))
+                     spec=LazySpec(spec=lambda: helper.cached.spec, name=None, file=None, line=None, func=None))
         facade_cache[thunk] = facade
         return facade
     
@@ -750,7 +758,7 @@ class Syntax(Generic[A, S]):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
-        return cls(factory_run, spec=FactorySpec(fname=name, kwargs=FrozenDict(kwargs)))
+        return cls(factory_run, spec=FactorySpec(fname=name, kwargs=FrozenDict(kwargs), name=None, file=None, line=None, func=None))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
