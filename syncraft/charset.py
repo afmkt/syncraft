@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Generic, Tuple, Callable, Type, ClassVar, Any, Iterable, Sequence, Optional
+    TypeVar, Generic, Tuple, Type, ClassVar, Any, Iterable, Sequence, Optional
 )
 
 from syncraft.utils import FrozenDict

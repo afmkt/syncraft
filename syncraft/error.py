@@ -1,15 +1,8 @@
 from __future__ import annotations
 from typing import (
-    Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Type, Generator, Union, Hashable, TYPE_CHECKING
+    Optional, List, Any
 )
-from syncraft.ast import AST, Ignore
 from dataclasses import dataclass, replace, field
-from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
-from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
-from syncraft.constraint import Bindable
-if TYPE_CHECKING:
-    from syncraft.syntax import Syntax
 
 
 @dataclass(frozen=True)

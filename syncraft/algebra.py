@@ -4,7 +4,7 @@ from typing import (
     Type, Generator, Union, Hashable, TYPE_CHECKING
 )
 from syncraft.ast import AST, Ignore
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, replace
 from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable

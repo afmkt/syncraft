@@ -7,7 +7,11 @@ from typing import Any
 from syncraft.syntax import Syntax
 from sqlglot import TokenType
 
-lift = Syntax.lift
+def lift(token_type: TokenType | str) -> Syntax[Any, Any]:
+    if isinstance(token_type, str):
+        return Syntax.token(text=token_type)
+    else:
+        return Syntax.token(token_type=token_type)
 lazy = Syntax.lazy
 token = Syntax.token
 choice = Syntax.choice

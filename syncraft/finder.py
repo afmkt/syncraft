@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra,  YieldChannelType, SendChannelType
 )
-from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect, Lazy, Nothing
+from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect, Lazy
 from syncraft.cache import Either, Left, Right
 from syncraft.generator import GenState, Generator
 from syncraft.cache import Cache
-from syncraft.syntax import Syntax, SyntaxSpec
+from syncraft.syntax import Syntax
 
 
 T=TypeVar('T', bound=Hashable)

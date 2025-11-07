@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List,
-    Callable, Dict, Sequence, Union, Iterator, Literal, TextIO
+    Callable, Dict, Sequence, Union, Iterator, Literal
 )
 
 from dataclasses import dataclass, field, replace
@@ -18,7 +18,7 @@ from enum import Enum
 from collections import defaultdict
 from functools import reduce
 import random
-from collections import defaultdict
+
 Tag = str
 C = TypeVar('C', bound=str | int | Enum | Any)
 

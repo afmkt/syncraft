@@ -26,7 +26,7 @@ from syncraft.ast import (
 from syncraft.utils import FrozenDict
 
 from syncraft.fa import FABuilder
-from syncraft.syntax import Syntax, RunnerProtocol, Incomplete
+from syncraft.syntax import Syntax, RunnerProtocol
 
 from syncraft.constraint import Bindable
 from syncraft.input import StreamCursor, PayloadKind

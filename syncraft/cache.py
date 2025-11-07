@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict, Set
+from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from rich import print

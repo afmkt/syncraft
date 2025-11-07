@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import (
     Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, ClassVar,
-    runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING, List
+    runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING
 )
 if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
     from syncraft.syntax import FactorySpec, Syntax

@@ -8,7 +8,7 @@ from typing import (
 )
 from functools import cached_property
 
-from dataclasses import dataclass, replace, is_dataclass, fields, field
+from dataclasses import dataclass, replace, is_dataclass, fields
 from enum import Enum
 from syncraft.utils import CallWith
 
