@@ -43,7 +43,7 @@ def test_syntax2svg_handles_direct_recursion():
     def deferred() -> ChoiceSpec:
         return recursive_choice
 
-    lazy = LazySpec(spec=deferred, name=None, file=None, line=None, func=None)
+    lazy = LazySpec(spec=deferred, flatten=True, name=None, file=None, line=None, func=None)
     recursive_choice = ChoiceSpec(left=token_digit, right=lazy, name=None, file=None, line=None, func=None)
 
     svg = syntax2svg(recursive_choice)

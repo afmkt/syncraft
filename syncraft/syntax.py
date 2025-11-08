@@ -49,9 +49,7 @@ class Graph(Generic[N]):
         for parent, child in edges:
             e.setdefault(parent, set()).add(child)
             e.setdefault(child, set())
-        return cls(edges=FrozenDict({k: frozenset(v) for k, v in e.items()}), 
-                   
-                   root=root)
+        return cls(edges=FrozenDict({k: frozenset(v) for k, v in e.items()}), root=root)
     
     def __str__(self) -> str:
         """
@@ -130,6 +128,11 @@ class SyntaxSpec:
     line: Optional[int] = field(compare=False, hash=False)
     func: Optional[str] = field(compare=False, hash=False)
 
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        raise NotImplementedError
+        
     def named(self, name: str, *, file: None | str, line: None | int, func: None | str, _location:bool=True) -> SyntaxSpec:
         if _location:
             return replace(self, name=name, file=file, line=line, func=func)
@@ -201,7 +204,16 @@ class SyntaxSpec:
 
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec):
-    spec: Callable[[], SyntaxSpec]    
+    spec: Callable[[], SyntaxSpec]
+    flatten: bool 
+
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        ret = cls.lazy(lambda: self.spec().syntax(cls, cache=cache), flatten=self.flatten)
+        cache[self] = ret
+        return ret
+
     def __str__(self) -> str:
         name = self.name or "lazy(...)"
         return self.format("{0}", name)
@@ -231,6 +243,23 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
     right: SyntaxSpec
+
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        left = self.left.syntax(cls, cache=cache)
+        right = self.right.syntax(cls, cache=cache)
+        match self.kind:
+            case ThenKind.BOTH:
+                ret = left + right
+            case ThenKind.LEFT:
+                ret = left // right
+            case ThenKind.RIGHT:
+                ret = left >> right
+            case _:
+                raise AssertionError(f"Unknown ThenKind: {self.kind}")
+        cache[self] = ret
+        return ret
 
     @classmethod
     def flatten(cls, node: SyntaxSpec) -> List[SyntaxSpec | ThenKind]:
@@ -266,6 +295,15 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
 
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        left = self.left.syntax(cls, cache=cache)
+        right = self.right.syntax(cls, cache=cache)
+        ret = left | right
+        cache[self] = ret
+        return ret
+
     @classmethod
     def flatten(cls, node: SyntaxSpec) -> List[SyntaxSpec]:
         choices = []
@@ -293,7 +331,7 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
 
     @property
     def complexity(self) -> float:
-        return 1 + self.left.complexity + (self.right.complexity / 2)
+        return 1 + max(self.left.complexity, self.right.complexity)
 
     def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.left, self.right)
@@ -303,6 +341,14 @@ class ManySpec(SyntaxSpec, Generic[A]):
     spec: SyntaxSpec
     at_least: int
     at_most: Optional[int]
+
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        inner = self.spec.syntax(cls, cache=cache)
+        ret = inner.many(at_least=self.at_least, at_most=self.at_most)
+        cache[self] = ret
+        return ret
 
     def __str__(self) -> str:
         if self.name:
@@ -329,7 +375,13 @@ class ManySpec(SyntaxSpec, Generic[A]):
 class FactorySpec(SyntaxSpec):
     fname: str
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        ret = cls.factory(self.fname, **self.kwargs)
+        cache[self] = ret
+        return ret
+    
     def __str__(self) -> str:
         if self.name or not self.kwargs:
             return self.name or self.fname
@@ -840,7 +892,12 @@ class Syntax(Generic[A, S]):
         helper = LazyState(flatten=flatten, thunk=thunk)
 
         facade = cls(alg_f=lambda acls, **global_kwargs: helper(acls, **global_kwargs), 
-                     spec=LazySpec(spec=lambda: helper.cached.spec, name=None, file=None, line=None, func=None))
+                     spec=LazySpec(spec=lambda: helper.cached.spec, 
+                                   flatten=flatten,
+                                   name=None, 
+                                   file=None, 
+                                   line=None, 
+                                   func=None))
         facade_cache[thunk] = facade
         return facade
     
@@ -872,39 +929,7 @@ class Syntax(Generic[A, S]):
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax[Any, Any]:
         c: Dict[SyntaxSpec, Syntax] = {}
-        def _rehydrate(
-            cls: type[Syntax],
-            spec: SyntaxSpec,
-            cache: Dict[SyntaxSpec, Syntax]
-        ) -> Syntax:
-            if spec in cache:
-                return cache[spec]
-            if isinstance(spec, LazySpec):
-                syntax = cls.lazy(lambda: _rehydrate(cls, spec.spec(), cache))
-            elif isinstance(spec, ThenSpec):
-                left = _rehydrate(cls, spec.left, cache)
-                right = _rehydrate(cls, spec.right, cache)
-                if spec.kind == ThenKind.BOTH:
-                    syntax = left + right
-                elif spec.kind == ThenKind.LEFT:
-                    syntax = left // right
-                elif spec.kind == ThenKind.RIGHT:
-                    syntax = left >> right
-                else:  # pragma: no cover - defensive guard
-                    raise AssertionError(f"Unsupported ThenKind: {spec.kind!r}")
-            elif isinstance(spec, ChoiceSpec):
-                syntax = _rehydrate(cls, spec.left, cache) | _rehydrate(cls, spec.right, cache)
-            elif isinstance(spec, ManySpec):
-                inner = _rehydrate(cls, spec.spec, cache)
-                syntax = inner.many(at_least=spec.at_least, at_most=spec.at_most)
-            elif isinstance(spec, FactorySpec):
-                syntax = cls.factory(spec.fname, **spec.kwargs)
-            else:  # pragma: no cover - defensive guard
-                raise AssertionError(f"Unsupported SyntaxSpec node: {spec!r}")
-            cache[spec] = syntax
-            return syntax
-
-        return _rehydrate(cls, spec, c)
+        return spec.syntax(cls, cache=c)
 
     def factory_spec(self, visitor: Callable[[FactorySpec, Any], Any], init: Any) -> Any:
         for _, node in self.spec.walk():
