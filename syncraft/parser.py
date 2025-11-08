@@ -116,7 +116,7 @@ class ParserState(Bindable, Generic[T]):
             return "pending=True"
         return ''
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         parts = [self.str_input]
         if self.ended:
             parts.append(self.str_ended)
@@ -126,11 +126,8 @@ class ParserState(Bindable, Generic[T]):
             parts.append(self.str_line)
         if self.column > 0:
             parts.append(self.str_column)
-        return f"ParserState({', '.join(parts)})"
-
-    def __str__(self) -> str:
-        return self.__repr__()
-
+        return f"{self.__class__.__name__}({', '.join(parts)})"
+    
     def _slice_to_display(self, start: int, end: int) -> list[str]:
         segment = self.input[start:end]
         if isinstance(self.input, str):

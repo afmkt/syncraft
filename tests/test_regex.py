@@ -187,3 +187,5 @@ def test_regex():
             assert ok, f"Pattern failed to parse: {pattern}\nMy Error: {myerr}\nRe Error: {err}"
         else:
             assert not ok, f"Pattern should have failed but parsed: {pattern}"
+
+

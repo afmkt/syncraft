@@ -24,6 +24,7 @@ from syncraft.ast import (
 from syncraft.parser import parse_word
 from syncraft.lexer import ExtLexer
 from syncraft.token import Structured
+from syncraft.regex import regex_syntax
 
 
 
@@ -132,3 +133,18 @@ def test_walk_handles_recursive_grammar() -> None:
     assert nodes, "Expected walk to yield at least one node"
     unique_nodes = {id(node) for _, node in nodes}
     assert len(unique_nodes) == len(nodes), "Walk should not revisit nodes in recursive grammars"
+
+
+def test_graph():
+    g = regex_syntax.graph()
+    assert g.edges, "Graph should have edges"
+    assert g.root, "Graph should have roots"
+    s = Syntax.from_graph(g)
+    assert s is not None, "Should be able to reconstruct syntax from graph"
+    g1 = s.graph()
+    print(g1.root)
+    print(g.root)
+    assert g1.edges == g.edges, "Reconstructed graph should match original"
+    assert g1.root == g.root, "Reconstructed graph root should match original"
+    assert len(g1.edges) == len(g.edges), "Reconstructed graph should have same number of edges"
+    assert g == g1, "Graphs should be equal"

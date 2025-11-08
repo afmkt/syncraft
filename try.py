@@ -6,6 +6,7 @@ from syncraft.regex import (
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
+from syncraft.syntax import Syntax
 from syncraft.algebra import Error
 import random
 import string
@@ -13,13 +14,20 @@ import re
 from rich import print
 
 
-# def test_multi_recursion():
-#     pattern = "((a|b)c(d|e(f|g(h|i(j|k(l|m(n|o(p|q(r|s(t|u(v|w(x|y(z))))))))))))))"
-#     ok, myerr, err = verify(pattern)
-#     g = regex_syntax.graph()
-#     g1 = myerr.graph
-#     assert g == g1, f"Graphs do not match for pattern: {pattern}"
-#     assert ok, f"Pattern failed to parse: {pattern}\nRe Error: {err}\nMy Error: {myerr}"
+def test_graph():
+    g = regex_syntax.graph()
+    assert g.edges, "Graph should have edges"
+    assert g.root, "Graph should have roots"
+    s = Syntax.from_graph(g)
+    assert s is not None, "Should be able to reconstruct syntax from graph"
+    g1 = s.graph()
+    # assert g1.edges == g.edges, "Reconstructed graph should match original"
+    # print(g1.root)
+    print(g.root)
+    assert g1.root == g.root, "Reconstructed graph root should match original"
+    assert len(g1.edges) == len(g.edges), "Reconstructed graph should have same number of edges"
+    assert g == g1, "Graphs should be equal"
+
 
 def test_alternation_in_group():
     pattern = "(a|b)"
@@ -31,5 +39,5 @@ def test_alternation_in_group():
     assert ok, f"Pattern failed to parse: {pattern}\nRe Error: {err}\nMy Error: {myerr}"
 
 if __name__ == "__main__":
-    # test_multi_recursion()
-    test_alternation_in_group()
+    test_graph()
+    # test_alternation_in_group()

@@ -431,8 +431,9 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         # Raw structure assertions
         assert isinstance(raw, tuple) and len(raw) == 3
         assert isinstance(raw[0], tuple) and len(raw[0]) == 3  # left nested
-        assert str(raw[1]) == 't.+'
-        assert str(raw[2]) == 't.3'
+        
+        assert raw[1] == Token(text='+')
+        assert raw[2] == Token(text='3')
 
         # Mapped version
         NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  
@@ -644,7 +645,7 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap()
-    assert str(ast) == '((((t.a,),),),)'
+    assert ast == ((((Token(text='a'),),),),)
 
 def test_direct_left_recursion_unproductive_now_productive_flatten()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -656,7 +657,7 @@ def test_direct_left_recursion_unproductive_now_productive_flatten()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap()
-    assert str(ast) == '(t.a,)'
+    assert ast == (Token(text='a'),)
 
 def test_direct_left_recursion_unproductive_now_productive1()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -668,7 +669,7 @@ def test_direct_left_recursion_unproductive_now_productive1()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap()
-    assert str(ast) == '(t.a,)'
+    assert ast == (Token(text='a'),)
 
 def test_direct_left_recursion_unproductive_now_productive1_flatten()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -680,7 +681,7 @@ def test_direct_left_recursion_unproductive_now_productive1_flatten()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap()
-    assert str(ast) == '(t.a,)'
+    assert ast == (Token(text='a'),)
 
 
 def test_direct_left_recursion_unproductive_now_productive2()->None:
@@ -693,7 +694,7 @@ def test_direct_left_recursion_unproductive_now_productive2()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap()
-    assert str(ast) == '((((t.a, t.a), t.a), t.a), t.a)'
+    assert ast == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
 
 def test_direct_left_recursion_unproductive_now_productive2_flatten()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -705,7 +706,7 @@ def test_direct_left_recursion_unproductive_now_productive2_flatten()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap()
-    assert str(ast) == '(t.a, t.a, t.a, t.a, t.a)'
+    assert ast == (Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a'))
 
 
 def test_direct_left_recursion_collapse()->None:
@@ -713,7 +714,7 @@ def test_direct_left_recursion_collapse()->None:
     S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a', cache=Cache())
     ast, _ = v.bimap()
-    assert str(ast) == 't.a'
+    assert ast == Token(text='a')
 
 def test_indirect_multi_head_cycle_parses_successfully():
     """
@@ -749,7 +750,7 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap()
-    assert str(ast) == '(t.a,)'
+    assert ast == (Token(text='a'),)
 
 
 

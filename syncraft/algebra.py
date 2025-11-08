@@ -98,11 +98,7 @@ class Error:
     def __str__(self) -> str:
         stack = self.list(self.graph)
         return "\n".join(e.str_ for e in stack)
-        
     
-    def __repr__(self) -> str:
-        return self.__str__()
-
     def push(self, 
             *,
             this: Optional[Any] = None, 

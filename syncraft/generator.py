@@ -47,12 +47,10 @@ class GenState(Bindable, Generic[T]):
 
     def __str__(self) -> str:
         if isinstance(self.ast, AST):
-            return f"GenState(ast={self.ast.mapped})"
+            return f"{self.__class__.__name__}(ast={self.ast.mapped})"
         else:
-            return f"GenState(ast={self.ast})"
-    def __repr__(self) -> str:
-        return self.__str__()
-
+            return f"{self.__class__.__name__}(ast={self.ast})"
+        
     def unused_cache_key(self) -> int:
         return 0
 

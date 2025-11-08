@@ -117,10 +117,7 @@ class Graph(Generic[N]):
         # from that point.
              
         return "\n".join(output_lines).strip()
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
+    
 @dataclass(frozen=True)
 class SyntaxSpec:
     name: Optional[str] = field(compare=False, hash=False)
@@ -133,7 +130,7 @@ class SyntaxSpec:
             return cache[self]
         raise NotImplementedError
         
-    def named(self, name: str, *, file: None | str, line: None | int, func: None | str, _location:bool=True) -> SyntaxSpec:
+    def named(self, *, name: None | str, file: None | str, line: None | int, func: None | str, _location:bool=True) -> SyntaxSpec:
         if _location:
             return replace(self, name=name, file=file, line=line, func=func)
         else:
@@ -210,17 +207,14 @@ class LazySpec(SyntaxSpec):
     def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
-        ret = cls.lazy(lambda: self.spec().syntax(cls, cache=cache), flatten=self.flatten)
+        ret = cls.lazy(lambda: self.spec().syntax(cls, cache=cache), flatten=self.flatten)._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
 
     def __str__(self) -> str:
         name = self.name or "lazy(...)"
         return self.format("{0}", name)
-    
-    def __repr__(self) -> str:
-        return super().__repr__()
-    
+        
     @property    
     def complexity(self) -> float:
         return math.inf
@@ -258,6 +252,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
                 ret = left >> right
             case _:
                 raise AssertionError(f"Unknown ThenKind: {self.kind}")
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
 
@@ -278,10 +273,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
         else:
             parts = ThenSpec.flatten(self)
             return  f"({' '.join(str(n) for n in parts)})"
-
-            
-    def __repr__(self) -> str:
-        return super().__repr__()
+        
 
     @property
     def complexity(self) -> float:
@@ -301,6 +293,7 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
         left = self.left.syntax(cls, cache=cache)
         right = self.right.syntax(cls, cache=cache)
         ret = left | right
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
 
@@ -325,10 +318,7 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
             else:
                 inner = " | ".join(str(c) for c in choices)
                 return self.format("({choices})", choices=inner)
-
-    def __repr__(self) -> str:
-        return super().__repr__()
-
+            
     @property
     def complexity(self) -> float:
         return 1 + max(self.left.complexity, self.right.complexity)
@@ -347,6 +337,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
         ret = inner.many(at_least=self.at_least, at_most=self.at_most)
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
 
@@ -356,9 +347,6 @@ class ManySpec(SyntaxSpec, Generic[A]):
         else:
             return self.format("*({spec})", spec=str(self.spec))
         
-    def __repr__(self) -> str:
-        return super().__repr__()
-
     @property
     def complexity(self) -> float:
         if self.at_most is None:
@@ -379,6 +367,7 @@ class LexSpec(SyntaxSpec):
         if self in cache:
             return cache[self]
         ret = cls.factory(self.fname, **self.kwargs)
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
     
@@ -389,9 +378,6 @@ class LexSpec(SyntaxSpec):
             args = f"{', '.join(f'{k}={v}' for k,v in self.kwargs.items())}"
             return self.format("{fname}({args})", fname=self.fname, args=args)
     
-    def __repr__(self) -> str:
-        return super().__repr__()
-
     @property
     def complexity(self) -> float:
         return 1
@@ -464,10 +450,7 @@ class Syntax(Generic[A, S]):
     
     def __str__(self) -> str:
         return str(self.spec)
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-    
+        
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
     
@@ -479,9 +462,12 @@ class Syntax(Generic[A, S]):
     def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
         cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
         return self.alg_f(alg, **(cfg | global_kwargs)).with_syntax(self)
-            
+
+    def _named(self, *, name: None | str, file: None | str, line: None | int, func: None | str) -> Syntax[A, S]:
+        return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
+
     def named(self, name: str, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
-        return replace(self, spec=self.spec.named(name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
+        return replace(self, spec=self.spec.named(name=name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
 
     ######################################################## value transformation ########################################################
     def map(self, f: Callable[[Any], B],*, raw:bool = False) -> Syntax[B, S]:
@@ -941,7 +927,10 @@ class Syntax(Generic[A, S]):
         return spec.syntax(cls, cache=c)
 
 
-        
+    @classmethod
+    def from_graph(cls, graph: Graph[SyntaxSpec]) -> Syntax[Any, Any]:
+        c: Dict[SyntaxSpec, Syntax] = {}
+        return graph.root.syntax(cls, cache=c)
     
 class RunnerProtocol(Protocol, Generic[A, S]):
     def algebra(self, 

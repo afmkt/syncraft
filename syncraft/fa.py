@@ -42,8 +42,8 @@ class FAState:
         cls._counter += 1
         return val
 
-    def __repr__(self) -> str:
-        return f"s{self.id}"        
+    def __str__(self) -> str:
+        return f"s{self.id}"    
     
 
 

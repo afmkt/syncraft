@@ -27,9 +27,6 @@ class SyncraftError(Exception):
         if self.data:
             details += ", " + ", ".join(f"{k}={v!r}" for k, v in self.data.items())
         return f"{base} ({details})"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
 
 def shallow_dict(a: Any)->Dict[str, Any]:
     if not is_dataclass(a):
@@ -354,7 +351,7 @@ class ChoiceKind(Enum):
     RIGHT = 'right'
 
 ChoiceKind.__str__ = lambda self: self.value   # type: ignore
-ChoiceKind.__repr__ = lambda self: self.value  # type: ignore
+
 
 @dataclass(frozen=True)
 class Choice(AST, Generic[A, B]):
@@ -416,7 +413,7 @@ class ThenKind(Enum):
     RIGHT = '>>'
 
 ThenKind.__str__ = lambda self: self.value   # type: ignore
-ThenKind.__repr__ = lambda self: self.value  # type: ignore    
+
 @dataclass(eq=True, frozen=True)
 class Then(AST, Generic[A, B]):
     """Pair two values with a composition kind (both, left, or right).
@@ -646,14 +643,7 @@ class Token(AST, Generic[Char]):
                 return f"t.({''.join(str(c) for c in self.text).strip()}, {self.token_type})"
         else:
             raise SyncraftError("Unsupported type for Token text", offender=self.text, expect="str, bytes, or tuple")
-
-    def __repr__(self) -> str:
-        return self.__str__()
-    
-
-
-
-
+        
 T = TypeVar('T', bound=Hashable)
 
 

@@ -83,7 +83,7 @@ class LeftRecursionError(SyncraftError):
             parts.append(f"reason={self.reason}")
         return ("; ".join(parts)) if parts else ""
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         stack = "\n-> ".join(reversed(self.stack))
         metrics = self._format_metrics()
         hint_lines = [
@@ -95,11 +95,7 @@ class LeftRecursionError(SyncraftError):
         ]
         metrics_line = ("[" + metrics + "]\n") if metrics else ""
         return f"\n{stack}\n{metrics_line}" + "\n".join(hint_lines)
-
-    def __str__(self) -> str:
-        return self.__repr__()
     
-
 @dataclass(frozen=True)
 class InProgress(Generic[S]):
     rule: Rule
@@ -121,10 +117,7 @@ class InProgress(Generic[S]):
     
     def __str__(self) -> str:
         return f"InProgress(rule={callable_str(self.rule)}, result={self.result})"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-    
+        
 
     @property
     def state(self) -> Optional[S]:
@@ -243,16 +236,14 @@ class Cache(Generic[S]):
         result = yield from rule(key, self)
         return result
     
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         parts = []
         for f, c in self.cache.items():
             for k, v in c.items():
                 parts.append(f"{k} -> {v} ^ {callable_str(f)}")
         content = "\n    ".join(parts)
         return f"Cache(\n    {content})"
-
-    def __str__(self) -> str:
-        return self.__repr__()
+    
     
     def gc(self, min_position: int) -> None:
         if min_position < 0:

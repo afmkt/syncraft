@@ -102,9 +102,6 @@ class CodeUniverse(Generic[C]):
                 return f"FROZENSET({self.value[0]}-{self.value[1]})"
             else:
                 return f"{self.space.__name__}({self.value[0]}-{self.value[1]})"
-
-    def __repr__(self) -> str:
-        return self.__str__()
     
     def concat(self, cs: Sequence[C]) -> str | bytes | Tuple[C, ...]:
         space = self.space
@@ -487,7 +484,7 @@ class CharSet(Generic[C]):
     def __bool__(self) -> bool:
         return self.interval != ()
     
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         parts = []
         for start, end in self.interval:
             def fmt(cp: int) -> str:
@@ -504,5 +501,3 @@ class CharSet(Generic[C]):
             else:
                 parts.append(f"{fmt(start)}-{fmt(end)}")
         return f"CharSet({', '.join(parts)}).{self.universe}"
-    def __str__(self) -> str:
-        return self.__repr__()
