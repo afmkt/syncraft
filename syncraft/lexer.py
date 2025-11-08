@@ -6,7 +6,7 @@ from typing import (
     runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING
 )
 if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
-    from syncraft.syntax import FactorySpec, Syntax
+    from syncraft.syntax import LexSpec, Syntax
 from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.charset import CodeUniverse
@@ -37,8 +37,8 @@ Tag = str
 
 
 
-def all_terminal(syn: Syntax[Any, Any]) -> Set[FactorySpec]:
-    def collect(spec: FactorySpec, acc: Set[FactorySpec]) -> Set[FactorySpec]:
+def all_terminal(syn: Syntax[Any, Any]) -> Set[LexSpec]:
+    def collect(spec: LexSpec, acc: Set[LexSpec]) -> Set[LexSpec]:
         acc.add(spec)
         return acc
     return syn.factory_spec(collect, set())

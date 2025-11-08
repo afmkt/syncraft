@@ -9,7 +9,7 @@ from syncraft.syntax import (
     ThenSpec,
     ChoiceSpec,
     ManySpec,
-    FactorySpec,
+    LexSpec,
 )
 from syncraft.ast import ThenKind
 from syncraft.algebra import Error
@@ -158,7 +158,7 @@ def syntax2svg(
         return rep
 
     def spec_label(node: SyntaxSpec) -> str:
-        if isinstance(node, FactorySpec):
+        if isinstance(node, LexSpec):
             return node.fname
         if isinstance(node, ThenSpec):
             return f"Then({node.kind.name.lower()})"
@@ -180,7 +180,7 @@ def syntax2svg(
                 placeholder_cache[node] = Comment(f"↺ {label}")
         return placeholder_cache[node]
 
-    def build_factory(spec: FactorySpec) -> Any:
+    def build_factory(spec: LexSpec) -> Any:
         kwargs = dict(spec.kwargs)
         if spec.name == "token":
             text = kwargs.get("text")
@@ -256,7 +256,7 @@ def syntax2svg(
                 diagram_cache[node] = many_diagram(node, inner)
                 continue
 
-            if isinstance(node, FactorySpec):
+            if isinstance(node, LexSpec):
                 diagram_cache[node] = build_factory(node)
                 continue
 

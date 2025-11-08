@@ -12,7 +12,7 @@ except ImportError:  # pragma: no cover - tests skipped when optional deps missi
 
 from syncraft.dev import syntax2svg
 from syncraft.syntax import (
-    FactorySpec,
+    LexSpec,
     ThenSpec,
     ChoiceSpec,
     LazySpec,
@@ -21,8 +21,8 @@ from syncraft.ast import ThenKind
 from syncraft.utils import FrozenDict
 
 
-def token_spec(label: str) -> FactorySpec:
-    return FactorySpec(fname="token", kwargs=FrozenDict({"text": label}), name=None, file=None, line=None, func=None)
+def token_spec(label: str) -> LexSpec:
+    return LexSpec(fname="token", kwargs=FrozenDict({"text": label}), name=None, file=None, line=None, func=None)
 
 
 def test_syntax2svg_simple_sequence():

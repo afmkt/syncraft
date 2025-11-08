@@ -372,7 +372,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
 
 
 @dataclass(frozen=True)
-class FactorySpec(SyntaxSpec):
+class LexSpec(SyntaxSpec):
     fname: str
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
@@ -911,7 +911,7 @@ class Syntax(Generic[A, S]):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
-        return cls(factory_run, spec=FactorySpec(fname=name, kwargs=FrozenDict(kwargs), name=None, file=None, line=None, func=None))
+        return cls(factory_run, spec=LexSpec(fname=name, kwargs=FrozenDict(kwargs), name=None, file=None, line=None, func=None))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
@@ -931,9 +931,9 @@ class Syntax(Generic[A, S]):
         c: Dict[SyntaxSpec, Syntax] = {}
         return spec.syntax(cls, cache=c)
 
-    def factory_spec(self, visitor: Callable[[FactorySpec, Any], Any], init: Any) -> Any:
+    def factory_spec(self, visitor: Callable[[LexSpec, Any], Any], init: Any) -> Any:
         for _, node in self.spec.walk():
-            if isinstance(node, FactorySpec):
+            if isinstance(node, LexSpec):
                 init = visitor(node, init)
         return init
     
