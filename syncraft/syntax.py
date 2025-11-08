@@ -9,7 +9,7 @@ from typing import (
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator
 )
 from dataclasses import dataclass, field, replace
-from functools import reduce
+from functools import reduce, cached_property
 
 
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict
@@ -867,6 +867,15 @@ class Syntax(Generic[A, S]):
 
         return self.iso(mark_s, imark_s)
     
+    @cached_property
+    def lexspec(self) -> frozenset[LexSpec]:
+        result: Set[LexSpec] = set()
+        for _, node in self.spec.walk():
+            if isinstance(node, LexSpec):
+                result.add(node)
+        return frozenset(result)
+
+
     @classmethod
     def fail(cls, error: B) -> Syntax[B, S]:
         return cls.factory('fail', error=error)
@@ -931,11 +940,8 @@ class Syntax(Generic[A, S]):
         c: Dict[SyntaxSpec, Syntax] = {}
         return spec.syntax(cls, cache=c)
 
-    def factory_spec(self, visitor: Callable[[LexSpec, Any], Any], init: Any) -> Any:
-        for _, node in self.spec.walk():
-            if isinstance(node, LexSpec):
-                init = visitor(node, init)
-        return init
+
+        
     
 class RunnerProtocol(Protocol, Generic[A, S]):
     def algebra(self, 

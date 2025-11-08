@@ -37,11 +37,6 @@ Tag = str
 
 
 
-def all_terminal(syn: Syntax[Any, Any]) -> Set[LexSpec]:
-    def collect(spec: LexSpec, acc: Set[LexSpec]) -> Set[LexSpec]:
-        acc.add(spec)
-        return acc
-    return syn.factory_spec(collect, set())
 
 @dataclass
 class Mode(Generic[C]):
@@ -103,14 +98,14 @@ class LexerProtocol(Protocol, Generic[C]):
 
 
 
-class LexerBase(LexerProtocol[C]):    
+class LexerBase(LexerProtocol[C]):
     @classmethod
     def normalise_kwargs(cls, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         payload_kind = kwargs.pop("payload_kind", None)
         syn = kwargs.pop("syntax", None)
         if syn and not payload_kind:
             fabuilder: None | FABuilder = None
-            for fspec in all_terminal(syn):
+            for fspec in syn.lexspec:
                 for k,v in fspec.kwargs.items():
                     if isinstance(v, FABuilder):
                         fabuilder = v
