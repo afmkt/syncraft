@@ -493,11 +493,18 @@ class CharSet(Generic[C]):
                 if cp == CharSet.END_CP:
                     return "<END>"
                 try:
-                    return repr(self.universe.int2code(cp))
+                    return str(self.universe.int2code(cp))
                 except Exception:
                     return f"<{cp}>"
             if start == end:
                 parts.append(fmt(start))
             else:
                 parts.append(f"{fmt(start)}-{fmt(end)}")
-        return f"CharSet({', '.join(parts)}).{self.universe}"
+        return f"{', '.join(parts)}"
+    
+    def __pretty__(self) -> str:
+        return str(self)    
+    
+    def __rich__(self) -> str:
+        return str(self) 
+    

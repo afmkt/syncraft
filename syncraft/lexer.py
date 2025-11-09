@@ -420,8 +420,10 @@ class Lexer(LexerBase[C]):
             mode.start_index = index
         rr = mode.runner.step(char, index)
         if rr.error:
+            expecting = mode.runner.resumable
             mode.runner = mode.runner.reset()
-            return Left(f"Lexing error at index {index} on char \"{char}\", expecting {mode.runner.resumable} ")
+            expecting_str = ", ".join(f'"{str(e)}"' for e in expecting)
+            return Left(f"Lexing error at index {index} get \"{char}\", expecting {expecting_str}")
 
         mode.runner = rr.runner
         if rr.final and rr.accepted is None:
