@@ -428,9 +428,8 @@ class Lexer(LexerBase[C]):
         if rr.error:
             expecting = mode.runner.resumable
             mode.runner = mode.runner.reset()
-            expecting_str = ", ".join(f'"{str(e)}"' for e in expecting)
             return Left(LexerError(
-                message=f"Lexing error at index {index} get \"{char}\", expecting {expecting_str}",
+                message="Lexing mismatch",
                 index=index,
                 offender=char,
                 expect=frozenset(str(e) for e in expecting),

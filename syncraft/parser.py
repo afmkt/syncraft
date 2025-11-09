@@ -34,8 +34,11 @@ T = TypeVar('T', bound=Hashable)
 A = TypeVar('A')
 
 
-def underline(text: str) -> str:
-    return ''.join(ch + '\u0332' for ch in text)
+def underline(text: str, ul: bool) -> str:
+    if ul:
+        return ''.join(ch + '\u0332' for ch in text)
+    else:
+        return text
 
 @total_ordering
 @dataclass(frozen=True)
@@ -89,11 +92,19 @@ class ParserState(Bindable, Generic[T]):
             raise SyncraftError("Input must be a sequence type", offender=self.input, expect="tuple, str, or bytes")
 
     @property
-    def str_input(self) -> str:
+    def cursor(self) -> str:
         indicator = '.'
         indicator = '\u25cf'
         indicator = '\u007c\u25BA'  
-        return f"[ {' '.join(self.before() + [indicator] + self.after())} ]"
+        return indicator
+
+    def str_input(self, ul: bool) -> str:
+        return f"[ {' '.join(self.before(ul=ul) + [self.cursor] + self.after(ul=ul))} ]"
+    
+    def cursor_at(self, input: str) -> int:
+        return input.find(self.cursor)
+
+
     @property
     def str_line(self) -> str:
         if self.line > 0:
@@ -118,7 +129,7 @@ class ParserState(Bindable, Generic[T]):
         return ''
 
     def __str__(self) -> str:
-        parts = [f"input={self.str_input}"]
+        parts = [f"input={self.str_input(ul=True)}"]
         if self.ended:
             parts.append(self.str_ended)
         if self.pending:
@@ -136,16 +147,16 @@ class ParserState(Bindable, Generic[T]):
         return self.__str__()
 
 
-    def _slice_to_display(self, start: int, end: int) -> list[str]:
+    def _slice_to_display(self, start: int, end: int, ul: bool) -> list[str]:
         segment = self.input[start:end]
         if isinstance(self.input, str):
-            return [underline(str(ch)) for ch in segment]
+            return [underline(str(ch), ul) for ch in segment]
         elif isinstance(self.input, bytes):
             # Decode printable ASCII bytes, otherwise use hex
             result = []
             for b in segment:
                 if isinstance(b, int) and 32 <= b < 127:
-                    result.append(underline(chr(b)))
+                    result.append(underline(chr(b), ul))
                 elif isinstance(b, int):
                     result.append(f"\\x{b:02x}")
                 else:
@@ -153,20 +164,20 @@ class ParserState(Bindable, Generic[T]):
             return result
         else:
             # Generic token list
-            return [underline(str(token)) for token in segment]
+            return [underline(str(token), ul) for token in segment]
 
 
-    def before(self, length: Optional[int] = 3) -> list[str]:
+    def before(self, length: Optional[int] = 3, ul: bool = True) -> list[str]:
         length = min(self.index, length) if length is not None else self.index
-        ret = self._slice_to_display(self.index - length, self.index)
+        ret = self._slice_to_display(self.index - length, self.index, ul)
         if self.index - length > 0:
             ret = ["..."] + ret
         return ret
 
-    def after(self, length: Optional[int] = 3) -> list[str]:
+    def after(self, length: Optional[int] = 3, ul: bool = True) -> list[str]:
         remaining = len(self.input) - self.index
         length = min(length, remaining) if length is not None else remaining
-        ret = self._slice_to_display(self.index, self.index + length)
+        ret = self._slice_to_display(self.index, self.index + length, ul)
         if self.index + length < len(self.input):
             ret = ret + ["..."]
         return ret
