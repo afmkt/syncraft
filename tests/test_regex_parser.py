@@ -13,20 +13,20 @@ def test_literal_characters():
     """Test parsing of literal characters."""
     # Single literal character
     result = parse_regex(literal, "a")
-    assert result.text == "a"
+    assert result == "a"
 
 
 def test_literal_digits():
     """Test parsing of literal digits."""
     result = parse_regex(literal, "1")
-    assert result.text == "1"
+    assert result == "1"
 
 
 def test_literal_special_chars():
     """Test parsing of literal special characters that are not metacharacters."""
     # Characters that are allowed as literals (not in the excluded set)
     result = parse_regex(literal, "@")
-    assert result.text == "@"
+    assert result == "@"
 
 
 def test_control_escapes():

@@ -88,7 +88,7 @@ class Error:
                 ln = f"\nError at line {deepest.state.line}, column {deepest.state.column}, Input: {deepest.state.str_input(False)}"
                 c = deepest.state.cursor_at(ln)
                 lines.append(ln)
-                lines.append(' ' * (c + len(deepest.state.cursor) + 1) + '^')
+                lines.append(' ' * (c + len(deepest.state.cursor) ) + '^')
             else:
                 lines.append(f"Error at line {deepest.state.line}, column {deepest.state.column}")
                 

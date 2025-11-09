@@ -32,6 +32,8 @@ dev = [
     "pytest-profiling>=1.8.1",
     "snakeviz>=2.2.2",
     "mypy>=1.18.2",
+    "regex>=2025.11.3",
+    "types-regex>=2025.11.3.20251106",
 ]
 
 

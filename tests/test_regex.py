@@ -95,7 +95,7 @@ def generate_random_regex_tests(n=100, seed=42) -> list[tuple[str, str, bool]]:
 
 
 
-@pytest.mark.xfail(reason="Comprehensive regex tests are disabled for now.")
+# @pytest.mark.xfail(reason="Comprehensive regex tests are disabled for now.")
 def test_regex():
     TEST_CASES = [
         # 1. Basic literals and quantifiers
@@ -182,10 +182,10 @@ def test_regex():
     ] + generate_random_regex_tests(200, seed=12345)
 
     for name, pattern, should_pass in TEST_CASES:
-        ok, myerr, err = verify(pattern)
+        vr = verify(pattern)
         if should_pass:
-            assert ok, f"Pattern failed to parse: {pattern}\nMy Error: {myerr}\nRe Error: {err}"
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
         else:
-            assert not ok, f"Pattern should have failed but parsed: {pattern}"
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
 
 

@@ -11,7 +11,10 @@ from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
 from syncraft.input import StreamCursor
-import re
+try:
+    import regex as re
+except ImportError:
+    import re
 
 
 r"""
@@ -168,7 +171,7 @@ unicode_digit = S.lex(unicode_digit=B.unicode_category(["Nd"])).named('unicode_d
 # class_literal     = unicode_scalar - {"\\", "]"} ;
 class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", "]"])).named('class_literal')
 # literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
-literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"])).named('literal_char')
+literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"])).map(lambda x: x.text).named('literal_char')
 
 # hex_octa          = hex_quad hex_quad ;
 hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text).named('hex_octa')
@@ -404,7 +407,7 @@ class DotAtom:
 
 # atom              = literal | char_class | group | anchor | dot | shorthand ;
 atom = S.choice(
-        literal.map(lambda x: x.text).mark('text').to(LiteralAtom).named('literal'),
+        literal.mark('text').to(LiteralAtom).named('literal'),
         group,
         dot.to(DotAtom),
         anchor.to(AnchorAtom),
@@ -475,7 +478,19 @@ def parse_regex(syntax: Syntax[Any, Any],
         return result
 
 
-def verify(pattern: str) -> Tuple[bool, Any, Any]:
+@dataclass
+class VerifyResult:
+    ok: bool
+    pattern: str
+    syncraft: Any
+    re:Any
+    err_syncraft: Any
+    err_re: Any
+
+
+
+
+def verify(pattern: str) -> VerifyResult:
     myerr = None
     err = None
     parsed = parse(pattern)
@@ -486,6 +501,12 @@ def verify(pattern: str) -> Tuple[bool, Any, Any]:
     except re.error as e:
         pyparsed = None
         err = e
-    ret = (pyparsed is not None and isinstance(parsed, Regex)) or (pyparsed is None and isinstance(parsed, Error))
-    return ret, myerr, err
-    
+    ok = (pyparsed is not None and isinstance(parsed, Regex)) or (pyparsed is None and isinstance(parsed, Error))
+    return VerifyResult(
+        ok=ok,
+        pattern=pattern,
+        syncraft=parsed,
+        re=pyparsed,
+        err_syncraft=myerr,
+        err_re=err
+    )

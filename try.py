@@ -11,7 +11,7 @@ from syncraft.algebra import Error
 import random
 import string
 import re
-# from rich import print
+from rich import print
 
 
 def test_graph():
@@ -34,10 +34,10 @@ def test_graph():
 
 
 def test_alternation_in_group():
-    pattern = "(a|b)"
-    ok, myerr, err = verify(pattern)
-    print(str(myerr))
-    assert ok
+    pattern = r"(?-i)a"
+    vr = verify(pattern)
+    print(str(vr.err_syncraft))
+    assert vr.ok, f"Verification should succeed, but failed with error: {vr.err_syncraft}"
 
 if __name__ == "__main__":
     # test_graph()
