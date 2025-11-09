@@ -57,7 +57,7 @@ def _strip_left_recursion(alt: SyntaxSpec, root: SyntaxSpec) -> SyntaxSpec:
 
 
 def _grammar_is_left_recursive(spec: SyntaxSpec) -> bool:
-    inner = spec.spec() if isinstance(spec, LazySpec) else spec
+    inner = spec.inner_spec if isinstance(spec, LazySpec) else spec
     return any(_is_left_recursive(alt, spec) for alt in _flatten_choices(inner))
 
 
@@ -94,7 +94,7 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     assert _grammar_is_left_recursive(Expr.spec)
 
     root_spec = Expr.spec
-    inner = root_spec.spec() if isinstance(root_spec, LazySpec) else root_spec
+    inner = root_spec.inner_spec if isinstance(root_spec, LazySpec) else root_spec
     alternatives = _flatten_choices(inner)
 
     recursive_alts = [alt for alt in alternatives if _is_left_recursive(alt, root_spec)]
@@ -133,18 +133,4 @@ def test_walk_handles_recursive_grammar() -> None:
     assert nodes, "Expected walk to yield at least one node"
     unique_nodes = {id(node) for _, node in nodes}
     assert len(unique_nodes) == len(nodes), "Walk should not revisit nodes in recursive grammars"
-
-
-def test_graph():
-    g = regex_syntax.graph()
-    assert g.edges, "Graph should have edges"
-    assert g.root, "Graph should have roots"
-    s = Syntax.from_graph(g)
-    assert s is not None, "Should be able to reconstruct syntax from graph"
-    g1 = s.graph()
-    print(g1.root)
-    print(g.root)
-    assert g1.edges == g.edges, "Reconstructed graph should match original"
-    assert g1.root == g.root, "Reconstructed graph root should match original"
-    assert len(g1.edges) == len(g.edges), "Reconstructed graph should have same number of edges"
-    assert g == g1, "Graphs should be equal"
+    

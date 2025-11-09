@@ -651,12 +651,11 @@ T = TypeVar('T', bound=Hashable)
 ParseResult = Union[
     Lazy['ParseResult[T]'],
     Then['ParseResult[T]', 'ParseResult[T]'], 
-    Marked['ParseResult[T]'],
     Choice['ParseResult[T]', 'ParseResult[T]'],
     Many['ParseResult[T]'],
     Collect['ParseResult[T]', Any],
+    Marked['ParseResult[T]'],
     Nothing,
-    # Token[T],
     T,
 ]
 

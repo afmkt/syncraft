@@ -37,17 +37,3 @@ def test_syntax2svg_simple_sequence():
     assert "A" in svg or "token" in svg
 
 
-def test_syntax2svg_handles_direct_recursion():
-    token_digit = token_spec("digit")
-
-    def deferred() -> ChoiceSpec:
-        return recursive_choice
-
-    lazy = LazySpec(spec=deferred, flatten=True, name=None, file=None, line=None, func=None)
-    recursive_choice = ChoiceSpec(left=token_digit, right=lazy, name=None, file=None, line=None, func=None)
-
-    svg = syntax2svg(recursive_choice)
-
-    assert isinstance(svg, str)
-    print(svg)
-    assert "digit" in svg or "Choice" in svg

@@ -40,83 +40,68 @@ N = TypeVar('N', bound=Hashable)  # Node type for graphs
 @dataclass(frozen=True)
 class Graph(Generic[N]):
     edges: FrozenDict[N, frozenset[N]]
-
     root: N
+
     @classmethod
     def from_edges(cls, root: N, *edges: Tuple[N, N]) -> Graph[N]:
-
         e: Dict[N, Set[N]] = {}
         for parent, child in edges:
             e.setdefault(parent, set()).add(child)
             e.setdefault(child, set())
         return cls(edges=FrozenDict({k: frozenset(v) for k, v in e.items()}), root=root)
     
-    def __str__(self) -> str:
-        """
-        Generates a human-readable, indented tree representation of the graph
-        starting from the root node.
-        """
-        # Set to track visited nodes to avoid infinite recursion on cycles
+    @property
+    def nodes(self) -> Set[N]:
+        return set(self.edges.keys())
+
+    def node_dump(self) -> str:
+        return "\n".join(sorted(str(node) for node in self.nodes))
+    
+    def edge_dump(self) -> str:
+        lines = []
+        for parent, children in self.edges.items():
+            for child in children:
+                lines.append(f"{parent} -> {child}")
+        return "\n".join(sorted(lines))
+
+    def str_tree(self, root: N) -> str:
         visited: Set[N] = set()
-        
-        # List to store all lines of the output
         output_lines: List[str] = [self.__class__.__name__]
         def node_str(node: N) -> str:
+            prefix = f"{id(node)}:"
+            prefix = ""
             if isinstance(node, ThenSpec):
-                return f"{str(id(node))}:{node}:ThenSpec({node.kind})"
+                return f"{prefix}{node}:ThenSpec({node.kind})"
             elif isinstance(node, ChoiceSpec):
-                return f"{str(id(node))}:{node}:ChoiceSpec(|)"
+                return f"{prefix}{node}:ChoiceSpec(|)"
             else:
-                return f"{str(id(node))}:{node}"
+                return f"{prefix}{node}"
 
         def _format_node(node: N, prefix: str, is_last_sibling: bool):
-            """
-            Recursive helper function for DFS traversal and formatting.
-            
-            Args:
-                node: The current node being processed.
-                prefix: The indentation string accumulated from parents (e.g., "│   │   ").
-                is_last_sibling: True if this node is the last in its parent's list.
-            """
-            # 1. Check for cycles
             if node in visited:
-                # Use └── for cycles as well, but only at the end of the line
                 output_lines.append(f"{prefix}└── [CYCLE] {node}")
                 return
-
-            # 2. Mark as visited, determine connector, and add line
             visited.add(node)
             connector = "└── " if is_last_sibling else "├── "
-
             node_display = f"ROOT {node_str(node)}" if node == self.root else f"{node_str(node)}"
             output_lines.append(f"{prefix}{connector}{node_display}")
-            
-            # 3. Determine the new prefix for the children
-            # If the current node is the last sibling, stop the vertical line (use '    ').
-            # Otherwise, continue the vertical line (use '│   ').
             new_prefix = prefix + ("    " if is_last_sibling else "│   ")
-            
-            # 4. Process neighbors
-            neighbors = sorted(list(self.edges.get(node, frozenset())), key=lambda x: -len(str(x)))
-            
+            neighbors = sorted(list(self.edges.get(node, frozenset())), key=lambda x: str(x))
+            # neighbors = list(self.edges.get(node, frozenset()))
             for i, neighbor in enumerate(neighbors):
                 neighbor_is_last = (i == len(neighbors) - 1)
-                
-                # The recursive call uses the new prefix and the neighbor's status
                 _format_node(neighbor, new_prefix, neighbor_is_last)
-        
-        # --- Root Initialization ---
-        
-        # The root is treated as the 'last' child of an imaginary parent (is_last_sibling=True) 
-        # so it gets the initial "└── " connector, matching the visual style.
-        _format_node(self.root, "", True)
-
-        # The root node should not have a connector if it were a pure tree print, 
-        # but since your example started with `└── ROOT regex`, we keep the 
-        # recursive call and the logic should now correctly indent the children 
-        # from that point.
-             
+        _format_node(root, "", True)
         return "\n".join(output_lines).strip()
+    
+    def __str__(self) -> str:
+        return self.str_tree(self.root)
+    
+    def __pretty__(self) -> str:
+        return self.__str__()
+    
+    def __rich__(self) -> str:
+        return self.__str__()
     
 @dataclass(frozen=True)
 class SyntaxSpec:
@@ -124,6 +109,11 @@ class SyntaxSpec:
     file: Optional[str] = field(compare=False, hash=False) 
     line: Optional[int] = field(compare=False, hash=False)
     func: Optional[str] = field(compare=False, hash=False)
+    def __pretty__(self) -> str:
+        return self.__str__()
+    
+    def __rich__(self) -> str:
+        return self.__str__()
 
     def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
@@ -157,7 +147,7 @@ class SyntaxSpec:
     
     def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, "SyntaxSpec"]]:
         lazy_cache: Dict[int, SyntaxSpec] = {}
-        visited: Set[int] = set()
+        visited: Set[SyntaxSpec] = set()
         stack: List[Tuple[int, SyntaxSpec]] = [(0, self)]
 
         while stack:
@@ -165,10 +155,9 @@ class SyntaxSpec:
             if max_depth is not None and depth > max_depth:
                 continue
 
-            node_id = id(node)
-            if node_id in visited:
+            if node in visited:
                 continue
-            visited.add(node_id)
+            visited.add(node)
 
             yield depth, node
 
@@ -186,11 +175,11 @@ class SyntaxSpec:
         """
         lazy_cache: Dict[int, SyntaxSpec] = {}
         edges: List[Tuple[SyntaxSpec, SyntaxSpec]] = []
-        seen: Set[Tuple[int, int]] = set()
+        seen: Set[Tuple[SyntaxSpec, SyntaxSpec]] = set()
 
         for _depth, node in self.walk(max_depth=max_depth):
             for child in node._children(lazy_cache=lazy_cache):
-                key = (id(node), id(child))
+                key = (node, child)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -201,13 +190,12 @@ class SyntaxSpec:
 
 @dataclass(frozen=True)
 class LazySpec(SyntaxSpec):
-    spec: Callable[[], SyntaxSpec]
-    flatten: bool 
+    lazy_state: LazyState[Any, Any]
 
     def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
-        ret = cls.lazy(lambda: self.spec().syntax(cls, cache=cache), flatten=self.flatten)._named(name=self.name, file=self.file, line=self.line, func=self.func)
+        ret = cls.lazy(self.lazy_state.thunk, flatten=self.lazy_state.flatten)._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
 
@@ -219,18 +207,75 @@ class LazySpec(SyntaxSpec):
     def complexity(self) -> float:
         return math.inf
 
-
+    @property
+    def inner_spec(self) -> SyntaxSpec:
+        return self.lazy_state.cached.spec
+        
     def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         key = id(self)
         if key in lazy_cache:
             return (lazy_cache[key],)
         try:
-            target = self.spec()
+            target = self.inner_spec
         except RecursionError:
             return ()
         lazy_cache[key] = target
         return (target,)
     
+@dataclass(frozen=True)
+class MarkedSpec(SyntaxSpec):
+    mname: str
+    spec: SyntaxSpec
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        inner = self.spec.syntax(cls, cache=cache)
+        ret = inner.mark(self.mname)
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
+        cache[self] = ret
+        return ret
+
+    def __str__(self) -> str:
+        if self.name:
+            return self.format("{0}", self.name)
+        else:
+            return self.format("{spec}.mark{mname}", spec=str(self.spec), mname=self.mname)
+        
+    @property
+    def complexity(self) -> float:
+        return self.spec.complexity
+    
+    def _children(self,*, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+        return (self.spec,)
+
+
+@dataclass(frozen=True)
+class CollectSpec(SyntaxSpec):
+    collector: Collector = field(compare=False, hash=False)
+    id: Hashable
+    spec: SyntaxSpec 
+    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        inner = self.spec.syntax(cls, cache=cache)
+        ret = inner.to(self.collector)
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
+        cache[self] = ret
+        return ret
+
+    def __str__(self) -> str:
+        if self.name:
+            return self.format("{0}", self.name)
+        else:
+            return self.format("{spec}.to{collector}", spec=str(self.spec), collector=str(self.collector))
+        
+    @property
+    def complexity(self) -> float:
+        return 1 + self.spec.complexity
+    
+    def _children(self,*, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+        return (self.spec,)
+
 
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
@@ -386,12 +431,21 @@ class LexSpec(SyntaxSpec):
 class LazyState(Generic[A, S]):
     flatten: bool
     # thunk returns a Syntax[A, S], the original callable passed to Syntax.lazy
-    thunk: Callable[[], Syntax[A, S]] | None = field(default = None, repr=False, compare=False)
+    thunk: Callable[[], Syntax[A, S]]
     # cached resolved Syntax; excluded from comparisons
     _cached_syntax: Optional[Syntax[A, S]] = field(default=None, init=False, repr=False, compare=False)
     # cache algebras per (alg, kwargs_key). excluded from comparisons
     _inner_algebras_cache: Dict[Tuple[Type[Algebra[Any, Any]], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
     _algebras_cache: Dict[Tuple[Type[Algebra[Any, Any]], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+
+    def __hash__(self) -> int:
+        return hash((self.flatten, self.thunk))
+    
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, LazyState):
+            return False
+        return self.flatten == other.flatten and self.thunk == other.thunk
 
     @property
     def cached(self) -> Syntax[A, S]:
@@ -450,6 +504,12 @@ class Syntax(Generic[A, S]):
     
     def __str__(self) -> str:
         return str(self.spec)
+
+    def __pretty__(self) -> str:
+        return self.__str__()
+    
+    def __rich__(self) -> str:
+        return self.__str__()
         
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
@@ -567,7 +627,13 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).many(at_least=at_least, at_most=at_most), # type: ignore
-                       spec = ManySpec(spec=self.spec, at_least=at_least, at_most=at_most, name=None, file=None, line=None, func=None)
+                       spec = ManySpec(spec=self.spec, 
+                                       at_least=at_least, 
+                                       at_most=at_most, 
+                                       name=self.spec.name, 
+                                       file=self.spec.file, 
+                                       line=self.spec.line, 
+                                       func=self.spec.func)
                        )
 
     def debug(self, 
@@ -711,7 +777,13 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).then_left(other(cls, **global_kwargs)), # type: ignore
-                       spec = ThenSpec(kind=ThenKind.LEFT, left=self.spec, right=other.spec, name=None, file=None, line=None, func=None)
+                       spec = ThenSpec(kind=ThenKind.LEFT, 
+                                       left=self.spec, 
+                                       right=other.spec, 
+                                       name=None, 
+                                       file=None, 
+                                       line=None, 
+                                       func=None)
                    )
 
 
@@ -775,7 +847,12 @@ class Syntax(Generic[A, S]):
 
         return replace(self, 
                        alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)).flag(is_choice=True), # type: ignore
-                       spec=ChoiceSpec(left=self.spec, right=other.spec, name=None, file=None, line=None, func=None))
+                       spec=ChoiceSpec(left=self.spec, 
+                                       right=other.spec, 
+                                       name=None, 
+                                       file=None, 
+                                       line=None, 
+                                       func=None))
         
 
     def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
@@ -814,7 +891,7 @@ class Syntax(Generic[A, S]):
 
         return self.map_all(bind_v)
 
-    def to(self, f: Collector[E]) -> Syntax[Collect[A, E], S]:
+    def to(self, f: Collector[E], id: Hashable = None) -> Syntax[Collect[A, E], S]:
         """Attach a collector to the produced value.
         A collector can be a dataclass, and the Marked nodes will be 
         mapped to the fields of the dataclass.
@@ -836,7 +913,14 @@ class Syntax(Generic[A, S]):
         def ito_f(c: Collect[A, E]) -> A:
             return c.value if isinstance(c, Collect) else c
 
-        return self.iso(to_f, ito_f)
+        ret = self.iso(to_f, ito_f)
+        # return ret
+        return replace(ret, spec=CollectSpec(collector=f, id=id,
+                                             spec=self.spec, 
+                                             name=self.spec.name, 
+                                             file=self.spec.file, 
+                                             line=self.spec.line, 
+                                             func=self.spec.func))
 
     def mark(self, name: str) -> Syntax[Marked[A], S]:
 
@@ -851,7 +935,18 @@ class Syntax(Generic[A, S]):
         def imark_s(m: Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m
 
-        return self.iso(mark_s, imark_s)
+
+        ret = self.iso(mark_s, imark_s)
+        # return ret
+        spec = self.spec
+        if isinstance(spec, MarkedSpec):
+            spec = replace(spec, mname=name)
+        return replace(ret, spec=MarkedSpec(mname=name, 
+                                            name=spec.name,
+                                            spec=spec, 
+                                            file=spec.file, 
+                                            line=spec.line, 
+                                            func=spec.func))
     
     @cached_property
     def lexspec(self) -> frozenset[LexSpec]:
@@ -887,8 +982,7 @@ class Syntax(Generic[A, S]):
         helper = LazyState(flatten=flatten, thunk=thunk)
 
         facade = cls(alg_f=lambda acls, **global_kwargs: helper(acls, **global_kwargs), 
-                     spec=LazySpec(spec=lambda: helper.cached.spec, 
-                                   flatten=flatten,
+                     spec=LazySpec(lazy_state=helper,
                                    name=None, 
                                    file=None, 
                                    line=None, 
@@ -906,7 +1000,12 @@ class Syntax(Generic[A, S]):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
-        return cls(factory_run, spec=LexSpec(fname=name, kwargs=FrozenDict(kwargs), name=None, file=None, line=None, func=None))
+        return cls(factory_run, spec=LexSpec(fname=name, 
+                                             kwargs=FrozenDict(kwargs), 
+                                             name=None, 
+                                             file=None, 
+                                             line=None, 
+                                             func=None))
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
