@@ -96,7 +96,7 @@ def generate_random_regex_tests(n=100, seed=42) -> list[tuple[str, str, bool]]:
 
 
 # @pytest.mark.xfail(reason="Comprehensive regex tests are disabled for now.")
-def test_regex():
+def test_literal_quantifiers():
     TEST_CASES = [
         # 1. Basic literals and quantifiers
         ("literal_a", r"a", True),
@@ -110,13 +110,36 @@ def test_regex():
         ("quantifier_maximum_only", r"a{,5}", True),     # invalid in Python but valid stress test
         ("lazy_star", r"a*?", True),
         ("non_capturing_repeat", r"(?:ab)*", True),
+    ] 
 
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+
+def test_alternation_grouping():
+    TEST_CASES = [
         # 2. Alternation and grouping
         ("alternation_simple", r"a|b|c", True),
         ("alternation_in_group", r"(a|b)c", True),
         ("noncapturing_alt", r"(?:foo|bar)", True),
         ("nested_grouping", r"((ab)|(cd))+", True),
         ("named_group", r"(?P<word>[A-Za-z_]\w*)", True),
+    ]
+
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+
+def test_character_classes():
+    TEST_CASES = [
 
         # 3. Character classes
         ("class_basic", r"[abc]", True),
@@ -131,12 +154,34 @@ def test_regex():
         ("class_unicode_range", r"[\u00A9-\u00B1]", True),
         ("class_unicode_category", r"[\p{Lu}\p{Ll}]", True),
 
+    ]
+
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+
+def test_anchors_boundaries():
+    TEST_CASES = [
         # 4. Anchors and boundaries
         ("anchor_line", r"^abc$", True),
         ("boundary_word", r"\bword\b", True),
         ("boundary_nonword", r"\Bfoo\B", True),
         ("anchor_absolute_start", r"\Astart", True),
         ("anchor_absolute_end", r"end\Z", True),
+    ]
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+def test_shorthands_unicode_escape():
+    TEST_CASES = [
 
         # 5. Shorthands and Unicode escapes
         ("shorthands_basic", r"\d+\s*\w*", True),
@@ -147,6 +192,16 @@ def test_regex():
         ("unicode_named", r"\N{LATIN SMALL LETTER A}", True),
         ("unicode_category_upper", r"\p{Lu}", True),
         ("unicode_category_non_digit", r"\P{Nd}", True),
+    ]
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+def test_lookaround():
+    TEST_CASES = [
 
         # 6. Lookaround assertions
         ("lookahead_positive", r"(?=foo)", True),
@@ -154,6 +209,16 @@ def test_regex():
         ("lookbehind_positive", r"(?<=baz)", True),
         ("lookbehind_negative", r"(?<!qux)", True),
         ("nested_lookahead", r"(?:(?=a)b)*", True),
+    ]
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+def test_inline_flags():
+    TEST_CASES = [
 
         # 7. Inline flags
         ("flag_case_insensitive", r"(?i)abc", True),
@@ -161,6 +226,16 @@ def test_regex():
         ("flag_disable", r"(?-i)a", True),
         ("flag_scoped", r"(?i:abc)", True),
         ("flag_all", r"(?aLmsux)", True),
+    ]
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+def test_complex():
+    TEST_CASES = [
 
         # 8. Complex real-world examples
         ("email_pattern", r"(?P<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})", True),
@@ -169,6 +244,16 @@ def test_regex():
         ("comment_line_multiline", r"(?m)^(?:#.*|$)", True),
         ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
         ("cli_flag", r"(?:(?<=\s)|^)-{1,2}[A-Za-z0-9_-]+", True),
+    ]
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+def test_malform():
+    TEST_CASES = [
 
         # 9. Malformed or edge cases (should fail)
         ("unclosed_group", r"(", False),
@@ -179,7 +264,7 @@ def test_regex():
         ("invalid_named_group", r"(?P<1name>a)", False),
         ("invalid_flag", r"(?z)", False),
         ("empty_unicode_category", r"\p{}", False),
-    ] + generate_random_regex_tests(200, seed=12345)
+    ]
 
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
@@ -187,5 +272,19 @@ def test_regex():
             assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
         else:
             assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+
+
+def test_fuzzing():
+    TEST_CASES = generate_random_regex_tests(200, seed=12345)
+
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+
 
 
