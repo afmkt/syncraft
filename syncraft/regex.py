@@ -35,15 +35,15 @@ digit             = "0".."9" ;
 anchor            = "^" | "$" | boundary_escape ;
 boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
 
-group             = "(" branch ")"
-                  | "(?:" branch ")"
-                  | "(?P<" name ">" branch ")"
-                  | "(?=" branch ")"
-                  | "(?!" branch ")"
-                  | "(?<=" branch ")"
-                  | "(?<!" branch ")"
+group             = "(" regex ")"
+                  | "(?:" regex ")"
+                  | "(?P<" name ">" regex ")"
+                  | "(?=" regex ")"
+                  | "(?!" regex ")"
+                  | "(?<=" regex ")"
+                  | "(?<!" regex ")"
                   | "(?" inline_flags ")"
-                  | "(?" inline_flags ":" branch ")"
+                  | "(?" inline_flags ":" regex ")"
                   ;
 inline_flags      = flag_seq [ "-" flag_seq ] ;
 flag_seq          = flag { flag } ;
@@ -306,27 +306,30 @@ inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda
 
 
 def _group_body() -> Syntax[Any, Any]:
-    # group = "(" branch ")"
-    plain = lparen >> branch.mark('pattern') // rparen
-    # group = "(?:" branch ")"
-    noncapturing = (S.lex(_=B.lit("(?:")).named('"(?:"') >> branch.mark('pattern') // rparen)
-    # group = "(?P<" name ">" branch ")"
-    named = S.lex(gp_named=B.lit("(?P<")).named('"(?P<"') >> name.mark('name') // greater + branch.mark('pattern') // rparen
-    # group = "(?=" branch ")"
-    lookahead = S.lex(gp_lookahead=B.lit("(?=" )).named('"(?="') >> branch.mark('pattern') // rparen
-    # group = "(?!" branch ")"
-    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"') >> branch.mark('pattern') // rparen
-    # group = "(?<=" branch ")"
-    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="') >> branch.mark('pattern') // rparen
-    # group = "(?<!" branch ")"
-    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"') >> branch.mark('pattern') // rparen
+    # Forward reference to regex since groups can contain full regex patterns with alternation
+    regex_ref = S.lazy(lambda: regex_syntax)
+    
+    # group = "(" regex ")"
+    plain = lparen >> regex_ref.mark('pattern') // rparen
+    # group = "(?:" regex ")"
+    noncapturing = (S.lex(_=B.lit("(?:")).named('"(?:"') >> regex_ref.mark('pattern') // rparen)
+    # group = "(?P<" name ">" regex ")"
+    named = S.lex(gp_named=B.lit("(?P<")).named('"(?P<"') >> name.mark('name') // greater + regex_ref.mark('pattern') // rparen
+    # group = "(?=" regex ")"
+    lookahead = S.lex(gp_lookahead=B.lit("(?=" )).named('"(?="') >> regex_ref.mark('pattern') // rparen
+    # group = "(?!" regex ")"
+    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"') >> regex_ref.mark('pattern') // rparen
+    # group = "(?<=" regex ")"
+    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="') >> regex_ref.mark('pattern') // rparen
+    # group = "(?<!" regex ")"
+    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"') >> regex_ref.mark('pattern') // rparen
     # group = "(?" inline_flags ")"
     inline_flag_only = S.lex(gp_inline_flags=B.lit("(?")).named('"(?"') >> inline_flags // rparen
-    # group = "(?" inline_flags ":" branch ")"
+    # group = "(?" inline_flags ":" regex ")"
     inline_flag_with_colon = (S.lex(gp_inline_flags_colon=B.lit("(?")).named('"(?"')
                               >> inline_flags
                               // colon 
-                              + branch.mark('pattern') 
+                              + regex_ref.mark('pattern') 
                               // rparen)
     return S.choice(
                 plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),

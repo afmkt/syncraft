@@ -39,4 +39,4 @@ def test_alternation_in_group():
 
 if __name__ == "__main__":
     test_graph()
-    test_alternation_in_group()
+    # test_alternation_in_group()

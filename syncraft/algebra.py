@@ -85,7 +85,7 @@ class Error:
         # Header with position info if available
         if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
             if hasattr(deepest.state, 'str_input'):
-                ln = f"Error at line {deepest.state.line}, column {deepest.state.column}, Input: {deepest.state.str_input(False)}"
+                ln = f"\nError at line {deepest.state.line}, column {deepest.state.column}, Input: {deepest.state.str_input(False)}"
                 c = deepest.state.cursor_at(ln)
                 lines.append(ln)
                 lines.append(' ' * (c + len(deepest.state.cursor) + 1) + '^')
