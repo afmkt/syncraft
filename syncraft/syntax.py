@@ -968,8 +968,17 @@ class Syntax(Generic[A, S]):
 
 
     @classmethod
-    def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-        sorted_parsers = sorted(parsers, key=lambda p: p.spec.complexity)
+    def choice(cls, *parsers: Syntax[Any, S], sort: bool=True) -> Syntax[Any, S]:
+        """
+        Create a choice syntax from multiple parsers.
+        Args:
+            *parsers: Syntax parsers to combine.
+            sort: Whether to sort parsers by complexity before combining.
+        """
+        if sort:
+            sorted_parsers = sorted(parsers, key=lambda p: p.spec.complexity)
+        else:
+            sorted_parsers = list(parsers)
         return reduce(lambda a, b: a | b, sorted_parsers) if len(sorted_parsers) > 0 else cls.success(Nothing())
 
 
