@@ -639,8 +639,8 @@ class Syntax(Generic[A, S]):
 
     def debug(self, 
               *,
-              on_fail: Optional[Callable[[Algebra[A, S], Any, S], None]] = None, 
-              on_success: Optional[Callable[[Algebra[A, S], A, S], None]] = None) -> Syntax[A, S]:
+              on_fail: Optional[Callable[[Algebra[A, S], Any, S], None] | str] = None, 
+              on_success: Optional[Callable[[Algebra[A, S], A, S], None] | str] = None) -> Syntax[A, S]:
 
         def on_succeed(alg: Algebra[A, S], input: S, result: Right[Tuple[A, S]]) -> Either[Any, Tuple[A, S]]:
             def default_on_success(alg: Algebra[A, S], value: A, state: S) -> None:
@@ -652,6 +652,8 @@ class Syntax(Generic[A, S]):
                 on_success(alg, *result.value)
             else:
                 default_on_success(alg, *result.value)
+                if isinstance(on_success, str):
+                    print(on_success)
             return result
             
         def on_failure(alg: Algebra[A, S], input: S, error: Left[Any]) -> Either[Any, Tuple[A, S]]:
@@ -667,6 +669,8 @@ class Syntax(Generic[A, S]):
                 on_fail(alg, error.value, input)
             else:
                 default_on_fail(alg, error.value, input)
+                if isinstance(on_fail, str):
+                    print(on_fail)
             return error
         
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(on_succeed).on_fail(on_failure))

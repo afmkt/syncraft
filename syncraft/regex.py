@@ -352,7 +352,7 @@ def _group_body() -> Syntax[Any, Any]:
             )
 
 
-group = S.lazy(_group_body).named('group').debug()
+group = S.lazy(_group_body).named('group').debug(on_fail='=' * 100)
 
 # anchor            = "^" | "$" | boundary_escape ;
 # - ^ → LINE_START
@@ -419,7 +419,7 @@ atom = S.choice(
         shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
         char_class.to(CharClassAtom),
-        ).named('atom')
+        ).named('atom').debug(on_fail='-' * 100)
 
 
 @dataclass(frozen=True)
