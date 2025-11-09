@@ -329,15 +329,15 @@ def _group_body() -> Syntax[Any, Any]:
                               + branch.mark('pattern') 
                               // rparen)
     return S.choice(
-                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)).named('plain'),
-                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t)).named('noncapturing'),
-                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t)).named('named'),
-                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t)).named('lookahead'),
-                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t)).named('negative_lookahead'),
-                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t)).named('lookbehind'),
-                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t)).named('negative_lookbehind'),
-                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t)).named('inline_flag_only'),
-                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t)).named('inline_flag_with_colon'),
+                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),
+                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing'),
+                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="named").named('named'),
+                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t), id="lookahead").named('lookahead'),
+                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t), id="negative_lookahead").named('negative_lookahead'),
+                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t), id="lookbehind").named('lookbehind'),
+                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
+                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
+                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
             )
 
 

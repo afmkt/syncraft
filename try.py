@@ -38,5 +38,5 @@ def test_alternation_in_group():
     assert ok, f"Pattern failed to parse: {pattern}\nRe Error: {err}\nMy Error: {myerr}"
 
 if __name__ == "__main__":
-    # test_graph()
+    test_graph()
     test_alternation_in_group()
