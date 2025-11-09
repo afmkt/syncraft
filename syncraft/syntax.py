@@ -54,10 +54,10 @@ class Graph(Generic[N]):
     def nodes(self) -> Set[N]:
         return set(self.edges.keys())
 
-    def node_dump(self) -> str:
+    def str_node(self) -> str:
         return "\n".join(sorted(str(node) for node in self.nodes))
     
-    def edge_dump(self) -> str:
+    def str_edge(self) -> str:
         lines = []
         for parent, children in self.edges.items():
             for child in children:

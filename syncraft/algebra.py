@@ -38,7 +38,6 @@ class Error:
     committed: bool = field(default=False)
     previous: Optional[Error] = field(default=None)
     depth: Optional[int] = field(default=None)
-    path_index: Optional[int] = field(default=None)
 
     @staticmethod
     def get_syntax(f: Any) -> Syntax | None:
@@ -90,13 +89,12 @@ class Error:
             parts.append(f"state={self.str_state}")
         if self.depth is not None:
             parts.append(f"depth={self.depth}")
-        if self.path_index is not None:
-            parts.append(f"path_index={self.path_index}")
         indent = "" if self.depth is None else "  " * self.depth
+        indent = ""
         return f"{indent}Error({', '.join(parts)})"
 
     def __str__(self) -> str:
-        stack = self.list(self.graph)
+        stack = self.list
         return "\n".join(e.str_ for e in stack)
     
     def push(self, 
@@ -114,32 +112,13 @@ class Error:
         return replace(new, previous=self)
     
     @property
-    def naive_list(self) -> List[Error]:
+    def list(self) -> List[Error]:
         lst: List[Error] = []
         current: Optional[Error] = self
         while current is not None:
             lst.append(replace(current, depth=len(lst), previous=None))
             current = current.previous
         return lst
-
-    def list(self, g: Optional[Graph[SyntaxSpec]] = None)->List[Error]:
-        if g is None:
-            return self.naive_list
-        else:
-            lst: List[Error] = []
-            current: Optional[Error] = self
-            node_index: Dict[SyntaxSpec, int] = {}
-            while current is not None:
-                spec = current.spec
-                if spec is None:
-                    return self.naive_list
-                if spec not in g.edges:
-                    assert spec not in node_index, f"Spec <{str(id(spec))}:{spec}> already indexed"
-                    raise SyncraftError(f"Spec <{str(id(spec))}:{spec}> not found in graph edges", offender=spec, expect="Spec in graph edges")
-                node_index[spec] = len(node_index)                
-                lst.append(replace(current, depth=len(lst), path_index=node_index[spec], previous=None))
-                current = current.previous
-            return lst
     
     @property
     def deepest(self) -> Error:
