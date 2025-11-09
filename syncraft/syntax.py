@@ -900,6 +900,8 @@ class Syntax(Generic[A, S]):
 
         Args:
             f: Collector invoked during generation/printing.
+            id: Optional unique identifier for the syntax node. When f is a lambda function, id should be provided to distinguish different collectors.
+                When f is a lambda the same function has different identity each time it is defined, so id helps to identify the collector uniquely.
 
         Returns:
             Syntax producing Collect(value, collector=f).
@@ -914,7 +916,6 @@ class Syntax(Generic[A, S]):
             return c.value if isinstance(c, Collect) else c
 
         ret = self.iso(to_f, ito_f)
-        # return ret
         return replace(ret, spec=CollectSpec(collector=f, id=id,
                                              spec=self.spec, 
                                              name=self.spec.name, 
@@ -937,7 +938,6 @@ class Syntax(Generic[A, S]):
 
 
         ret = self.iso(mark_s, imark_s)
-        # return ret
         spec = self.spec
         if isinstance(spec, MarkedSpec):
             spec = replace(spec, mname=name)

@@ -26,27 +26,17 @@ def test_graph():
     assert g1.root == g.root, "Reconstructed graph root should match original"
     assert len(g1.edges) == len(g.edges), "Reconstructed graph should have same number of edges"
     assert g1.nodes == g.nodes, "Reconstructed graph should have same set of nodes"
-    # Note: g1.nodes != g.nodes and g1.edges != g.edges because reconstruction
-    # creates new object instances. This is expected behavior.
-    # The important thing is structural consistency: same counts and equivalent structure.
-    print('='*100)
-    print(g1.node_dump())
+    assert g1.edges == g.edges, "Reconstructed graph should have same set of edges"
+    assert g1 == g, "Reconstructed graph should be equal to original"
 
 
 
 def test_alternation_in_group():
     pattern = "(a|b)"
     ok, myerr, err = verify(pattern)
-    g = regex_syntax.graph()
-    g1 = myerr.graph
-    
-    # Test structural consistency instead of exact equality
-    assert len(g.edges) == len(g1.edges), f"Edge count mismatch for pattern: {pattern}"
-    assert g.root == g1.root, f"Root mismatch for pattern: {pattern}"
-    print(f"Pattern {pattern}: Structural consistency ✓")
     
     assert ok, f"Pattern failed to parse: {pattern}\nRe Error: {err}\nMy Error: {myerr}"
 
 if __name__ == "__main__":
-    test_graph()
-    # test_alternation_in_group()
+    # test_graph()
+    test_alternation_in_group()
