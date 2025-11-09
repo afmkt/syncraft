@@ -3,10 +3,9 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import (
     Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, ClassVar,
-    runtime_checkable, Callable, Hashable, Type, TYPE_CHECKING
+    runtime_checkable, Callable, Hashable, Type
 )
-if TYPE_CHECKING:  # pragma: no cover - avoids circular import at runtime
-    from syncraft.syntax import LexSpec, Syntax
+
 from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.charset import CodeUniverse
@@ -35,8 +34,15 @@ T = TypeVar('T', bound=Hashable)
 
 Tag = str
 
-
-
+@dataclass(frozen=True)
+class LexerError:
+    message: str
+    index: int
+    offender: Hashable
+    expect: frozenset[Hashable]
+    @classmethod
+    def message_only(cls, message: str) -> "LexerError":
+        return cls(message=message, index=-1, offender=None, expect=frozenset())
 
 @dataclass
 class Mode(Generic[C]):
@@ -77,7 +83,7 @@ class LexerResult(Generic[C]):
 class LexerProtocol(Protocol, Generic[C]):
     def reset(self) -> None: ...
 
-    def match(self, tag: frozenset[Tag | None], char: C, index: int) -> Either[Any, None | LexerResult[C]]: ...
+    def match(self, tag: frozenset[Tag | None], char: C, index: int) -> Either[LexerError, None | LexerResult[C]]: ...
 
     def varify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
 
@@ -85,7 +91,7 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def gen(self, tag: Tag | None, rng: random.Random) -> Any: ...
 
-    def candidate(self) -> Either[Any, None | LexerResult[C]]: ...
+    def candidate(self) -> Either[LexerError, None | LexerResult[C]]: ...
     
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
@@ -397,14 +403,14 @@ class Lexer(LexerBase[C]):
                     return True
         return False
 
-    def candidate(self) -> Either[Any, None | LexerResult[C]]:
+    def candidate(self) -> Either[LexerError, None | LexerResult[C]]:
         mode = self.current_mode
         if mode.start_index is None:
-            return Left("Cannot get candidate when no input has been processed")
+            return Left(LexerError.message_only("Cannot get candidate when no input has been processed"))
         
         candidate_ = mode.runner.candidates
         if not candidate_:
-            return Left("No candidate available")
+            return Left(LexerError.message_only("No candidate available"))
         latest = candidate_[-1]
         return Right(
             LexerResult(
@@ -414,7 +420,7 @@ class Lexer(LexerBase[C]):
             )
         )
 
-    def match(self, tags:frozenset[Tag|None], char: C, index: int) -> Either[Any, None | LexerResult[C]]:
+    def match(self, tags:frozenset[Tag|None], char: C, index: int) -> Either[LexerError, None | LexerResult[C]]:
         mode = self.current_mode
         if mode.start_index is None:
             mode.start_index = index
@@ -423,13 +429,23 @@ class Lexer(LexerBase[C]):
             expecting = mode.runner.resumable
             mode.runner = mode.runner.reset()
             expecting_str = ", ".join(f'"{str(e)}"' for e in expecting)
-            return Left(f"Lexing error at index {index} get \"{char}\", expecting {expecting_str}")
+            return Left(LexerError(
+                message=f"Lexing error at index {index} get \"{char}\", expecting {expecting_str}",
+                index=index,
+                offender=char,
+                expect=frozenset(str(e) for e in expecting),
+            ))
 
-        mode.runner = rr.runner
         if rr.final and rr.accepted is None:
             mode.runner = mode.runner.reset()
-            return Left(f"Lexing reached final state at index {index} without acceptance")
-        elif rr.final and rr.accepted is not None:
+            return Left(LexerError(
+                message=f"Lexing reached final state at index {index} without acceptance",
+                index=index,
+                offender=char,
+                expect=frozenset(),
+            ))
+        mode.runner = rr.runner
+        if rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
             tag = mode.select_tag(accepted_tags)
             if tag is None:
@@ -518,14 +534,20 @@ class ExtLexer(LexerBase[T]):
                 register_one(t, self.tkspec, **non_specs)
         
 
-    def candidate(self) -> Either[Any, None | LexerResult[T]]:
-        return Left("External lexer cannot provide candidates")
+    def candidate(self) -> Either[LexerError, None | LexerResult[T]]:
+        return Left(LexerError.message_only("External lexer cannot provide candidates"))
 
-    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> Either[Any, None | LexerResult[T]]:
+    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> Either[LexerError, None | LexerResult[T]]:
         for tag in tags:
             if tag in self.rules and self.rules[tag].predicate(item):
-                return Right(LexerResult(tag=tag, start=index, end=index + 1, value=item))            
-        return Left(f"External lexer has no rule for token at index {index}: {item!r}")
+                return Right(LexerResult(tag=tag, start=index, end=index + 1, value=item))   
+                
+        return Left(LexerError(
+            message=f"External lexer has no rule for token at index {index}: {item!r}",
+            index=index,
+            offender=item,
+            expect=frozenset(tags)
+        ))
         
 
     def varify(self, tag: frozenset[Tag | None], value: Any) -> bool:

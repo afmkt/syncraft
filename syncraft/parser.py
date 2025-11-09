@@ -6,7 +6,8 @@ from typing import (
 from syncraft.lexer import (
     LexerBase,
     LexerResult,
-    LexerProtocol
+    LexerProtocol,
+    LexerError
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.utils import FrozenDict
@@ -92,7 +93,7 @@ class ParserState(Bindable, Generic[T]):
         indicator = '.'
         indicator = '\u25cf'
         indicator = '\u007c\u25BA'  
-        return f"input=[{' '.join(self.before() + [indicator] + self.after())}]"
+        return f"[ {' '.join(self.before() + [indicator] + self.after())} ]"
     @property
     def str_line(self) -> str:
         if self.line > 0:
@@ -117,7 +118,7 @@ class ParserState(Bindable, Generic[T]):
         return ''
 
     def __str__(self) -> str:
-        parts = [self.str_input]
+        parts = [f"input={self.str_input}"]
         if self.ended:
             parts.append(self.str_ended)
         if self.pending:
@@ -270,23 +271,24 @@ class Parser(Algebra[T, ParserState[T]]):
             while True:
                 if state.ended:
                     match lexer.candidate():
-                        
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
                             if lexeme is None:
                                 token = Token(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
                             return Right((token, state.advance())) # type: ignore
-                        case _:
-                            return Left(Error(message="Cannot match token at end of input", this=lex_run, state=state))
+                        case Left(LexerError(message=err_msg, index=index, offender=offender, expect=expect)):
+                            return Left(Error(message="Cannot match token at end of input", this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
+                        case e:
+                            raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or LexerError")
                 elif state.pending:
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
                     state = tmp
                 else:
                     match lexer.match(ntags, state.current, state.abs_index()):
-                        case Left(err_msg):
-                            return Left(Error(message=f"{err_msg}", this=lex_run, state=state))
+                        case Left(LexerError(message=err_msg, index=index, offender=offender, expect=expect)):
+                            return Left(Error(message=err_msg, this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
@@ -297,8 +299,8 @@ class Parser(Algebra[T, ParserState[T]]):
                             if end > state.index:
                                 state = state.advance()
                             return Right((token, state)) # type: ignore
-                        case _:
-                            raise SyncraftError("Unknown result from lexer", offender=state, expect="LexerResult or None")
+                        case e:
+                            raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or None or LexerError")
 
         return cls(lex_run)
 

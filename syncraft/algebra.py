@@ -71,31 +71,181 @@ class Error:
     @property
     def str_this(self) -> str:
         spec = self.spec
+        if spec and hasattr(spec, 'file') and hasattr(spec, 'line') and spec.file and spec.line:
+            return f"{spec} ({spec.file}:{spec.line})"
         return f"{spec}"
 
-    @property
-    def str_state(self) -> str:
-        return str(self.state)
     
 
     @property
-    def str_(self) -> str:
-        parts = [f"rule={self.str_this}"]
-        if self.message is not None:
-            parts.append(f"msg={self.message}")
-        if self.error is not None:
-            parts.append(f"err={self.error}")
-        if self.state is not None:
-            parts.append(f"state={self.str_state}")
-        if self.depth is not None:
-            parts.append(f"depth={self.depth}")
-        indent = "" if self.depth is None else "  " * self.depth
-        indent = ""
-        return f"{indent}Error({', '.join(parts)})"
+    def summary(self) -> str:
+        """One-line error summary focusing on the actual error"""
+        deepest = self.deepest
+        if deepest.message:
+            return f"Parse Error: {deepest.message}"
+        elif deepest.error:
+            return f"Parse Error: {self._format_error(deepest.error)}"
+        else:
+            return f"Parse Error in rule '{deepest.str_this}'"
+
+    @property
+    def contextual(self) -> str:
+        """Multi-line error with context and location"""
+        deepest = self.deepest
+        lines = []
+        
+        # Header with position info if available
+        if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
+            lines.append(f"Parse Error at line {deepest.state.line}, column {deepest.state.column}")
+        else:
+            lines.append("Parse Error")
+        
+        # Show the actual error
+        if deepest.message:
+            lines.append(f"  Message: {deepest.message}")
+        if deepest.error:
+            lines.append(f"  Cause: {self._format_error(deepest.error)}")
+        
+        # Show input context if available
+        if deepest.state is not None and hasattr(deepest.state, 'str_input'):
+            lines.append(f"  Input: {deepest.state.str_input}")
+        
+        # Show parsing context with duplicate counts (no limit on stack frames)
+        stack = self.list
+        if len(stack) > 1:
+            lines.append("  Parsing context:")
+            
+            # Count duplicates and group them
+            rule_counts: Dict[str, int] = {}
+            rule_order: List[str] = []
+            
+            for entry in stack[::-1]:  # Reverse to show root->leaf progression
+                rule = entry.str_this
+                if rule not in rule_counts:
+                    rule_counts[rule] = 0
+                    rule_order.append(rule)
+                rule_counts[rule] += 1
+            
+            for i, rule in enumerate(rule_order):
+                count = rule_counts[rule]
+                prefix = "  └─ " if i == len(rule_order) - 1 else "  ├─ "
+                if count > 1:
+                    lines.append(f"{prefix}{rule} {count}x")
+                else:
+                    lines.append(f"{prefix}{rule}")
+        
+        return "\n".join(lines)
+
+    @property  
+    def user_friendly(self) -> str:
+        """User-friendly error message with helpful suggestions"""
+        deepest = self.deepest
+        lines = []
+        
+        # Header with position info if available
+        if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
+            lines.append(f"Parse Error at line {deepest.state.line}, column {deepest.state.column}")
+        else:
+            lines.append("Parse Error")
+        
+        # Show the actual error in user-friendly terms
+        if deepest.message and "expecting" in deepest.message:
+            lines.append(f"  Issue: {deepest.message}")
+        elif deepest.error:
+            lines.append(f"  Issue: {self._format_error(deepest.error)}")
+        
+        # Show input context if available
+        if deepest.state is not None and hasattr(deepest.state, 'str_input'):
+            lines.append(f"  Input: {deepest.state.str_input}")
+        
+        # Add context-specific suggestions
+        suggestion = self._get_suggestion()
+        if suggestion:
+            lines.append(f"  Suggestion: {suggestion}")
+        
+        return "\n".join(lines)
+    
+    def _format_error(self, error: Any) -> str:
+        """Format error object in a more readable way"""
+        # Check if it's a LexerError
+        if hasattr(error, 'message') and hasattr(error, 'index') and hasattr(error, 'offender') and hasattr(error, 'expect'):
+            # It's a LexerError - let's make it much more readable
+            if hasattr(error, 'expect') and error.expect:
+                # Handle case where expect might contain a single string with comma-separated values
+                expect_items: List[str] = []
+                for item in error.expect:
+                    item_str = str(item)
+                    if ', ' in item_str:
+                        # Split comma-separated string into individual items
+                        expect_items.extend(s.strip() for s in item_str.split(', '))
+                    else:
+                        expect_items.append(item_str)
+                
+                expect_list = sorted(set(expect_items))  # Remove duplicates and sort
+                if len(expect_list) == 1:
+                    expected_str = f"'{expect_list[0]}'"
+                elif len(expect_list) <= 3:
+                    quoted_expects = [f"'{e}'" for e in expect_list]
+                    expected_str = f"one of {', '.join(quoted_expects)}"
+                else:
+                    expected_str = f"one of {len(expect_list)} valid characters"
+            else:
+                expected_str = "valid input"
+            
+            if hasattr(error, 'offender') and error.offender is not None:
+                got_str = f"'{error.offender}'"
+            else:
+                got_str = "unexpected input"
+            
+            if hasattr(error, 'index') and error.index >= 0:
+                return f"Lexing error at position {error.index}: expected {expected_str}, got {got_str}"
+            else:
+                return f"Lexing error: expected {expected_str}, got {got_str}"
+        else:
+            # For other error types, just convert to string
+            return str(error)
+
+    def _get_suggestion(self) -> str:
+        """Generate context-specific suggestions based on error patterns"""
+        deepest = self.deepest
+        stack = self.list
+        
+        # Look for common error patterns and provide helpful suggestions
+        if deepest.message and "expecting \"?\"" in deepest.message:
+            # This suggests they're trying to parse a plain group but parser expects inline flag syntax
+            return "Use '(?:a|b)' for non-capturing group or ensure the pattern matches group syntax"
+        
+        if any("group" in entry.str_this for entry in stack):
+            if deepest.message and "expecting" in deepest.message:
+                return "Check group syntax - use '(...)' for capturing, '(?:...)' for non-capturing"
+        
+        if any("quantifier" in entry.str_this for entry in stack):
+            return "Check quantifier syntax - use ?, *, +, or {n,m}"
+        
+        if any("char_class" in entry.str_this for entry in stack):
+            return "Check character class syntax - use [...] with proper escaping"
+        
+        return ""
+
+    @property
+    def compact(self) -> str:
+        """Very compact error message for quick feedback"""
+        deepest = self.deepest
+        location = ""
+        if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
+            location = f" at line {deepest.state.line}, column {deepest.state.column}"
+        
+        if deepest.message:
+            return f"Error{location}: {deepest.message}"
+        elif deepest.error:
+            return f"Error{location}: {self._format_error(deepest.error)}"
+        else:
+            return f"Parse error{location} in '{deepest.str_this}'"
 
     def __str__(self) -> str:
-        stack = self.list
-        return "\n".join(e.str_ for e in stack)
+        # Use the contextual format by default instead of the full trace
+        return self.contextual
+    
     
     def push(self, 
             *,

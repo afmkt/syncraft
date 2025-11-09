@@ -46,7 +46,7 @@ def file(level: int = 0)->None | str:
     while level >= 0 and frame is not None:
         level -= 1
         frame = frame.f_back
-    return os.path.basename(frame.f_code.co_filename) if frame is not None else None
+    return frame.f_code.co_filename if frame is not None else None
 
 def func(level: int = 0) -> None | str:
     frame = inspect.currentframe()
