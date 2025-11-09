@@ -71,7 +71,7 @@ class Error:
     @property
     def str_this(self) -> str:
         spec = self.spec
-        return f"{id(spec)}:{spec}"
+        return f"{spec}"
 
     @property
     def str_state(self) -> str:

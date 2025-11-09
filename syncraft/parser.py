@@ -278,7 +278,7 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = lexeme
                             return Right((token, state.advance())) # type: ignore
                         case _:
-                            return Left(Error(message=f"Cannot match token at end of input, expect {name}", this=lex_run, state=state))
+                            return Left(Error(message="Cannot match token at end of input", this=lex_run, state=state))
                 elif state.pending:
                     tmp = yield Incomplete(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
@@ -286,7 +286,7 @@ class Parser(Algebra[T, ParserState[T]]):
                 else:
                     match lexer.match(ntags, state.current, state.abs_index()):
                         case Left(err_msg):
-                            return Left(Error(message=f"{err_msg}, expect {name}", this=lex_run, state=state))
+                            return Left(Error(message=f"{err_msg}", this=lex_run, state=state))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):

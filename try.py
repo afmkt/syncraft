@@ -34,7 +34,7 @@ def test_graph():
 def test_alternation_in_group():
     pattern = "(a|b)"
     ok, myerr, err = verify(pattern)
-    
+    print(str(myerr))
     assert ok, f"Pattern failed to parse: {pattern}\nRe Error: {err}\nMy Error: \n{myerr}"
 
 if __name__ == "__main__":

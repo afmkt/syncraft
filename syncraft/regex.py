@@ -309,21 +309,21 @@ def _group_body() -> Syntax[Any, Any]:
     # group = "(" branch ")"
     plain = lparen >> branch.mark('pattern') // rparen
     # group = "(?:" branch ")"
-    noncapturing = (S.lex(_=B.lit("(?:" )).named('(?:') >> branch.mark('pattern') // rparen)
+    noncapturing = (S.lex(_=B.lit("(?:")).named('"(?:"') >> branch.mark('pattern') // rparen)
     # group = "(?P<" name ">" branch ")"
-    named = S.lex(gp_named=B.lit("(?P<")).named('(?P<') >> name.mark('name') // greater + branch.mark('pattern') // rparen
+    named = S.lex(gp_named=B.lit("(?P<")).named('"(?P<"') >> name.mark('name') // greater + branch.mark('pattern') // rparen
     # group = "(?=" branch ")"
-    lookahead = S.lex(gp_lookahead=B.lit("(?=" )).named('(?=') >> branch.mark('pattern') // rparen
+    lookahead = S.lex(gp_lookahead=B.lit("(?=" )).named('"(?="') >> branch.mark('pattern') // rparen
     # group = "(?!" branch ")"
-    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!" )).named('(?!') >> branch.mark('pattern') // rparen
+    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"') >> branch.mark('pattern') // rparen
     # group = "(?<=" branch ")"
-    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=" )).named('(?<=') >> branch.mark('pattern') // rparen
+    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="') >> branch.mark('pattern') // rparen
     # group = "(?<!" branch ")"
-    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('(?<!') >> branch.mark('pattern') // rparen
+    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"') >> branch.mark('pattern') // rparen
     # group = "(?" inline_flags ")"
-    inline_flag_only = S.lex(gp_inline_flags=B.lit("(?")).named('(?') >> inline_flags // rparen
+    inline_flag_only = S.lex(gp_inline_flags=B.lit("(?")).named('"(?"') >> inline_flags // rparen
     # group = "(?" inline_flags ":" branch ")"
-    inline_flag_with_colon = (S.lex(gp_inline_flags_colon=B.lit("(?")).named('(?')
+    inline_flag_with_colon = (S.lex(gp_inline_flags_colon=B.lit("(?")).named('"(?"')
                               >> inline_flags
                               // colon 
                               + branch.mark('pattern') 

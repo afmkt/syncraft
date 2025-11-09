@@ -419,11 +419,12 @@ class Lexer(LexerBase[C]):
         if mode.start_index is None:
             mode.start_index = index
         rr = mode.runner.step(char, index)
-        mode.runner = rr.runner
         if rr.error:
             mode.runner = mode.runner.reset()
-            return Left(f"Lexing error at index {index} on char {char}")
-        elif rr.final and rr.accepted is None:
+            return Left(f"Lexing error at index {index} on char \"{char}\", expecting {mode.runner.resumable} ")
+
+        mode.runner = rr.runner
+        if rr.final and rr.accepted is None:
             mode.runner = mode.runner.reset()
             return Left(f"Lexing reached final state at index {index} without acceptance")
         elif rr.final and rr.accepted is not None:
