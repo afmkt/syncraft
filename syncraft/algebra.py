@@ -82,14 +82,14 @@ class Error:
         deepest = self.deepest
         if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
             if hasattr(deepest.state, 'str_input'):
-                lines.append(f"Error at line {deepest.state.line}, column {deepest.state.column}, Input: {deepest.state.str_input(ul=False)}")
+                lines.append(f"At line: {deepest.state.line}, column: {deepest.state.column}, Input: {deepest.state.str_input(ul=False)}")
             else:
-                lines.append(f"Error at line {deepest.state.line}, column {deepest.state.column}")
-            lines.append(f"{deepest.str_this}")
+                lines.append(f"At line: {deepest.state.line}, column: {deepest.state.column}")
             if deepest.error:
                 lines.append(f"{self._format_error(deepest.error)}")
             elif deepest.message:
                 lines.append(f"{deepest.message}")
+            lines.append(f"{deepest.str_this}")
             return lines
         return [str(self)]
 

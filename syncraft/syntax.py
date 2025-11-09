@@ -644,7 +644,7 @@ class Syntax(Generic[A, S]):
 
         def on_succeed(alg: Algebra[A, S], input: S, result: Right[Tuple[A, S]]) -> Either[Any, Tuple[A, S]]:
             def default_on_success(alg: Algebra[A, S], value: A, state: S) -> None:
-                print(f"[DEBUG] {self}: ")
+                print(f"[DEBUG]    SUCCEEDED: {self}")
                 print(f"        Output Value: {value}")
                 print(f"        Output State: {state}")                    
 
@@ -656,7 +656,7 @@ class Syntax(Generic[A, S]):
             
         def on_failure(alg: Algebra[A, S], input: S, error: Left[Any]) -> Either[Any, Tuple[A, S]]:
             def default_on_fail(alg: Algebra[A, S], error: Any, state: S) -> None:
-                print(f"[DEBUG] {self}:")
+                print(f"[DEBUG] FAILED: {self}")
                 if isinstance(error, Error) and hasattr(error, 'compact'):
                     for ln in error.compact:
                         print(f"        {ln}")
