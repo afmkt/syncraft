@@ -277,6 +277,10 @@ range = (class_atom.mark('start') // minus + class_atom.mark('end')).to(CharRang
 class_item = range | class_atom
 
 # class_class_items = leading_rsquare? class_item { class_item } ;
+# leading_rsquare == ']' indicates that the first character in the class is a literal ']'
+# if ~leading_rsquare is absent, t[0] is Nothing bool(Nothing) → False, we just take the class_item.many() == t[1]
+# if ~leading_rsquare is present, t[0] is the leading_rsquare Token bool(Token) → True, we should include ']' in the class_item
+# so we append ']' to the list of class_item value in this case
 class_class_items = (~leading_rsquare + class_item.many()).map(lambda t: (t[1] + [']']) if t[0] else t[1]).named('class_class_items')
 # char_class        = "[" [ "^" ] class_class_items "]" ;
 char_class = (lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare).named('char_class')
@@ -335,15 +339,16 @@ def _group_body() -> Syntax[Any, Any]:
                               + regex_syntax.mark('pattern') 
                               // rparen)
     return S.choice(
-                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),
-                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing'),
-                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="named").named('named'),
+                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain').debug(),
+                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing').debug(),
+                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="named").named('named').debug(),
                 lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t), id="lookahead").named('lookahead'),
                 negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t), id="negative_lookahead").named('negative_lookahead'),
                 lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t), id="lookbehind").named('lookbehind'),
                 negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
                 inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
                 inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
+                sort = False
             )
 
 

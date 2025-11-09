@@ -77,18 +77,31 @@ class Error:
 
 
     @property
-    def contextual(self) -> str:
-        """Multi-line error with context and location"""
-        deepest = self.deepest
+    def compact(self) -> list[str]:
         lines = []
-        
-        # Header with position info if available
+        deepest = self.deepest
         if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
             if hasattr(deepest.state, 'str_input'):
-                ln = f"\nError at line {deepest.state.line}, column {deepest.state.column}, Input: {deepest.state.str_input(False)}"
-                c = deepest.state.cursor_at(ln)
-                lines.append(ln)
-                lines.append(' ' * (c + len(deepest.state.cursor) ) + '^')
+                lines.append(f"Error at line {deepest.state.line}, column {deepest.state.column}, Input: {deepest.state.str_input(ul=False)}")
+            else:
+                lines.append(f"Error at line {deepest.state.line}, column {deepest.state.column}")
+            lines.append(f"{deepest.str_this}")
+            if deepest.error:
+                lines.append(f"{self._format_error(deepest.error)}")
+            elif deepest.message:
+                lines.append(f"{deepest.message}")
+            return lines
+        return [str(self)]
+
+    @property
+    def summary(self) -> str:
+        deepest = self.deepest
+        lines = []
+        if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
+            if hasattr(deepest.state, 'str_input'):
+                ln = f"Error at line {deepest.state.line}, column {deepest.state.column}, Input: {{0}}"
+                lns = deepest.state.format_input(ln, False)
+                lines.extend(lns)
             else:
                 lines.append(f"Error at line {deepest.state.line}, column {deepest.state.column}")
                 
@@ -100,17 +113,18 @@ class Error:
             lines.append(f"  Message: {deepest.message}")
         if deepest.error:
             lines.append(f"    Cause: {self._format_error(deepest.error)}")
-
+        return "\n".join(lines)
+        
+    @property
+    def trace(self) -> str:
+        lines = []
         # Show parsing context with duplicate counts (no limit on stack frames)
         stack = self.list
         if len(stack) > 1:
-            lines.append('')
             lines.append("  Trace:")
-            
             # Count duplicates and group them
             rule_counts: Dict[str, int] = {}
             rule_order: List[str] = []
-            
             for entry in stack[::-1]:  # Reverse to show root->leaf progression
                 rule = entry.str_this
                 if rule not in rule_counts:
@@ -125,9 +139,12 @@ class Error:
                     lines.append(f"{prefix}{rule} [{count}x]")
                 else:
                     lines.append(f"{prefix}{rule}")
-            lines.append('')
         return "\n".join(lines)
 
+    @property
+    def contextual(self) -> str:
+        return f"\n{self.summary}\n{self.trace}\n"
+        
     def _format_error(self, error: Any) -> str:
         """Format error object in a more readable way"""
         # Check if it's a LexerError
@@ -318,6 +335,8 @@ class Algebra(Generic[A, S]):
                     err = Error(error=e, this=self)
                     return replace(err, committed=True)
         return self.map_error(commit_error)
+
+    
 
     def on_fail(self, 
                 func: Callable[

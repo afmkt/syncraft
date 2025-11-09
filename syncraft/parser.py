@@ -28,6 +28,51 @@ import re
 from pathlib import Path
 import io
 import asyncio
+import os
+
+def get_tab_width() -> int:
+    """Get the tab width from system settings, defaulting to 8 if unavailable."""
+    try:
+        # Try to get from TABSIZE environment variable
+        if 'TABSIZE' in os.environ:
+            return int(os.environ['TABSIZE'])
+        
+        # Try to get from common shell variables
+        for var in ['COLUMNS', 'TERM']:
+            if var in os.environ:
+                # Check if there are any editor-specific tab settings
+                pass
+        
+        # Try to read from common editor config files
+        home = os.path.expanduser('~')
+        config_files = [
+            os.path.join(home, '.vimrc'),
+            os.path.join(home, '.editorconfig'),
+            os.path.join('.editorconfig')
+        ]
+        
+        for config_file in config_files:
+            if os.path.exists(config_file):
+                try:
+                    with open(config_file, 'r') as f:
+                        content = f.read()
+                        # Look for tab width settings
+                        import re
+                        # Vim style: set tabstop=4
+                        vim_match = re.search(r'(?:set\s+)?tabstop\s*[=:]\s*(\d+)', content, re.IGNORECASE)
+                        if vim_match:
+                            return int(vim_match.group(1))
+                        # EditorConfig style: tab_width = 4
+                        ec_match = re.search(r'tab_width\s*=\s*(\d+)', content, re.IGNORECASE)
+                        if ec_match:
+                            return int(ec_match.group(1))
+                except (IOError, ValueError):
+                    continue
+        
+        # Default to standard tab width
+        return 8
+    except (ValueError, OSError):
+        return 8
 
 
 T = TypeVar('T', bound=Hashable)  
@@ -98,11 +143,39 @@ class ParserState(Bindable, Generic[T]):
         indicator = '\u007c\u25BA'  
         return indicator
 
+    def format_input(self, template:str, ul: bool = True) -> List[str]:
+        ret = []  
+        ln = template.format(self.str_input(ul=ul))
+        next = ' ' * self.cursor_at(ln) + '^'
+        ret.append(ln)
+        ret.append(next)
+        return ret
+
+
     def str_input(self, ul: bool) -> str:
         return f"[ {' '.join(self.before(ul=ul) + [self.cursor] + self.after(ul=ul))} ]"
     
     def cursor_at(self, input: str) -> int:
-        return input.find(self.cursor)
+        ret = 0
+        tab_width = get_tab_width()
+        for i in range(len(input)):
+            char = input[i]
+            # Reset position only on newline (starts new line)
+            if char == '\n':
+                ret = 0
+                continue
+            # Handle tab character with dynamic tab width
+            elif char == '\t':
+                ret = (ret // tab_width + 1) * tab_width  # Move to next tab stop
+                continue
+            # Handle other control characters (don't affect position tracking)
+            elif ord(char) < 32:
+                continue
+            
+            if input[i:i+len(self.cursor)] == self.cursor:
+                return ret + len(self.cursor) + 1
+            ret += 1
+        return -1
 
 
     @property

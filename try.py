@@ -33,7 +33,7 @@ def test_graph():
 
 
 
-def test_alternation_in_group():
+def test_regex():
     TEST_CASES = [
         ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
         ("flag_all", r"(?aLmsux)", True),
@@ -76,6 +76,6 @@ def to_raw_literal(s: str) -> str:
 
 if __name__ == "__main__":
     # test_graph()
-    test_alternation_in_group()
-    s = r".E?|\B\w?(?.{2,3}.)\s{1,5}"
-    print(to_raw_literal(s))
+    test_regex()
+    # s = r".E?|\B\w?(?.{2,3}.)\s{1,5}"
+    # print(to_raw_literal(s))
