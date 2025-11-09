@@ -11,7 +11,7 @@ from syncraft.algebra import Error
 import random
 import string
 import re
-from rich import print
+# from rich import print
 
 
 def test_graph():
@@ -23,6 +23,8 @@ def test_graph():
     g1 = s.graph()
     
     # Test structural consistency (the main fix validation)
+    print(g.str_node)
+    # print(g1.str_node)
     assert g1.root == g.root, "Reconstructed graph root should match original"
     assert len(g1.edges) == len(g.edges), "Reconstructed graph should have same number of edges"
     assert g1.nodes == g.nodes, "Reconstructed graph should have same set of nodes"
