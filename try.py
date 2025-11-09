@@ -34,11 +34,48 @@ def test_graph():
 
 
 def test_alternation_in_group():
-    pattern = r"(?-i)a"
-    vr = verify(pattern)
-    print(str(vr.err_syncraft))
-    assert vr.ok, f"Verification should succeed, but failed with error: {vr.err_syncraft}"
+    TEST_CASES = [
+        ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
+        ("flag_all", r"(?aLmsux)", True),
+        ('fuzzing', r'.E?|\B\w?(?.{2,3}.)\s{1,5}', True),
+        ("flag_disable", r"(?-i)a", True),
+        ("invalid_named_group", r"(?P<1name>a)", False),
+        ("invalid_flag", r"(?z)", False),
+        ("empty_unicode_category", r"\p{}", False),
+        ("unclosed_group", r"(", False),
+        ("unclosed_class", r"[abc", False),
+        ("invalid_quantifier_range", r"{3,2}", False),
+        ("incomplete_hex", r"\x4", False),
+        ("unclosed_named_group", r"(?P<name>", False),
+    ]
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+
+def to_raw_literal(s: str) -> str:
+    # Count trailing backslashes
+    n_backslashes = len(s) - len(s.rstrip("\\"))
+    # A valid raw string cannot end with an odd number of backslashes
+    if n_backslashes % 2 == 1:
+        # fallback to repr
+        return repr(s)
+
+    # Pick the safer quote type
+    if "'" in s and '"' not in s:
+        quote = '"'
+    else:
+        quote = "'"
+
+    return f"r{quote}{s}{quote}"
+
+
 
 if __name__ == "__main__":
     # test_graph()
     test_alternation_in_group()
+    s = r".E?|\B\w?(?.{2,3}.)\s{1,5}"
+    print(to_raw_literal(s))

@@ -498,7 +498,7 @@ def verify(pattern: str) -> VerifyResult:
         myerr = parsed
     try:
         pyparsed = re.compile(pattern)
-    except re.error as e:
+    except Exception as e:
         pyparsed = None
         err = e
     ok = (pyparsed is not None and isinstance(parsed, Regex)) or (pyparsed is None and isinstance(parsed, Error))

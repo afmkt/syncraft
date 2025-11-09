@@ -13,6 +13,7 @@ import re
 
 
 
+    
 def random_literal():
     chars = string.ascii_letters + string.digits + "_"
     return random.choice(chars)
@@ -219,13 +220,12 @@ def test_lookaround():
 
 def test_inline_flags():
     TEST_CASES = [
-
         # 7. Inline flags
         ("flag_case_insensitive", r"(?i)abc", True),
         ("flag_multiple", r"(?imx)pattern", True),
-        ("flag_disable", r"(?-i)a", True),
         ("flag_scoped", r"(?i:abc)", True),
         ("flag_all", r"(?aLmsux)", True),
+        ("flag_disable", r"(?-i)a", True),
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
@@ -242,8 +242,10 @@ def test_complex():
         ("float_pattern", r"(?:(?:\+|-)?\d+(?:\.\d+)?)(?:e[+-]?\d+)?", True),
         ("ssn_like", r"(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)", True),
         ("comment_line_multiline", r"(?m)^(?:#.*|$)", True),
-        ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
         ("cli_flag", r"(?:(?<=\s)|^)-{1,2}[A-Za-z0-9_-]+", True),
+        ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
+        ('fuzzing', r'.E?|\B\w?(?.{2,3}.)\s{1,5}', True),
+        
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
@@ -254,16 +256,15 @@ def test_complex():
 
 def test_malform():
     TEST_CASES = [
-
         # 9. Malformed or edge cases (should fail)
+        ("invalid_named_group", r"(?P<1name>a)", False),
+        ("invalid_flag", r"(?z)", False),
+        ("empty_unicode_category", r"\p{}", False),
         ("unclosed_group", r"(", False),
         ("unclosed_class", r"[abc", False),
         ("invalid_quantifier_range", r"{3,2}", False),
         ("incomplete_hex", r"\x4", False),
         ("unclosed_named_group", r"(?P<name>", False),
-        ("invalid_named_group", r"(?P<1name>a)", False),
-        ("invalid_flag", r"(?z)", False),
-        ("empty_unicode_category", r"\p{}", False),
     ]
 
     for name, pattern, should_pass in TEST_CASES:
@@ -273,16 +274,27 @@ def test_malform():
         else:
             assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
 
-
-
-def test_fuzzing():
-    TEST_CASES = generate_random_regex_tests(200, seed=12345)
-
+def test_fuzzing_collection():
+    TEST_CASES = [
+        ("fuzzing", r".{3}|\w{1}(?\ZH?)^\w", True),
+    ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
         if should_pass:
             assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
         else:
+            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+
+def test_fuzzing():
+    TEST_CASES = generate_random_regex_tests(200, seed=1234)
+
+    for name, pattern, should_pass in TEST_CASES:
+        vr = verify(pattern)
+        if should_pass:
+            pattern = ("fuzzing",pattern, should_pass)
+            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        else:
+            pattern = ("fuzzing", pattern, should_pass)
             assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
 
 

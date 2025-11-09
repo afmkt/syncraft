@@ -147,11 +147,12 @@ class Error:
                 expect_list = sorted(set(expect_items))  # Remove duplicates and sort
                 if len(expect_list) == 1:
                     expected_str = f"'{expect_list[0]}'"
-                elif len(expect_list) <= 3:
+                elif len(expect_list) <= 10:
                     quoted_expects = [f"'{e}'" for e in expect_list]
                     expected_str = f"one of {', '.join(quoted_expects)}"
                 else:
-                    expected_str = f"one of {len(expect_list)} valid characters"
+
+                    expected_str = f"one of {', '.join(expect_list[0:5])} ... {len(expect_list)} valid inputs"
             else:
                 expected_str = "valid input"
             
