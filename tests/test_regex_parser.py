@@ -283,10 +283,10 @@ def test_groups_capture():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.CAPTURE
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -300,10 +300,10 @@ def test_groups_non_capture():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.NON_CAPTURE
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -319,10 +319,10 @@ def test_groups_named():
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.CAPTURE
     assert result.name == "name"
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -337,10 +337,10 @@ def test_groups_lookahead():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.LOOKAHEAD
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -354,10 +354,10 @@ def test_groups_negative_lookahead():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.NEG_LOOKAHEAD
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -372,10 +372,10 @@ def test_groups_lookbehind():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.LOOKBEHIND
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -390,10 +390,10 @@ def test_groups_negative_lookbehind():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.NEG_LOOKBEHIND
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -439,10 +439,10 @@ def test_groups_flags_scoped():
     assert result.kind == GroupKind.FLAGS_SCOPED
     assert result.inline_flags == ("i",)
     assert result.disabled_flags is None
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier
@@ -458,10 +458,10 @@ def test_groups_flags_scoped_with_disable():
     assert result.kind == GroupKind.FLAGS_SCOPED
     assert result.inline_flags == ("i", "m")
     assert result.disabled_flags == ("s",)
-    assert isinstance(result.pattern, Branch)
-    assert len(result.pattern.pieces) == 3
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
-        p = result.pattern.pieces[i]
+        p = result.pattern.branches[0].pieces[i]
         assert isinstance(p.atom, LiteralAtom)
         assert p.atom.text == char
         assert not p.quantifier

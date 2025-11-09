@@ -40,5 +40,5 @@ def test_alternation_in_group():
     assert ok
 
 if __name__ == "__main__":
-    test_graph()
-    # test_alternation_in_group()
+    # test_graph()
+    test_alternation_in_group()
