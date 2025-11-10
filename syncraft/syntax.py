@@ -708,69 +708,33 @@ class Syntax(Generic[A, S]):
 
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Then[B, Then[A, C]], S]:
-        """Parse left, then this syntax, then right; keep all.
-
-        Equivalent to left >> self // right.
-
-        Args:
-            left: Opening syntax.
-            right: Closing syntax.
-
-        Returns:
-            Syntax producing nested Then with all parts.
-        """
         return (left >> self // right)
 
-    def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Choice[Many[Then[B, A]], Optional[Nothing]]], S]:
-        """Parse one or more items separated by sep.
+    def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Many[Then[B, A]]], S]:
+        ret: Syntax[Then[A, Many[Then[B, A]]], S] = self + (sep >> self).many()
 
-        Returns a structure where the first item is separated from the rest,
-        which are collected in a Many of Then pairs.
-
-        Args:
-            sep: Separator syntax between items.
-
-        Returns:
-            Syntax describing a non-empty, separator-delimited list.
-        """
-        ret: Syntax[Then[A, Choice[Many[Then[B, A]], Nothing]], S] = self + (sep >> self).many().optional
-
-        def f(a: Then[A, Choice[Many[Then[B, A]], Nothing]]) -> Many[A]:
+        def f(a: Then[A, Many[Then[B, A]]]) -> Many[A]:
             match a:
                 case Then(
                     kind=ThenKind.BOTH,
                     left=left,
-                    right=Choice(kind=ChoiceKind.RIGHT, value=Nothing()),
+                    right=Many(value=bs),
                 ):
-                    return Many(value=(left,))
-                case Then(
-                    kind=ThenKind.BOTH,
-                    left=left,
-                    right=Choice(kind=ChoiceKind.LEFT, value=Many(value=bs)),
-                ):
-                    return Many(value=(left,) + tuple([b.right for b in bs]))
+                    return Many(value=(left,) + tuple(b.right for b in bs))
                 case _:
                     raise SyncraftError(f"Bad data shape {a}", offender=a, expect="Then(BOTH) with Choice on the right")
 
-        def i(a: Many[A]) -> Then[A, Choice[Many[Then[B | None, A]], Nothing]]:
+        def i(a: Many[A]) -> Then[A, Many[Then[B|None, A]]]:
             if not isinstance(a, Many) or len(a.value) < 1:
                 raise SyncraftError(f"sep_by inverse expect Many with at least one element, got {a}", offender=a, expect="Many with at least one element")
-            if len(a.value) == 1:
-                return Then(
-                    kind=ThenKind.BOTH,
-                    left=a.value[0],
-                    right=Choice(kind=ChoiceKind.RIGHT, value=Nothing()),
-                )
-            else:
-                v: List[Then[B | None, A]] = [
-                    Then(kind=ThenKind.RIGHT, right=x, left=None) for x in a.value[1:]
-                ]
-                return Then(
-                    kind=ThenKind.BOTH,
-                    left=a.value[0],
-                    right=Choice(kind=ChoiceKind.LEFT, value=Many(value=tuple(v))),
-                )
-
+            v: List[Then[B | None, A]] = [
+                Then(kind=ThenKind.RIGHT, right=x, left=None) for x in a.value[1:]
+            ]
+            return Then(
+                kind=ThenKind.BOTH,
+                left=a.value[0],
+                right=Many(value=tuple(v)),
+            )
         return ret.iso(f, i)  # type: ignore
 
     def parens(
@@ -778,7 +742,7 @@ class Syntax(Generic[A, S]):
         sep: Syntax[C, S],
         open: Syntax[B, S],
         close: Syntax[D, S],
-    ) -> Syntax[Then[B, Then[Then[A, Choice[Many[Then[C, A]], Optional[Nothing]]], D]], S]:
+    ) -> Syntax[Then[B, Then[Then[A, Many[Then[C, A]]], D]], S]:
         """Parse a parenthesized, separator-delimited list.
 
         Shorthand for self.sep_by(sep).between(open, close).

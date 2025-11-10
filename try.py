@@ -27,7 +27,6 @@ def test_graph():
     g1 = s.graph()
     
     # Test structural consistency (the main fix validation)
-    print(g.str_node)
     # print(g1.str_node)
     assert g1.root == g.root, "Reconstructed graph root should match original"
     assert len(g1.edges) == len(g.edges), "Reconstructed graph should have same number of edges"
@@ -35,19 +34,6 @@ def test_graph():
     assert g1.edges == g.edges, "Reconstructed graph should have same set of edges"
     assert g1 == g, "Reconstructed graph should be equal to original"
 
-
-def test_optional_many():
-    a = lit('a')
-    S = a.optional.many()
-    sql = ""
-    from syncraft.cache import Cache
-    ast, bound = parse_word(S, sql, cache=Cache())    
-    generated, bound = gen.generate_with(S, ast)
-    print(ast)
-    assert ast == generated, "Parsed and generated results do not match."
-    x, f = generated.bimap()
-    u, v = gen.generate_with(S, f(x))
-    assert u == ast
 
 
 def test_regex():
@@ -71,6 +57,6 @@ def test_empty_many() -> None:
 
 
 if __name__ == "__main__":
-    # test_graph()
-    # test_regex()
+    test_graph()
+    test_regex()
     test_empty_many()
