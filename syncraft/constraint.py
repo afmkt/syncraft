@@ -12,7 +12,7 @@ from inspect import Signature
 import inspect
 from syncraft.ast import SyncraftError
 from syncraft.utils import FrozenDict
-
+from syncraft.input import PayloadKind
     
 @dataclass(frozen=True)
 class Binding:
@@ -63,6 +63,9 @@ class Bindable:
         """Leave the current binding scope (no-op by default)."""
         return self
 
+    @property
+    def payload_kind(self) -> Optional[PayloadKind]:
+        return None
 
 class Quantifier(Enum):
     FORALL = "forall"

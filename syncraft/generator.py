@@ -471,7 +471,7 @@ def generate_with(
     
     runner = Runner(ast=data, seed=seed, restore_pruned=restore_pruned, lexer_class=lexer_class)
 
-    v, s = runner(syntax=syntax, alg_cls=Generator, cursor=None)
+    v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -485,7 +485,7 @@ def validate(
     
     runner = Runner(ast=data, seed=0, restore_pruned=True)
     
-    v, s = runner(syntax=syntax, alg_cls=Generator, cursor=None)
+    v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
         return v, s.binding.bound()
     else:
@@ -496,7 +496,7 @@ def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     
     runner = Runner(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
     
-    v, s = runner(syntax=syntax, alg_cls=Generator, cursor=None)
+    v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
         return v, s.binding.bound()
     else:

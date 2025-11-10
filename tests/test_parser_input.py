@@ -15,7 +15,7 @@ from syncraft.token import Structured, TokenMatcher, matcher, struct
 def test_parse_text_input_without_config_infers_lexer() -> None:
     syntax = Syntax.literal("hi")
 
-    value, state = parser_run(syntax=syntax, cursor=StreamCursor.from_data(["hi"]))
+    value, state = parser_run(syntax=syntax, data=StreamCursor.from_data(["hi"]), cache=None)
 
     assert value == "hi"
     assert state is not None
@@ -25,7 +25,7 @@ def test_parse_text_input_without_config_infers_lexer() -> None:
 def test_parse_bytes_input_without_config_infers_lexer() -> None:
     syntax = Syntax.token(text=b"\x01")
 
-    value, state = parser_run(syntax=syntax, cursor=StreamCursor.from_data([b"\x01"]))
+    value, state = parser_run(syntax=syntax, data=StreamCursor.from_data([b"\x01"]), cache=None)
     
     assert value == b"\x01"
     assert state is not None
@@ -40,7 +40,7 @@ def test_parse_token_input_without_config_infers_extlexer() -> None:
     syntax = Syntax.token(PING=matcher_spec)
 
     tokens: list[Token] = [Token(text="ping", token_type="PING")]
-    value, bound = parse_data(syntax=syntax, data=tokens)
+    value, bound = parse_data(syntax=syntax, data=tokens, cache=None)
 
     assert isinstance(value, Token)
     assert value.token_type == "PING"
@@ -55,7 +55,8 @@ def test_run_with_input_stream_handles_incomplete() -> None:
 
     value, state = parser_run(
         syntax=syntax,
-        cursor=source
+        data=source,
+        cache=None
     )
 
     assert state is not None
@@ -75,7 +76,7 @@ def test_parse_list_accepts_token_spec_from_token_call() -> None:
     syntax = token(token_type="PING", PING=matcher_spec)
 
     tokens: list[Token] = [Token(text="ping", token_type="PING")]
-    value, bound = parse_data(syntax=syntax, data=tokens)
+    value, bound = parse_data(syntax=syntax, data=tokens, cache=None)
 
     assert isinstance(value, Token)
     assert value.text == "ping"
@@ -89,7 +90,7 @@ def test_parse_string_input_with_lexer_bind() -> None:
     syntax_cls = Syntax.config(lexer_class=lexer_cls)
     word = syntax_cls.lex(WORD=FABuilder.lit("hi").tagged("WORD"))
 
-    value, state = parser_run(syntax=word, cursor=StreamCursor.from_data("hi"))
+    value, state = parser_run(syntax=word, data=StreamCursor.from_data("hi"), cache=None)
 
     assert isinstance(value, Token)
     assert value.token_type == "WORD"
@@ -102,7 +103,7 @@ def test_parse_bytes_input_with_lexer_bind() -> None:
     syntax_cls = Syntax.config(universe=CodeUniverse.byte())
     byte_token = syntax_cls.lex(BYTE=FABuilder.lit(b"\x01").tagged("BYTE"))
 
-    value, state = parser_run(syntax=byte_token, cursor=StreamCursor.from_data(b"\x01"))
+    value, state = parser_run(syntax=byte_token, data=StreamCursor.from_data(b"\x01"), cache=None)
 
     assert isinstance(value, Token)
     assert value.token_type == "BYTE"

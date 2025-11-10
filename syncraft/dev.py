@@ -28,7 +28,7 @@ def rich_error(err: Error)->None:
     try:
         from rich import print
         from rich.table import Table as RichTable
-        lst = err.list(None)
+        lst = err.list
         leaf: Any = lst[0] if lst else {}
         if isinstance(leaf, Mapping):
             leaf_map: Mapping[str, Any] = leaf

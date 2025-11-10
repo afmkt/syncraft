@@ -304,7 +304,7 @@ def test_grouping():
     D = literal("d").named("D")
     s = (A + B) // D + C
     print(s)
-    ast, _ = parse_word(s, "a b d c")    
+    ast, _ = parse_word(s, "a b d c", cache=Cache())    
     print(ast)
     x, inv = ast.bimap()
     print(x)
@@ -312,7 +312,7 @@ def test_grouping():
 
     s1 = A + (B // D) + C
     print(s1)
-    ast1, _ = parse_word(s1, "a b d c")
+    ast1, _ = parse_word(s1, "a b d c", cache=Cache())
     print(ast1)
     y, inv = ast1.bimap()
     print(y)

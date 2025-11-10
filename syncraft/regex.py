@@ -352,7 +352,7 @@ def _group_body() -> Syntax[Any, Any]:
             )
 
 
-group = S.lazy(_group_body).named('group').debug(on_fail='=' * 100)
+group = S.lazy(_group_body).named('group').debug()
 
 # anchor            = "^" | "$" | boundary_escape ;
 # - ^ → LINE_START
@@ -419,7 +419,7 @@ atom = S.choice(
         shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
         char_class.to(CharClassAtom),
-        ).named('atom').debug(on_fail='-' * 100)
+        ).named('atom').debug()
 
 
 @dataclass(frozen=True)
@@ -459,7 +459,7 @@ def parse(data: str, *, raw:bool=False) -> Regex | Error | Any:
     from syncraft.parser import Runner
     runner: Runner[Any] = Runner()
     cursor = StreamCursor.from_data(data)
-    for result, s in runner.run(regex_parser, cursor):
+    for result, s in runner.run(regex_parser, state=None, cursor=cursor, once=True, cache=None):
         if s:
             if isinstance(result, AST):
                 return result if raw else result.mapped 
@@ -473,7 +473,7 @@ def parse_regex(syntax: Syntax[Any, Any],
                 pattern: str, 
                 *, 
                 raw:bool=False) -> Any:
-    result, s = parse_string(syntax, pattern)
+    result, s = parse_string(syntax, pattern, cache=None)
     if s:
         if isinstance(result, AST):
             return result if raw else result.mapped 

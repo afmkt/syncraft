@@ -1,6 +1,10 @@
 from .syntax import (
 	Syntax,
-    
+    SyntaxSpec,
+	Graph,
+    LazySpec,
+    ThenSpec,
+    ChoiceSpec,    
 )
 from .algebra import (
     Algebra,
@@ -12,6 +16,9 @@ from .algebra import (
 from .parser import (
     Parser,
 	parse,
+    ParserState,
+    parser,
+    parse_data,
 )
 from .generator import (
     Generator,
@@ -43,25 +50,43 @@ from .ast import (
 	Many,
 	Marked,
 	Collect,
+    Nothing,
 )
+from .charset import CodeUniverse, CharSet
+from .fa import FABuilder, DFA, NFA, DFARunner, NFARunner
+from .lexer import ExtLexer, Lexer
 from .utils import (
     FrozenDict,
     CallWith,
-    
 )
+from .input import (
+	StreamCursor,
+)
+from .cache import Cache
+
 
 __all__ = [
+    # charset
+    "CodeUniverse", "CharSet",
+	# fa
+	"FABuilder", "DFA", "NFA", "DFARunner", "NFARunner",
+    # lexer
+	"ExtLexer", "Lexer",
+    # cache
+    "Cache",
     # algebra
     "Algebra", "Error", "Left", "Right", "Either",
 	# syntax & core
-	"Syntax", 
+	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "ThenSpec", "ChoiceSpec",
 	# parsing/generation helpers
-	"parse",
+	"parse", "parser", "parse_data", "ParserState",
 	"generate", "generate_with", "validate", "Parser", "Generator",
 	# finder
 	"find", "matches", "anything", "Finder",
 	# constraints
 	"Constraint", "Quantifier", "forall", "exists", "FrozenDict", "CallWith",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "Choice", "ChoiceKind", "Many", "Marked", "Collect", "Bimap", "Biarrow"
+	"AST", "Token", "Then", "ThenKind", "Choice", "ChoiceKind", "Many", "Marked", "Collect", "Bimap", "Biarrow", "Nothing",
+    # input
+	"StreamCursor",
 ]

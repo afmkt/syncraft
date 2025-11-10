@@ -408,11 +408,12 @@ class ManySpec(SyntaxSpec, Generic[A]):
 @dataclass(frozen=True)
 class LexSpec(SyntaxSpec):
     fname: str
+    args: Tuple[Any, ...] = field(default_factory=tuple)
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
-        ret = cls.factory(self.fname, **self.kwargs)
+        ret = cls.factory(self.fname, *self.args, **self.kwargs)
         ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
@@ -636,44 +637,64 @@ class Syntax(Generic[A, S]):
                                        line=self.spec.line, 
                                        func=self.spec.func)
                        )
+    
+
+    def on_fail(self, f: Callable[[Optional[Syntax[A, S]], S, Any], Either[Any, Tuple[Any, S]]] | None | Any) -> Syntax[Any, S]:
+        """Attach a callback to handle failure cases.
+
+        Args:
+            f: Function called on failure with (algebra, state, error).
+
+        Returns:
+            Syntax that invokes f on failure.
+
+        """
+        def _on_fail(alg: Algebra[A, S], input: S, error: Any) -> Either[Any, Tuple[Any, S]]:
+            if callable(f):
+                return f(alg.syntax, input, error) # type: ignore
+            else:
+                return Left(f)
+        if f is None:
+            return self
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_fail(_on_fail)) 
+    
+    def on_success(self, f: Callable[[Optional[Syntax[A, S]], S, Tuple[A,S]], Either[Any, Tuple[Any, S]]] | None | Any) -> Syntax[Any, S]:
+        """Attach a callback to handle success cases.
+
+        Args:
+            f: Function called on success with (algebra, value, state).
+
+        Returns:
+            Syntax that invokes f on success.
+        """
+        def _on_success(alg: Algebra[A, S], input: S, result: Tuple[A, S]) -> Either[Any, Tuple[Any, S]]:
+            if callable(f):
+                return f(alg.syntax, input, result) # type: ignore
+            else:
+                return Right((f, result[1])) 
+        if f is None:
+            return self 
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success)) 
 
     def debug(self, 
               *,
-              on_fail: Optional[Callable[[Algebra[A, S], Any, S], None] | str] = None, 
-              on_success: Optional[Callable[[Algebra[A, S], A, S], None] | str] = None) -> Syntax[A, S]:
-
-        def on_succeed(alg: Algebra[A, S], input: S, result: Right[Tuple[A, S]]) -> Either[Any, Tuple[A, S]]:
-            def default_on_success(alg: Algebra[A, S], value: A, state: S) -> None:
-                print(f"[DEBUG]    SUCCEEDED: {self}")
-                print(f"        Output Value: {value}")
-                print(f"        Output State: {state}")                    
-
+              on_fail: Optional[Callable[[Any, S], None] | Any] = None, 
+              on_success: Optional[Callable[[A , S], None] | Any] = None) -> Syntax[A, S]:
+        def on_succeeded(syntax: Optional[Syntax[A, S]], input: S, result: Tuple[A, S]) -> Either[Any, Tuple[A, S]]:
             if callable(on_success):
-                on_success(alg, *result.value)
-            else:
-                default_on_success(alg, *result.value)
-                if isinstance(on_success, str):
-                    print(on_success)
-            return result
-            
-        def on_failure(alg: Algebra[A, S], input: S, error: Left[Any]) -> Either[Any, Tuple[A, S]]:
-            def default_on_fail(alg: Algebra[A, S], error: Any, state: S) -> None:
-                print(f"[DEBUG] FAILED: {self}")
-                if isinstance(error, Error) and hasattr(error, 'compact'):
-                    for ln in error.compact:
-                        print(f"        {ln}")
-                else:
-                    print(f"        Error: {error}")
-                print()
+                on_success(result[0], result[1])
+            elif on_success is not None:
+                print(on_success)
+            return Right(result)
+
+        def on_failure(syntax: Optional[Syntax[A, S]], input: S, error: Any) -> Either[Any, Tuple[A, S]]:
             if callable(on_fail):
-                on_fail(alg, error.value, input)
-            else:
-                default_on_fail(alg, error.value, input)
-                if isinstance(on_fail, str):
-                    print(on_fail)
-            return error
+                on_fail(error, input)
+            elif on_fail is not None:
+                print(on_fail)
+            return Left(error)
         
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(on_succeed).on_fail(on_failure))
+        return self.on_fail(on_failure).on_success(on_succeeded)
 
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Then[B, Then[A, C]], S]:
@@ -988,6 +1009,10 @@ class Syntax(Generic[A, S]):
     def success(cls, value: B) -> Syntax[B, S]:
         return cls.factory('success', value=value)
 
+    @classmethod
+    def parallel(cls, *syntaxes: Syntax[Any, S], state: Optional[S]=None) -> Syntax[Any, S]:
+        return cls.factory('parallel', *syntaxes, last_state=state)
+    
 
     @classmethod
     def choice(cls, *parsers: Syntax[Any, S], sort: bool=True) -> Syntax[Any, S]:
@@ -1024,15 +1049,15 @@ class Syntax(Generic[A, S]):
     
 
     @classmethod
-    def factory(cls, name: str, **kwargs: Any) -> Syntax[Any, Any]:
-        
+    def factory(cls, name: str, *args:Any, **kwargs: Any) -> Syntax[Any, Any]:
         def factory_run(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
             method = getattr(acls, name, None)
             if method is None or not callable(method):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
-            result = CallWith(method, **(global_kwargs | kwargs))()
+            result = CallWith(method, *args, **(global_kwargs | kwargs))()
             return cast(Algebra[Any, Any], result)
         return cls(factory_run, spec=LexSpec(fname=name, 
+                                             args=args,
                                              kwargs=FrozenDict(kwargs), 
                                              name=None, 
                                              file=None, 
@@ -1074,14 +1099,17 @@ class RunnerProtocol(Protocol, Generic[A, S]):
     def finalize(self, result: Optional[Tuple[Any, None | S]]) -> None: 
         return
 
+
     def run(self, 
             parser: Algebra[A, S], 
+            state: Optional[S],
             cursor: Optional[StreamCursor[Any]],
-            cache: Optional[Cache[Any]] = None,
-            once: bool=True) -> Generator[Tuple[Any, None | S], None, None]: 
+            cache: Optional[Cache[Any]],
+            once: bool
+            ) -> Generator[Tuple[Any, None | S], None, None]: 
         while True:
             ret = None
-            state = self.resume(None, cursor)
+            state = self.resume(state, cursor)
             gen_cache: Cache[Any] = cache or Cache()
             parser_gen = parser.run(state, cache=gen_cache)
             try:
@@ -1106,20 +1134,31 @@ class RunnerProtocol(Protocol, Generic[A, S]):
             yield ret  # type: ignore
             if once:
                 break
-                
-                
-
 
     def __call__(self, 
                  syntax: Syntax[A, S], 
                  alg_cls: Type[Algebra[A, S]],
+                 state: Optional[S],
                  cursor: Optional[StreamCursor[Any]],
-                 cache: Optional[Cache[Any]] = None) -> Tuple[Any, None | S]:
-        parser = self.algebra(syntax=syntax, alg_cls=alg_cls, payload_kind=cursor.payload_kind if cursor else None)  
-        for ret in self.run(parser, cursor, cache, once=True):
-            return ret
-        raise SyncraftError("Runner did not yield any results", offender=self, expect="at least one result")
+                 cache: Optional[Cache[Any]],
+                 once: bool
+                 ) -> Generator[Tuple[Any, None | S], None, None]:
+        alg = self.algebra(syntax=syntax, alg_cls=alg_cls, payload_kind=cursor.payload_kind if cursor else None)  
+        yield from self.run(alg, state, cursor, cache, once=once)
+
+    def once(self, 
+             syntax: Syntax[A, S], 
+             alg_cls: Type[Algebra[A, S]],
+             state: Optional[S],
+             cursor: Optional[StreamCursor[Any]],
+             cache: Optional[Cache[Any]]
+             ) -> Tuple[Any, None | S]:
+        gen = self.__call__(syntax, alg_cls, state, cursor, cache, once=True)
+        return next(gen)
         
+
+
+
 
 
 

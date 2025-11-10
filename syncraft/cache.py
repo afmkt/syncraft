@@ -8,6 +8,7 @@ from syncraft.ast import SyncraftError
 from rich import print
 from syncraft.utils import callable_str
 from collections import defaultdict
+import copy
 import random
 
 def is_lazy(func: Callable[..., Any]) -> bool:
@@ -184,6 +185,10 @@ class Cache(Generic[S]):
     max_revision: int = 512  # Protection against runaway single-head growth
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
+
+
+    def clone(self) -> Cache[S]:
+        return copy.deepcopy(self)
 
     @property
     def max_growth_iterations(self) -> int:

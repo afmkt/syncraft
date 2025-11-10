@@ -338,45 +338,29 @@ class Algebra(Generic[A, S]):
 
     
 
-    def on_fail(self, 
-                func: Callable[
-                    [
-                        Algebra[A, S], 
-                        S, 
-                        Left[Any]
-                    ], 
-                        Either[Any, Tuple[B, S]]
-                    ]) -> Algebra[A | B, S]:
+    def on_fail(self, func: Callable[[Algebra[A, S], S, Any], Either[Any, Tuple[B, S]]]) -> Algebra[A | B, S]:
         assert callable(func), "func must be callable"
         def fail_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                           SendChannelType, 
-                                                                           Either[Any, Tuple[A|B, S]]]:
+                                                SendChannelType, 
+                                                Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Left):
-                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result))
+                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result.value))
             else:
                 return cast(Either[Any, Tuple[A | B, S]], result)
         return replace(self, run_f=fail_run) # type: ignore
         
 
-    def on_success(self, 
-                    func: Callable[
-                        [
-                            Algebra[A, S], 
-                            S, 
-                            Right[Tuple[A, S]], 
-                        ], 
-                            Either[Any, Tuple[B, S]]
-                        ]) -> Algebra[A | B, S]:
+    def on_success(self, func: Callable[[Algebra[A, S], S, Tuple[A, S]], Either[Any, Tuple[B, S]]]) -> Algebra[A | B, S]:
         assert callable(func), "func must be callable"
         def success_run(input: S, 
                         cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                              SendChannelType, 
-                                                                              Either[Any, Tuple[A|B, S]]]:
+                                                    SendChannelType, 
+                                                    Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Right):
-                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result))
+                return cast(Either[Any, Tuple[A | B, S]], func(self, input, result.value))
             else:
                 return cast(Either[Any, Tuple[A | B, S]], result)
         return replace(self, run_f=success_run) # type: ignore
@@ -547,6 +531,20 @@ class Algebra(Generic[A, S]):
                         )) 
             return Right((Many(value=tuple(ret)), current_input))
         return replace(self, run_f=many_run) # type: ignore
+    
+    @classmethod
+    def parallel(cls, *syntaxes: Syntax[Any, S], last_state: Optional[S], **kwargs:Any) -> Algebra[Tuple[Any, ...], S]:
+        def parallel_run(input: S, 
+                    cache:Cache[S]) -> Generator[YieldChannelType, 
+                                               SendChannelType, 
+                                               Either[Any, Tuple[Tuple[Any, ...], S]]]:
+            algebras = [syntax(cls, **kwargs) for syntax in syntaxes]
+            results: List[Tuple[Syntax[Any, S], Either[Any, Tuple[Tuple[Any, ...], S]]]] = []
+            for i, alg in enumerate(algebras):
+                result = yield from alg.run(input, cache.clone())
+                results.append((syntaxes[i], result))
+            return Right((tuple(results), input if last_state is None else last_state))
+        return cls(run_f=parallel_run) # type: ignore
 
     
 
