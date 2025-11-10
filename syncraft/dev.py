@@ -1,59 +1,17 @@
 from __future__ import annotations
-import builtins
 import io
-from typing import Tuple, Any, Set, Optional, List, Dict, Mapping
+from typing import Tuple, Any, Set, Optional, List, Dict
 from syncraft.syntax import (
-    Syntax,
     SyntaxSpec,
     LazySpec,
     ThenSpec,
     ChoiceSpec,
     ManySpec,
     LexSpec,
+    CollectSpec,
+    MarkedSpec,
 )
 from syncraft.ast import ThenKind
-from syncraft.algebra import Error
-from rich import print
-
-def debug(syntax: Syntax[Any, Any], *, msg: str = "") -> Syntax[Any, Any]:
-    def on_fail(rule:Any, err: Any, state: Any) -> None:
-        print(f"[red]Syntax Debug Fail:[/red] {msg}")
-        print(f"  Rule: {rule}")
-        print(f"  State: {state}")
-        rich_error(err)
-    return syntax.debug(on_fail = on_fail)
-    
-
-def rich_error(err: Error)->None:
-    try:
-        from rich import print
-        from rich.table import Table as RichTable
-        lst = err.list
-        leaf: Any = lst[0] if lst else {}
-        if isinstance(leaf, Mapping):
-            leaf_map: Mapping[str, Any] = leaf
-        else:
-            leaf_map = {
-                key: getattr(leaf, key)
-                for key in dir(leaf)
-                if not key.startswith('_') and hasattr(leaf, key) and not callable(getattr(leaf, key))
-            }
-        tbl = RichTable(title="Parser Error", show_lines=True)
-        tbl.add_column("Leaf Parser Field", style="blue")
-        tbl.add_column("Leaf Parser Value", style="yellow")
-        flds: Set[str] = {str(fld) for fld in leaf_map.keys()}
-        for fld in sorted(flds):
-            leaf_value = leaf_map.get(fld, "N/A")
-            tbl.add_row(f"{fld}", f"{leaf_value}")
-        print(tbl)
-    except ImportError:
-        builtins.print(err)
-
-
-
-
-
-
 
 def syntax2svg(
     syntax: SyntaxSpec,
@@ -169,6 +127,11 @@ def syntax2svg(
             return f"Many[{node.at_least},{upper}]"
         if isinstance(node, LazySpec):
             return "Lazy"
+        if isinstance(node, CollectSpec):
+            collector_name = getattr(node.collector, '__name__', str(node.collector))
+            return f"Collect({collector_name})"
+        if isinstance(node, MarkedSpec):
+            return f"Mark({node.mname})"
         return type(node).__name__
 
     def placeholder(node: SyntaxSpec) -> Any:
@@ -235,6 +198,19 @@ def syntax2svg(
 
             if isinstance(node, LazySpec):
                 diagram_cache[node] = child_items[0] if child_items else Comment("lazy …")
+                continue
+
+            if isinstance(node, CollectSpec):
+                # CollectSpec wraps another spec - show the inner content with a collect annotation
+                inner = child_items[0] if child_items else Comment("…")
+                collector_name = getattr(node.collector, '__name__', str(node.collector))
+                diagram_cache[node] = Sequence(Comment(f"→{collector_name}"), inner)
+                continue
+
+            if isinstance(node, MarkedSpec):
+                # MarkedSpec wraps another spec - show the inner content with a mark annotation
+                inner = child_items[0] if child_items else Comment("…")
+                diagram_cache[node] = Sequence(Comment(f"@{node.mname}"), inner)
                 continue
 
             if isinstance(node, ThenSpec):

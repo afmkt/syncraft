@@ -35,7 +35,10 @@ uv sync --group dev
 ```
 
 TODO
-- [ ]  regex.py a subset of Python re
+- [ ]  Static analysis tool based on Syntax.graph
+- [ ]  Profile hook on Cache
+- [ ]  try_parse based on Syntax.parallel
+- [ ]  regex.py convert Regex to FABuilder
 - [ ]  Visualization (railroad diagrams + AST).
 - [ ]  Interactive dev (Jupyter).
 - [ ]  Semantic layer (datalog + unification).
