@@ -218,8 +218,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         Raises:
             ValueError: If bounds are invalid.
         """
-        if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+        if at_least < 0 or (at_most is not None and at_most < at_least):
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
         def many_run(input: GenState[T], 
                      cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                                        SendChannelType, 
@@ -464,12 +464,15 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
 def generate_with(
     syntax: Syntax[Any, Any], 
     data: Optional[ParseResult[Any]] = None, 
-    seed: int = 0, 
+    seed: Optional[int] = None,
     restore_pruned: bool = False,
     lexer_class: Type[LexerProtocol] | None = None,
 ) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     
-    runner = Runner(ast=data, seed=seed, restore_pruned=restore_pruned, lexer_class=lexer_class)
+    runner = Runner(ast=data, 
+                    seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
+                    restore_pruned=restore_pruned, 
+                    lexer_class=lexer_class)
 
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
@@ -478,10 +481,7 @@ def generate_with(
         return v, None    
 
 
-def validate(
-    syntax: Syntax[Any, Any], 
-    data: ParseResult[Any]
-) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
+def validate(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     
     runner = Runner(ast=data, seed=0, restore_pruned=True)
     
@@ -492,9 +492,11 @@ def validate(
         return v, None    
 
 
-def generate(syntax) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
+def generate(syntax, seed: Optional[int] = None) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     
-    runner = Runner(ast=None, seed=random.randint(0, 2**32 - 1), restore_pruned=False)
+    runner = Runner(ast=None, 
+                    seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
+                    restore_pruned=False)
     
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:

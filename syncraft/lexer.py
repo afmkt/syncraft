@@ -542,7 +542,7 @@ class ExtLexer(LexerBase[T]):
                 return Right(LexerResult(tag=tag, start=index, end=index + 1, value=item))   
                 
         return Left(LexerError(
-            message=f"External lexer has no rule for token at index {index}: {item!r}",
+            message="External lexer token mismatch",
             index=index,
             offender=item,
             expect=frozenset(tags)

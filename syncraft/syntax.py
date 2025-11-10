@@ -615,13 +615,13 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).flat_map(f)) # type: ignore
 
-    def many(self, *, at_least: int = 1, at_most: Optional[int] = None) -> Syntax[Many[A], S]:
+    def many(self, *, at_least: int = 0, at_most: Optional[int] = None) -> Syntax[Many[A], S]:
         """Repeat this syntax and collect results into Many.
 
         Repeats greedily until failure or no progress. Enforces bounds.
 
         Args:
-            at_least: Minimum number of matches (default 1).
+            at_least: Minimum number of matches (default 0).
             at_most: Optional maximum number of matches.
 
         Returns:
@@ -675,6 +675,16 @@ class Syntax(Generic[A, S]):
         if f is None:
             return self 
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success)) 
+
+
+    @staticmethod
+    def default_debug_on_fail(error: Any, input: S) -> None:
+        print(f"Syntax failed with error: {error} on input state: {input}")
+
+    @staticmethod
+    def default_debug_on_success(value: Any, input: S) -> None:
+        print(f"Syntax succeeded with value: {value} on input state: {input}")
+
 
     def debug(self, 
               *,
@@ -1124,8 +1134,10 @@ class RunnerProtocol(Protocol, Generic[A, S]):
             except StopIteration as e:
                 result = e.value
                 if isinstance(result, Right):
+                    assert result.value is not None, "Algebra returned Right with None value"
                     ret = result.value
                 elif isinstance(result, Left):
+                    assert result.value is not None, "Algebra returned Left with None value"
                     ret = result.value, None
                 else:
                     ret = Error(this=result, message="Algebra returned data that is not Left or Right"), None

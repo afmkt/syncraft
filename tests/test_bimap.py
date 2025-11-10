@@ -179,7 +179,8 @@ def test_empty_many() -> None:
     syntax = A.many()  # This should allow empty matches
     sql = ""
     ast, bound = parse_word(syntax, sql, cache=Cache())
-    assert isinstance(ast, Error)
+    assert ast.mapped == [], "AST mapped value should be an empty list for empty input"
+
 
 
 def test_backtracking_many() -> None:

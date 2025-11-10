@@ -821,9 +821,9 @@ class NFA(Generic[C]):
     def __pos__(self) -> NFA[C]:
         return self.plus
     
-    def many(self, at_least: int = 1, at_most: Optional[int] = None) -> NFA[C]:
-        if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+    def many(self, at_least: int = 0, at_most: Optional[int] = None) -> NFA[C]:
+        if at_least < 0 or (at_most is not None and at_most < at_least):
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
         if at_least == 1 and at_most is None:
             return self.plus
         nfa = self
@@ -1172,7 +1172,7 @@ class FABuilder(Generic[C]):
     children: Tuple[FABuilder[C], ...] = field(default_factory=tuple)
     intervals: Tuple[Tuple[str | bytes | int | C, str | bytes | int | C], ...] = field(default_factory=tuple)
     text: Optional[Union[str, bytes, Sequence[C]]] = None
-    at_least: int = 1
+    at_least: int = 0
     at_most: Optional[int] = None
     skip: bool = False  # if true, do not include this in the final automaton (used for whitespace, comments, etc)
     priority: int = 0  # higher number means higher priority
@@ -1375,7 +1375,7 @@ class FABuilder(Generic[C]):
 
     def many(self, 
              *, 
-             at_least: int = 1, 
+             at_least: int = 0, 
              at_most: Optional[int] = None) -> FABuilder[C]:
         return FABuilder(kind=_NodeKind.MANY, 
                          children=(self,), 

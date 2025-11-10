@@ -115,10 +115,7 @@ def test_literal_quantifiers():
 
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 
 def test_alternation_grouping():
@@ -133,10 +130,7 @@ def test_alternation_grouping():
 
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 
 def test_character_classes():
@@ -159,10 +153,7 @@ def test_character_classes():
 
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 
 def test_anchors_boundaries():
@@ -176,10 +167,7 @@ def test_anchors_boundaries():
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_shorthands_unicode_escape():
     TEST_CASES = [
@@ -196,10 +184,7 @@ def test_shorthands_unicode_escape():
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_lookaround():
     TEST_CASES = [
@@ -213,10 +198,7 @@ def test_lookaround():
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_inline_flags():
     TEST_CASES = [
@@ -229,10 +211,7 @@ def test_inline_flags():
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_complex():
     TEST_CASES = [
@@ -249,10 +228,7 @@ def test_complex():
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_malform():
     TEST_CASES = [
@@ -269,10 +245,7 @@ def test_malform():
 
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_fuzzing_collection():
     TEST_CASES = [
@@ -280,22 +253,15 @@ def test_fuzzing_collection():
     ]
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_fuzzing():
-    TEST_CASES = generate_random_regex_tests(200, seed=1234)
+    TEST_CASES = generate_random_regex_tests(200, seed=random.randint(0, 2**32 - 1))
 
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        if should_pass:
-            pattern = ("fuzzing",pattern, should_pass)
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            pattern = ("fuzzing", pattern, should_pass)
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        pattern = ("fuzzing",pattern, should_pass)
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 
 

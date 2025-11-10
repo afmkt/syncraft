@@ -609,7 +609,9 @@ class Collect(AST, Generic[A, E]):
             
             c = CallWith(self.collector, b)
             if c.missing_args or c.missing_kwargs:
-                raise SyncraftError("Collector cannot be called with provided arguments", offender=self.collector, expect="callable with matching signature")
+                raise SyncraftError("Collector cannot be called with provided arguments", 
+                                     offender=self.collector, 
+                                     expect="callable with matching signature")
             
             if c.unused_args:
                 inv_first = build_inv(c.unused_args[0])

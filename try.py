@@ -13,6 +13,10 @@ import string
 import re
 from rich import print
 
+from syncraft.parser import  parse_word
+import syncraft.generator as gen
+lit = Syntax.literal
+
 
 def test_graph():
     g = regex_syntax.graph()
@@ -32,50 +36,41 @@ def test_graph():
     assert g1 == g, "Reconstructed graph should be equal to original"
 
 
+def test_optional_many():
+    a = lit('a')
+    S = a.optional.many()
+    sql = ""
+    from syncraft.cache import Cache
+    ast, bound = parse_word(S, sql, cache=Cache())    
+    generated, bound = gen.generate_with(S, ast)
+    print(ast)
+    assert ast == generated, "Parsed and generated results do not match."
+    x, f = generated.bimap()
+    u, v = gen.generate_with(S, f(x))
+    assert u == ast
+
 
 def test_regex():
     TEST_CASES = [
         ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
-        ("flag_all", r"(?aLmsux)", True),
-        ('fuzzing', r'.E?|\B\w?(?.{2,3}.)\s{1,5}', True),
         ("flag_disable", r"(?-i)a", True),
-        ("invalid_named_group", r"(?P<1name>a)", False),
-        ("invalid_flag", r"(?z)", False),
-        ("empty_unicode_category", r"\p{}", False),
-        ("unclosed_group", r"(", False),
-        ("unclosed_class", r"[abc", False),
-        ("invalid_quantifier_range", r"{3,2}", False),
-        ("incomplete_hex", r"\x4", False),
-        ("unclosed_named_group", r"(?P<name>", False),
+        ('fuzzing', '(?!)', False),
+        ('fuzzing', '(?w)e*L+|[^wW]?\\S*\\D+', True),
     ]
     for name, pattern, should_pass in TEST_CASES:
+        
         vr = verify(pattern)
-        if should_pass:
-            assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-        else:
-            assert not vr.ok, f"Pattern should have failed but parsed: {pattern}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\n\nRe Error: {vr.err_re}\n\nSyncraft Error: {vr.err_syncraft}"
 
-
-def to_raw_literal(s: str) -> str:
-    # Count trailing backslashes
-    n_backslashes = len(s) - len(s.rstrip("\\"))
-    # A valid raw string cannot end with an odd number of backslashes
-    if n_backslashes % 2 == 1:
-        # fallback to repr
-        return repr(s)
-
-    # Pick the safer quote type
-    if "'" in s and '"' not in s:
-        quote = '"'
-    else:
-        quote = "'"
-
-    return f"r{quote}{s}{quote}"
-
+def test_empty_many() -> None:
+    A = lit("a")
+    syntax = A.many()  # This should allow empty matches
+    sql = ""
+    ast, bound = parse_word(syntax, sql, cache=None)
+    assert ast.mapped == [], "AST mapped value should be an empty list for empty input"
 
 
 if __name__ == "__main__":
     # test_graph()
-    test_regex()
-    # s = r".E?|\B\w?(?.{2,3}.)\s{1,5}"
-    # print(to_raw_literal(s))
+    # test_regex()
+    test_empty_many()

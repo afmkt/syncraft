@@ -82,9 +82,9 @@ class Error:
         deepest = self.deepest
         if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
             if hasattr(deepest.state, 'str_input'):
-                lines.append(f"At line: {deepest.state.line}, column: {deepest.state.column}, Input: {deepest.state.str_input(ul=False)}")
+                lines.append(f"At line: {deepest.state.line if deepest.state.line > 0 else 'N/A'}, column: {deepest.state.column if deepest.state.column > 0 else 'N/A'}, Input: {deepest.state.str_input(ul=False)}")
             else:
-                lines.append(f"At line: {deepest.state.line}, column: {deepest.state.column}")
+                lines.append(f"At line: {deepest.state.line if deepest.state.line > 0 else 'N/A'}, column: {deepest.state.column if deepest.state.column > 0 else 'N/A'}")
             if deepest.error:
                 lines.append(f"{self._format_error(deepest.error)}")
             elif deepest.message:
@@ -99,11 +99,11 @@ class Error:
         lines = []
         if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
             if hasattr(deepest.state, 'str_input'):
-                ln = f"Error at line {deepest.state.line}, column {deepest.state.column}, Input: {{0}}"
+                ln = f"Error at line {deepest.state.line if deepest.state.line > 0 else 'N/A'}, column {deepest.state.column if deepest.state.column > 0 else 'N/A'}, Input: {{0}}"
                 lns = deepest.state.format_input(ln, False)
                 lines.extend(lns)
             else:
-                lines.append(f"Error at line {deepest.state.line}, column {deepest.state.column}")
+                lines.append(f"Error at line {deepest.state.line if deepest.state.line > 0 else 'N/A'}, column {deepest.state.column if deepest.state.column > 0 else 'N/A'}")
                 
         else:
             lines.append("Error")
@@ -281,6 +281,13 @@ class Algebra(Generic[A, S]):
             else:
                 e = e.push(f"{self.name}")
             raise e
+        except Exception as err:
+            return Left(Error(
+                message="Unexpected error during parsing",
+                error=err,
+                this=self,
+                state=input
+            ))
         
 
     def as_(self, typ: Type[B])->B:
@@ -493,8 +500,8 @@ class Algebra(Generic[A, S]):
         
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
-        if at_least <=0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>0 and (at_most is None or at_most>=at_least)")
+        if at_least < 0 or (at_most is not None and at_most < at_least):
+            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
         def many_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
                                                 SendChannelType, 

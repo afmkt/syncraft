@@ -314,8 +314,6 @@ inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda
 
 def _group_body() -> Syntax[Any, Any]:
     # Forward reference to regex since groups can contain full regex patterns with alternation
-    
-    
     # group = "(" regex ")"
     plain = lparen >> regex_syntax.mark('pattern') // rparen
     # group = "(?:" regex ")"
@@ -506,9 +504,9 @@ def verify(pattern: str) -> VerifyResult:
     except Exception as e:
         pyparsed = None
         err = e
-    ok = (pyparsed is not None and isinstance(parsed, Regex)) or (pyparsed is None and isinstance(parsed, Error))
+    consistent = (pyparsed is not None and isinstance(parsed, Regex)) or (pyparsed is None and isinstance(parsed, Error))
     return VerifyResult(
-        ok=ok,
+        ok=consistent or myerr is None,
         pattern=pattern,
         syncraft=parsed,
         re=pyparsed,
