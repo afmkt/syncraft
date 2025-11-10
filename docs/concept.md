@@ -77,7 +77,7 @@ A = literal("a").mark("decl").bind()
 B = literal("b").mark("ref").bind()
 syntax = (A + B).to(Pair)
 
-ast, bound = parse_sql(syntax, "a b", dialect="sqlite")  # dialect is required by the tokenizer
+ast, bound = parse_word(syntax, "a b")
 
 # Write a value-level predicate using the parameter names of interest
 def distinct(decl, ref) -> bool:
@@ -89,5 +89,11 @@ if bound is not None:
 
 The quantifier inspects the function signature `(decl, ref)`, gathers bound tuples for those names, forms combinations, and checks the predicate for each combination. Replace `forall` with `exists` to assert the existence of at least one satisfying pair. You can `&`/`|` multiple constraints and check a single combined result.
 
-## 4) Relationship to sqlglot
-Syncraft reuses sqlglot’s tokenizer to obtain a token stream, which is why `parse` requires a `dialect` argument. Parsing/generation logic and combinators are independent of sqlglot; only tokenization depends on it.
+## 4) Parsing and Tokenization
+Syncraft provides several parsing functions for different input types:
+- `parse_word`: splits input by whitespace into tokens
+- `parse_data`: works with pre-tokenized data
+- `parse_string`: parses character-by-character
+- `parse`: works with StreamCursor objects for custom input handling
+
+The library is independent of external tokenizers and provides its own tokenization approach.

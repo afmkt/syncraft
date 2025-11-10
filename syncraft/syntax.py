@@ -711,6 +711,27 @@ class Syntax(Generic[A, S]):
         return (left >> self // right)
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Many[Then[B, A]]], S]:
+        """Parse this syntax separated by the given separator.
+        
+        Parses one or more occurrences of this syntax separated by the separator.
+        Returns the first element and a Many containing the remaining elements
+        paired with their separators.
+        
+        Args:
+            sep: Separator syntax to use between elements.
+            
+        Returns:
+            Syntax producing Then(first_element, Many(separator_element_pairs)).
+            The result is automatically transformed via iso() to produce Many[A]
+            containing all parsed elements without the separators.
+            
+        Example:
+            >>> from syncraft.syntax import Syntax
+            >>> A = Syntax.literal("a")
+            >>> comma = Syntax.literal(",")
+            >>> syntax = A.sep_by(comma)
+            >>> # Parses "a,a,a" and produces Many containing three "a" elements
+        """
         ret: Syntax[Then[A, Many[Then[B, A]]], S] = self + (sep >> self).many()
 
         def f(a: Then[A, Many[Then[B, A]]]) -> Many[A]:

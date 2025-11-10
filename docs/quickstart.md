@@ -15,16 +15,16 @@ pip install syncraft
 We’ll parse a list of pairs like "a b, a b, a b" separated by commas.
 
 ```python
-from syncraft import literal, parse, generate  # see: syntax & parser in API reference
+from syncraft import literal, parse, generate
 
 A = literal("a")
 B = literal("b")
 C = literal(",")
 syntax = (A + B).sep_by(C)
-ast, _ = parse_sql(syntax, "a b, a b, a b", dialect="sqlite")
+ast, _ = parse_word(syntax, "a b, a b, a b")
 
 ```
-See also: `literal`, combinators like `+` and `.sep_by`, and `parse` in the [API reference](reference.md).
+See also: `literal`, combinators like `+` and `.sep_by`, and `parse_word` in the [API reference](reference.md).
 
 ## 3. Convert AST to a friendlier value with bimap
 `AST.bimap()` returns a pair `(value, inverse)` where:
@@ -63,7 +63,7 @@ B = literal("b").mark("second")
 C = literal(",")
 syntax = (A + B).to(Pair).sep_by(C)
 
-ast, _ = parse_sql(syntax, "a b, a b, a b", dialect="sqlite")
+ast, _ = parse_word(syntax, "a b, a b, a b")
 value, inverse = ast.bimap()
 print(value)
 ```

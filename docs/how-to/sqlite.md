@@ -4,7 +4,7 @@
 from syncraft import parse
 from syncraft.sqlite3 import select_stmt
 
-ast, _ = parse_sql(select_stmt, "select a from t where a > 1", dialect="sqlite")
+ast, _ = parse_word(select_stmt, "select a from t where a > 1")
 ```
 
 Use `sqlglot()` to map tokens to sqlglot expressions if needed.

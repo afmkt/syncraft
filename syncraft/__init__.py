@@ -6,6 +6,7 @@ from .syntax import (
     ThenSpec,
     ChoiceSpec,    
 )
+
 from .algebra import (
     Algebra,
     Error,
@@ -19,6 +20,7 @@ from .parser import (
     ParserState,
     parser,
     parse_data,
+    parse_word,
 )
 from .generator import (
     Generator,
@@ -64,6 +66,9 @@ from .input import (
 )
 from .cache import Cache
 
+# Export commonly used class methods for convenience
+literal = Syntax.literal
+choice = Syntax.choice
 
 __all__ = [
     # charset
@@ -79,7 +84,7 @@ __all__ = [
 	# syntax & core
 	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "ThenSpec", "ChoiceSpec",
 	# parsing/generation helpers
-	"parse", "parser", "parse_data", "ParserState",
+	"parse", "parser", "parse_data", "parse_word", "ParserState",
 	"generate", "generate_with", "validate", "Parser", "Generator",
 	# finder
 	"find", "matches", "anything", "Finder",
@@ -89,4 +94,7 @@ __all__ = [
 	"AST", "Token", "Then", "ThenKind", "Choice", "ChoiceKind", "Many", "Marked", "Collect", "Bimap", "Biarrow", "Nothing",
     # input
 	"StreamCursor",
+    # convenience exports
+    "literal",
+    "choice",
 ]
