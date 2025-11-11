@@ -39,8 +39,6 @@ TODO
 - [ ]  Profile hook on Cache
 - [ ]  try_parse based on Syntax.parallel
 - [ ]  regex.py convert Regex to FABuilder
-- [ ]  Visualization (railroad diagrams + AST).
-- [ ]  Interactive dev (Jupyter).
 - [ ]  Semantic layer (datalog + unification).
 
 
