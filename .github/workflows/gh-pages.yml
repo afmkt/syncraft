@@ -40,13 +40,14 @@ jobs:
         run: |
           set -euxo pipefail
           python -m pip install --upgrade pip
-          # Install the package from source code (current tag)
-          pip install -e .
-          # Install documentation dependencies
-          pip install mkdocs mkdocs-material mkdocstrings mkdocstrings-python mkdocs-macros-plugin
+          python -m pip install uv
+          # Install the package from source code (current tag) with dev dependencies
+          uv sync --group dev
+          # Make sure the package is available in the environment
+          uv run python -c "import syncraft; print(f'Syncraft version: {syncraft.__version__ if hasattr(syncraft, \"__version__\") else \"installed\"}')"
 
       - name: Build site (clean)
-        run: mkdocs build --clean --site-dir ./site
+        run: uv run mkdocs build --clean --site-dir ./site
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
