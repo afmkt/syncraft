@@ -1073,10 +1073,6 @@ class Syntax(Generic[A, S]):
     @classmethod
     def success(cls, value: B) -> Syntax[B, S]:
         return cls.factory('success', value=value)
-
-    @classmethod
-    def parallel(cls, *syntaxes: Syntax[Any, S], state: Optional[S]=None) -> Syntax[Any, S]:
-        return cls.factory('parallel', *syntaxes, last_state=state)
     
 
     @classmethod

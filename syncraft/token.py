@@ -36,8 +36,7 @@ class TokenSpec(Protocol[T]):
 
 
 class TokenSpecBase(TokenSpec[T]):
-
-
+    
     @classmethod
     def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional["TokenSpec[T]"]: 
         all = all_subclasses(cls)

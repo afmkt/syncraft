@@ -119,6 +119,7 @@ class LexerBase(LexerProtocol[C]):
             if fabuilder is None:
                 payload_kind = 'token'
             else:
+                
                 payload_kind = fabuilder.payload_kind
 
         if payload_kind in ('text', 'bytes'):

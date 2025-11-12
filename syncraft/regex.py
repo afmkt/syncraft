@@ -120,7 +120,7 @@ class AnchorKind(Enum):
 
 
 B = FABuilder[str]
-S = Syntax.config(universe=CodeUniverse.unicode(), builtin=True)
+S = Syntax.config( builtin=True)
 # number            = digit { digit } ;
 number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text)).named('number')
 
@@ -130,7 +130,7 @@ or_ = S.lex(or_=B.lit("|")).named('"|"')
 # leading_rsquare   = "]" ;
 leading_rsquare   = S.lex(leading_rsquare=B.lit("]")).named('leading_rsquare')
 
-whitespace = S.lex(whitespace=B.oneof([" ", "\t", "\n", "\r", "\f", "\v"])).named('whitespace')
+whitespace = S.lex(whitespace=B.oneof(" \t\n\r\f\v")).named('whitespace')
 question = S.lex(question=B.lit("?")).named('"?"')
 star = S.lex(star=B.lit("*")).named('"*"')
 plus = S.lex(plus=B.lit("+")).named('"+"')
@@ -181,7 +181,7 @@ hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_
 hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text).named('hex_pair')
 
 # meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}" | "|" | "+" | "*" | "?" | "^" | "$" ;
-meta_char = S.lex(meta_char=B.oneof(["\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"])).named('meta_char')
+meta_char = S.lex(meta_char=B.oneof("\\.[](){}|+*?^$")).named('meta_char')
 # control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" ;
 control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"])).named('control_escape')
 
@@ -305,7 +305,7 @@ class GroupAtom:
     disabled_flags: Optional[Tuple[str, ...]] = None
 
 # flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
-flag = S.lex(flag=B.oneof(["a", "i", "L", "m", "s", "u", "x"])).named('flag')
+flag = S.lex(flag=B.oneof("aiLmsux")).named('flag')
 # flag_seq          = flag { flag } ;
 flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts)).named('flag_seq')
 # inline_flags      = flag_seq [ "-" flag_seq ] ;
