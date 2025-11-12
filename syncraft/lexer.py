@@ -173,7 +173,7 @@ class LexerCache:
              builders: Set[FABuilder[Any]], 
              factory: Callable[[], Lexer[Any]],
              dir: Path) -> Lexer[Any]:
-        tmp = sorted(str(fb) for fb in builders)
+        tmp = sorted(repr(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
         # print(f"Loading lexer from from {dir} with key {key}")
