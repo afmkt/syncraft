@@ -10,7 +10,7 @@ import pytest
 from syncraft.ast import SyncraftError
 
 def _lexer_with_parentheses() -> Lexer[str]:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    alphabet: CodeUniverse[str] = CodeUniverse.ascii()
     base: FABuilder[str] = FABuilder.lit("a").tagged("IDENT")
     open_paren: FABuilder[str] = FABuilder.lit("(").tagged("OPEN").act(
         ModeAction(ModeActionEnum.PUSH, mode="paren")
@@ -22,7 +22,7 @@ def _lexer_with_parentheses() -> Lexer[str]:
         ModeAction(ModeActionEnum.BELONG, mode="paren")
     )
     return Lexer.from_builders(
-        universe,
+        alphabet,
         base,
         open_paren,
         close_paren,
@@ -53,11 +53,11 @@ def test_mode_actions_should_emit_mode_specific_tags() -> None:
 
 
 def test_skip_rules_should_suppress_tokens() -> None:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    alphabet: CodeUniverse[str] = CodeUniverse.ascii()
     rule_a: FABuilder[str] = FABuilder.lit("a").tagged("A")
     rule_b: FABuilder[str] = FABuilder.lit("b").tagged("B")
     whitespace: FABuilder[str] = FABuilder.lit(" ").tagged("WS").skipped()
-    lexer = Lexer.from_builders(universe, rule_a, rule_b, whitespace)
+    lexer = Lexer.from_builders(alphabet, rule_a, rule_b, whitespace)
 
     tokens = _collect_tokens(lexer, "a b")
     assert [tok.tag for tok in tokens] == ["A", "B"]
@@ -65,14 +65,14 @@ def test_skip_rules_should_suppress_tokens() -> None:
 
 
 def _lexer_with_skip() -> Lexer[str]:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    alphabet: CodeUniverse[str] = CodeUniverse.ascii()
     letter: FABuilder[str] = FABuilder.lit("a").tagged("A")
     skip_ws: FABuilder[str] = FABuilder.lit(" ").tagged("WS").skipped()
-    return Lexer.from_builders(universe, letter, skip_ws)
+    return Lexer.from_builders(alphabet, letter, skip_ws)
 
 
 def _lexer_with_modes() -> Lexer[str]:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    alphabet: CodeUniverse[str] = CodeUniverse.ascii()
     base: FABuilder[str] = FABuilder.lit("a").tagged("IDENT")
     open_paren: FABuilder[str] = FABuilder.lit("(").tagged("OPEN").act(
         ModeAction(ModeActionEnum.PUSH, mode="paren")
@@ -83,7 +83,7 @@ def _lexer_with_modes() -> Lexer[str]:
     inner: FABuilder[str] = FABuilder.lit("b").tagged("INNER").act(
         ModeAction(ModeActionEnum.BELONG, mode="paren")
     )
-    return Lexer.from_builders(universe, base, open_paren, close_paren, inner)
+    return Lexer.from_builders(alphabet, base, open_paren, close_paren, inner)
 
 
 def test_skip_rules_return_none_when_selected() -> None:
@@ -119,9 +119,9 @@ def test_pop_mode_requires_known_mode() -> None:
 
 
 def test_match_reports_correct_span_boundaries() -> None:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    alphabet: CodeUniverse[str] = CodeUniverse.ascii()
     rule: FABuilder[str] = FABuilder.lit("ab").tagged("AB")
-    lexer = Lexer.from_builders(universe, rule)
+    lexer = Lexer.from_builders(alphabet, rule)
 
     tokens = _collect_tokens(lexer, "ab")
     assert len(tokens) == 1
@@ -132,21 +132,21 @@ def test_match_reports_correct_span_boundaries() -> None:
 
 
 def test_greedy_rule_short_circuits_longer_match() -> None:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    alphabet: CodeUniverse[str] = CodeUniverse.ascii()
     long_rule: FABuilder[str] = FABuilder.lit("ab").tagged("LONG")
     short_rule: FABuilder[str] = FABuilder.lit("a", tag="SHORT", non_greedy=True)
     trailing: FABuilder[str] = FABuilder.lit("b").tagged("B")
 
-    greedy_lexer = Lexer.from_builders(universe, long_rule, short_rule, trailing)
+    greedy_lexer = Lexer.from_builders(alphabet, long_rule, short_rule, trailing)
     tokens = _collect_tokens(greedy_lexer, "ab")
     assert [tok.tag for tok in tokens] == ["SHORT", "B"]
 
 
 def test_default_lexer_still_prefers_maximal_munch() -> None:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
+    alphabet: CodeUniverse[str] = CodeUniverse.ascii()
     long_rule: FABuilder[str] = FABuilder.lit("ab").tagged("LONG")
     short_rule: FABuilder[str] = FABuilder.lit("a").tagged("SHORT")
 
-    lexer = Lexer.from_builders(universe, long_rule, short_rule)
+    lexer = Lexer.from_builders(alphabet, long_rule, short_rule)
     tokens = _collect_tokens(lexer, "ab")
     assert [tok.tag for tok in tokens] == ["LONG"]

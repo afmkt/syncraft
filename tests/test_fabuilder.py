@@ -44,9 +44,9 @@ def test_tagging():
     assert tagged.tag == "FOO"
 
 def test_compile_to_nfa():
-    universe = CodeUniverse.ascii()
+    alphabet = CodeUniverse.ascii()
     builder = FABuilder.literal("abc", tag="ID")
-    nfa = builder.compile(universe)
+    nfa = builder.compile(alphabet)
     # Should be an NFA and accept 'abc'
     assert isinstance(nfa, (NFA, DFA))  
     assert hasattr(nfa, 'runner')

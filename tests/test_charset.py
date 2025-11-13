@@ -115,8 +115,8 @@ class Color(enum.Enum):
     BLUE = 3
 
 def test_charset_enum_basic():
-    universe = CodeUniverse.enum(Color)
-    cs = CharSet.create([Color.RED, Color.BLUE], universe=universe)
+    alphabet = CodeUniverse.enum(Color)
+    cs = CharSet.create([Color.RED, Color.BLUE], universe=alphabet)
     assert cs(Color.RED)
     assert cs(Color.BLUE)
     assert not cs(Color.GREEN)
@@ -124,8 +124,8 @@ def test_charset_enum_basic():
     assert cs.interval == ((0,0),(2,2))
 
 def test_charset_enum_error():
-    universe = CodeUniverse.enum(Color)
-    cs = CharSet.create([Color.RED], universe=universe)
+    alphabet = CodeUniverse.enum(Color)
+    cs = CharSet.create([Color.RED], universe=alphabet)
     class Fake(enum.Enum):
         FAKE = 99
     with pytest.raises(CodepointError):
@@ -138,7 +138,7 @@ def test_charset_enum_empty():
         CodeUniverse.enum(Empty)
 
 
-# --- CodeUniverse tests ---
+# --- Alphabet tests ---
 def test_codeuniverse_ascii():
     u = CodeUniverse.ascii()
     assert u.value == (0, 0x7F)
