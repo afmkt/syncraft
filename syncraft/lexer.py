@@ -8,7 +8,7 @@ from typing import (
 
 from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
-from syncraft.charset import CodeUniverse
+from syncraft.alphabet import AlphabetProtocol, Alphabet
 from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError, Token
 from syncraft.cache import Either, Left, Right
@@ -18,11 +18,12 @@ from pathlib import Path
 import hashlib
 import threading
 from syncraft.token import TokenSpec, TokenSpecBase, all_subclasses
+
 import pickle
 
 
 
-C = TypeVar('C', bound=str | int | Enum | Any)
+C = TypeVar('C', bound=Hashable)
 A = TypeVar('A')
 Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
 T = TypeVar('T', bound=Hashable)
@@ -123,8 +124,8 @@ class LexerBase(LexerProtocol[C]):
                 payload_kind = fabuilder.payload_kind
 
         if payload_kind in ('text', 'bytes'):
-            universe: CodeUniverse[str | bytes] = CodeUniverse.unicode() if payload_kind == 'text' else CodeUniverse.byte()
-            return {**kwargs, 'universe': kwargs.pop('universe', universe)}
+            alphabet: AlphabetProtocol[str | bytes] = Alphabet.get(str) if payload_kind == 'text' else Alphabet.get(bytes)
+            return {**kwargs, 'alphabet': kwargs.pop('alphabet', alphabet)}
         elif payload_kind in ('token',):
             tkspec: Optional[TokenSpec[Any]]  = TokenSpecBase.from_kwargs(**kwargs)
             assert tkspec is not None, f"TokenSpec could not be infered from the given parameters {kwargs}."
@@ -220,7 +221,7 @@ class Lexer(LexerBase[C]):
     @classmethod
     def create(cls, 
                *, 
-               universe: CodeUniverse, 
+               alphabet: AlphabetProtocol[C], 
                default_mode:str|None=None,
                builtin: bool = False,
                cache_path: str | Path | None = None,
@@ -242,16 +243,16 @@ class Lexer(LexerBase[C]):
         
         builders, dir = fabuilder(**kwargs)
         return cls.cache.load(builders=builders, 
-                              factory=lambda: cls.from_builders(universe, *builders, default_mode=default_mode),
+                              factory=lambda: cls.from_builders(alphabet, *builders, default_mode=default_mode),
                               dir=dir)
         
             
     @classmethod
-    def bind(cls,*, universe: CodeUniverse[C], default_mode:str|None=None) -> Type["Lexer[Any]"]:
+    def bind(cls,*, alphabet: AlphabetProtocol[C], default_mode:str|None=None) -> Type["Lexer[Any]"]:
         class BoundLexer(Lexer[Any]):
             @classmethod
             def from_kwargs(cls, **kwargs: Any) -> Optional["Lexer[C]"]:
-                return Lexer.create(universe=universe, default_mode=default_mode, **kwargs)
+                return Lexer.create(alphabet=alphabet, default_mode=default_mode, **kwargs)
         return BoundLexer
 
 
@@ -287,7 +288,7 @@ class Lexer(LexerBase[C]):
             
 
     @staticmethod
-    def one_mode(universe: CodeUniverse[C], *rules: FABuilder[C]) -> "Mode[C]":
+    def one_mode(alphabet: AlphabetProtocol[C], *rules: FABuilder[C]) -> "Mode[C]":
         if not rules:
             raise SyncraftError("Cannot build a Mode with no rules", offender=rules, expect="at least one rule")
         skip: Set[Tag] = set()
@@ -304,7 +305,7 @@ class Lexer(LexerBase[C]):
             if rule.non_greedy:
                 assert rule.tag is not None, "Greedy rules must have a tag"
                 non_greedy.add(rule.tag)
-            nfa = rule.compile(universe).nfa
+            nfa = rule.compile(alphabet).nfa
             nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
             combined = nfa if combined is None else combined.union(nfa)
 
@@ -321,7 +322,7 @@ class Lexer(LexerBase[C]):
 
     @classmethod
     def from_builders(cls, 
-                      universe: CodeUniverse[Any], 
+                      alphabet: AlphabetProtocol[Any], 
                       *rules: FABuilder[C],
                       default_mode: str | None = None) -> "Lexer[C]":
         if len(rules) == 0:
@@ -357,7 +358,7 @@ class Lexer(LexerBase[C]):
 
         lexer_modes: Dict[str | None, Mode[C]] = {}
         for mname, mode_rules in modes.items():
-            lexer_modes[mname] = cls.one_mode(universe, *mode_rules)
+            lexer_modes[mname] = cls.one_mode(alphabet, *mode_rules)
 
         lexer = cls(modes=lexer_modes, actions=actions, default_mode=default_mode)
         lexer.push_mode(default_mode)

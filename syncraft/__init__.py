@@ -54,13 +54,14 @@ from .ast import (
 	Collect,
     Nothing,
 )
-from .charset import CodeUniverse, CharSet
+from .charset import  CharSet
 from .fa import FABuilder, DFA, NFA, DFARunner, NFARunner
 from .lexer import ExtLexer, Lexer
 from .utils import (
     FrozenDict,
     CallWith,
 )
+from .alphabet import AlphabetProtocol, CodepointError, Alphabet
 from .input import (
 	StreamCursor,
 )
@@ -72,7 +73,7 @@ choice = Syntax.choice
 
 __all__ = [
     # charset
-    "CodeUniverse", "CharSet",
+    "CharSet", "AlphabetProtocol", "Alphabet", "CodepointError",
 	# fa
 	"FABuilder", "DFA", "NFA", "DFARunner", "NFARunner",
     # lexer

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Type
 
 from syncraft.ast import Token
-from syncraft.charset import CodeUniverse
+from syncraft.alphabet import Alphabet, AlphabetProtocol
 from syncraft.fa import FABuilder
 from syncraft.input import StreamCursor
 from syncraft.lexer import ExtLexer, Lexer
@@ -85,8 +85,8 @@ def test_parse_list_accepts_token_spec_from_token_call() -> None:
 
 
 def test_parse_string_input_with_lexer_bind() -> None:
-    universe: CodeUniverse[str] = CodeUniverse.ascii()
-    lexer_cls: Type[Lexer[str]] = Lexer.bind(universe=universe)
+    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    lexer_cls: Type[Lexer[str]] = Lexer.bind(alphabet=alphabet)
     syntax_cls = Syntax.config(lexer_class=lexer_cls)
     word = syntax_cls.lex(WORD=FABuilder.lit("hi").tagged("WORD"))
 
@@ -100,7 +100,7 @@ def test_parse_string_input_with_lexer_bind() -> None:
 
 
 def test_parse_bytes_input_with_lexer_bind() -> None:
-    syntax_cls = Syntax.config(universe=CodeUniverse.byte())
+    syntax_cls = Syntax.config(alphabet=Alphabet.get(bytes))
     byte_token = syntax_cls.lex(BYTE=FABuilder.lit(b"\x01").tagged("BYTE"))
 
     value, state = parser_run(syntax=byte_token, data=StreamCursor.from_data(b"\x01"), cache=None)

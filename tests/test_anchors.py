@@ -1,11 +1,12 @@
 from enum import Enum
-from syncraft.charset import CodeUniverse, CharSet
+from syncraft.charset import CharSet
+from syncraft.alphabet import Alphabet
 from syncraft.fa import NFA, FAState
 from syncraft.utils import FrozenDict
 
 
 def test_start_anchor_simple():
-    uni = CodeUniverse.ascii()
+    uni = Alphabet.get(str)
     base = NFA.from_charset('a', uni)
     anchored = base.start()
     r = anchored.runner().start().runner
@@ -19,7 +20,7 @@ def test_start_anchor_simple():
 
 
 def test_end_anchor_simple():
-    uni = CodeUniverse.ascii()
+    uni = Alphabet.get(str)
     base = NFA.from_charset('a', uni)
     anchored = base.end()
     r = anchored.runner()
@@ -38,11 +39,11 @@ def test_end_anchor_simple():
 
 def test_both_anchors_empty():
     # ^$ should match empty only. Construct NFA with epsilon accept and then add both anchors.
-    uni = CodeUniverse.ascii()
+    uni = Alphabet.get(str)
     # Build empty-match NFA: init is also accept, no transitions.
     init = FAState()
     empty = NFA(
-        universe=uni,
+        alphabet=uni,
         init=init,
         accept=FrozenDict({init: frozenset()}),
         transitions=FrozenDict(),

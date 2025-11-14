@@ -1,10 +1,10 @@
 import random
 from syncraft.fa import NFA
-from syncraft.charset import CodeUniverse
+from syncraft.alphabet import Alphabet, AlphabetProtocol
 
 def test_dfa_reverse_simple():
     # DFA for 'abc' tagged as 'word'
-    nfa = NFA.from_string('abc', tag='word', universe=CodeUniverse.ascii())
+    nfa = NFA.from_string('abc', tag='word', alphabet=Alphabet.get(str))
     dfa = nfa.dfa
     rev = dfa.reverse
     s = rev.gen('word', random.Random(42))
@@ -12,7 +12,7 @@ def test_dfa_reverse_simple():
 
 def test_dfa_reverse_multiple_tags():
     # DFA for 'a' tagged as 'A', 'b' tagged as 'B'
-    nfa = NFA.from_string('a', tag='A', universe=CodeUniverse.ascii()) | NFA.from_string('b', tag='B', universe=CodeUniverse.ascii())
+    nfa = NFA.from_string('a', tag='A', alphabet=Alphabet.get(str)) | NFA.from_string('b', tag='B', alphabet=Alphabet.get(str))
     dfa = nfa.dfa
     rev = dfa.reverse
     s_a = rev.gen('A', random.Random(1))
@@ -22,7 +22,7 @@ def test_dfa_reverse_multiple_tags():
 
 def test_dfa_reverse_randomness():
     # DFA for 'ab' and 'ac' both tagged as 'X'
-    nfa = NFA.from_string('ab', tag='X', universe=CodeUniverse.ascii()) | NFA.from_string('ac', tag='X', universe=CodeUniverse.ascii())
+    nfa = NFA.from_string('ab', tag='X', alphabet=Alphabet.get(str)) | NFA.from_string('ac', tag='X', alphabet=Alphabet.get(str))
     dfa = nfa.dfa
     rev = dfa.reverse
     # Should be able to generate both 'ab' and 'ac'
@@ -30,7 +30,7 @@ def test_dfa_reverse_randomness():
     assert results == {'ab', 'ac'}
 
 def test_dfa_reverse_invalid_tag():
-    nfa = NFA.from_string('a', tag='A', universe=CodeUniverse.ascii())
+    nfa = NFA.from_string('a', tag='A', alphabet=Alphabet.get(str))
     dfa = nfa.dfa
     rev = dfa.reverse
     try:

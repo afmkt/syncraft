@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 from syncraft.fa import DFA, FAState  # type: ignore
-from syncraft.charset import CharSet, CodeUniverse
+from syncraft.charset import CharSet
+from syncraft.alphabet import Alphabet
 from syncraft.utils import FrozenDict
 
 # Reproduction of a known minimization flaw: current DFA.minimize merges states that
@@ -31,7 +32,7 @@ from syncraft.utils import FrozenDict
 
 
 def _build_dfa():
-    u = CodeUniverse.ascii()
+    u = Alphabet.get(str)
     a = CharSet.create('a', u)
     b = CharSet.create('b', u)
     S = FAState()
@@ -46,7 +47,7 @@ def _build_dfa():
     }
     accept = {F: frozenset()}  # no tags needed
     return DFA(
-        universe=u,
+        alphabet=u,
         init=S,
         accept=FrozenDict(accept),
         transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()}),
@@ -120,11 +121,11 @@ def _all_strings(alphabet: str, max_len: int):
 
 def test_minimize_preserves_language_small():
     """Property: Minimized DFA must agree with original on all strings up to length 3."""
-    u = CodeUniverse.ascii()
+    u = Alphabet.get(str)
     # Build a DFA from an NFA for pattern: (ab|ba) a?  (just some branching / optional)
     from syncraft.fa import NFA
-    a = NFA.from_charset('a', universe=u)
-    b = NFA.from_charset('b', universe=u)
+    a = NFA.from_charset('a', alphabet=u)
+    b = NFA.from_charset('b', alphabet=u)
     pattern = (a.then(b) | b.then(a)).then(a.optional)
     dfa = pattern.dfa
     m = dfa.minimize

@@ -1,5 +1,5 @@
 from syncraft.fa import FABuilder, NFA, DFA
-from syncraft.charset import CodeUniverse
+from syncraft.alphabet import Alphabet
 
 def test_literal_builder():
     builder = FABuilder.literal("abc", tag="ID")
@@ -44,7 +44,7 @@ def test_tagging():
     assert tagged.tag == "FOO"
 
 def test_compile_to_nfa():
-    alphabet = CodeUniverse.ascii()
+    alphabet = Alphabet.get(str)
     builder = FABuilder.literal("abc", tag="ID")
     nfa = builder.compile(alphabet)
     # Should be an NFA and accept 'abc'

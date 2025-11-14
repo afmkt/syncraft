@@ -4,7 +4,7 @@ This document records the intended integration of regular-language execution (NF
 
 ## Summary
 
-- All lexical rules (declared anywhere) are collected and compiled into one shared DFA (per universe/mode) at build time.
+- All lexical rules (declared anywhere) are collected and compiled into one shared DFA (per alphabet/mode) at build time.
 - There is no token stream. Each FA node is a normal terminal in the grammar that:
   - runs the shared DFA starting at the current index,
   - picks the longest match among an allowed tag set (if provided),
@@ -28,7 +28,7 @@ Implemented:
     - Guards against zero-length consumption in the main match.
     - Returns `MatchResult(end_index, value, tag)`; value is the matched slice (str/bytes).
 - Build path (current): `_compile_builder_to_nfa` supports LITERAL/CONCAT/UNION/STAR/OPTIONAL/MANY (PLUS desugars). It unions all NFAs, determinizes once to a single DFA, and wraps into a `Matcher`.
-- Syntax harvesting: `collect_lexers(root: Syntax, *, universe?, policy?) -> Lexer` walks the `Syntax` graph and extracts lexeme specs:
+- Syntax harvesting: `collect_lexers(root: Syntax, *, alphabet?, policy?) -> Lexer` walks the `Syntax` graph and extracts lexeme specs:
   - `Syntax.token(**kwargs)` now records its kwargs in `Syntax.meta.parameter` (changed in `Syntax.token`) enabling read-only introspection.
   - Currently collects only literal `text` values (str/bytes) into `LexBuilder.literal`. `token_type`, if provided, becomes the tag.
   - Builds a centralized `Lexer` with discovered rules and sets `declaration_order` from discovered tags.
@@ -45,11 +45,10 @@ Not yet implemented (planned):
 
 ```python
 from syncraft.syntax import Syntax
-from syncraft.charset import CodeUniverse
 from syncraft.lexer import collect_lexers
 
 # Suppose `root` is your grammar Syntax[Any, S] that uses Syntax.token/literal
-lex = collect_lexers(root, universe=CodeUniverse.ascii())
+lex = collect_lexers(root, alphabet=Alphabet.get(str))
 matcher = lex.build()
 
 res = matcher.match("if(x)", 0)
@@ -85,7 +84,7 @@ Terminal integration is pending; for now you can manually probe `matcher.match` 
 
 Inputs:
 - Parser state: underlying character/byte sequence, current index, and mode stack.
-- Shared DFA (selected per mode/universe).
+- Shared DFA (selected per mode/alphabet).
 - LexPolicy (priority and actions).
 - Optional `allowed_tags: frozenset[str|Enum]` to restrict what this terminal accepts (if omitted, means any active tag in the current mode).
 
@@ -211,5 +210,5 @@ else:
 
 - Efficient representation of `allowed_tags` during matching (bitset masks vs set intersection).
 - Per-scope policy overrides (temporarily change trims/mode for sub-grammars) as a small `Syntax.map_state` helper.
-- Optional multi-universe support (bytes/unicode) via multiple DFAs and dynamic selection.
+- Optional multi-alphabet support (bytes/unicode) via multiple DFAs and dynamic selection.
 - Streaming inputs via `Algebra.Incomplete` if we later parse very large sources.

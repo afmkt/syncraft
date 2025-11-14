@@ -6,7 +6,7 @@ from typing import Optional, Tuple, Union, Any
 import unicodedata
 from syncraft.ast import AST, Token, Nothing, SyncraftError
 from syncraft.algebra import Error
-from syncraft.charset import CodeUniverse
+from syncraft.alphabet import Alphabet
 from syncraft.fa import FABuilder
 from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
