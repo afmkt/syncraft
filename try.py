@@ -61,7 +61,7 @@ def test_regex():
     ]
     for name, pattern, should_pass in TEST_CASES:
         
-        vr = verify(pattern)
+        vr = verify(pattern, profile=True)
         assert vr.ok, f"Pattern failed to parse: {pattern}\n\nRe Error: {vr.err_re}\n\nSyncraft Error: {vr.err_syncraft}"
 
 def test_empty_many() -> None:

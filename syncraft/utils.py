@@ -22,7 +22,15 @@ def callable_str(obj:Any, with_id: bool=False)->str:
         return f"{prefix}\u2a01 {name}"
     else:
         return f"{prefix}{name}"
-    
+
+
+def is_lazy(func: Callable[..., Any]) -> bool:
+    return hasattr(func, 'is_lazy') and func.is_lazy
+
+def is_orelse(func: Callable[..., Any]) -> bool:
+    return hasattr(func, 'is_orelse') and func.is_orelse
+
+
 
 def line(level: int = 0) -> None | int:
     frame = inspect.currentframe()
