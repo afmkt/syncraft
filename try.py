@@ -73,7 +73,7 @@ def test_empty_many() -> None:
 
 def test_dfa_reverse_multiple_tags():
     # DFA for 'a' tagged as 'A', 'b' tagged as 'B'
-    nfa = NFA.from_string('a', tag='A', alphabet=Alphabet.get(str)) | NFA.from_string('b', tag='B', alphabet=Alphabet.get(str))
+    nfa = NFA.from_string('a', tag='A', alphabet=Alphabet(str)) | NFA.from_string('b', tag='B', alphabet=Alphabet(str))
     dfa = nfa.dfa
     rev = dfa.reverse
     s_a = rev.gen('A', random.Random(1))
@@ -84,7 +84,7 @@ def test_dfa_reverse_multiple_tags():
 
 
 def test_charset_bytes_mode() -> None:
-    b1: CharSet[int] = CharSet.create(b"\x00\x10\x20", alphabet=Alphabet.get(bytes))
+    b1: CharSet[int] = CharSet.create(b"\x00\x10\x20", alphabet=Alphabet(bytes))
     assert b1(0x00)
     assert not b1(0x01)
     assert b1.interval == ((0x00, 0x00), (0x10, 0x10), (0x20, 0x20))
@@ -93,7 +93,7 @@ def test_charset_bytes_mode() -> None:
     assert not comp(0x10)
 
 def test_codeuniverse_byte():
-    u = Alphabet.get(bytes)
+    u = Alphabet(bytes)
     assert u.codes == ((0, 0xFF),)
     assert u.space is bytes
     assert u.decode(0x41) == b'A'
@@ -106,7 +106,7 @@ def test_codeuniverse_byte():
 
 
 def test_parse_string_input_with_lexer_bind() -> None:
-    alphabet = Alphabet.get(str)
+    alphabet = Alphabet(str)
     lexer_cls: Type[Lexer[str]] = Lexer.bind(alphabet=alphabet)
     syntax_cls = Syntax.config(lexer_class=lexer_cls)
     word = syntax_cls.lex(WORD=FABuilder.lit("hi").tagged("WORD"))

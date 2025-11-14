@@ -32,7 +32,7 @@ from syncraft.utils import FrozenDict
 
 
 def _build_dfa():
-    u = Alphabet.get(str)
+    u = Alphabet(str)
     a = CharSet.create('a', u)
     b = CharSet.create('b', u)
     S = FAState()
@@ -121,7 +121,7 @@ def _all_strings(alphabet: str, max_len: int):
 
 def test_minimize_preserves_language_small():
     """Property: Minimized DFA must agree with original on all strings up to length 3."""
-    u = Alphabet.get(str)
+    u = Alphabet(str)
     # Build a DFA from an NFA for pattern: (ab|ba) a?  (just some branching / optional)
     from syncraft.fa import NFA
     a = NFA.from_charset('a', alphabet=u)

@@ -44,7 +44,7 @@ def test_tagging():
     assert tagged.tag == "FOO"
 
 def test_compile_to_nfa():
-    alphabet = Alphabet.get(str)
+    alphabet = Alphabet(str)
     builder = FABuilder.literal("abc", tag="ID")
     nfa = builder.compile(alphabet)
     # Should be an NFA and accept 'abc'

@@ -18,3 +18,5 @@ def user_cache_path(base: None | str | Path) -> Path:
     base_path = Path(base) if base is not None else Path(user_cache_dir("syncraft")) / "cache"
     base_path.mkdir(parents=True, exist_ok=True)
     return base_path
+
+

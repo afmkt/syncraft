@@ -10,7 +10,7 @@ import pytest
 from syncraft.ast import SyncraftError
 
 def _lexer_with_parentheses() -> Lexer[str]:
-    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    alphabet: AlphabetProtocol[str] = Alphabet(str)
     base: FABuilder[str] = FABuilder.lit("a").tagged("IDENT")
     open_paren: FABuilder[str] = FABuilder.lit("(").tagged("OPEN").act(
         ModeAction(ModeActionEnum.PUSH, mode="paren")
@@ -53,7 +53,7 @@ def test_mode_actions_should_emit_mode_specific_tags() -> None:
 
 
 def test_skip_rules_should_suppress_tokens() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    alphabet: AlphabetProtocol[str] = Alphabet(str)
     rule_a: FABuilder[str] = FABuilder.lit("a").tagged("A")
     rule_b: FABuilder[str] = FABuilder.lit("b").tagged("B")
     whitespace: FABuilder[str] = FABuilder.lit(" ").tagged("WS").skipped()
@@ -65,14 +65,14 @@ def test_skip_rules_should_suppress_tokens() -> None:
 
 
 def _lexer_with_skip() -> Lexer[str]:
-    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    alphabet: AlphabetProtocol[str] = Alphabet(str)
     letter: FABuilder[str] = FABuilder.lit("a").tagged("A")
     skip_ws: FABuilder[str] = FABuilder.lit(" ").tagged("WS").skipped()
     return Lexer.from_builders(alphabet, letter, skip_ws)
 
 
 def _lexer_with_modes() -> Lexer[str]:
-    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    alphabet: AlphabetProtocol[str] = Alphabet(str)
     base: FABuilder[str] = FABuilder.lit("a").tagged("IDENT")
     open_paren: FABuilder[str] = FABuilder.lit("(").tagged("OPEN").act(
         ModeAction(ModeActionEnum.PUSH, mode="paren")
@@ -119,7 +119,7 @@ def test_pop_mode_requires_known_mode() -> None:
 
 
 def test_match_reports_correct_span_boundaries() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    alphabet: AlphabetProtocol[str] = Alphabet(str)
     rule: FABuilder[str] = FABuilder.lit("ab").tagged("AB")
     lexer = Lexer.from_builders(alphabet, rule)
 
@@ -132,7 +132,7 @@ def test_match_reports_correct_span_boundaries() -> None:
 
 
 def test_greedy_rule_short_circuits_longer_match() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    alphabet: AlphabetProtocol[str] = Alphabet(str)
     long_rule: FABuilder[str] = FABuilder.lit("ab").tagged("LONG")
     short_rule: FABuilder[str] = FABuilder.lit("a", tag="SHORT", non_greedy=True)
     trailing: FABuilder[str] = FABuilder.lit("b").tagged("B")
@@ -143,7 +143,7 @@ def test_greedy_rule_short_circuits_longer_match() -> None:
 
 
 def test_default_lexer_still_prefers_maximal_munch() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet.get(str)
+    alphabet: AlphabetProtocol[str] = Alphabet(str)
     long_rule: FABuilder[str] = FABuilder.lit("ab").tagged("LONG")
     short_rule: FABuilder[str] = FABuilder.lit("a").tagged("SHORT")
 

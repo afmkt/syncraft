@@ -124,7 +124,7 @@ class LexerBase(LexerProtocol[C]):
                 payload_kind = fabuilder.payload_kind
 
         if payload_kind in ('text', 'bytes'):
-            alphabet: AlphabetProtocol[str | bytes] = Alphabet.get(str) if payload_kind == 'text' else Alphabet.get(bytes)
+            alphabet: AlphabetProtocol[str | bytes] = Alphabet(str) if payload_kind == 'text' else Alphabet(bytes)
             return {**kwargs, 'alphabet': kwargs.pop('alphabet', alphabet)}
         elif payload_kind in ('token',):
             tkspec: Optional[TokenSpec[Any]]  = TokenSpecBase.from_kwargs(**kwargs)
@@ -177,7 +177,7 @@ class LexerCache:
         tmp = sorted(repr(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
-        
+
         with self.lock:
             if key in self.dict:
                 return self.dict[key]

@@ -35,20 +35,57 @@ class AlphabetProtocol(Protocol[C]):
     def decode(self, code: int) -> C: ...
 
 
-class Alphabet(Generic[C]):
-    registry: ClassVar[Dict[Type[Any], Callable[[], AlphabetProtocol[Any]]]] = dict()
+class Alphabet(Generic[C], AlphabetProtocol[C]):
+    registry: ClassVar[Dict[Type[Any] | frozenset[Any], 
+                                AlphabetProtocol[Any]]] = dict()
+    
+    @property
+    def space(self) -> Type[C] | frozenset[C] | Type[Enum]:
+        return self.inner.space
+    @property
+    def codes(self) -> Tuple[Tuple[int, int], ...]:
+        return self.inner.codes
+    def concat(self, cs: Sequence[C]) -> C | Tuple[C, ...]:
+        return self.inner.concat(cs)
+    def encode(self, symbol: C) -> int:
+        return self.inner.encode(symbol)
+    def decode(self, code: int) -> C:
+        return self.inner.decode(code)
+    
+    def __hash__(self) -> int:
+        return hash(self.inner)
+    
+    def __eq__(self, other: object, /) -> bool:
+        if not isinstance(other, Alphabet):
+            return False
+        return self.inner is other.inner
+
+    def __init__(self, symbol_type: Type[C] | Sequence[C] | Type[Enum]) -> None:
+        self.inner = Alphabet._get(symbol_type)
+    
     @classmethod
     def register(cls, symbol_type: Type[C]) -> Callable[[Callable[[], AlphabetProtocol[C]]], Callable[[], AlphabetProtocol[C]]]:
         def decorator(factory: Callable[[], AlphabetProtocol[C]]) -> Callable[[], AlphabetProtocol[C]]:
-            cls.registry[symbol_type] = factory
+            cls.registry[symbol_type] = factory()
             return factory
         return decorator
     
     @classmethod
-    def get(cls, symbol_type: Type[C]) -> AlphabetProtocol[C]:
-        if symbol_type not in cls.registry:
-            raise ValueError(f"No alphabet registered for symbol type: {symbol_type}")
-        return cls.registry[symbol_type]()
+    def register_finite(cls, symbols: Type[Enum] | Sequence[C]) -> AlphabetProtocol[C]:
+        alphabet = FiniteAlphabet.create(symbols)
+        cls.registry[alphabet.space] = alphabet
+        return alphabet
+
+    @classmethod
+    def _get(cls, symbol_type: Type[C] | Type[Enum] | Sequence[C]) -> AlphabetProtocol[C]:
+        if isinstance(symbol_type, type):
+            if symbol_type in cls.registry:
+                return cls.registry[symbol_type]                
+        else:
+            key = frozenset(symbol_type)
+            if key in cls.registry:
+                return cls.registry[key]
+        raise ValueError(f"No alphabet registered for symbol type: {symbol_type}")
     
 
 
@@ -98,18 +135,9 @@ class ByteAlphabet(AlphabetProtocol[bytes]):
 
 @dataclass(frozen=True)
 class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
-    _space: Type[Enum] | frozenset[C] | Sequence[C]
-    code2int: FrozenDict[C, int] = field(default_factory=FrozenDict, init=False)
-    int2code: FrozenDict[int, C] = field(default_factory=FrozenDict, init=False)
-    
-    @cached_property
-    def space(self) -> Type[Enum] | frozenset[C]:
-        if isinstance(self._space, type) and issubclass(self._space, Enum):
-            return self._space
-        elif isinstance(self._space, frozenset):
-            return self._space
-        else:
-            return frozenset(self._space)
+    space: Type[Enum] | frozenset[C]
+    code2int: FrozenDict[C, int] = field(default_factory=FrozenDict)
+    int2code: FrozenDict[int, C] = field(default_factory=FrozenDict)
 
     @cached_property
     def codes(self) -> Tuple[Tuple[int, int], ...]:
@@ -124,18 +152,16 @@ class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
     def concat(self, cs: Sequence[C]) -> Tuple[C, ...]:
         return tuple(cs)
     
-
-    def __post_init__(self) -> None:
-        if isinstance(self.space, type) and issubclass(self.space, Enum):
-            elements = list(self.space)
+    @classmethod
+    def create(cls, symbols: Type[Enum] | Sequence[C]) -> AlphabetProtocol[C]:
+        if isinstance(symbols, type) and issubclass(symbols, Enum):
+            elements = list(symbols)
             code2int: FrozenDict[C, int] = FrozenDict({s: i for i, s in enumerate(elements)})
             int2code: FrozenDict[int, C] = FrozenDict({i: s for s, i in code2int.items()})
-            object.__setattr__(self, 'code2int', code2int)
-            object.__setattr__(self, 'int2code', int2code)
+            return cls(space=symbols, code2int=code2int, int2code=int2code)
         else:
-            _elements = list(self.space)
+            _elements = list(symbols)
             _code2int: FrozenDict[C, int] = FrozenDict({s: i for i, s in enumerate(_elements)})
             _int2code: FrozenDict[int, C] = FrozenDict({i: s for s, i in _code2int.items()})
-            object.__setattr__(self, 'code2int', _code2int)
-            object.__setattr__(self, 'int2code', _int2code)
+            return cls(space=frozenset(_elements), code2int=_code2int, int2code=_int2code)
     

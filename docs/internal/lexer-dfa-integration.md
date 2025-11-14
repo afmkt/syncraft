@@ -48,7 +48,7 @@ from syncraft.syntax import Syntax
 from syncraft.lexer import collect_lexers
 
 # Suppose `root` is your grammar Syntax[Any, S] that uses Syntax.token/literal
-lex = collect_lexers(root, alphabet=Alphabet.get(str))
+lex = collect_lexers(root, alphabet=Alphabet(str))
 matcher = lex.build()
 
 res = matcher.match("if(x)", 0)

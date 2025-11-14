@@ -6,7 +6,7 @@ from syncraft.utils import FrozenDict
 
 
 def test_start_anchor_simple():
-    uni = Alphabet.get(str)
+    uni = Alphabet(str)
     base = NFA.from_charset('a', uni)
     anchored = base.start()
     r = anchored.runner().start().runner
@@ -20,7 +20,7 @@ def test_start_anchor_simple():
 
 
 def test_end_anchor_simple():
-    uni = Alphabet.get(str)
+    uni = Alphabet(str)
     base = NFA.from_charset('a', uni)
     anchored = base.end()
     r = anchored.runner()
@@ -39,7 +39,7 @@ def test_end_anchor_simple():
 
 def test_both_anchors_empty():
     # ^$ should match empty only. Construct NFA with epsilon accept and then add both anchors.
-    uni = Alphabet.get(str)
+    uni = Alphabet(str)
     # Build empty-match NFA: init is also accept, no transitions.
     init = FAState()
     empty = NFA(
