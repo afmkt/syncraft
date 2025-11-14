@@ -20,7 +20,7 @@ from syncraft.constraint import Bindable
 from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
 
 from syncraft.input import StreamCursor, PayloadKind
-from syncraft.fa import FABuilder
+from syncraft.fa import Builder
 
 
 
@@ -1130,7 +1130,7 @@ class Syntax(Generic[A, S]):
         return cls.factory('lex', **kwargs)
 
     @classmethod
-    def lex(cls, **kwargs: FABuilder) -> Syntax[Any, Any]:
+    def lex(cls, **kwargs: Builder) -> Syntax[Any, Any]:
         return cls.factory('lex', **kwargs)
     
     @classmethod

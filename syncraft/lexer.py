@@ -9,7 +9,7 @@ from typing import (
 from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.alphabet import AlphabetProtocol, Alphabet
-from syncraft.fa import DFA, NFA, FABuilder, ReverseDFA, Runner, ModeAction, ModeActionEnum
+from syncraft.fa import DFA, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError, Token
 from syncraft.cache import Either, Left, Right
 from collections import deque, defaultdict
@@ -111,10 +111,10 @@ class LexerBase(LexerProtocol[C]):
         payload_kind = kwargs.pop("payload_kind", None)
         syn = kwargs.pop("syntax", None)
         if syn and not payload_kind:
-            fabuilder: None | FABuilder = None
+            fabuilder: None | Builder = None
             for fspec in syn.lexspec:
                 for k,v in fspec.kwargs.items():
-                    if isinstance(v, FABuilder):
+                    if isinstance(v, Builder):
                         fabuilder = v
                         break  
             if fabuilder is None:
@@ -176,7 +176,7 @@ class LexerCache:
 
     def load(self, 
              *,
-             builders: Set[FABuilder[Any]], 
+             builders: Set[Builder[Any]], 
              factory: Callable[[], Lexer[Any]],
              dir: Path) -> Lexer[Any]:
         tmp = sorted(repr(fb) for fb in builders)
@@ -230,15 +230,15 @@ class Lexer(LexerBase[C]):
                builtin: bool = False,
                cache_path: str | Path | None = None,
                **kwargs: Any) -> Optional["Lexer[C]"]:
-        def fabuilder(**kwargs: Any) -> Tuple[Set[FABuilder[Any]], Path]:
+        def fabuilder(**kwargs: Any) -> Tuple[Set[Builder[Any]], Path]:
             if builtin:
                 path = builtin_cache_path()
             else:
                 path = user_cache_path(cache_path)
 
-            acc: Set[FABuilder[Any]] = set()
+            acc: Set[Builder[Any]] = set()
             for k, v in kwargs.items():
-                if isinstance(v, FABuilder):
+                if isinstance(v, Builder):
                     if v.tag is None:
                         acc.add(v.tagged(k))
                     else:
@@ -292,7 +292,7 @@ class Lexer(LexerBase[C]):
             
 
     @staticmethod
-    def one_mode(alphabet: AlphabetProtocol[C], *rules: FABuilder[C]) -> "Mode[C]":
+    def one_mode(alphabet: AlphabetProtocol[C], *rules: Builder[C]) -> "Mode[C]":
         if not rules:
             raise SyncraftError("Cannot build a Mode with no rules", offender=rules, expect="at least one rule")
         skip: Set[Tag] = set()
@@ -327,11 +327,11 @@ class Lexer(LexerBase[C]):
     @classmethod
     def from_builders(cls, 
                       alphabet: AlphabetProtocol[Any], 
-                      *rules: FABuilder[C],
+                      *rules: Builder[C],
                       default_mode: str | None = None) -> "Lexer[C]":
         if len(rules) == 0:
             raise SyncraftError("Cannot build a Lexer with no rules", offender=rules, expect="at least one rule")
-        modes: Dict[str | None, Set[FABuilder[C]]] = defaultdict(set)
+        modes: Dict[str | None, Set[Builder[C]]] = defaultdict(set)
         actions: Dict[Tag | None, ModeAction] = {}
         for rule in rules:
             match rule.action:

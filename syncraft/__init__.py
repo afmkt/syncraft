@@ -55,7 +55,7 @@ from .ast import (
     Nothing,
 )
 from .charset import  CharSet
-from .fa import FABuilder, DFA, NFA, DFARunner, NFARunner
+from .fa import Builder, DFA, NFA, DFARunner, NFARunner
 from .lexer import ExtLexer, Lexer
 from .utils import (
     FrozenDict,
@@ -75,7 +75,7 @@ __all__ = [
     # charset
     "CharSet", "AlphabetProtocol", "Alphabet", "CodepointError",
 	# fa
-	"FABuilder", "DFA", "NFA", "DFARunner", "NFARunner",
+	"Builder", "DFA", "NFA", "DFARunner", "NFARunner",
     # lexer
 	"ExtLexer", "Lexer",
     # cache

@@ -7,7 +7,7 @@ import unicodedata
 from syncraft.ast import AST, Token, Nothing, SyncraftError
 from syncraft.algebra import Error
 from syncraft.alphabet import Alphabet
-from syncraft.fa import FABuilder
+from syncraft.fa import Builder
 from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
 from syncraft.input import StreamCursor
@@ -119,7 +119,7 @@ class AnchorKind(Enum):
 
 
 
-B = FABuilder[str]
+B = Builder[str]
 S = Syntax.config( builtin=True)
 # number            = digit { digit } ;
 number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text)).named('number')

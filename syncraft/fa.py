@@ -1158,10 +1158,10 @@ class ModeAction:
     belong: str | None = None  # only used for PUSH action
 
 @dataclass(frozen=True)
-class FABuilder(Generic[C]):
+class Builder(Generic[C]):
     kind: _NodeKind
     tag: Tag | None = None
-    children: Tuple[FABuilder[C], ...] = field(default_factory=tuple)
+    children: Tuple[Builder[C], ...] = field(default_factory=tuple)
     intervals: Tuple[Tuple[str | bytes | C, str | bytes | C], ...] = field(default_factory=tuple)
     text: Optional[Union[str, bytes, Sequence[C]]] = None
     at_least: int = 0
@@ -1199,9 +1199,9 @@ class FABuilder(Generic[C]):
             case _NodeKind.DIFF:
                 return f"({self.children[0]} - {self.children[1]})"
             case _:
-                return f"FABuilder({self.kind})"
+                return f"Builder({self.kind})"
 
-    def walk(self) -> Iterator["FABuilder[C]"]:
+    def walk(self) -> Iterator["Builder[C]"]:
         yield self
         for child in self.children:
             yield from child.walk()
@@ -1236,7 +1236,7 @@ class FABuilder(Generic[C]):
                 skip: bool = False, 
                 priority: int = 0,
                 non_greedy: bool = False,
-                action: Optional[ModeAction] = None) -> "FABuilder[C]":
+                action: Optional[ModeAction] = None) -> "Builder[C]":
         return cls(
             kind=_NodeKind.LITERAL,
             text=text,
@@ -1259,7 +1259,7 @@ class FABuilder(Generic[C]):
                          priority: int = 0,
                          non_greedy: bool = False,
                          action: Optional[ModeAction] = None,
-                         ) -> FABuilder[C]:
+                         ) -> Builder[C]:
         import unicodedata
         from itertools import groupby
         def unicode_category_ranges(*cats: str) -> list[tuple[str, str]]:
@@ -1292,7 +1292,7 @@ class FABuilder(Generic[C]):
               skip: bool = False, 
               priority: int = 0,
               non_greedy: bool = False,
-              action: Optional[ModeAction] = None) -> FABuilder[Any]:
+              action: Optional[ModeAction] = None) -> Builder[Any]:
         return cls(kind=_NodeKind.RANGE, 
                    intervals=((start, end),), 
                    tag=tag, 
@@ -1310,7 +1310,7 @@ class FABuilder(Generic[C]):
               skip: bool = False, 
               priority: int = 0,
               non_greedy: bool = False,
-              action: Optional[ModeAction] = None) -> FABuilder[C]:
+              action: Optional[ModeAction] = None) -> Builder[C]:
         if not isinstance(chars, (str, bytes)):
             if len(chars) > 0:
                 if isinstance(chars[0], (str, bytes)):
@@ -1329,61 +1329,61 @@ class FABuilder(Generic[C]):
         )
 
     # ---- DSL operators ----
-    def __add__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.CONCAT, children=(self, other))
+    def __add__(self, other: Builder[C]) -> Builder[C]:
+        return Builder(kind=_NodeKind.CONCAT, children=(self, other))
 
-    def __or__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.UNION, children=(self, other))
+    def __or__(self, other: Builder[C]) -> Builder[C]:
+        return Builder(kind=_NodeKind.UNION, children=(self, other))
 
-    def __and__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.INTERSECT, children=(self, other))
+    def __and__(self, other: Builder[C]) -> Builder[C]:
+        return Builder(kind=_NodeKind.INTERSECT, children=(self, other))
 
-    def __sub__(self, other: FABuilder[C]) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.DIFF, children=(self, other))
+    def __sub__(self, other: Builder[C]) -> Builder[C]:
+        return Builder(kind=_NodeKind.DIFF, children=(self, other))
 
-    def __invert__(self) -> FABuilder[C]:  # optional (~)
-        return FABuilder(kind=_NodeKind.OPTIONAL, children=(self,))
+    def __invert__(self) -> Builder[C]:  # optional (~)
+        return Builder(kind=_NodeKind.OPTIONAL, children=(self,))
 
-    def __neg__(self) -> FABuilder[C]:  # complement (-)
-        return FABuilder(kind=_NodeKind.COMPLEMENT, children=(self,))
-
-    @property
-    def star(self) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.STAR, children=(self,))
+    def __neg__(self) -> Builder[C]:  # complement (-)
+        return Builder(kind=_NodeKind.COMPLEMENT, children=(self,))
 
     @property
-    def plus(self) -> FABuilder[C]:
+    def star(self) -> Builder[C]:
+        return Builder(kind=_NodeKind.STAR, children=(self,))
+
+    @property
+    def plus(self) -> Builder[C]:
         return (self + self.star)
 
     def many(self, 
              *, 
              at_least: int = 0, 
-             at_most: Optional[int] = None) -> FABuilder[C]:
-        return FABuilder(kind=_NodeKind.MANY, 
+             at_most: Optional[int] = None) -> Builder[C]:
+        return Builder(kind=_NodeKind.MANY, 
                          children=(self,), 
                          at_least=at_least, 
                          at_most=at_most)
 
-    def tagged(self, value: Tag) -> FABuilder[C]:
+    def tagged(self, value: Tag) -> Builder[C]:
         return replace(self, tag=value)
     
-    def act(self, action: ModeAction | None = None) -> FABuilder[C]:
+    def act(self, action: ModeAction | None = None) -> Builder[C]:
         return replace(self, action=action)
 
-    def skipped(self, skip: bool = True) -> FABuilder[C]:
+    def skipped(self, skip: bool = True) -> Builder[C]:
         return replace(self, skip=skip)
     
-    def prioritized(self, priority: int) -> FABuilder[C]:
+    def prioritized(self, priority: int) -> Builder[C]:
         return replace(self, priority=priority)
 
-    def with_non_greedy(self, non_greedy: bool = True) -> FABuilder[C]:
+    def with_non_greedy(self, non_greedy: bool = True) -> Builder[C]:
         return replace(self, non_greedy=non_greedy)
 
     def compile(self, alphabet: AlphabetProtocol[C]) -> NFA[C] | DFA[C]: 
         match self.kind:
             case _NodeKind.RANGE:
                 if not self.intervals:
-                    raise SyncraftError("Range FABuilder must have intervals", offender=self, expect="at least one interval")
+                    raise SyncraftError("Range Builder must have intervals", offender=self, expect="at least one interval")
                 codes = []
                 for (start, end) in self.intervals:
                     code_start = alphabet.encode(start) # type: ignore
@@ -1402,11 +1402,11 @@ class FABuilder(Generic[C]):
                 return left.then(right)
             case _NodeKind.LITERAL:
                 if self.text is None:
-                    raise SyncraftError("Literal FABuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
+                    raise SyncraftError("Literal Builder must have text", offender=self, expect="text is str, bytes, or Sequence")
                 return NFA.from_string(self.text, alphabet=alphabet, tag=self.tag)
             case _NodeKind.ONEOF:
                 if self.text is None:
-                    raise SyncraftError("OneOf FABuilder must have text", offender=self, expect="text is str, bytes, or Sequence")
+                    raise SyncraftError("OneOf Builder must have text", offender=self, expect="text is str, bytes, or Sequence")
                 return NFA.from_charset(self.text, alphabet=alphabet, tag=self.tag)
             case _NodeKind.STAR:
                 inner = self.children[0].compile(alphabet).nfa
@@ -1435,7 +1435,7 @@ class FABuilder(Generic[C]):
                 right1 = self.children[1].compile(alphabet).dfa
                 return left1.difference(right1)
             case _:
-                raise NotImplementedError(f"Unhandled FABuilder kind: {self.kind}")
+                raise NotImplementedError(f"Unhandled Builder kind: {self.kind}")
             
     
     

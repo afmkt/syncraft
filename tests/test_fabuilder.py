@@ -1,21 +1,21 @@
-from syncraft.fa import FABuilder, NFA, DFA
+from syncraft.fa import Builder, NFA, DFA
 from syncraft.alphabet import Alphabet
 
 def test_literal_builder():
-    builder = FABuilder.lit("abc", tag="ID")
+    builder = Builder.lit("abc", tag="ID")
     assert builder.kind.name == "LITERAL"
     assert builder.text == "abc"
     assert builder.tag == "ID"
 
 def test_oneof_builder():
-    builder = FABuilder.oneof("xyz", tag="CHARSET")
+    builder = Builder.oneof("xyz", tag="CHARSET")
     assert builder.kind.name == "ONEOF"
     assert builder.text == "xyz"
     assert builder.tag == "CHARSET"
 
 def test_concat_union_and_subtract():
-    a = FABuilder.lit("a")
-    b = FABuilder.lit("b")
+    a = Builder.lit("a")
+    b = Builder.lit("b")
     concat = a + b
     union = a | b
     intersect = a & b
@@ -26,7 +26,7 @@ def test_concat_union_and_subtract():
     assert diff.kind.name == "DIFF"
 
 def test_star_plus_optional_many():
-    a = FABuilder.lit("x")
+    a = Builder.lit("x")
     star = a.star
     plus = a.plus
     optional = ~a
@@ -39,13 +39,13 @@ def test_star_plus_optional_many():
     assert many.at_most == 5
 
 def test_tagging():
-    a = FABuilder.lit("foo")
+    a = Builder.lit("foo")
     tagged = a.tagged("FOO")
     assert tagged.tag == "FOO"
 
 def test_compile_to_nfa():
     alphabet = Alphabet(str)
-    builder = FABuilder.lit("abc", tag="ID")
+    builder = Builder.lit("abc", tag="ID")
     nfa = builder.compile(alphabet)
     # Should be an NFA and accept 'abc'
     assert isinstance(nfa, (NFA, DFA))  
@@ -54,10 +54,10 @@ def test_compile_to_nfa():
 
 
 def test_literal_values_detect_text_universe() -> None:
-    builder: FABuilder[str] = FABuilder.lit("hi") + FABuilder.lit("bye")
+    builder: Builder[str] = Builder.lit("hi") + Builder.lit("bye")
     assert builder.payload_kind == "text"
 
 
 def test_literal_values_detect_bytes_universe() -> None:
-    builder: FABuilder[bytes] = FABuilder.lit(b"x") | FABuilder.lit(b"y")
+    builder: Builder[bytes] = Builder.lit(b"x") | Builder.lit(b"y")
     assert builder.payload_kind == "bytes"

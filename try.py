@@ -18,7 +18,7 @@ from rich import print
 from typing import Type
 
 from syncraft.ast import Token
-from syncraft.fa import FABuilder
+from syncraft.fa import Builder
 from syncraft.input import StreamCursor
 from syncraft.lexer import ExtLexer, Lexer
 from syncraft.parser import parse as parser_run, parse_data
@@ -109,7 +109,7 @@ def test_parse_string_input_with_lexer_bind() -> None:
     alphabet = Alphabet(str)
     lexer_cls: Type[Lexer[str]] = Lexer.bind(alphabet=alphabet)
     syntax_cls = Syntax.config(lexer_class=lexer_cls)
-    word = syntax_cls.lex(WORD=FABuilder.lit("hi").tagged("WORD"))
+    word = syntax_cls.lex(WORD=Builder.lit("hi").tagged("WORD"))
 
     value, state = parser_run(syntax=word, data=StreamCursor.from_data("hi"), cache=None)
 

@@ -25,7 +25,7 @@ from syncraft.ast import (
 )
 from syncraft.utils import FrozenDict
 
-from syncraft.fa import FABuilder
+from syncraft.fa import Builder
 from syncraft.syntax import Syntax, RunnerProtocol
 
 from syncraft.constraint import Bindable
@@ -408,7 +408,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 generated = lexer.gen(tag, input.rng())
                 if (
                     isinstance(lexer, Lexer)
-                    and any(isinstance(value, FABuilder) for value in kwargs.values())
+                    and any(isinstance(value, Builder) for value in kwargs.values())
                     and not isinstance(generated, Token)
                 ):
                     if isinstance(generated, (str, bytes, tuple)):

@@ -44,7 +44,7 @@ TODO
 
 - [ ]  Profile hook on Cache, for grammar profiling
 
-- [ ]  regex.py convert Regex to FABuilder, for grammar authoring
+- [ ]  regex.py convert Regex to Builder, for grammar authoring
 
 - [ ]  Semantic layer (datalog + unification). for AST analysis
 

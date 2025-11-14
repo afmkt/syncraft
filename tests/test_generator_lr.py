@@ -15,7 +15,7 @@ from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
 from syncraft.lexer import ExtLexer
 from syncraft.cache import Cache
-from syncraft.fa import FABuilder
+from syncraft.fa import Builder
 from syncraft.token import Structured, matcher, TokenMatcher
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
@@ -92,7 +92,7 @@ def test_generate_with_infers_text_lexer_without_config() -> None:
 
 
 def test_generate_with_infers_from_fabuilder_literal() -> None:
-    lex_syntax = Syntax.factory("lex", WORD=FABuilder.lit("go").tagged("WORD"))
+    lex_syntax = Syntax.factory("lex", WORD=Builder.lit("go").tagged("WORD"))
     ast, bound = generate_with(lex_syntax, seed=321)
     assert isinstance(ast, Token)
     assert ast.token_type == "WORD"
