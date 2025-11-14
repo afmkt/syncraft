@@ -21,7 +21,7 @@ from collections import defaultdict
 from functools import reduce
 import random
 
-Tag = str
+Tag = str | Enum
 C = TypeVar('C', bound=Hashable)
 
 FAStateBuilder = Callable[[], 'FAState']
@@ -1125,8 +1125,6 @@ class DFARunner(Runner[C, DFA[C]]):
                     break
         
         return self.advance_state(cur, pos=self.accepted[-1][0] if self.accepted else 0)
-        
-
 
 
 
@@ -1145,7 +1143,7 @@ class _NodeKind(str, Enum):
     OPTIONAL = "OPTIONAL"
     MANY = "MANY"
 
-FA = TypeVar('FA', bound=Union[NFA, DFA])
+
 
 
 class ModeActionEnum(Enum):
@@ -1231,7 +1229,7 @@ class FABuilder(Generic[C]):
 
 
     @classmethod
-    def literal(cls, 
+    def lit(cls, 
                 text: Union[str, bytes], 
                 *, 
                 tag: Optional[Tag] = None,
@@ -1249,17 +1247,7 @@ class FABuilder(Generic[C]):
             non_greedy=non_greedy,
         )
 
-    # Alias for convenience
-    @classmethod
-    def lit(cls, 
-            text: Union[str, bytes], 
-            *, 
-            tag: Optional[Tag] = None,
-            skip: bool = False, 
-            priority: int = 0,
-            non_greedy: bool = False,
-            action: Optional[ModeAction] = None) -> FABuilder[C]:
-        return cls.literal(text, tag=tag, action=action, skip=skip, priority=priority, non_greedy=non_greedy)
+
 
 
     @classmethod

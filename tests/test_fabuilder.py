@@ -2,7 +2,7 @@ from syncraft.fa import FABuilder, NFA, DFA
 from syncraft.alphabet import Alphabet
 
 def test_literal_builder():
-    builder = FABuilder.literal("abc", tag="ID")
+    builder = FABuilder.lit("abc", tag="ID")
     assert builder.kind.name == "LITERAL"
     assert builder.text == "abc"
     assert builder.tag == "ID"
@@ -14,8 +14,8 @@ def test_oneof_builder():
     assert builder.tag == "CHARSET"
 
 def test_concat_union_and_subtract():
-    a = FABuilder.literal("a")
-    b = FABuilder.literal("b")
+    a = FABuilder.lit("a")
+    b = FABuilder.lit("b")
     concat = a + b
     union = a | b
     intersect = a & b
@@ -26,7 +26,7 @@ def test_concat_union_and_subtract():
     assert diff.kind.name == "DIFF"
 
 def test_star_plus_optional_many():
-    a = FABuilder.literal("x")
+    a = FABuilder.lit("x")
     star = a.star
     plus = a.plus
     optional = ~a
@@ -39,13 +39,13 @@ def test_star_plus_optional_many():
     assert many.at_most == 5
 
 def test_tagging():
-    a = FABuilder.literal("foo")
+    a = FABuilder.lit("foo")
     tagged = a.tagged("FOO")
     assert tagged.tag == "FOO"
 
 def test_compile_to_nfa():
     alphabet = Alphabet(str)
-    builder = FABuilder.literal("abc", tag="ID")
+    builder = FABuilder.lit("abc", tag="ID")
     nfa = builder.compile(alphabet)
     # Should be an NFA and accept 'abc'
     assert isinstance(nfa, (NFA, DFA))  

@@ -33,7 +33,7 @@ T = TypeVar('T', bound=Hashable)
 
 
 
-Tag = str
+Tag = str | Enum
 
 @dataclass(frozen=True)
 class LexerError:
@@ -88,7 +88,7 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def varify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
 
-    def tags(self) -> frozenset[str|None]: ...
+    def tags(self) -> frozenset[str|Enum|None]: ...
 
     def gen(self, tag: Tag | None, rng: random.Random) -> Any: ...
 
@@ -159,7 +159,12 @@ class LexerCache:
         file = dir / f"{key}.lex"
         if file.exists():
             with open(file, "rb") as f:
-                return pickle.load(f)
+                try:
+                    return pickle.load(f)
+                except Exception as e:
+                    print(e)
+                    print("Failed to load lexer from cache:", file)
+                    file.unlink()
         return None
     
     @staticmethod
@@ -207,7 +212,7 @@ class Lexer(LexerBase[C]):
     cache: ClassVar[LexerCache] = LexerCache()
 
     
-    def tags(self) -> frozenset[str|None]:
+    def tags(self) -> frozenset[str|Enum|None]:
         all_tags: Set[Tag|None] = set()
         for mode in self.modes.values():
             for tags in mode.runner.dfa.accept.values():
@@ -488,7 +493,7 @@ class ExtLexer(LexerBase[T]):
     def reset(self) -> None:
         pass
 
-    def tags(self) -> frozenset[str|None]:
+    def tags(self) -> frozenset[str|Enum|None]:
         return frozenset(self.rules.keys())
 
     @classmethod
