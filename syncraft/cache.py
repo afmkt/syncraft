@@ -171,6 +171,7 @@ def set_random_seed(seed: int) -> None:
 
 @dataclass
 class ProfileEntry:
+    parent: Rule | None = None
     calls: int = 0
     total_time: float = 0.0
     max_time: float = 0.0
@@ -183,11 +184,11 @@ class ProfileEntry:
 class Profiler:
     dict: Dict[Rule, Dict[int, ProfileEntry]] = field(default_factory=lambda: defaultdict(dict))
 
-    def log(self, rule: Rule, pos: int, duration: float, success: bool) -> None:
+    def log(self, parent: Rule | None, rule: Rule, pos: int, duration: float, success: bool) -> None:
         bucket = self.dict[rule]
         entry = bucket.get(pos)
         if entry is None:
-            entry = ProfileEntry()
+            entry = ProfileEntry(parent=parent)
             bucket[pos] = entry
         entry.calls += 1
         entry.total_time += duration
@@ -203,6 +204,7 @@ class Profiler:
         for rule, bucket in self.dict.items():
             for pos, entry in bucket.items():
                 result.append({
+                    'parent': entry.parent if keep_rule else callable_str(entry.parent),
                     'rule': rule if keep_rule else callable_str(rule),
                     'position': pos,
                     'calls': entry.calls,
@@ -242,7 +244,7 @@ class Profiler:
             result.append(agg_row)
         return result
     
-    def report(self, lines: int = 10) -> None:
+    def report(self, lines: int = 10, sort: str = "total_time") -> None:
         agg_functions = {
             'position': lambda values: 'N/A', # Placeholder for non-numeric column
             'calls': sum,
@@ -254,7 +256,7 @@ class Profiler:
             'avg_time': lambda values: sum(values) / len(values) if values else 0.0, # Not actually used in the final report calculation
             'success_rate': lambda values: sum(values) / len(values) if values else 0.0 # Not actually used in the final report calculation
         }        
-        rule_data = self.agg(keep_rule=True, **agg_functions)
+        rule_data = self.agg(keep_rule=True, **agg_functions) # type: ignore
         if not rule_data:
             print("[Profiler] No profiling data collected.")
             return
@@ -274,7 +276,7 @@ class Profiler:
         width = 160
         print("\n" + "="*width)        
         # Sort by total_time descending
-        rule_data.sort(key=lambda x: x['total_time'], reverse=True)
+        rule_data.sort(key=lambda x: x[sort], reverse=True)
         print("[Profiler] Rule Performance Report:")
         HEADER_FMT = "{:<25} | {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>30}"
         print(HEADER_FMT.format("Rule", "Calls", "Total Time", "Avg Call Time", "Max Time", "Success Rate", "Location"))
@@ -384,7 +386,7 @@ class Cache(Generic[S]):
             end_time = time.perf_counter()
             duration = end_time - start_time
             success = isinstance(result, Right)
-            self.profiler.log(rule, key.cache_key, duration, success)
+            self.profiler.log(self.stack[-2][0] if len(self.stack) > 1 else None, rule, key.cache_key, duration, success)
             return result
         else:
             result = yield from rule(key, self)
