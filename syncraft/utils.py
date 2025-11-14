@@ -12,21 +12,14 @@ import os
 def callable_str(obj:Any, with_id: bool=False)->str:
     if not callable(obj):
         return repr(obj)
-    original = str(obj)
     idstr = hex(id(obj))
     name = obj.syntax if hasattr(obj, 'syntax') else (
         obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
     prefix = '' if not with_id else f"{idstr} @ "
-    if 'lazy' in original:
-        return f"{prefix}LAZY({name})"
-    elif 'flat_map' in original:
-        return f"{prefix}THEN({name})"
-    elif 'or_else' in original:
-        return f"{prefix}OR_ELSE({name})"
-    elif 'map' in original:
-        return f"{prefix}MAP({name})"
-    elif 'lex' in original:
-        return f"{prefix}LEX({name})"
+    if hasattr(obj, 'is_lazy') and obj.is_lazy:
+        return f"{prefix}\u25CA {name}"
+    elif hasattr(obj, 'is_choice') and obj.is_choice:
+        return f"{prefix}\u2a01 {name}"
     else:
         return f"{prefix}{name}"
     

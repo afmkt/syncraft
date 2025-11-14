@@ -338,20 +338,20 @@ def _group_body() -> Syntax[Any, Any]:
                               + regex_syntax.mark('pattern') 
                               // rparen)
     return S.choice(
-                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain').debug(),
-                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing').debug(),
-                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="named").named('named').debug(),
-                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t), id="lookahead").named('lookahead').debug(),
-                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t), id="negative_lookahead").named('negative_lookahead').debug(),
-                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t), id="lookbehind").named('lookbehind').debug(),
-                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind').debug(),
-                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only').debug(),
-                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon').debug(),
+                plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),
+                noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing'),
+                named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="named").named('named'),
+                lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t), id="lookahead").named('lookahead'),
+                negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t), id="negative_lookahead").named('negative_lookahead'),
+                lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t), id="lookbehind").named('lookbehind'),
+                negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
+                inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
+                inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
                 sort = False
             )
 
 
-group = S.lazy(_group_body).named('group').debug()
+group = S.lazy(_group_body).named('group')
 
 # anchor            = "^" | "$" | boundary_escape ;
 # - ^ → LINE_START
@@ -418,7 +418,7 @@ atom = S.choice(
         shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
         char_class.to(CharClassAtom),
-        ).named('atom').debug()
+        ).named('atom')
 
 
 @dataclass(frozen=True)
@@ -448,7 +448,7 @@ class Regex:
 
 
 # regex             = branch { "|" branch } ;
-regex_syntax = branch.sep_by(or_).named('regex').mark('branches').to(Regex)
+regex_syntax = branch.sep_by(or_).mark('branches').to(Regex).named('regex')
 
 
 regex_parser = parser(syntax=regex_syntax, payload_kind='text')

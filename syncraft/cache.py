@@ -178,6 +178,8 @@ class ProfileEntry:
     min_time: float = float('inf')
     successes: int = 0
     failures: int = 0
+    is_lazy: bool = False
+    is_choice: bool = False
 
 
 @dataclass
@@ -188,7 +190,7 @@ class Profiler:
         bucket = self.dict[rule]
         entry = bucket.get(pos)
         if entry is None:
-            entry = ProfileEntry(parent=parent)
+            entry = ProfileEntry(parent=parent, is_lazy=is_lazy(rule), is_choice=is_choice(rule))
             bucket[pos] = entry
         entry.calls += 1
         entry.total_time += duration
@@ -215,6 +217,8 @@ class Profiler:
                     'failures': entry.failures,
                     'avg_time': entry.total_time / entry.calls if entry.calls > 0 else 0.0,
                     'success_rate': entry.successes / entry.calls if entry.calls > 0 else 0.0,
+                    'is_lazy': entry.is_lazy,
+                    'is_choice': entry.is_choice,
                 })
         return result
     
@@ -244,7 +248,7 @@ class Profiler:
             result.append(agg_row)
         return result
     
-    def report(self, lines: int = 10, sort: str = "total_time") -> None:
+    def report(self, lines: Optional[int] = 20, sort: str = "total_time", filter: Callable[[Dict[str, Any]], bool] = lambda r: callable_str(r['rule']) != 'map_run') -> None:
         agg_functions = {
             'position': lambda values: 'N/A', # Placeholder for non-numeric column
             'calls': sum,
@@ -253,6 +257,8 @@ class Profiler:
             'min_time': min,  # Min of all min_times across positions
             'successes': sum,
             'failures': sum,
+            'is_lazy': lambda values: any(values),
+            'is_choice': lambda values: any(values),
             'avg_time': lambda values: sum(values) / len(values) if values else 0.0, # Not actually used in the final report calculation
             'success_rate': lambda values: sum(values) / len(values) if values else 0.0 # Not actually used in the final report calculation
         }        
@@ -273,18 +279,19 @@ class Profiler:
         print(f"Total Failures: {total_failures:,}")
         print(f"Total Successes: {total_successes:,}")
         print(f"Success Rate:  {overall_success_rate:.2%}")
-        width = 160
+        width = 190
         print("\n" + "="*width)        
         # Sort by total_time descending
         rule_data.sort(key=lambda x: x[sort], reverse=True)
-        print("[Profiler] Rule Performance Report:")
-        HEADER_FMT = "{:<25} | {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>30}"
-        print(HEADER_FMT.format("Rule", "Calls", "Total Time", "Avg Call Time", "Max Time", "Success Rate", "Location"))
+        HEADER_FMT = "{:<25} | {:<25} | {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>30}"
+        print(HEADER_FMT.format("Rule", "Parent", "Calls", "Total Time", "Avg Time", "Max Time", "Success Rate", "Location"))
         print("-" * width)
         for r in rule_data:
+            if not filter(r):
+                continue
             rule = r['rule']
             rule_name = callable_str(rule)[:24] # Truncate rule name if too long
-            
+            parent = callable_str(r['parent'])[:24]
             # Format numbers for printing
             calls_str = f"{r['calls']:,}"
             total_time_str = f"{r['total_time']:,.4f}"
@@ -295,10 +302,11 @@ class Profiler:
             rule_location = rule_location or 'N/A'
             
             # Use fixed-width alignment
-            print(f"{rule_name:<25} | {calls_str:>10} | {total_time_str:>12} | {avg_call_time_str:>12} | {max_time_str:>12} | {success_rate_str:>12} | {rule_location:>30}")
-            lines -= 1
-            if lines <= 0:
-                break
+            print(f"{rule_name:<25} | {parent:<25} | {calls_str:>10} | {total_time_str:>12} | {avg_call_time_str:>12} | {max_time_str:>12} | {success_rate_str:>12} | {rule_location:>30}")
+            if lines is not None:
+                lines -= 1
+                if lines <= 0:
+                    break
             
         print("\n" + "="*width + "\n")
 
