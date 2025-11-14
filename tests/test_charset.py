@@ -8,7 +8,7 @@ from syncraft.charset import (
  
 )
 from syncraft.alphabet import Alphabet
-from syncraft.alphabet import Symbol, CodepointError
+from syncraft.alphabet import  CodepointError
 from syncraft.algebra import SyncraftError
 import enum
 

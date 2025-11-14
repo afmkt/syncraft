@@ -98,10 +98,19 @@ class ByteAlphabet(AlphabetProtocol[bytes]):
 
 @dataclass(frozen=True)
 class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
-    space: Type[Enum] | frozenset[C]
-    code2int: FrozenDict[C, int] = field(default_factory=FrozenDict)
-    int2code: FrozenDict[int, C] = field(default_factory=FrozenDict)
+    _space: Type[Enum] | frozenset[C] | Sequence[C]
+    code2int: FrozenDict[C, int] = field(default_factory=FrozenDict, init=False)
+    int2code: FrozenDict[int, C] = field(default_factory=FrozenDict, init=False)
     
+    @cached_property
+    def space(self) -> Type[Enum] | frozenset[C]:
+        if isinstance(self._space, type) and issubclass(self._space, Enum):
+            return self._space
+        elif isinstance(self._space, frozenset):
+            return self._space
+        else:
+            return frozenset(self._space)
+
     @cached_property
     def codes(self) -> Tuple[Tuple[int, int], ...]:
         return ((0, len(self.code2int) - 1), )
@@ -115,16 +124,18 @@ class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
     def concat(self, cs: Sequence[C]) -> Tuple[C, ...]:
         return tuple(cs)
     
-    @classmethod
-    def create(cls, symbols: Type[Enum] | Sequence[C]) -> FiniteAlphabet[C]:
-        if isinstance(symbols, type) and issubclass(symbols, Enum):
-            elements = list(symbols)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.space, type) and issubclass(self.space, Enum):
+            elements = list(self.space)
             code2int: FrozenDict[C, int] = FrozenDict({s: i for i, s in enumerate(elements)})
             int2code: FrozenDict[int, C] = FrozenDict({i: s for s, i in code2int.items()})
-            return cls(space=symbols, code2int=code2int, int2code=int2code)
+            object.__setattr__(self, 'code2int', code2int)
+            object.__setattr__(self, 'int2code', int2code)
         else:
-            _elements = list(symbols)
+            _elements = list(self.space)
             _code2int: FrozenDict[C, int] = FrozenDict({s: i for i, s in enumerate(_elements)})
             _int2code: FrozenDict[int, C] = FrozenDict({i: s for s, i in _code2int.items()})
-            return cls(space=frozenset(_elements), code2int=_code2int, int2code=_int2code)
+            object.__setattr__(self, 'code2int', _code2int)
+            object.__setattr__(self, 'int2code', _int2code)
     
