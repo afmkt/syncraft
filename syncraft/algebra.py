@@ -5,7 +5,7 @@ from typing import (
 )
 from syncraft.ast import AST, Ignore
 from dataclasses import dataclass, replace, field
-from syncraft.ast import ThenKind, Lazy, Then, Choice, Many, ChoiceKind, SyncraftError
+from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
@@ -449,30 +449,30 @@ class Algebra(Generic[A, S]):
 
 
     
-    def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[Choice[A, B], S]:
+    def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[OrElse[A, B], S]:
         def or_else_run(input: S, 
                         cache:Cache[S]) -> Generator[YieldChannelType, 
                                                     SendChannelType,
-                                                    Either[Any, Tuple[Choice[A, B], S]]]:
+                                                    Either[Any, Tuple[OrElse[A, B], S]]]:
             inp = input.enter()
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
-                    return Right((Choice(kind=ChoiceKind.LEFT, value=value), state.leave()))
+                    return Right((OrElse(kind=OrElseKind.LEFT, value=value), state.leave()))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
                         return Left(replace(err, committed=False))
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
-                            return Right((Choice(kind=ChoiceKind.RIGHT, value=other_value), other_state.leave()))
+                            return Right((OrElse(kind=OrElseKind.RIGHT, value=other_value), other_state.leave()))
                         case Left(other_err):
                             return Left(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
         
         alg = replace(self, run_f=or_else_run) # type: ignore
-        return cast(Algebra[Choice[A, B], S], alg)
+        return cast(Algebra[OrElse[A, B], S], alg)
         
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:

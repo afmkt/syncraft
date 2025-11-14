@@ -396,20 +396,20 @@ class Marked(AST, Generic[A]):
         v, inner_f = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
         return Marked(name=self.name, value=v), lambda b: Marked(name = b.name, value=inner_f(b.value))
     
-class ChoiceKind(Enum):
+class OrElseKind(Enum):
     LEFT = 'left'
     RIGHT = 'right'
 
-ChoiceKind.__str__ = lambda self: self.value   # type: ignore
+OrElseKind.__str__ = lambda self: self.value   # type: ignore
 
 
 @dataclass(frozen=True)
-class Choice(AST, Generic[A, B]):
+class OrElse(AST, Generic[A, B]):
     """Represent a binary alternative between left and right values.
 
     ``kind`` indicates which branch was taken, or ``None`` when unknown.
     """
-    kind: Optional[ChoiceKind]
+    kind: Optional[OrElseKind]
     value: Optional[A | B] = None
     @property
     def arity(self)->int:
@@ -423,7 +423,7 @@ class Choice(AST, Generic[A, B]):
             return self.value.is_then
         return False
 
-    def bimap(self, r: Bimap[A | B, C]=Bimap.identity()) -> Tuple[Optional[C], Callable[[Optional[C]], Choice[A, B]]]:
+    def bimap(self, r: Bimap[A | B, C]=Bimap.identity()) -> Tuple[Optional[C], Callable[[Optional[C]], OrElse[A, B]]]:
         """Map over the held value if present; propagate ``None`` otherwise.
 
         The inverse resets ``kind`` to ``None`` to avoid biasing the result.
@@ -703,7 +703,7 @@ T = TypeVar('T', bound=Hashable)
 ParseResult = Union[
     Lazy['ParseResult[T]'],
     Then['ParseResult[T]', 'ParseResult[T]'], 
-    Choice['ParseResult[T]', 'ParseResult[T]'],
+    OrElse['ParseResult[T]', 'ParseResult[T]'],
     Many['ParseResult[T]'],
     Collect['ParseResult[T]', Any],
     Marked['ParseResult[T]'],

@@ -18,7 +18,7 @@ def callable_str(obj:Any, with_id: bool=False)->str:
     prefix = '' if not with_id else f"{idstr} @ "
     if hasattr(obj, 'is_lazy') and obj.is_lazy:
         return f"{prefix}\u25CA {name}"
-    elif hasattr(obj, 'is_choice') and obj.is_choice:
+    elif hasattr(obj, 'is_orelse') and obj.is_orelse:
         return f"{prefix}\u2a01 {name}"
     else:
         return f"{prefix}{name}"

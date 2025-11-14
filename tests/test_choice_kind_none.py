@@ -18,11 +18,11 @@ def test_validate_and_generate_with_after_bimap_resets_choice_kind():
     ast, _ = parse_word(A, 'a a a', cache=Cache())
     assert not isinstance(ast, Error)
 
-    # Apply bimap then reconstruct the AST. Choice.bimap resets kind to None.
-    x, invf = ast.bimap()  # x is a flattened tuple-like view; invf reconstructs AST with kind=None in Choice nodes
+    # Apply bimap then reconstruct the AST. OrElse.bimap resets kind to None.
+    x, invf = ast.bimap()  # x is a flattened tuple-like view; invf reconstructs AST with kind=None in OrElse nodes
     reconstructed = invf(x)
 
-    # validate() should succeed even when Choice.kind is None
+    # validate() should succeed even when OrElse.kind is None
     v1, b1 = validate(A, reconstructed)
     assert not isinstance(v1, Error)
     assert b1 is not None
@@ -33,7 +33,7 @@ def test_validate_and_generate_with_after_bimap_resets_choice_kind():
     assert b2 is not None
 
 
-# @pytest.mark.xfail(reason="Mutual LR with Choice.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
+# @pytest.mark.xfail(reason="Mutual LR with OrElse.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
 def test_mutual_left_recursion_with_base_after_bimap_A():
     # Grammar: A := (A + 'b') | 'a'  and  B := (B + 'a') | 'b' would not alternate as intended.
     # Use standard mutual LR with base on each:
@@ -58,7 +58,7 @@ def test_mutual_left_recursion_with_base_after_bimap_A():
     assert b2 is not None
 
 
-# @pytest.mark.xfail(reason="Mutual LR with Choice.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
+# @pytest.mark.xfail(reason="Mutual LR with OrElse.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
 def test_mutual_left_recursion_with_base_after_bimap_B():
     # Same grammar, start from B and parse 'b a b': B -> A + 'b', A -> B + 'a', B -> 'b'
     A = S.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]

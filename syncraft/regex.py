@@ -494,7 +494,7 @@ class VerifyResult:
 
 
 
-def verify(pattern: str, profile: bool = True) -> VerifyResult:
+def verify(pattern: str, profile: bool = False) -> VerifyResult:
     myerr = None
     err = None
     cache: Cache[Any] = Cache()
@@ -503,6 +503,7 @@ def verify(pattern: str, profile: bool = True) -> VerifyResult:
     parsed = parse(pattern, cache=cache)
     if cache.profiler is not None:
         cache.profiler.report()
+        
     if not isinstance(parsed, Regex):
         myerr = parsed
     try:

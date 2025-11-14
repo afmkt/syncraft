@@ -20,7 +20,7 @@ from syncraft.cache import Cache, Either, Left, Right
 from syncraft.ast import (
     ParseResult, AST, Token, 
     Nothing, Lazy,
-    Choice, Many, ChoiceKind,
+    OrElse, Many, OrElseKind,
     Then, ThenKind, SyncraftError
 )
 from syncraft.utils import FrozenDict
@@ -269,41 +269,41 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
  
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: 
+                ) -> Algebra[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]: 
         """Try ``self``; if it fails without commitment, try ``other``.
 
         In pruned mode, deterministically chooses a branch using a forked RNG.
-        With an existing ``Choice`` AST, it executes the indicated branch.
+        With an existing ``OrElse`` AST, it executes the indicated branch.
 
         Args:
             other: Fallback algebra to try when ``self`` is not committed.
 
         Returns:
-            Algebra[Choice[ParseResult[T], ParseResult[T]], GenState[T]]: An
+            Algebra[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]: An
             algebra yielding which branch succeeded and its value.
         """
         def or_else_run(input: GenState[T], 
                         cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                                           SendChannelType, 
-                                                                                          Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
-            def exec(kind: ChoiceKind | None, 
+                                                                                          Either[Any, Tuple[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+            def exec(kind: OrElseKind | None, 
                      left: GenState[T], 
                      right: GenState[T]) -> PyGenerator[YieldChannelType, 
                                                         SendChannelType, 
-                                                        Either[Any, Tuple[Choice[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+                                                        Either[Any, Tuple[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]]]:
                 match kind:
-                    case ChoiceKind.LEFT:
+                    case OrElseKind.LEFT:
                         self_result = yield from self.run(left, cache)
                         match self_result:
                             case Right((value, next_input)):
-                                return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
+                                return Right((OrElse(kind=OrElseKind.LEFT, value=value), next_input))
                             case Left(error):
                                 return Left(error)
-                    case ChoiceKind.RIGHT:
+                    case OrElseKind.RIGHT:
                         other_result = yield from other.run(right, cache)
                         match other_result:
                             case Right((value, next_input)):
-                                return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
+                                return Right((OrElse(kind=OrElseKind.RIGHT, value=value), next_input))
                             case Left(error):
                                 return Left(error)
                     case None:
@@ -311,7 +311,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         self_result = yield from self.run(left, cache)
                         match self_result:
                             case Right((value, next_input)):
-                                return Right((Choice(kind=ChoiceKind.LEFT, value=value), next_input))
+                                return Right((OrElse(kind=OrElseKind.LEFT, value=value), next_input))
                             case Left(error):
                                 if isinstance(error, Error):
                                     if error.committed:
@@ -321,20 +321,20 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 other_result = yield from other.run(right, cache)
                                 match other_result:
                                     case Right((value, next_input)):
-                                        return Right((Choice(kind=ChoiceKind.RIGHT, value=value), next_input))
+                                        return Right((OrElse(kind=OrElseKind.RIGHT, value=value), next_input))
                                     case Left(error):
                                         return Left(error)
-                raise SyncraftError(f"Invalid ChoiceKind: {kind}", offender=kind, expect=(ChoiceKind.LEFT, ChoiceKind.RIGHT, None))
+                raise SyncraftError(f"Invalid OrElseKind: {kind}", offender=kind, expect=(OrElseKind.LEFT, OrElseKind.RIGHT, None))
 
             if input.pruned:
                 forked_input = input.fork(tag="or_else")
-                which = forked_input.rng("or_else").choice((ChoiceKind.LEFT, ChoiceKind.RIGHT))
+                which = forked_input.rng("or_else").choice((OrElseKind.LEFT, OrElseKind.RIGHT))
                 result = yield from exec(which, forked_input, forked_input)
                 return result
             else:
-                if not isinstance(input.ast, Choice) or isinstance(input.ast, Nothing):
+                if not isinstance(input.ast, OrElse) or isinstance(input.ast, Nothing):
                     return Left(Error(this=self, 
-                                      message=f"Expect Choice got {input.ast}",
+                                      message=f"Expect OrElse got {input.ast}",
                                       state=input))
                 else:
                     result = yield from exec(input.ast.kind, 

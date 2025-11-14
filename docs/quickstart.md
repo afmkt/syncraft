@@ -110,7 +110,7 @@ Many(
 See also: `bimap` on AST and `generate` in the [API reference](reference.md).
 
 > Note
-> `ast.bimap()` drops `Choice.kind` to `None` by design. For left‑recursive grammars, the Parser’s LR recovery
+> `ast.bimap()` drops `OrElse.kind` to `None` by design. For left‑recursive grammars, the Parser’s LR recovery
 > produces `Then(kind=BOTH, ...)` chains that the Generator cannot generally re‑thread without those branch hints.
 > Therefore, left‑recursive grammars are not guaranteed to round‑trip after `bimap()`; mutually left‑recursive
 > cases are especially prone to failure. If round‑trip is a requirement, prefer right‑recursive/iterative forms

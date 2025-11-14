@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind, Many, Choice, ChoiceKind, Token, Marked, Nothing, Any
+from syncraft.ast import Then, ThenKind, Many, OrElse, OrElseKind, Token, Marked, Nothing, Any
 from syncraft.algebra import Error
 from syncraft.parser import  parse_word
 import syncraft.generator as gen
@@ -254,7 +254,7 @@ def test_ambiguous() -> None:
     sql = "a"
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # Does it prefer A (shorter) or B (fails)? Depends on design.
-    assert ast == Choice[Token, Token](value=from_string("a"), kind=ChoiceKind.LEFT)
+    assert ast == OrElse[Token, Token](value=from_string("a"), kind=OrElseKind.LEFT)
 
 
 def test_combo() -> None:
@@ -295,7 +295,7 @@ def test_many_optional():
     ast1, _ = parse_word(syntax, "a a b", cache=Cache())
     # print(ast1)
     ast2, inv = ast1.bimap()
-    assert Many(value=(Choice(kind=None, value=from_string('a')), Choice(kind=None, value=from_string('a')))) == inv(ast2)
+    assert Many(value=(OrElse(kind=None, value=from_string('a')), OrElse(kind=None, value=from_string('a')))) == inv(ast2)
 
 
 def test_grouping():

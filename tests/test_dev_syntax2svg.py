@@ -14,7 +14,7 @@ from syncraft.dev import syntax2svg
 from syncraft.syntax import (
     LexSpec,
     ThenSpec,
-    ChoiceSpec,
+    OrElseSpec,
     LazySpec,
 )
 from syncraft.ast import ThenKind

@@ -7,13 +7,13 @@ from syncraft.syntax import (
     SyntaxSpec,
     LazySpec,
     ThenSpec,
-    ChoiceSpec,
+    OrElseSpec,
 
 )
 from syncraft.ast import (
     Token,
     Then,
-    Choice,
+    OrElse,
     Many,
     Marked,
     Collect,
@@ -30,7 +30,7 @@ from syncraft.regex import regex_syntax
 
 
 def _flatten_choices(spec: SyntaxSpec) -> List[SyntaxSpec]:
-    if isinstance(spec, ChoiceSpec):
+    if isinstance(spec, OrElseSpec):
         return _flatten_choices(spec.left) + _flatten_choices(spec.right)
     return [spec]
 
@@ -66,7 +66,7 @@ def _flatten_token_text(node: object) -> List[str]:
         return [str(node.text)]
     if isinstance(node, Then):
         return _flatten_token_text(node.left) + _flatten_token_text(node.right)
-    if isinstance(node, Choice):
+    if isinstance(node, OrElse):
         return _flatten_token_text(node.value) if node.value is not None else []
     if isinstance(node, Many):
         items: List[str] = []

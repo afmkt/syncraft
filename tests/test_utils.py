@@ -13,7 +13,7 @@ def iter_tokens(ast: Any) -> Iterable[str]:
         for x in ast:
             yield from iter_tokens(x)
     elif hasattr(ast, 'value') and isinstance(getattr(ast, 'value'), tuple):
-        # For Then/Choice wrappers from syncraft.ast
+        # For Then/OrElse wrappers from syncraft.ast
         for x in getattr(ast, 'value'):
             yield from iter_tokens(x)
     elif hasattr(ast, 'left') and hasattr(ast, 'right'):

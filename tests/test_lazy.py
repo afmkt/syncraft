@@ -774,16 +774,16 @@ def test_multi_recursion()->None:
     print(v)
     # We care about the raw AST shape (pre-bimap). Extract leaves manually.
     from syncraft.ast import Then, ThenKind
-    from syncraft.algebra import Choice, ChoiceKind  # type: ignore
+    from syncraft.algebra import OrElse, OrElseKind  # type: ignore
 
     def leaves(node):
         if isinstance(node, Lazy):
             return leaves(node.value)
         if isinstance(node, Then) and node.kind == ThenKind.BOTH:
             return leaves(node.left) + leaves(node.right)
-        if isinstance(node, Choice):
-            # For this grammar Choice.RIGHT wraps literal terminal; LEFT wraps a Then chain.
-            if node.kind == ChoiceKind.RIGHT:
+        if isinstance(node, OrElse):
+            # For this grammar OrElse.RIGHT wraps literal terminal; LEFT wraps a Then chain.
+            if node.kind == OrElseKind.RIGHT:
                 return (node.value,)
             else:
                 return leaves(node.value)

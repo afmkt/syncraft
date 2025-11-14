@@ -14,8 +14,8 @@ import random
 def is_lazy(func: Callable[..., Any]) -> bool:
     return hasattr(func, 'is_lazy') and func.is_lazy
 
-def is_choice(func: Callable[..., Any]) -> bool:
-    return hasattr(func, 'is_choice') and func.is_choice
+def is_orelse(func: Callable[..., Any]) -> bool:
+    return hasattr(func, 'is_orelse') and func.is_orelse
 
 def randomized(collection, enable_randomization=True):
     """Helper function to randomize iteration order of sets and other collections."""
@@ -179,7 +179,7 @@ class ProfileEntry:
     successes: int = 0
     failures: int = 0
     is_lazy: bool = False
-    is_choice: bool = False
+    is_orelse: bool = False
 
 
 @dataclass
@@ -190,7 +190,7 @@ class Profiler:
         bucket = self.dict[rule]
         entry = bucket.get(pos)
         if entry is None:
-            entry = ProfileEntry(parent=parent, is_lazy=is_lazy(rule), is_choice=is_choice(rule))
+            entry = ProfileEntry(parent=parent, is_lazy=is_lazy(rule), is_orelse=is_orelse(rule))
             bucket[pos] = entry
         entry.calls += 1
         entry.total_time += duration
@@ -218,7 +218,7 @@ class Profiler:
                     'avg_time': entry.total_time / entry.calls if entry.calls > 0 else 0.0,
                     'success_rate': entry.successes / entry.calls if entry.calls > 0 else 0.0,
                     'is_lazy': entry.is_lazy,
-                    'is_choice': entry.is_choice,
+                    'is_orelse': entry.is_orelse,
                 })
         return result
     
@@ -248,7 +248,7 @@ class Profiler:
             result.append(agg_row)
         return result
     
-    def report(self, lines: Optional[int] = 20, sort: str = "total_time", filter: Callable[[Dict[str, Any]], bool] = lambda r: callable_str(r['rule']) != 'map_run') -> None:
+    def report(self, lines: Optional[int] = None, sort: str = "total_time", filter: Callable[[Dict[str, Any]], bool] = lambda r: callable_str(r['rule']) != 'map_run') -> None:
         agg_functions = {
             'position': lambda values: 'N/A', # Placeholder for non-numeric column
             'calls': sum,
@@ -258,7 +258,7 @@ class Profiler:
             'successes': sum,
             'failures': sum,
             'is_lazy': lambda values: any(values),
-            'is_choice': lambda values: any(values),
+            'is_orelse': lambda values: any(values),
             'avg_time': lambda values: sum(values) / len(values) if values else 0.0, # Not actually used in the final report calculation
             'success_rate': lambda values: sum(values) / len(values) if values else 0.0 # Not actually used in the final report calculation
         }        
@@ -358,7 +358,7 @@ class Cache(Generic[S]):
             entry = self.cache[rule].get(pos)
             if entry and isinstance(entry.payload, InProgress):
                 members.append((rule, pos))
-                if is_choice(rule):
+                if is_orelse(rule):
                     has_choice = True
                 if is_lazy(rule):
                     has_lazy = True
@@ -370,7 +370,7 @@ class Cache(Generic[S]):
             ret: Group[S] = Group(leader=(offender, pos), members=frozenset(members))
             if not has_choice:
                 raise LeftRecursionError(
-                    "Left recursion detected but no Choice rule found in group",
+                    "Left recursion detected but no OrElse rule found in group",
                     offender,
                     reason='no-choice'
                 )            

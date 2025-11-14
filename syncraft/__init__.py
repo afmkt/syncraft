@@ -4,7 +4,7 @@ from .syntax import (
 	Graph,
     LazySpec,
     ThenSpec,
-    ChoiceSpec,    
+    OrElseSpec,    
 )
 
 from .algebra import (
@@ -47,8 +47,8 @@ from .ast import (
 	Token,
 	Then,
 	ThenKind,
-	Choice,
-	ChoiceKind,
+	OrElse,
+	OrElseKind,
 	Many,
 	Marked,
 	Collect,
@@ -83,7 +83,7 @@ __all__ = [
     # algebra
     "Algebra", "Error", "Left", "Right", "Either",
 	# syntax & core
-	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "ThenSpec", "ChoiceSpec",
+	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "ThenSpec", "OrElseSpec",
 	# parsing/generation helpers
 	"parse", "parser", "parse_data", "parse_word", "ParserState",
 	"generate", "generate_with", "validate", "Parser", "Generator",
@@ -92,7 +92,7 @@ __all__ = [
 	# constraints
 	"Constraint", "Quantifier", "forall", "exists", "FrozenDict", "CallWith",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "Choice", "ChoiceKind", "Many", "Marked", "Collect", "Bimap", "Biarrow", "Nothing",
+	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "Collect", "Bimap", "Biarrow", "Nothing",
     # input
 	"StreamCursor",
     # convenience exports

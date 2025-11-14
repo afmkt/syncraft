@@ -5,7 +5,7 @@ from syncraft.syntax import (
     SyntaxSpec,
     LazySpec,
     ThenSpec,
-    ChoiceSpec,
+    OrElseSpec,
     ManySpec,
     LexSpec,
     CollectSpec,
@@ -120,8 +120,8 @@ def syntax2svg(
             return node.fname
         if isinstance(node, ThenSpec):
             return f"Then({node.kind.name.lower()})"
-        if isinstance(node, ChoiceSpec):
-            return "Choice"
+        if isinstance(node, OrElseSpec):
+            return "OrElse"
         if isinstance(node, ManySpec):
             upper = "∞" if node.at_most is None else str(node.at_most)
             return f"Many[{node.at_least},{upper}]"
@@ -222,7 +222,7 @@ def syntax2svg(
                 diagram_cache[node] = Sequence(*parts)
                 continue
 
-            if isinstance(node, ChoiceSpec):
+            if isinstance(node, OrElseSpec):
                 options = child_items[:2] if len(child_items) >= 2 else child_items
                 diagram_cache[node] = Choice(0, *options) if len(options) > 1 else (options[0] if options else Comment("choice"))
                 continue
@@ -271,13 +271,13 @@ def ast2svg(ast: Any) -> Optional[str]:
         return None
 
     def node_label(node):
-        from syncraft.ast import Nothing, Marked, Choice, Many, Then, Collect, Token
+        from syncraft.ast import Nothing, Marked, OrElse, Many, Then, Collect, Token
         if isinstance(node, Nothing):
             return "Nothing"
         elif isinstance(node, Marked):
             return f"Marked(name={node.name})"
-        elif isinstance(node, Choice):
-            return f"Choice(kind={getattr(node.kind, 'name', node.kind)})"
+        elif isinstance(node, OrElse):
+            return f"OrElse(kind={getattr(node.kind, 'name', node.kind)})"
         elif isinstance(node, Many):
             return "Many"
         elif isinstance(node, Then):
@@ -292,7 +292,7 @@ def ast2svg(ast: Any) -> Optional[str]:
             return str(node)
 
     def add_nodes_edges(dot, node, parent_id=None, node_id_gen=[0]):
-        from syncraft.ast import Nothing, Marked, Choice, Many, Then, Collect
+        from syncraft.ast import Nothing, Marked, OrElse, Many, Then, Collect
         node_id = f"n{node_id_gen[0]}"
         node_id_gen[0] += 1
         label = node_label(node)
@@ -305,7 +305,7 @@ def ast2svg(ast: Any) -> Optional[str]:
             return
         elif isinstance(node, Marked):
             add_nodes_edges(dot, node.value, node_id, node_id_gen)
-        elif isinstance(node, Choice):
+        elif isinstance(node, OrElse):
             if node.value is not None:
                 add_nodes_edges(dot, node.value, node_id, node_id_gen)
         elif isinstance(node, Many):

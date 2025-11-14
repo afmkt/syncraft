@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from syncraft.algebra import (
     Algebra,  YieldChannelType, SendChannelType
 )
-from syncraft.ast import  ParseResult, Choice, Many, Then, Marked, Collect, Lazy
+from syncraft.ast import  ParseResult, OrElse, Many, Then, Marked, Collect, Lazy
 from syncraft.cache import Either, Left, Right
 from syncraft.generator import GenState, Generator
 from syncraft.cache import Cache
@@ -83,7 +83,7 @@ def _find(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any]) -> PyG
                 yield from _find(s, e, cache)
         case Marked(value=value):
             yield from _find(s, value, cache)
-        case Choice(value=value):
+        case OrElse(value=value):
             if value is not None:
                 yield from _find(s, value, cache)
         case Collect(value=value):

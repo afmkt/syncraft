@@ -17,7 +17,7 @@ from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, 
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
 
-from syncraft.ast import Then, ThenKind, Marked, Choice, Many, ChoiceKind, Nothing, Collect, E, Collector, SyncraftError
+from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, OrElseKind, Nothing, Collect, E, Collector, SyncraftError
 
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import Builder
@@ -73,8 +73,8 @@ class Graph(Generic[N]):
             prefix = ""
             if isinstance(node, ThenSpec):
                 return f"{prefix}{node}:ThenSpec({node.kind})"
-            elif isinstance(node, ChoiceSpec):
-                return f"{prefix}{node}:ChoiceSpec(|)"
+            elif isinstance(node, OrElseSpec):
+                return f"{prefix}{node}:OrElseSpec(|)"
             else:
                 return f"{prefix}{node}"
 
@@ -335,7 +335,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
         return (self.left, self.right)
 
 @dataclass(frozen=True)
-class ChoiceSpec(SyntaxSpec, Generic[A, B]):
+class OrElseSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
 
@@ -352,7 +352,7 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
     @classmethod
     def flatten(cls, node: SyntaxSpec) -> List[SyntaxSpec]:
         choices = []
-        if isinstance(node, ChoiceSpec):
+        if isinstance(node, OrElseSpec):
             choices.extend(cls.flatten(node.left))
             choices.extend(cls.flatten(node.right))
         else:
@@ -364,7 +364,7 @@ class ChoiceSpec(SyntaxSpec, Generic[A, B]):
         if self.name:
             return self.name
         else:
-            choices = ChoiceSpec.flatten(self)
+            choices = OrElseSpec.flatten(self)
             if len(choices) == 2:
                 return self.format("({left} | {right})", left=str(choices[0]), right=str(choices[1]))
             else:
@@ -819,7 +819,7 @@ class Syntax(Generic[A, S]):
                 ):
                     return Many(value=(left,) + tuple(b.right for b in bs))
                 case _:
-                    raise SyncraftError(f"Bad data shape {a}", offender=a, expect="Then(BOTH) with Choice on the right")
+                    raise SyncraftError(f"Bad data shape {a}", offender=a, expect="Then(BOTH) with OrElse on the right")
 
         def i(a: Many[A]) -> Then[A, Many[Then[B|None, A]]]:
             if not isinstance(a, Many) or len(a.value) < 1:
@@ -855,13 +855,13 @@ class Syntax(Generic[A, S]):
         return self.sep_by(sep=sep).between(left=open, right=close)
 
     @property
-    def optional(self) -> Syntax[Choice[A, Nothing], S]:
+    def optional(self) -> Syntax[OrElse[A, Nothing], S]:
         """Make this syntax optional.
 
-        Returns a Choice of the value or Nothing when absent.
+        Returns a OrElse of the value or Nothing when absent.
 
         Returns:
-            Syntax producing Choice of value or Nothing.
+            Syntax producing OrElse of value or Nothing.
         """
         return (self | self.success(Nothing())).named(f"({str(self.spec)})?", _location=False)
         
@@ -948,21 +948,21 @@ class Syntax(Generic[A, S]):
 
         return other.__rshift__(self)
 
-    def __or__(self, other: Syntax[B, S]) -> Syntax[Choice[A, B], S]:
+    def __or__(self, other: Syntax[B, S]) -> Syntax[OrElse[A, B], S]:
         """Alternative: try this syntax; if it fails uncommitted, try the other.
 
-        Returns a Choice indicating which branch succeeded.
+        Returns a OrElse indicating which branch succeeded.
 
         Args:
             other: Alternative syntax to try on failure.
 
         Returns:
-            Syntax producing Choice.LEFT or Choice.RIGHT.
+            Syntax producing OrElse.LEFT or OrElse.RIGHT.
         """
 
         return replace(self, 
-                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)).flag(is_choice=True), # type: ignore
-                       spec=ChoiceSpec(left=self.spec, 
+                       alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).or_else(other(cls, **global_kwargs)).flag(is_orelse=True), # type: ignore
+                       spec=OrElseSpec(left=self.spec, 
                                        right=other.spec, 
                                        name=None, 
                                        file=None, 
@@ -970,11 +970,11 @@ class Syntax(Generic[A, S]):
                                        func=None))
         
 
-    def __ror__(self, other: Syntax[B, S]) -> Syntax[Choice[B, A], S]:
+    def __ror__(self, other: Syntax[B, S]) -> Syntax[OrElse[B, A], S]:
 
         return other.__or__(self)
 
-    def __invert__(self) -> Syntax[Choice[A, Nothing], S]:
+    def __invert__(self) -> Syntax[OrElse[A, Nothing], S]:
         """Syntactic sugar for optional() (tilde operator)."""
         return self.optional
 
