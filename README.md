@@ -39,11 +39,6 @@ TODO
 
 - [ ]  Syntax.lex takes hybrid token/fabuilder, lexer type is totally determined by the argument type of Syntax.lex, for API ergonomic and enable hybrid token-text-bytes input stream
 
-- [ ]  try_parse based on Syntax.parallel, for grammar debug, parallel might not belong to Algebra/Syntax, it fits more naturally to the static analyzer.
-       The problem with parallel is that Bindable is not Manoid, so we don't have a clean way to combine multiple next state into one.
-
-- [ ]  Profile hook on Cache, for grammar profiling
-
 - [ ]  regex.py convert Regex to Builder, for grammar authoring
 
 - [ ]  Semantic layer (datalog + unification). for AST analysis

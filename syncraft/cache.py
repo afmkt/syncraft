@@ -168,6 +168,140 @@ def set_randomization(enabled: bool) -> None:
 def set_random_seed(seed: int) -> None:
     """Set the random seed for reproducible randomized testing."""
     random.seed(seed)
+
+@dataclass
+class ProfileEntry:
+    calls: int = 0
+    total_time: float = 0.0
+    max_time: float = 0.0
+    min_time: float = float('inf')
+    successes: int = 0
+    failures: int = 0
+
+
+@dataclass
+class Profiler:
+    dict: Dict[Rule, Dict[int, ProfileEntry]] = field(default_factory=lambda: defaultdict(dict))
+
+    def log(self, rule: Rule, pos: int, duration: float, success: bool) -> None:
+        bucket = self.dict[rule]
+        entry = bucket.get(pos)
+        if entry is None:
+            entry = ProfileEntry()
+            bucket[pos] = entry
+        entry.calls += 1
+        entry.total_time += duration
+        entry.max_time = max(entry.max_time, duration)
+        entry.min_time = min(entry.min_time, duration)
+        if success:
+            entry.successes += 1
+        else:
+            entry.failures += 1
+
+    def flat(self, keep_rule: bool = False) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        for rule, bucket in self.dict.items():
+            for pos, entry in bucket.items():
+                result.append({
+                    'rule': rule if keep_rule else callable_str(rule),
+                    'position': pos,
+                    'calls': entry.calls,
+                    'total_time': entry.total_time,
+                    'max_time': entry.max_time,
+                    'min_time': entry.min_time,
+                    'successes': entry.successes,
+                    'failures': entry.failures,
+                    'avg_time': entry.total_time / entry.calls if entry.calls > 0 else 0.0,
+                    'success_rate': entry.successes / entry.calls if entry.calls > 0 else 0.0,
+                })
+        return result
+    
+    def agg(self, 
+            *, 
+            keep_rule: bool = False, 
+            **agg_func: Callable[[List[Any]], Any]) -> List[Dict[str, Any]]:
+        flat_data = self.flat(keep_rule=keep_rule)
+        if not flat_data:
+            return []
+        all_columns = flat_data[0].keys()
+        agg_cols = set(agg_func.keys())
+        group_cols = [col for col in all_columns if col not in agg_cols]
+        grouped: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = defaultdict(list)
+        for row in flat_data:
+            key = tuple(row[col] for col in group_cols)
+            grouped[key].append(row)
+        result: List[Dict[str, Any]] = []            
+        for key, rows in grouped.items():
+            agg_row: Dict[str, Any] = {}
+            for i, col in enumerate(group_cols):
+                agg_row[col] = key[i]
+            for col in agg_cols:
+                func = agg_func[col]
+                values = [row[col] for row in rows]
+                agg_row[col] = func(values)
+            result.append(agg_row)
+        return result
+    
+    def report(self, lines: int = 10) -> None:
+        agg_functions = {
+            'position': lambda values: 'N/A', # Placeholder for non-numeric column
+            'calls': sum,
+            'total_time': sum,
+            'max_time': max,  # Max of all max_times across positions
+            'min_time': min,  # Min of all min_times across positions
+            'successes': sum,
+            'failures': sum,
+            'avg_time': lambda values: sum(values) / len(values) if values else 0.0, # Not actually used in the final report calculation
+            'success_rate': lambda values: sum(values) / len(values) if values else 0.0 # Not actually used in the final report calculation
+        }        
+        rule_data = self.agg(keep_rule=True, **agg_functions)
+        if not rule_data:
+            print("[Profiler] No profiling data collected.")
+            return
+        total_calls = sum(r['calls'] for r in rule_data)
+        total_time = sum(r['total_time'] for r in rule_data)
+        total_successes = sum(r['successes'] for r in rule_data)        
+        total_failures = sum(r['failures'] for r in rule_data)
+        overall_success_rate = (total_successes / total_calls) if total_calls > 0 else 0.0
+        # 2. Print Report
+        print("--- ⏱️ Parser Profiler Report ---")
+        print("\n## Overall Summary")
+        print(f"Total Calls:   {total_calls:,}")
+        print(f"Total Time:    {total_time:,.4f} seconds")
+        print(f"Total Failures: {total_failures:,}")
+        print(f"Total Successes: {total_successes:,}")
+        print(f"Success Rate:  {overall_success_rate:.2%}")
+        width = 160
+        print("\n" + "="*width)        
+        # Sort by total_time descending
+        rule_data.sort(key=lambda x: x['total_time'], reverse=True)
+        print("[Profiler] Rule Performance Report:")
+        HEADER_FMT = "{:<25} | {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>30}"
+        print(HEADER_FMT.format("Rule", "Calls", "Total Time", "Avg Call Time", "Max Time", "Success Rate", "Location"))
+        print("-" * width)
+        for r in rule_data:
+            rule = r['rule']
+            rule_name = callable_str(rule)[:24] # Truncate rule name if too long
+            
+            # Format numbers for printing
+            calls_str = f"{r['calls']:,}"
+            total_time_str = f"{r['total_time']:,.4f}"
+            avg_call_time_str = f"{r['avg_time']:.6f}"
+            max_time_str = f"{r['max_time']:.6f}"
+            success_rate_str = f"{r['success_rate']:.2%}"
+            rule_location = rule.syntax.spec.location if hasattr(rule, 'syntax') and rule.syntax and hasattr(rule.syntax, 'spec') and rule.syntax.spec and hasattr(rule.syntax.spec, 'location') else "N/A"
+            rule_location = rule_location or 'N/A'
+            
+            # Use fixed-width alignment
+            print(f"{rule_name:<25} | {calls_str:>10} | {total_time_str:>12} | {avg_call_time_str:>12} | {max_time_str:>12} | {success_rate_str:>12} | {rule_location:>30}")
+            lines -= 1
+            if lines <= 0:
+                break
+            
+        print("\n" + "="*width + "\n")
+
+
+
 @dataclass
 class Cache(Generic[S]):
     DEFAULT_LOGGING: ClassVar[bool | Callable[..., Any]] = False
@@ -185,7 +319,12 @@ class Cache(Generic[S]):
     max_revision: int = 512  # Protection against runaway single-head growth
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
+    profiler: Optional[Profiler] = None
 
+    def with_profiler(self) -> Cache[S]:
+        if self.profiler is None:
+            self.profiler = Profiler()
+        return self
 
     def clone(self) -> Cache[S]:
         return copy.deepcopy(self)
@@ -238,8 +377,18 @@ class Cache(Generic[S]):
             print("[Cache]    ", *args, **kwargs)
     
     def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
-        result = yield from rule(key, self)
-        return result
+        if self.profiler is not None:
+            import time
+            start_time = time.perf_counter()
+            result = yield from rule(key, self)
+            end_time = time.perf_counter()
+            duration = end_time - start_time
+            success = isinstance(result, Right)
+            self.profiler.log(rule, key.cache_key, duration, success)
+            return result
+        else:
+            result = yield from rule(key, self)
+            return result
     
     def __str__(self) -> str:
         parts = []

@@ -110,6 +110,12 @@ class SyntaxSpec:
     file: Optional[str] = field(compare=False, hash=False) 
     line: Optional[int] = field(compare=False, hash=False)
     func: Optional[str] = field(compare=False, hash=False)
+    @property
+    def location(self) -> Optional[str]:
+        if self.file:
+            return f"{self.file}:{self.line or '?'}"
+        return None
+
     def __pretty__(self) -> str:
         return self.__str__()
     

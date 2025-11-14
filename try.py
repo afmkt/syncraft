@@ -121,4 +121,4 @@ def test_parse_string_input_with_lexer_bind() -> None:
 
 if __name__ == "__main__":
     
-    test_parse_string_input_with_lexer_bind()
+    test_regex()

@@ -9,25 +9,26 @@ import threading
 from weakref import WeakKeyDictionary, WeakValueDictionary
 import os
 
-def callable_str(obj:Any)->str:
+def callable_str(obj:Any, with_id: bool=False)->str:
     if not callable(obj):
         return repr(obj)
     original = str(obj)
     idstr = hex(id(obj))
     name = obj.syntax if hasattr(obj, 'syntax') else (
         obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
+    prefix = '' if not with_id else f"{idstr} @ "
     if 'lazy' in original:
-        return f"{idstr} @ LAZY({name})"
+        return f"{prefix}LAZY({name})"
     elif 'flat_map' in original:
-        return f"{idstr} @ THEN({name})"
+        return f"{prefix}THEN({name})"
     elif 'or_else' in original:
-        return f"{idstr} @ OR_ELSE({name})"
+        return f"{prefix}OR_ELSE({name})"
     elif 'map' in original:
-        return f"{idstr} @ MAP({name})"
+        return f"{prefix}MAP({name})"
     elif 'lex' in original:
-        return f"{idstr} @ LEX({name})"
+        return f"{prefix}LEX({name})"
     else:
-        return f"{idstr} @ {name}"
+        return f"{prefix}{name}"
     
 
 def line(level: int = 0) -> None | int:

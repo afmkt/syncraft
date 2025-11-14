@@ -6,8 +6,9 @@ from typing import Optional, Tuple, Union, Any
 import unicodedata
 from syncraft.ast import AST, Token, Nothing, SyncraftError
 from syncraft.algebra import Error
-from syncraft.alphabet import Alphabet
+
 from syncraft.fa import Builder
+from syncraft.cache import Cache
 from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
 from syncraft.input import StreamCursor
@@ -453,11 +454,11 @@ regex_syntax = branch.sep_by(or_).named('regex').mark('branches').to(Regex)
 regex_parser = parser(syntax=regex_syntax, payload_kind='text')
 
 
-def parse(data: str, *, raw:bool=False) -> Regex | Error | Any:
+def parse(data: str, *, raw:bool=False, cache: Optional[Cache[Any]] = None) -> Regex | Error | Any:
     from syncraft.parser import Runner
     runner: Runner[Any] = Runner()
     cursor = StreamCursor.from_data(data)
-    for result, s in runner.run(regex_parser, state=None, cursor=cursor, once=True, cache=None):
+    for result, s in runner.run(regex_parser, state=None, cursor=cursor, once=True, cache=cache):
         if s:
             if isinstance(result, AST):
                 return result if raw else result.mapped 
@@ -493,10 +494,15 @@ class VerifyResult:
 
 
 
-def verify(pattern: str) -> VerifyResult:
+def verify(pattern: str, profile: bool = True) -> VerifyResult:
     myerr = None
     err = None
-    parsed = parse(pattern)
+    cache: Cache[Any] = Cache()
+    if profile:
+        cache = cache.with_profiler()
+    parsed = parse(pattern, cache=cache)
+    if cache.profiler is not None:
+        cache.profiler.report()
     if not isinstance(parsed, Regex):
         myerr = parsed
     try:

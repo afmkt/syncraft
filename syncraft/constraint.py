@@ -294,7 +294,7 @@ def apply_subst_term(term, subst: Subst):
 
 # ---------- Engine ----------
 class DatalogEngine:
-    def __init__(self):
+    def __init__(self) -> None:
         self.facts: List[Fact] = []
         self.rules: List[Rule] = []
 

@@ -7,8 +7,6 @@ from syncraft.utils import FrozenDict
 class Analyzer:
     graph: Graph
     metadata: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-
-    @classmethod
     
 
     def with_metadata(self, **new_metadata: Any) -> Analyzer:

@@ -71,8 +71,8 @@ class Error:
     @property
     def str_this(self) -> str:
         spec = self.spec
-        if spec and hasattr(spec, 'file') and hasattr(spec, 'line') and spec.file and spec.line:
-            return f"{spec} ({spec.file}:{spec.line})"
+        if spec and hasattr(spec, 'location'):
+            return f"{spec} ({spec.location})"
         return f"{spec}"
 
 
