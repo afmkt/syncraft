@@ -7,7 +7,7 @@ from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from rich import print
 from syncraft.utils import callable_str, is_lazy, is_orelse
-from syncraft.profile import Profiler
+from syncraft.profile import Profile
 from collections import defaultdict
 import copy
 import random
@@ -185,11 +185,11 @@ class Cache(Generic[S]):
     max_revision: int = 512  # Protection against runaway single-head growth
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
-    profiler: Optional[Profiler] = None
+    profiler: Optional[Profile] = None
 
     def with_profiler(self) -> Cache[S]:
         if self.profiler is None:
-            self.profiler = Profiler()
+            self.profiler = Profile()
         return self
 
     def clone(self) -> Cache[S]:

@@ -27,7 +27,7 @@ class ProfileEntry:
 
 
 @dataclass
-class Profiler:
+class Profile:
     dict: Dict[Rule, Dict[int, ProfileEntry]] = field(default_factory=lambda: defaultdict(dict))
 
     def log(self, parent: Rule | None, rule: Rule, pos: int, duration: float, success: bool) -> None:
