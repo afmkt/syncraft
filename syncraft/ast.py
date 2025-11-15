@@ -253,7 +253,7 @@ class AST:
         v, _ = self.bimap()
         return v
     
-    def __repr_svg__(self) -> str | None:
+    def _repr_svg_(self) -> str | None:
         try:
             from syncraft.dev import ast2svg
             svg_content = ast2svg(self)

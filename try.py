@@ -72,61 +72,11 @@ def test_regex():
     #     vr = verify(pattern, profile=True)
     #     assert vr.ok, f"Pattern failed to parse: {pattern}\n\nRe Error: {vr.err_re}\n\nSyncraft Error: {vr.err_syncraft}"
 
-def test_empty_many() -> None:
-    A = lit("a")
-    syntax = A.many()  # This should allow empty matches
-    sql = ""
-    ast, bound = parse_word(syntax, sql, cache=None)
-    assert ast.mapped == [], "AST mapped value should be an empty list for empty input"
-
-def test_dfa_reverse_multiple_tags():
-    # DFA for 'a' tagged as 'A', 'b' tagged as 'B'
-    nfa = NFA.from_string('a', tag='A', alphabet=Alphabet(str)) | NFA.from_string('b', tag='B', alphabet=Alphabet(str))
-    dfa = nfa.dfa
-    rev = dfa.reverse
-    s_a = rev.gen('A', random.Random(1))
-    s_b = rev.gen('B', random.Random(2))
-    assert s_a == 'a'
-    assert s_b == 'b'
 
 
 
-def test_charset_bytes_mode() -> None:
-    b1: CharSet[int] = CharSet.create(b"\x00\x10\x20", alphabet=Alphabet(bytes))
-    assert b1(0x00)
-    assert not b1(0x01)
-    assert b1.interval == ((0x00, 0x00), (0x10, 0x10), (0x20, 0x20))
-    comp = -b1
-    assert comp(0x01)
-    assert not comp(0x10)
 
-def test_codeuniverse_byte():
-    u = Alphabet(bytes)
-    assert u.codes == ((0, 0xFF),)
-    assert u.space is bytes
-    assert u.decode(0x41) == b'A'
-    assert u.encode(b'A') == 0x41
-    assert u.codes == ((0, 0xFF),)
-    with pytest.raises(CodepointError):
-        u.encode(b'AB')
-    with pytest.raises(CodepointError):
-        u.decode(0x100)
-
-
-def test_parse_string_input_with_lexer_bind() -> None:
-    alphabet = Alphabet(str)
-    lexer_cls: Type[Lexer[str]] = Lexer.bind(alphabet=alphabet)
-    syntax_cls = Syntax.config(lexer_class=lexer_cls)
-    word = syntax_cls.lex(WORD=Builder.lit("hi").tagged("WORD"))
-
-    value, state = parser_run(syntax=word, data=StreamCursor.from_data("hi"), cache=None)
-
-    assert isinstance(value, Token)
-    assert value.token_type == "WORD"
-    assert value.text == "hi"
-    assert state is not None
-    assert state.ended
 
 if __name__ == "__main__":
-    
+    print(regex_syntax._repr_svg_())
     test_regex()
