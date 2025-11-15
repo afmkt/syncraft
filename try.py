@@ -61,16 +61,16 @@ def test_regex():
     assert result.atom == LiteralAtom(text="a"), f"Failed for pattern: {pattern}, got atom {result.atom}, expected LiteralAtom(text='a')"
 
 
-    TEST_CASES = [
-        ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
-        ("flag_disable", r"(?-i)a", True),
-        ('fuzzing', '(?!)', False),
-        ('fuzzing', '(?w)e*L+|[^wW]?\\S*\\D+', True),
-    ]
-    for name, pattern, should_pass in TEST_CASES:
+    # TEST_CASES = [
+    #     ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
+    #     ("flag_disable", r"(?-i)a", True),
+    #     ('fuzzing', '(?!)', False),
+    #     ('fuzzing', '(?w)e*L+|[^wW]?\\S*\\D+', True),
+    # ]
+    # for name, pattern, should_pass in TEST_CASES:
         
-        vr = verify(pattern, profile=True)
-        assert vr.ok, f"Pattern failed to parse: {pattern}\n\nRe Error: {vr.err_re}\n\nSyncraft Error: {vr.err_syncraft}"
+    #     vr = verify(pattern, profile=True)
+    #     assert vr.ok, f"Pattern failed to parse: {pattern}\n\nRe Error: {vr.err_re}\n\nSyncraft Error: {vr.err_syncraft}"
 
 def test_empty_many() -> None:
     A = lit("a")

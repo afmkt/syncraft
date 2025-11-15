@@ -574,75 +574,88 @@ class Syntax(Generic[A, S]):
     def __rich__(self) -> str:
         return self.__str__()
     
-    def _repr_html_(self) -> str | None:
+    def __repr_svg__(self) -> str | None:
         """
-        Jupyter/VS Code notebook integration: automatically display syntax as SVG diagram.
+        Jupyter notebook integration: automatically display syntax as SVG diagram.
         This enables beautiful grammar visualization by simply typing the syntax object name.
-        Uses _repr_html_ for broader compatibility (VS Code notebooks support HTML but not SVG display).
         """
         try:
             from syncraft.dev import syntax2svg
             svg_content = syntax2svg(self.spec)
-            if not svg_content:
-                return None
-                
-            # Include CSS styles for proper railroad diagram rendering
-            css_styles = """
-            <style>
-            .railroad-diagram {
-                background-color: hsl(30,20%,95%);
-            }
-            .railroad-diagram path {
-                stroke-width: 3;
-                stroke: black;
-                fill: rgba(0,0,0,0);
-            }
-            .railroad-diagram text {
-                font: bold 14px monospace;
-                text-anchor: middle;
-                white-space: pre;
-            }
-            .railroad-diagram text.diagram-text {
-                font-size: 12px;
-            }
-            .railroad-diagram text.diagram-arrow {
-                font-size: 16px;
-            }
-            .railroad-diagram text.label {
-                text-anchor: start;
-            }
-            .railroad-diagram text.comment {
-                font: italic 12px monospace;
-            }
-            .railroad-diagram g.non-terminal text {
-                /*font-weight: bold;*/
-            }
-            .railroad-diagram rect {
-                stroke-width: 3;
-                stroke: black;
-                fill: hsl(120,100%,90%);
-            }
-            .railroad-diagram rect.group-box {
-                stroke: gray;
-                stroke-dasharray: 10 5;
-                fill: none;
-            }
-            .railroad-diagram path.diagram-text {
-                stroke-width: 3;
-                stroke: black;
-                fill: white;
-                cursor: help;
-            }
-            .railroad-diagram g.diagram-text:hover path.diagram-text {
-                fill: #eee;
-            }
-            </style>
-            """
-            
-            return css_styles + svg_content
+            return svg_content
         except ImportError:
             # Gracefully handle case where dev dependencies aren't available
             return None
+    
+    # def _repr_html_(self) -> str | None:
+    #     """
+    #     Jupyter/VS Code notebook integration: automatically display syntax as SVG diagram.
+    #     This enables beautiful grammar visualization by simply typing the syntax object name.
+    #     Uses _repr_html_ for broader compatibility (VS Code notebooks support HTML but not SVG display).
+    #     """
+    #     try:
+    #         from syncraft.dev import syntax2svg
+    #         svg_content = syntax2svg(self.spec)
+    #         if not svg_content:
+    #             return None
+                
+    #         # Include CSS styles for proper railroad diagram rendering
+    #         css_styles = """
+    #         <style>
+    #         .railroad-diagram {
+    #             background-color: hsl(30,20%,95%);
+    #         }
+    #         .railroad-diagram path {
+    #             stroke-width: 3;
+    #             stroke: black;
+    #             fill: rgba(0,0,0,0);
+    #         }
+    #         .railroad-diagram text {
+    #             font: bold 14px monospace;
+    #             text-anchor: middle;
+    #             white-space: pre;
+    #         }
+    #         .railroad-diagram text.diagram-text {
+    #             font-size: 12px;
+    #         }
+    #         .railroad-diagram text.diagram-arrow {
+    #             font-size: 16px;
+    #         }
+    #         .railroad-diagram text.label {
+    #             text-anchor: start;
+    #         }
+    #         .railroad-diagram text.comment {
+    #             font: italic 12px monospace;
+    #         }
+    #         .railroad-diagram g.non-terminal text {
+    #             /*font-weight: bold;*/
+    #         }
+    #         .railroad-diagram rect {
+    #             stroke-width: 3;
+    #             stroke: black;
+    #             fill: hsl(120,100%,90%);
+    #         }
+    #         .railroad-diagram rect.group-box {
+    #             stroke: gray;
+    #             stroke-dasharray: 10 5;
+    #             fill: none;
+    #         }
+    #         .railroad-diagram path.diagram-text {
+    #             stroke-width: 3;
+    #             stroke: black;
+    #             fill: white;
+    #             cursor: help;
+    #         }
+    #         .railroad-diagram g.diagram-text:hover path.diagram-text {
+    #             fill: #eee;
+    #         }
+    #         </style>
+    #         """
+            
+    #         return css_styles + svg_content
+    #     except ImportError:
+    #         # Gracefully handle case where dev dependencies aren't available
+    #         return None
         
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore

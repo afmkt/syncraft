@@ -253,58 +253,15 @@ class AST:
         v, _ = self.bimap()
         return v
     
-    def _repr_html_(self) -> str | None:
-        """
-        Jupyter/VS Code notebook integration: automatically display AST as SVG tree diagram.
-        This enables beautiful AST visualization by simply typing the AST object name.
-        Uses _repr_html_ for broader compatibility (VS Code notebooks support HTML but not SVG display).
-        """
+    def __repr_svg__(self) -> str | None:
         try:
             from syncraft.dev import ast2svg
             svg_content = ast2svg(self)
-            if not svg_content:
-                return None
-                
-            # Include CSS styles for proper AST tree rendering
-            css_styles = """
-            <style>
-            .ast-diagram {
-                font-family: monospace;
-                background-color: hsl(210,20%,98%);
-            }
-            .ast-diagram .node {
-                fill: hsl(200,80%,90%);
-                stroke: hsl(200,80%,40%);
-                stroke-width: 2;
-            }
-            .ast-diagram .edge {
-                stroke: hsl(200,60%,50%);
-                stroke-width: 1.5;
-                fill: none;
-            }
-            .ast-diagram text {
-                font: 12px monospace;
-                text-anchor: middle;
-                dominant-baseline: central;
-            }
-            .ast-diagram .node-label {
-                font-weight: bold;
-                fill: hsl(200,80%,30%);
-            }
-            .ast-diagram .value-label {
-                font-style: italic;
-                fill: hsl(0,0%,40%);
-            }
-            </style>
-            """
-            
-            return css_styles + svg_content
+            return svg_content
         except ImportError:
             # Gracefully handle case where dev dependencies aren't available
             return None
-
-
-
+        
 class MetaNothing(type):
     def __instancecheck__(cls, instance: Any) -> bool:
         return instance is cls or super().__instancecheck__(instance)
