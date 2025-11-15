@@ -3,7 +3,7 @@ from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
     Type, Generator, Union, Hashable, TYPE_CHECKING, Dict
 )
-from syncraft.ast import AST, Ignore
+from syncraft.ast import AST, Nothing
 from dataclasses import dataclass, replace, field
 from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
@@ -525,10 +525,9 @@ class Algebra(Generic[A, S]):
                         p.failures += 1
                         if sampling:
                             profile.sort(key=lambda ps: ps.deficiency)
-                        if isinstance(err, Error):
-                            if err.committed:
-                                return Left(replace(err, committed=False))
-                            last_error = err
+                        if isinstance(err, Error) and err.committed:
+                            return Left(replace(err, committed=False))
+                        last_error = err
             if sampling:
                 profile.sort(key=lambda ps: ps.deficiency)
             if last_error is not None:
@@ -543,14 +542,14 @@ class Algebra(Generic[A, S]):
 
     @classmethod
     def seq(cls, *steps: Algebra[Any, S] | Tuple[Algebra[Any, S], bool]) -> Algebra[Seq, S]:
+        normaize_steps: List[Tuple[Algebra[Any, S], bool]] = [X if isinstance(X, tuple) else (X, True) for X in steps]
         def seq_run(input: S, 
                     cache:Cache[S]) -> Generator[YieldChannelType, 
                                                S, 
                                                Either[Any, Tuple[Seq, S]]]:
             inp = input
             results: List[Tuple[Any, bool]] = []
-            for X in steps:
-                step, keep = X if isinstance(X, tuple) else (X, True)
+            for step, keep in normaize_steps:
                 result = yield from step.run(inp, cache)
                 match result:
                     case Right((value, state)):
@@ -558,7 +557,7 @@ class Algebra(Generic[A, S]):
                         inp = state
                     case Left(err):
                         return Left(err)
-            return Right((Seq(elements=tuple(results)), inp))
+            return Right((Seq(value=tuple(results)), inp))
         return cls(run_f=seq_run) # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
@@ -604,7 +603,7 @@ class Algebra(Generic[A, S]):
                     case Right((value, next_input)):
                         if next_input == current_input:
                             break  # No progress, stop to avoid infinite loop
-                        elif value is not Ignore:
+                        elif value is not Nothing:
                             ret.append(value)
                         current_input = next_input
                         if at_most is not None and len(ret) > at_most:

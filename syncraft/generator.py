@@ -18,7 +18,7 @@ from syncraft.lexer import LexerBase, Lexer, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
-    ParseResult, AST, Token, 
+    ParseResult, AST, Token, Choice, Seq,
     Nothing, Lazy,
     OrElse, Many, OrElseKind,
     Then, ThenKind, SyncraftError
@@ -159,20 +159,54 @@ class GenState(Bindable, Generic[T]):
 
 @dataclass(frozen=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):      
+    @classmethod
+    def seq(cls, *steps: Algebra[Any, GenState[T]] | Tuple[Algebra[Any, GenState[T]], bool]) -> Algebra[Seq, GenState[T]]:
+        normaize_steps: List[Tuple[Algebra[Any, GenState[T]], bool]] = [X if isinstance(X, tuple) else (X, True) for X in steps]
+        def seq_run(input: GenState[T], 
+                    cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
+                                                           GenState[T], 
+                                                           Either[Any, Tuple[Seq, GenState[T]]]]:
+            if not input.pruned and not isinstance(input.ast, Seq):
+                return Left(Error(this=input.ast, 
+                                    message=f"Expect Seq got {input.ast}",
+                                    state=input))
+            if input.pruned:
+                result = []
+                for step, keep in normaize_steps:
+                    step_result = yield from step.run(input, cache)
+                    match step_result:
+                        case Left(error):
+                            return Left(error)
+                        case Right((value, next_input)):
+                            input = next_input
+                            result.append((value, keep))
+                return Right((Seq(value=tuple(result)), input))
+            else:
+                result = []
+                ast_seq = cast(Seq, input.ast)
+                if len(ast_seq.value) != len(normaize_steps):
+                    return Left(Error(this=input.ast, 
+                                        message=f"Expect Seq of length {len(normaize_steps)} got {len(ast_seq.value)}",
+                                        state=input))
+                inp = input
+                for (step, keep), (ast_elem, _) in zip(normaize_steps, ast_seq.value):
+                    if input.restore_pruned or keep:
+                        step_result = yield from step.run(inp.inject(ast_elem), cache)
+                    else:
+                        step_result = yield from step.run(inp.inject(None), cache)
+                    match step_result:
+                        case Left(error):
+                            return Left(error)
+                        case Right((value, next_input)):
+                            inp = next_input
+                            result.append((value, keep))    
+                return Right((Seq(value=tuple(result)), inp))
+        return cls(run_f=seq_run) # type: ignore
+    
+
 
     def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
-        """Sequence a dependent generator using the left child value.
 
-        Expects the input AST to be a ``Then`` node; applies ``self`` to the
-        left side, then passes the produced value to ``f`` and applies the
-        resulting algebra to the right side.
-
-        Args:
-            f: Function mapping the left value to the next algebra.
-
-        Returns:
-            Algebra[B, GenState[T]]: An algebra yielding the final result.
-        """
         def flat_map_run(input: GenState[T], 
                          cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                 GenState[T], 
@@ -230,7 +264,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     forked_input = input.fork(tag=len(ret))
                     match (yield from self.run(forked_input, cache)):
                         case Right((value, _)):
-                            ret.append(value)
+                            if value is not Nothing:
+                                ret.append(value)
                         case Left(_):
                             pass
                     if len(ret) >= at_least:
@@ -248,7 +283,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     self_result = yield from self.run(input.inject(x), cache) 
                     match self_result:
                         case Right((value, _)):
-                            ret.append(value)
+                            if value is not Nothing:
+                                ret.append(value)
                             if at_most is not None and len(ret) > at_most:
                                 return Left(Error(
                                         message=f"Expected at most {at_most} matches, got {len(ret)}",
@@ -267,21 +303,56 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         return replace(self, run_f=many_run)  # type: ignore
     
  
+    @classmethod
+    def choice(cls, *options: Algebra[Any, GenState[T]], reorder: int) -> Algebra[Choice[Any], GenState[T]]:
+        if not options:
+            raise SyncraftError("At least one option is required for choice", offender=options, expect="non-empty options")
+        def choice_run(input: GenState[T], cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
+                                                                                     GenState[T], 
+                                                                                     Either[Any, Tuple[Choice[Any], GenState[T]]]]:
+            if input.pruned:
+                forked_input = input.fork(tag="choice")
+                idx = forked_input.rng("choice_index").randint(0, len(options) - 1)
+                selected = options[idx]
+                result = yield from selected.run(forked_input, cache)
+                match result:
+                    case Right((value, next_input)):
+                        return Right((Choice(index=idx, value=value), next_input))
+                    case Left(error):
+                        return Left(error)
+            else:
+                if not isinstance(input.ast, Choice):
+                    return Left(Error(this=input.ast, 
+                                      message=f"Expect Choice got {input.ast}",
+                                      state=input))
+                ast_choice = input.ast
+                if ast_choice.index is None:
+                    for i, option in enumerate(options):
+                        result = yield from option.run(input.inject(ast_choice.value), cache)
+                        match result:
+                            case Right((value, next_input)):
+                                return Right((Choice(index=i, value=value), next_input))
+                            case Left(err):
+                                if isinstance(err, Error) and err.committed:
+                                    return Left(replace(err, committed=False))
+                    return Left(Error(this=input.ast, 
+                                      message=f"None of the choices matched for {input.ast}",
+                                      state=input))
+                else:
+                    selected = options[ast_choice.index]
+                    result = yield from selected.run(input.inject(ast_choice.value), cache)
+                    match result:
+                        case Right((value, next_input)):
+                            return Right((Choice(index=ast_choice.index, value=value), next_input))
+                        case Left(error):
+                            return Left(error)
+            raise SyncraftError("choice should always return a value or an error.", offender=result, expect=(Left, Right))
+        return cls(run_f=choice_run)  # type: ignore
+
+
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
                 ) -> Algebra[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]: 
-        """Try ``self``; if it fails without commitment, try ``other``.
-
-        In pruned mode, deterministically chooses a branch using a forked RNG.
-        With an existing ``OrElse`` AST, it executes the indicated branch.
-
-        Args:
-            other: Fallback algebra to try when ``self`` is not committed.
-
-        Returns:
-            Algebra[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]: An
-            algebra yielding which branch succeeded and its value.
-        """
         def or_else_run(input: GenState[T], 
                         cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                 GenState[T], 
@@ -313,11 +384,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             case Right((value, next_input)):
                                 return Right((OrElse(kind=OrElseKind.LEFT, value=value), next_input))
                             case Left(error):
-                                if isinstance(error, Error):
-                                    if error.committed:
-
-                                        return Left(replace(error, committed=False))
-                                    
+                                if isinstance(error, Error) and error.committed:
+                                    return Left(replace(error, committed=False))
                                 other_result = yield from other.run(right, cache)
                                 match other_result:
                                     case Right((value, next_input)):
@@ -332,7 +400,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 result = yield from exec(which, forked_input, forked_input)
                 return result
             else:
-                if not isinstance(input.ast, OrElse) or isinstance(input.ast, Nothing):
+                if not isinstance(input.ast, OrElse):
                     return Left(Error(this=self, 
                                       message=f"Expect OrElse got {input.ast}",
                                       state=input))

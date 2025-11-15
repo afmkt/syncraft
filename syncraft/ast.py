@@ -284,33 +284,7 @@ class Nothing(AST, metaclass=MetaNothing):
         return "Nothing"
     def __repr__(self)->str:
         return "Nothing"
-
-
-class MetaIgnore(type):
-    def __instancecheck__(cls, instance: Any) -> bool:
-        return instance is cls or super().__instancecheck__(instance)
-    def __str__(cls)->str:
-        return "Ignore"
-    def __repr__(cls)->str:
-        return "Ignore"
-    def __bool__(cls)->bool:
-        return False
-@dataclass(frozen=True)
-class Ignore(AST, metaclass=MetaIgnore):
-    """Singleton sentinel representing the absence of a value in the AST."""
-    def __call__(self)-> Ignore:
-        return self
-    def __new__(cls):
-        return cls
-    def __bool__(self)->bool:
-        return False
-    def __str__(self)->str:
-        return "Ignore"
-    def __repr__(self)->str:
-        return "Ignore"
     
-
-
 @dataclass(frozen=True)
 class Lazy(AST, Generic[A]):
     value: A
@@ -449,11 +423,11 @@ class Many(AST, Generic[A]):
 
 @dataclass(frozen=True)
 class Seq(AST):
-    elements: Tuple[Tuple[Any, bool], ...]
+    value: Tuple[Tuple[Any, bool], ...]
     def bimap(self, r: Bimap[Any, Any]=Bimap.identity()) -> Tuple[Tuple[Any, ...], Callable[[Tuple[Any, ...]], Seq]]:
         vs = []
         invs = []
-        for data, include in self.elements:
+        for data, include in self.value:
             if include:
                 v, inv = data.bimap(r) if isinstance(data, AST) else r(data)
                 vs.append(v)
@@ -461,13 +435,13 @@ class Seq(AST):
         def invf(bs: Tuple[Any, ...]) -> Seq:
             new_elements = []
             b_index = 0
-            for data, include in self.elements:
+            for data, include in self.value:
                 if include:
                     new_elements.append((invs[b_index](bs[b_index]), True))
                     b_index += 1
                 else:
                     new_elements.append((data, False))
-            return replace(self, elements=tuple(new_elements))
+            return replace(self, value=tuple(new_elements))
         return tuple(vs), invf
 
 
