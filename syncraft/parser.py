@@ -12,7 +12,7 @@ from syncraft.lexer import (
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.utils import FrozenDict
 from syncraft.algebra import (
-     Algebra, YieldChannelType, SendChannelType, Error
+     Algebra, YieldChannelType, S, Error
 )
 
 from dataclasses import dataclass, field, replace
@@ -359,7 +359,7 @@ class Parser(Algebra[T, ParserState[T]]):
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T]]) -> Generator[
                               YieldChannelType, 
-                              SendChannelType, 
+                              ParserState[T], 
                               Either[Any, Tuple[T, ParserState[T]]]]:
             lexer.reset()
             yield from ()

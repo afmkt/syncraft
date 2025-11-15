@@ -6,7 +6,7 @@ import math
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
-    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator
+    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce, cached_property
@@ -17,7 +17,7 @@ from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, 
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
 
-from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, OrElseKind, Nothing, Collect, E, Collector, SyncraftError
+from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, OrElseKind, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice
 
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import Builder
@@ -122,7 +122,7 @@ class SyntaxSpec:
     def __rich__(self) -> str:
         return self.__str__()
 
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         raise NotImplementedError
@@ -145,7 +145,7 @@ class SyntaxSpec:
             tmp['func'] = self.func
         return tmplt.format(*args, **{**tmp, **kwargs})
 
-    def _children(self, *, lazy_cache: Dict[int, "SyntaxSpec"]) -> Tuple["SyntaxSpec", ...]:
+    def _children(self, *, lazy_cache: MutableMapping[int, "SyntaxSpec"]) -> Tuple["SyntaxSpec", ...]:
         return ()
 
     @property    
@@ -199,7 +199,7 @@ class SyntaxSpec:
 class LazySpec(SyntaxSpec):
     lazy_state: LazyState[Any, Any]
 
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         ret = cls.lazy(self.lazy_state.thunk, flatten=self.lazy_state.flatten)._named(name=self.name, file=self.file, line=self.line, func=self.func)
@@ -218,7 +218,7 @@ class LazySpec(SyntaxSpec):
     def inner_spec(self) -> SyntaxSpec:
         return self.lazy_state.cached.spec
         
-    def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+    def _children(self, *, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         key = id(self)
         if key in lazy_cache:
             return (lazy_cache[key],)
@@ -233,7 +233,7 @@ class LazySpec(SyntaxSpec):
 class MarkedSpec(SyntaxSpec):
     mname: str
     spec: SyntaxSpec
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
@@ -252,7 +252,7 @@ class MarkedSpec(SyntaxSpec):
     def complexity(self) -> float:
         return self.spec.complexity
     
-    def _children(self,*, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+    def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.spec,)
 
 
@@ -261,7 +261,7 @@ class CollectSpec(SyntaxSpec):
     collector: Collector = field(compare=False, hash=False)
     id: Hashable
     spec: SyntaxSpec 
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
@@ -280,17 +280,42 @@ class CollectSpec(SyntaxSpec):
     def complexity(self) -> float:
         return 1 + self.spec.complexity
     
-    def _children(self,*, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+    def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.spec,)
 
+@dataclass(frozen=True)
+class SeqSpec(SyntaxSpec):
+    steps: Tuple[Tuple[SyntaxSpec, bool], ...]
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        steps = [(step.syntax(cls, cache=cache), keep) for step, keep in self.steps]
+        ret = cls.seq(*steps)
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
+        cache[self] = ret
+        return ret
 
+    def __str__(self) -> str:
+        if self.name:
+            return self.format("{0}", self.name)
+        else:
+            inner = " ".join(str(s) for s in self.steps)
+            return self.format("({steps})", steps=inner)
+        
+    @property
+    def complexity(self) -> float:
+        return 1 + sum(step.complexity for step, keep in self.steps)
+    
+    def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+        return tuple(step for step, keep in self.steps)
+    
 @dataclass(frozen=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
     right: SyntaxSpec
 
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         left = self.left.syntax(cls, cache=cache)
@@ -331,15 +356,44 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     def complexity(self) -> float:
         return 1 + self.left.complexity + self.right.complexity
     
-    def _children(self,*, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+    def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.left, self.right)
 
+
+@dataclass(frozen=True)
+class ChoiceSpec(SyntaxSpec):
+    reorder: int
+    options: Tuple[SyntaxSpec, ...]
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        opts = [opt.syntax(cls, cache=cache) for opt in self.options]
+        ret = cls.ichoice(*opts, reorder=self.reorder)
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
+        cache[self] = ret
+        return ret
+
+    def __str__(self) -> str:
+        if self.name:
+            return self.name
+        else:
+            choices = [str(opt) for opt in self.options]
+            inner = " | ".join(str(c) for c in choices)
+            return self.format("({choices})", choices=inner)
+
+    @property
+    def complexity(self) -> float:
+        return 1 + max(opt.complexity for opt in self.options)
+
+    def _children(self, *, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+        return self.options
+    
 @dataclass(frozen=True)
 class OrElseSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
 
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         left = self.left.syntax(cls, cache=cache)
@@ -375,7 +429,7 @@ class OrElseSpec(SyntaxSpec, Generic[A, B]):
     def complexity(self) -> float:
         return 1 + max(self.left.complexity, self.right.complexity)
 
-    def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+    def _children(self, *, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.left, self.right)
 
 @dataclass(frozen=True)
@@ -384,7 +438,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
     at_least: int
     at_most: Optional[int]
 
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
@@ -406,7 +460,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
         else:
             return 1 + self.spec.complexity * ((self.at_least + self.at_most) // 2)
     
-    def _children(self, *, lazy_cache: Dict[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+    def _children(self, *, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.spec,)
 
 
@@ -416,7 +470,7 @@ class LexSpec(SyntaxSpec):
     fname: str
     args: Tuple[Any, ...] = field(default_factory=tuple)
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-    def syntax(self, cls: type[Syntax], cache: Dict[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         ret = cls.factory(self.fname, *self.args, **self.kwargs)
@@ -509,6 +563,7 @@ class Syntax(Generic[A, S]):
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
+    _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     
     def __str__(self) -> str:
         return str(self.spec)
@@ -973,6 +1028,10 @@ class Syntax(Generic[A, S]):
     def __ror__(self, other: Syntax[B, S]) -> Syntax[OrElse[B, A], S]:
 
         return other.__or__(self)
+    
+
+    def __neg__(self) -> Tuple[Syntax[A, S], bool]:
+        return (self, False)
 
     def __invert__(self) -> Syntax[OrElse[A, Nothing], S]:
         """Syntactic sugar for optional() (tilde operator)."""
@@ -1080,6 +1139,21 @@ class Syntax(Generic[A, S]):
     def success(cls, value: B) -> Syntax[B, S]:
         return cls.factory('success', value=value)
     
+    @classmethod
+    def ichoice(cls, *parsers: Syntax[Any, S], reorder: int=0) -> Syntax[Choice[Any], S]:
+        syntaxes = []
+        cache = cls._syntax_cache
+        for p in parsers:
+            if isinstance(p.spec, ChoiceSpec):
+                for subp in p.spec.options:
+                    syntaxes.append(subp.syntax(cls, cache=cache))
+            else:
+                syntaxes.append(p)
+        def choice_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
+            algs = [step(acls, **global_kwargs) for step in syntaxes]
+            return acls.choice(*algs, reorder=reorder)
+        spec = ChoiceSpec(options=tuple(step.spec for step in syntaxes), reorder=reorder, name=None, file=None, line=None, func=None)
+        return cls(alg_f=choice_f, spec=spec) # type: ignore
 
     @classmethod
     def choice(cls, *parsers: Syntax[Any, S], sort: bool=True) -> Syntax[Any, S]:
@@ -1094,6 +1168,23 @@ class Syntax(Generic[A, S]):
         else:
             sorted_parsers = list(parsers)
         return reduce(lambda a, b: a | b, sorted_parsers) if len(sorted_parsers) > 0 else cls.success(Nothing())
+
+    @classmethod
+    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Seq, S]:
+        syntaxes = []
+        cache = cls._syntax_cache
+        for X in steps:
+            step, keep = X if isinstance(X, tuple) else (X, True)
+            if isinstance(step.spec, SeqSpec):
+                for substep, subkeep in step.spec.steps:
+                    syntaxes.append((substep.syntax(cls, cache=cache), subkeep and keep))
+            else:
+                syntaxes.append((step, keep))
+        def seq_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
+            algs = [(step(acls, **global_kwargs), keep) for step, keep in syntaxes]
+            return acls.seq(*algs)
+        spec = SeqSpec(steps=tuple((step.spec, keep) for step, keep in syntaxes), name=None, file=None, line=None, func=None)
+        return cls(alg_f=seq_f, spec=spec) # type: ignore
 
 
     @classmethod

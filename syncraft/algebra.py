@@ -5,9 +5,10 @@ from typing import (
 )
 from syncraft.ast import AST, Ignore
 from dataclasses import dataclass, replace, field
-from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError
+from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
+import time
 
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax, SyntaxSpec, Graph
@@ -23,9 +24,7 @@ SYNCRAFT_CONFIG_KEY = "__syncraft_config__"
 
 
 
-YieldChannelType = Incomplete[S] 
-SendChannelType = Union[S, Either[Any, Tuple[A, S]]]
-
+YieldChannelType = Incomplete[S]
 
 
 
@@ -226,7 +225,7 @@ class Error:
 @dataclass(frozen=True)        
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
-    run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, SendChannelType, Either[Any, Tuple[A, S]]]]
+    run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
     syntax: Syntax | None = None
 
     @staticmethod
@@ -256,14 +255,14 @@ class Algebra(Generic[A, S]):
     def __call__(self, 
                  input: S, 
                  cache: Cache[S]) -> Generator[YieldChannelType, 
-                                                SendChannelType, 
+                                                S, 
                                                 Either[Any, Tuple[A, S]]]:
         return self.run(input, cache=cache)
 
     def run(self, 
             input: S, 
             cache: Cache[S]) -> Generator[YieldChannelType, 
-                                        SendChannelType, 
+                                        S, 
                                         Either[Any, Tuple[A, S]]]:
         try:
             if cache is None:
@@ -297,7 +296,7 @@ class Algebra(Generic[A, S]):
     def lazy(cls, thunk: Callable[[], Algebra[A, S]], flatten:bool) -> Algebra[A, S]:
         def algebra_lazy_run(input: S,
                              cache: Cache[S]) -> Generator[YieldChannelType,
-                                                            SendChannelType,
+                                                            S,
                                                             Either[Any, Tuple[Any, S]]]:
             alg = thunk()
             result = (yield from alg.run(input, cache))
@@ -312,7 +311,7 @@ class Algebra(Generic[A, S]):
     def fail(cls, error: Any) -> Algebra[Any, S]:
         def fail_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                SendChannelType, 
+                                                S, 
                                                 Either[Any, Tuple[A, S]]]:
             yield from ()
             return Left(Error(
@@ -326,8 +325,8 @@ class Algebra(Generic[A, S]):
     def success(cls, value: Any) -> Algebra[Any, S]:
         def success_run(input: S, 
                         cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                              SendChannelType, 
-                                                                              Either[Any, Tuple[A, S]]]:
+                                                    S, 
+                                                    Either[Any, Tuple[A, S]]]:
             yield from ()
             return Right((value, input))
         return cls(success_run)
@@ -349,7 +348,7 @@ class Algebra(Generic[A, S]):
         assert callable(func), "func must be callable"
         def fail_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                SendChannelType, 
+                                                S, 
                                                 Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Left):
@@ -363,7 +362,7 @@ class Algebra(Generic[A, S]):
         assert callable(func), "func must be callable"
         def success_run(input: S, 
                         cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                    SendChannelType, 
+                                                    S, 
                                                     Either[Any, Tuple[A|B, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Right):
@@ -378,8 +377,8 @@ class Algebra(Generic[A, S]):
     def map_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
         def map_state_run(state: S, 
                           cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                                                SendChannelType, 
-                                                                                Either[Any, Tuple[A, S]]]:
+                                                        S, 
+                                                        Either[Any, Tuple[A, S]]]:
             result = yield from self.run(f(state), cache)
             return result
         return replace(self, run_f=map_state_run) 
@@ -390,7 +389,7 @@ class Algebra(Generic[A, S]):
     def map(self, f: Callable[[A], B], *, raw:bool) -> Algebra[B, S]:
         def map_run(input: S, 
                     cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                SendChannelType, 
+                                                S, 
                                                 Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
@@ -412,7 +411,7 @@ class Algebra(Generic[A, S]):
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, 
                           cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                    SendChannelType, 
+                                                    S, 
                                                     Either[Any, Tuple[A, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Left):
@@ -424,7 +423,7 @@ class Algebra(Generic[A, S]):
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Algebra[B, S]:
         def flat_map_run(input: S, 
                          cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                    SendChannelType, 
+                                                    S, 
                                                     Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
@@ -440,7 +439,7 @@ class Algebra(Generic[A, S]):
         def map_all_f(a : A) -> Algebra[B, S]:
             def map_all_run_f(input:S, 
                               cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                        SendChannelType, 
+                                                        S, 
                                                         Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right(f(a, input))
@@ -452,7 +451,7 @@ class Algebra(Generic[A, S]):
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[OrElse[A, B], S]:
         def or_else_run(input: S, 
                         cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                    SendChannelType,
+                                                    S,
                                                     Either[Any, Tuple[OrElse[A, B], S]]]:
             inp = input.enter()
             left = yield from self.run(inp, cache)
@@ -474,6 +473,93 @@ class Algebra(Generic[A, S]):
         alg = replace(self, run_f=or_else_run) # type: ignore
         return cast(Algebra[OrElse[A, B], S], alg)
         
+    @classmethod
+    def choice(cls, *options: Algebra[Any, S], reorder: int) -> Algebra[Choice[Any], S]:
+        if not options:
+            raise SyncraftError("At least one option is required for choice", offender=options, expect="non-empty options")
+        @dataclass
+        class ChoiceState:
+            index: int = 0
+            total_time: float = 0.0
+            successes: int = 0
+            failures: int = 0
+            @property
+            def deficiency(self) -> float:
+                return (self.failures + 1) * (self.total_time) / (self.successes + 1) 
+            
+        profile = [ChoiceState(index=index) for index in range(len(options))]
+        counter: int = 0
+        def choice_run(input: S, 
+                       cache:Cache[S]) -> Generator[YieldChannelType, 
+                                                  S, 
+                                                  Either[Any, Tuple[Choice[Any], S]]]:
+            nonlocal counter
+            counter += 1
+            if reorder > 0:
+                if counter % reorder == 0:
+                    counter = 0
+                    sampling = True
+                else:
+                    sampling = False
+            else:
+                sampling = False
+
+            inp = input.enter()
+            last_error: Optional[Error] = None
+            for p in profile:
+                option = options[p.index]
+                if sampling:
+                    start_time = time.perf_counter()
+                    result = yield from option.run(inp, cache)
+                    end_time = time.perf_counter()
+                    p.total_time += end_time - start_time
+                else:
+                    result = yield from option.run(inp, cache)
+                match result:
+                    case Right((value, state)):
+                        p.successes += 1
+                        if sampling:
+                            profile.sort(key=lambda ps: ps.deficiency)
+                        return Right((Choice(value=value, index=p.index), state.leave()))
+                    case Left(err):
+                        p.failures += 1
+                        if sampling:
+                            profile.sort(key=lambda ps: ps.deficiency)
+                        if isinstance(err, Error):
+                            if err.committed:
+                                return Left(replace(err, committed=False))
+                            last_error = err
+            if sampling:
+                profile.sort(key=lambda ps: ps.deficiency)
+            if last_error is not None:
+                return Left(last_error)
+            else:
+                return Left(Error(
+                    message="No options provided",
+                    this=cls,
+                    state=input
+                ))
+        return cls(run_f=choice_run) # type: ignore
+
+    @classmethod
+    def seq(cls, *steps: Algebra[Any, S] | Tuple[Algebra[Any, S], bool]) -> Algebra[Seq, S]:
+        def seq_run(input: S, 
+                    cache:Cache[S]) -> Generator[YieldChannelType, 
+                                               S, 
+                                               Either[Any, Tuple[Seq, S]]]:
+            inp = input
+            results: List[Tuple[Any, bool]] = []
+            for X in steps:
+                step, keep = X if isinstance(X, tuple) else (X, True)
+                result = yield from step.run(inp, cache)
+                match result:
+                    case Right((value, state)):
+                        results.append((value, keep))
+                        inp = state
+                    case Left(err):
+                        return Left(err)
+            return Right((Seq(elements=tuple(results)), inp))
+        return cls(run_f=seq_run) # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
@@ -504,7 +590,7 @@ class Algebra(Generic[A, S]):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
         def many_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                SendChannelType, 
+                                                S, 
                                                 Either[Any, Tuple[Many[A], S]]]:
             ret: List[A] = []
             current_input = input

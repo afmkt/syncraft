@@ -11,7 +11,7 @@ import random
 from functools import cached_property
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
-    Algebra, YieldChannelType, SendChannelType, Error
+    Algebra, YieldChannelType, Error
 )
 
 from syncraft.lexer import LexerBase, Lexer, LexerProtocol
@@ -32,7 +32,7 @@ from syncraft.constraint import Bindable
 from syncraft.input import StreamCursor, PayloadKind
 
 
-S = TypeVar('S', bound=Bindable)
+
 
 T = TypeVar('T', bound=Hashable)
 
@@ -175,8 +175,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         """
         def flat_map_run(input: GenState[T], 
                          cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                                                           SendChannelType, 
-                                                                                           Either[Any, Tuple[B, GenState[T]]]]:
+                                                                GenState[T], 
+                                                                Either[Any, Tuple[B, GenState[T]]]]:
             if not input.pruned and (not isinstance(input.ast, Then) or isinstance(input.ast, Nothing)):
                 return Left(Error(this=self, 
                                     message=f"Expect Then got {input.ast}",
@@ -222,8 +222,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
         def many_run(input: GenState[T], 
                      cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                                                       SendChannelType, 
-                                                                                       Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
+                                                            GenState[T], 
+                                                            Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
             if input.pruned:
                 ret: List[Any] = []
                 while True:
@@ -284,12 +284,12 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         """
         def or_else_run(input: GenState[T], 
                         cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                                                          SendChannelType, 
-                                                                                          Either[Any, Tuple[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+                                                                GenState[T], 
+                                                                Either[Any, Tuple[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]]]:
             def exec(kind: OrElseKind | None, 
                      left: GenState[T], 
                      right: GenState[T]) -> PyGenerator[YieldChannelType, 
-                                                        SendChannelType, 
+                                                        GenState[T], 
                                                         Either[Any, Tuple[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]]]:
                 match kind:
                     case OrElseKind.LEFT:
@@ -350,7 +350,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
              flatten:bool=False) -> Algebra[ParseResult[T], GenState[T]]:
         def algebra_lazy_run(input: GenState[T],
                              cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType,
-                                                                        SendChannelType,
+                                                                        GenState[T],
                                                                         Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             # Defer acquiring the underlying algebra until invocation time.
             alg = thunk()
@@ -398,7 +398,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         def lex_run(input: GenState[T], 
                     cache: Cache[GenState[T]]) -> PyGenerator[
                               YieldChannelType, 
-                              SendChannelType, 
+                              GenState[T], 
                               Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
             lexer.reset()
             yield from ()

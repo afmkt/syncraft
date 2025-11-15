@@ -43,4 +43,4 @@ TODO
 
 - [ ]  Semantic layer (datalog + unification). for AST analysis
 
-
+- [ ]  Add choice to syntax, algebra, ast, add dynamic reordering of choices

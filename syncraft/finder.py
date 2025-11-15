@@ -6,7 +6,7 @@ from typing import (
 
 from dataclasses import dataclass
 from syncraft.algebra import (
-    Algebra,  YieldChannelType, SendChannelType
+    Algebra,  YieldChannelType, S
 )
 from syncraft.ast import  ParseResult, OrElse, Many, Then, Marked, Collect, Lazy
 from syncraft.cache import Either, Left, Right
@@ -38,8 +38,8 @@ class Finder(Generator[T], Generic[T]):
         """
         def anything_run(input: GenState[T], 
                          cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType ,
-                                                                                           SendChannelType,
-                                                                                           Either[Any, Tuple[Any, GenState[T]]]]:
+                                                                GenState[T],
+                                                                Either[Any, Tuple[Any, GenState[T]]]]:
             yield from ()
             return Right((input.ast, input))
         return cls(anything_run)

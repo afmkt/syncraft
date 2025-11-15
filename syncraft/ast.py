@@ -436,6 +436,36 @@ class OrElse(AST, Generic[A, B]):
             v, inv = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
             return v, lambda c: replace(self, value=inv(c) if c is not None else None, kind=None)
 
+
+@dataclass(frozen=True)
+class Choice(AST, Generic[A]):
+    index: Optional[int]
+    value: Optional[A]
+    @property
+    def arity(self)->int:
+        if isinstance(self.value, AST):
+            return self.value.arity
+        return 1
+    
+    @property
+    def is_then(self) -> bool:
+        if isinstance(self.value, AST):
+            return self.value.is_then
+        return False
+
+    def bimap(self, r: Bimap[A, B]=Bimap.identity()) -> Tuple[Optional[B], Callable[[Optional[B]], Choice[A]]]:
+        """Map over the held value if present; propagate ``None`` otherwise.
+
+        The inverse resets ``index`` to ``None`` to avoid biasing the result.
+        When user edit the data we cannot assume which branch the data should go
+        back to. Set ``index`` to ``None`` to indicate this situation.
+        """
+        if self.value is None:
+            return None, lambda c: replace(self, value=None, index=None)
+        else:
+            v, inv = self.value.bimap(r) if isinstance(self.value, AST) else r(self.value)
+            return v, lambda c: replace(self, value=inv(c) if c is not None else None, index=None)
+
 @dataclass(frozen=True)
 class Many(AST, Generic[A]):
     """A finite sequence of values within the AST."""
@@ -457,6 +487,33 @@ class Many(AST, Generic[A]):
                 return Many(value = tuple(half + tmp))
         return [v[0] for v in ret], inv
 
+
+
+
+@dataclass(frozen=True)
+class Seq(AST):
+    elements: Tuple[Tuple[Any, bool], ...]
+    def bimap(self, r: Bimap[Any, Any]=Bimap.identity()) -> Tuple[Tuple[Any, ...], Callable[[Tuple[Any, ...]], Seq]]:
+        vs = []
+        invs = []
+        for data, include in self.elements:
+            if include:
+                v, inv = data.bimap(r) if isinstance(data, AST) else r(data)
+                vs.append(v)
+                invs.append(inv)
+        def invf(bs: Tuple[Any, ...]) -> Seq:
+            new_elements = []
+            b_index = 0
+            for data, include in self.elements:
+                if include:
+                    new_elements.append((invs[b_index](bs[b_index]), True))
+                    b_index += 1
+                else:
+                    new_elements.append((data, False))
+            return replace(self, elements=tuple(new_elements))
+        return tuple(vs), invf
+
+
 class ThenKind(Enum):
     BOTH = '+'
     LEFT = '//'
@@ -464,7 +521,7 @@ class ThenKind(Enum):
 
 ThenKind.__str__ = lambda self: self.value   # type: ignore
 
-@dataclass(eq=True, frozen=True)
+@dataclass(frozen=True)
 class Then(AST, Generic[A, B]):
     """Pair two values with a composition kind (both, left, or right).
 

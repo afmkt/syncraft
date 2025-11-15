@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional
+from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional, MutableMapping
 from dataclasses import dataclass
 import inspect
 import functools
@@ -190,7 +190,7 @@ class CallWith:
 
 K = TypeVar('K', bound=Hashable)
 V = TypeVar('V', bound=Any)
-class ThreadLocalWeakKeyDict(threading.local, Generic[K, V]):
+class ThreadLocalWeakKeyDict(threading.local, MutableMapping, Generic[K, V]):
     def __init__(self) -> None:
         super().__init__()
         self.store: WeakKeyDictionary[K, V] = WeakKeyDictionary()
@@ -198,13 +198,13 @@ class ThreadLocalWeakKeyDict(threading.local, Generic[K, V]):
     def __getitem__(self, key: K) -> V:
         return self.store[key]
 
-    def __contains__(self, key: K) -> bool:
+    def __contains__(self, key: object) -> bool:
         return key in self.store
 
     def __setitem__(self, key: K, value: V) -> None:
         self.store[key] = value
 
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: Any, /, default: Any | V = None) -> Optional[V]:
         return self.store.get(key, default)
     
     def items(self):
@@ -216,8 +216,8 @@ class ThreadLocalWeakKeyDict(threading.local, Generic[K, V]):
     def values(self):
         return self.store.values()
     
-    def update(self, other: collections.abc.Mapping[K, V]) -> None:
-        self.store.update(other)
+    def update(self, other=None, /, **kwargs) -> None:
+        self.store.update(other, **kwargs)
     
     def __ior__(self, other: collections.abc.Mapping[K, V]) -> ThreadLocalWeakKeyDict:
         self.store |= other
@@ -244,7 +244,7 @@ class ThreadLocalWeakKeyDict(threading.local, Generic[K, V]):
         return f"{self.__class__.__name__}({self.store})"
 
 
-class ThreadLocalWeakValueDict(threading.local, Generic[K, V]):
+class ThreadLocalWeakValueDict(threading.local, MutableMapping, Generic[K, V]):
     def __init__(self) -> None:
         super().__init__()
         self.store: WeakValueDictionary[K, V] = WeakValueDictionary()
@@ -252,13 +252,13 @@ class ThreadLocalWeakValueDict(threading.local, Generic[K, V]):
     def __getitem__(self, key: K) -> V:
         return self.store[key]
 
-    def __contains__(self, key: K) -> bool:
+    def __contains__(self, key: object) -> bool:
         return key in self.store
 
     def __setitem__(self, key: K, value: V) -> None:
         self.store[key] = value
 
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: Any, default: Any | V = None) -> Optional[V]:
         return self.store.get(key, default)
     
     def items(self):
@@ -270,8 +270,8 @@ class ThreadLocalWeakValueDict(threading.local, Generic[K, V]):
     def values(self):
         return self.store.values()
 
-    def update(self, other: collections.abc.Mapping[K, V]) -> None:
-        self.store.update(other)
+    def update(self, other=None, /, **kwargs) -> None:
+        self.store.update(other, **kwargs)
 
     def __ior__(self, other: collections.abc.Mapping[K, V]) -> ThreadLocalWeakValueDict:
         self.store |= other
