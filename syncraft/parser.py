@@ -224,11 +224,6 @@ class ParserState(Bindable, Generic[T]):
             parts.append(self.str_column)
         return f"{self.__class__.__name__}({', '.join(parts)})"
 
-    def __pretty__(self) -> str:
-        return self.__str__()
-    
-    def __rich__(self) -> str:
-        return self.__str__()
 
 
     def _slice_to_display(self, start: int, end: int, ul: bool) -> list[str]:

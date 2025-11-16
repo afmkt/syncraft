@@ -3,11 +3,12 @@
 from __future__ import annotations
 from typing import (
     Optional, Any, TypeVar, Tuple, cast,
-    Generic, Callable, Union, Protocol, Type, List, ClassVar,
+    Generic, Callable, Union, Protocol, Type, List, ClassVar, TYPE_CHECKING,
     Dict, Hashable
 )
 from functools import cached_property
-
+if TYPE_CHECKING:
+    from syncraft.vis import SVGVisualization
 from dataclasses import dataclass, replace, is_dataclass, fields
 from enum import Enum
 from syncraft.utils import CallWith
@@ -253,10 +254,10 @@ class AST:
         v, _ = self.bimap()
         return v
     
-    def _repr_svg_(self) -> str | None:
+    def svg(self, depth: int = 5) -> Optional[SVGVisualization]:
         try:
-            from syncraft.dev import ast2svg
-            svg_content = ast2svg(self)
+            from syncraft.vis import ast2svg
+            svg_content = ast2svg(self, max_depth=depth)
             return svg_content
         except ImportError:
             # Gracefully handle case where dev dependencies aren't available

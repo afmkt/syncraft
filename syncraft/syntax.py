@@ -6,18 +6,18 @@ import math
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
-    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping
+    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING
 )
 from dataclasses import dataclass, field, replace
 from functools import reduce, cached_property
-
-
+if TYPE_CHECKING:
+    from syncraft.vis import SVGVisualization
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
 
-from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, OrElseKind, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice
+from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice
 
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import Builder
@@ -97,13 +97,7 @@ class Graph(Generic[N]):
     
     def __str__(self) -> str:
         return self.str_tree(self.root)
-    
-    def __pretty__(self) -> str:
-        return self.__str__()
-    
-    def __rich__(self) -> str:
-        return self.__str__()
-    
+        
 @dataclass(frozen=True)
 class SyntaxSpec:
     name: Optional[str] = field(compare=False, hash=False)
@@ -115,13 +109,7 @@ class SyntaxSpec:
         if self.file:
             return f"{self.file}:{self.line or '?'}"
         return None
-
-    def __pretty__(self) -> str:
-        return self.__str__()
     
-    def __rich__(self) -> str:
-        return self.__str__()
-
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
@@ -565,27 +553,10 @@ class Syntax(Generic[A, S]):
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     
-    def __str__(self) -> str:
-        return str(self.spec)
-
-    def __pretty__(self) -> str:
-        return self.__str__()
-    
-    def __rich__(self) -> str:
-        return self.__str__()
-    
-    def _repr_svg_(self) -> str | None:
-        """
-        Jupyter notebook integration: automatically display syntax as SVG diagram.
-        This enables beautiful grammar visualization by simply typing the syntax object name.
-        """
-        try:
-            from syncraft.dev import syntax2svg
-            svg_content = syntax2svg(self.spec)
-            return svg_content
-        except ImportError:
-            # Gracefully handle case where dev dependencies aren't available
-            return None
+    def svg(self, depth: int = 3) -> Optional[SVGVisualization]:
+        from syncraft.vis import syntax2svg
+        return syntax2svg(self.spec, max_depth=depth)
+        
     
        
     def as_(self, typ: Type[B]) -> B:

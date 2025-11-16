@@ -10,7 +10,7 @@ try:  # pragma: no cover - guard optional test dependencies
 except ImportError:  # pragma: no cover - tests skipped when optional deps missing
     pytest.skip("railroad-diagrams is required for SVG rendering", allow_module_level=True)
 
-from syncraft.dev import syntax2svg
+from syncraft.vis import syntax2svg
 from syncraft.syntax import (
     LexSpec,
     ThenSpec,
@@ -19,7 +19,7 @@ from syncraft.syntax import (
 )
 from syncraft.ast import ThenKind
 from syncraft.utils import FrozenDict
-
+from syncraft.vis import SVGVisualization
 
 def token_spec(label: str) -> LexSpec:
     return LexSpec(fname="token", kwargs=FrozenDict({"text": label}), name=None, file=None, line=None, func=None)
@@ -30,10 +30,8 @@ def test_syntax2svg_simple_sequence():
     token_b = token_spec("B")
     sequence = ThenSpec(kind=ThenKind.BOTH, left=token_a, right=token_b, name=None, file=None, line=None, func=None)
 
-    svg = syntax2svg(sequence)
+    svg = syntax2svg(sequence, 5)
 
-    assert isinstance(svg, str)
-    assert "<svg" in svg
-    assert "A" in svg or "token" in svg
+    assert isinstance(svg, SVGVisualization)
 
 

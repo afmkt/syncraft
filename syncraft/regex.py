@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import overload, Literal
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
@@ -454,7 +455,12 @@ regex_syntax = branch.sep_by(or_).mark('branches').to(Regex).named('regex')
 regex_parser = parser(syntax=regex_syntax, payload_kind='text')
 
 
-def parse(data: str, *, raw:bool=False, cache: Optional[Cache[Any]] = None) -> Regex | Error | Any:
+@overload
+def parse(data: str, *, raw: Literal[True], cache: Optional[Cache[Any]] = None) -> AST: ...
+@overload
+def parse(data: str, *, raw: Literal[False], cache: Optional[Cache[Any]] = None) -> Regex | Error: ...
+
+def parse(data: str, *, raw:bool=False, cache: Optional[Cache[Any]] = None) -> Regex | Error | AST:
     from syncraft.parser import Runner
     runner: Runner[Any] = Runner()
     cursor = StreamCursor.from_data(data)
@@ -500,7 +506,7 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
     cache: Cache[Any] = Cache()
     if profile:
         cache = cache.with_profiler()
-    parsed = parse(pattern, cache=cache)
+    parsed = parse(pattern, raw=False, cache=cache)
     if cache.profiler is not None:
         cache.profiler.report()
         

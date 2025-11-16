@@ -290,9 +290,4 @@ class CharSet(Generic[C]):
                 parts.append(f"{fmt(start)}-{fmt(end)}")
         return f"{', '.join(parts)}"
     
-    def __pretty__(self) -> str:
-        return str(self)    
-    
-    def __rich__(self) -> str:
-        return str(self) 
     

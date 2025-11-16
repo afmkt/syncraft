@@ -1,6 +1,7 @@
 from __future__ import annotations
 import io
-from typing import Tuple, Any, Set, Optional, List, Dict
+from typing import Tuple, Any, Set, Optional, List, Dict, ClassVar
+from dataclasses import dataclass
 from syncraft.syntax import (
     SyntaxSpec,
     LazySpec,
@@ -13,11 +14,63 @@ from syncraft.syntax import (
 )
 from syncraft.ast import ThenKind
 
-def syntax2svg(
-    syntax: SyntaxSpec,
-    *,
-    max_depth: Optional[int] = None,
-) -> Optional[str]:
+@dataclass(frozen=True)
+class SVGVisualization:
+    svg: str
+    style: Optional[str]
+    RAILROAD_CSS: ClassVar[str] = """
+    <style>
+    /* CSS based on the railroad-diagrams original style */
+    .railroad-diagram svg {
+    background-color:hsl(30,20%,95%);
+    }
+    .railroad-diagram path {
+    stroke-width:3;
+    stroke:black;
+    fill:rgba(0,0,0,0);
+    }
+    .railroad-diagram text {
+    font:bold 14px monospace;
+    text-anchor:middle;
+    }
+    .railroad-diagram text.label {
+    text-anchor:start;
+    }
+    .railroad-diagram text.comment {
+    font:italic 12px monospace;
+    }
+    .railroad-diagram rect {
+    stroke-width:3;
+    stroke:black;
+    fill:hsl(120,100%,90%);
+    }
+    .railroad-diagram rect.non-terminal {
+    fill:hsl(120,100%,90%);
+    }
+    .railroad-diagram rect.terminal {
+    fill:hsl(0,0%,100%);
+    }
+    .railroad-diagram rect.skip {
+    fill: hsl(30, 100%, 90%);
+    }
+    </style>
+    """
+
+    def _repr_svg_(self) -> str:
+        if self.style:
+            return f"<style>{self.style}</style>\n{self.svg}"
+        return self.svg
+
+    def __repr__(self) -> str:
+        return f"SVGVisualization({self.svg})"
+    
+    def __str__(self) -> str:
+        return self.svg
+    
+
+
+
+def syntax2svg(syntax: SyntaxSpec, max_depth: int) -> Optional[SVGVisualization]:
     try:
         from railroad import (  # type: ignore
             Diagram,
@@ -249,18 +302,22 @@ def syntax2svg(
         if callable(write_svg_string):
             svg_result = write_svg_string()
             if isinstance(svg_result, str):
-                return svg_result
+                return SVGVisualization(svg=svg_result, style=SVGVisualization.RAILROAD_CSS)
+                
             if svg_result is not None:
-                return str(svg_result)
+                return SVGVisualization(svg=str(svg_result), style=SVGVisualization.RAILROAD_CSS)
+                
         buffer = io.StringIO()
         diagram.writeSvg(buffer.write)  # type: ignore[arg-type]
-        return buffer.getvalue()
+        return SVGVisualization(svg=buffer.getvalue(), style=SVGVisualization.RAILROAD_CSS)
+        
     except TypeError:
         buffer = io.StringIO()
         diagram.writeSvg(buffer.write)  # type: ignore[arg-type]
-        return buffer.getvalue()
+        return SVGVisualization(svg=buffer.getvalue(), style=SVGVisualization.RAILROAD_CSS)
 
-def ast2svg(ast: Any) -> Optional[str]:
+
+def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
     """
     Generate SVG visualization for a Syncraft AST node using graphviz.
     Returns SVG string or None if graphviz is not available.
@@ -291,7 +348,9 @@ def ast2svg(ast: Any) -> Optional[str]:
         else:
             return str(node)
 
-    def add_nodes_edges(dot, node, parent_id=None, node_id_gen=[0]):
+    def add_nodes_edges(dot, node, *, depth, parent_id=None, node_id_gen=[0]):
+        if depth == 0:
+            return
         from syncraft.ast import Nothing, Marked, OrElse, Many, Then, Collect
         node_id = f"n{node_id_gen[0]}"
         node_id_gen[0] += 1
@@ -304,18 +363,18 @@ def ast2svg(ast: Any) -> Optional[str]:
         if isinstance(node, Nothing):
             return
         elif isinstance(node, Marked):
-            add_nodes_edges(dot, node.value, node_id, node_id_gen)
+            add_nodes_edges(dot, node.value, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
         elif isinstance(node, OrElse):
             if node.value is not None:
-                add_nodes_edges(dot, node.value, node_id, node_id_gen)
+                add_nodes_edges(dot, node.value, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
         elif isinstance(node, Many):
             for child in node.value:
-                add_nodes_edges(dot, child, node_id, node_id_gen)
+                add_nodes_edges(dot, child, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
         elif isinstance(node, Then):
-            add_nodes_edges(dot, node.left, node_id, node_id_gen)
-            add_nodes_edges(dot, node.right, node_id, node_id_gen)
+            add_nodes_edges(dot, node.left, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
+            add_nodes_edges(dot, node.right, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
         elif isinstance(node, Collect):
-            add_nodes_edges(dot, node.value, node_id, node_id_gen)
+            add_nodes_edges(dot, node.value, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
         # Token is a leaf
         # For other types, try to walk __dict__ if they are dataclasses
         elif hasattr(node, '__dataclass_fields__'):
@@ -324,12 +383,13 @@ def ast2svg(ast: Any) -> Optional[str]:
                 if isinstance(v, (list, tuple)):
                     for item in v:
                         if hasattr(item, '__class__'):
-                            add_nodes_edges(dot, item, node_id, node_id_gen)
+                            add_nodes_edges(dot, item, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
                 elif hasattr(v, '__class__') and v is not node:
-                    add_nodes_edges(dot, v, node_id, node_id_gen)
+                    add_nodes_edges(dot, v, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
 
     dot = graphviz.Digraph(format='svg')
-    add_nodes_edges(dot, ast)
-    return dot.pipe().decode('utf-8')
+    add_nodes_edges(dot, ast, depth=max_depth)
+    return SVGVisualization(svg=dot.pipe().decode('utf-8'), style=None)
+
 
 
