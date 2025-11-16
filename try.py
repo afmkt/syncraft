@@ -78,5 +78,5 @@ def test_regex():
 
 
 if __name__ == "__main__":
-    print(regex_syntax._repr_svg_())
+    print(regex_syntax.svg(3))
     test_regex()

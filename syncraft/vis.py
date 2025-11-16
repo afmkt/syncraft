@@ -13,7 +13,7 @@ from syncraft.syntax import (
     MarkedSpec,
 )
 from syncraft.ast import ThenKind
-
+import xml.dom.minidom
 @dataclass(frozen=True)
 class SVGVisualization:
     svg: str
@@ -62,10 +62,15 @@ class SVGVisualization:
         return self.svg
 
     def __repr__(self) -> str:
-        return f"SVGVisualization({self.svg})"
+        return f"SVGVisualization({str(self)})"
     
     def __str__(self) -> str:
-        return self.svg
+        try:
+            dom = xml.dom.minidom.parseString(self.svg)
+            pretty_svg = dom.toprettyxml()
+            return pretty_svg
+        except Exception:
+            return self.svg
     
 
 
