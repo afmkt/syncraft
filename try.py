@@ -30,7 +30,7 @@ from syncraft.fa import NFA, DFA
 from syncraft.alphabet import Alphabet
 from syncraft.parser import  parse_word
 import syncraft.generator as gen
-
+from rich import print
 lit = Syntax.literal
 
 
@@ -78,5 +78,5 @@ def test_regex():
 
 
 if __name__ == "__main__":
-    print(regex_syntax.svg(3))
+    print(str(regex_syntax.svg(3)))
     test_regex()

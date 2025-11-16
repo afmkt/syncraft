@@ -14,6 +14,7 @@ from syncraft.syntax import (
 )
 from syncraft.ast import ThenKind
 import xml.dom.minidom
+import xml.etree.ElementTree as ET
 @dataclass(frozen=True)
 class SVGVisualization:
     svg: str
@@ -62,13 +63,27 @@ class SVGVisualization:
         return self.svg
 
     def __repr__(self) -> str:
-        return f"SVGVisualization({str(self)})"
-    
+        try:
+            root = ET.fromstring(self.svg)
+            def clean_element(elem: ET.Element) -> None:
+                if elem.text:
+                    elem.text = elem.text.strip()
+                if elem.tail:
+                    elem.tail = elem.tail.strip()
+                for child in elem:
+                    clean_element(child)
+
+            clean_element(root)
+            pretty_svg = ET.tostring(root, encoding='unicode', short_empty_elements=True)
+            return f"SVGVisualization({pretty_svg})"
+        except ET.ParseError:
+            return f"SVGVisualization({str(self)})"
+
     def __str__(self) -> str:
         try:
             dom = xml.dom.minidom.parseString(self.svg)
-            pretty_svg = dom.toprettyxml()
-            return pretty_svg
+            pretty_svg = dom.toprettyxml(indent="  ")
+            return pretty_svg.strip()
         except Exception:
             return self.svg
     
