@@ -12,6 +12,7 @@ from syncraft.fa import Builder
 from syncraft.cache import Cache
 from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
+from rich import print
 from syncraft.input import StreamCursor
 try:
     import regex as re
@@ -375,8 +376,12 @@ class Quantifier:
 # - {n} → minimum=n, maximum=n
 # - {n,} → minimum=n, maximum=None
 # - {n,m} → minimum=n, maximum=m
-braced_quantifier = S.choice(
-    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])),
+braced_quantifier = S.ichoice(
+    (lbrace >> number // rbrace)
+        .debug(on_success=lambda v, s: print(f"braced_quantifier debug before: {v.mapped}"))
+        .map(lambda n: Quantifier(minimum=n[0], maximum=n[0]))
+        .debug(on_success=lambda v, s: print(f"braced_quantifier debug after: {v}")),
+    # FIXME:
     (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t[0], maximum=None)),
     (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier)
 )
@@ -387,7 +392,8 @@ braced_quantifier = S.choice(
 # - * → minimum=0, maximum=None
 # - + → minimum=1, maximum=None
 # - braced_quantifier followed by ? → same as braced_quantifier but greedy=False
-quantifier = (S.choice(
+quantifier = (S.ichoice(
+    # FIXME
     question.map(lambda _: Quantifier(minimum=0, maximum=1)),
     star.map(lambda _: Quantifier(minimum=0, maximum=None)),
     plus.map(lambda _: Quantifier(minimum=1, maximum=None)),

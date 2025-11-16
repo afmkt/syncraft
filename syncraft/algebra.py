@@ -9,6 +9,8 @@ from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, Syncraf
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 import time
+import sys
+import traceback
 
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax, SyntaxSpec, Graph
@@ -281,9 +283,11 @@ class Algebra(Generic[A, S]):
                 e = e.push(f"{self.name}")
             raise e
         except Exception as err:
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
             return Left(Error(
                 message="Unexpected error during parsing",
-                error=err,
+                error=traceback_details,
                 this=self,
                 state=input
             ))

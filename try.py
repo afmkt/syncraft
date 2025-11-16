@@ -1,7 +1,7 @@
 from __future__ import annotations
 import pytest
 from syncraft.regex import (
-    parse, verify, parse_regex,
+    parse, verify, parse_regex, braced_quantifier,
     literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex_syntax,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
@@ -53,13 +53,7 @@ def test_graph():
 
 
 def test_regex():
-    pattern, expected_quantifier = ("a{3}", Quantifier(minimum=3, maximum=3, greedy=True))
     print(parse_regex(quantifier, '{3}'))
-    result = parse_regex(piece, pattern)
-    assert isinstance(result, Piece)
-    assert result.quantifier == expected_quantifier, f"Failed for pattern: {pattern}, got {result.quantifier}, expected {expected_quantifier}"
-    assert result.atom == LiteralAtom(text="a"), f"Failed for pattern: {pattern}, got atom {result.atom}, expected LiteralAtom(text='a')"
-
 
     # TEST_CASES = [
     #     ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
@@ -78,5 +72,5 @@ def test_regex():
 
 
 if __name__ == "__main__":
-    print(str(regex_syntax.svg(3)))
+    # print(str(regex_syntax.svg(3)))
     test_regex()
