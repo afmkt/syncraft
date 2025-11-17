@@ -350,13 +350,13 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
 
 @dataclass(frozen=True)
 class ChoiceSpec(SyntaxSpec):
-    reorder: int
+    sample_interval: int
     options: Tuple[SyntaxSpec, ...]
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         opts = [opt.syntax(cls, cache=cache) for opt in self.options]
-        ret = cls.ichoice(*opts, reorder=self.reorder)
+        ret = cls.choice(*opts, sample_interval=self.sample_interval)
         ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
@@ -945,6 +945,9 @@ class Syntax(Generic[A, S]):
         return other.__or__(self)
     
 
+    def __pos__(self) -> Tuple[Syntax[A, S], bool]:
+        return (self, True)
+
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, False)
 
@@ -1055,23 +1058,16 @@ class Syntax(Generic[A, S]):
         return cls.factory('success', value=value)
     
     @classmethod
-    def ichoice(cls, *parsers: Syntax[Any, S], reorder: int=0) -> Syntax[Choice[Any], S]:
-        syntaxes = []
-        cache = cls._syntax_cache
-        for p in parsers:
-            if isinstance(p.spec, ChoiceSpec):
-                for subp in p.spec.options:
-                    syntaxes.append(subp.syntax(cls, cache=cache))
-            else:
-                syntaxes.append(p)
+    def choice(cls, *parsers: Syntax[Any, S], sample_interval: int=0) -> Syntax[Choice[Any], S]:
+        syntaxes = list(parsers)
         def choice_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
             algs = [step(acls, **global_kwargs) for step in syntaxes]
-            return acls.choice(*algs, reorder=reorder)
-        spec = ChoiceSpec(options=tuple(step.spec for step in syntaxes), reorder=reorder, name=None, file=None, line=None, func=None)
+            return acls.choice(*algs, sample_interval=sample_interval)
+        spec = ChoiceSpec(options=tuple(step.spec for step in syntaxes), sample_interval=sample_interval, name=None, file=None, line=None, func=None)
         return cls(alg_f=choice_f, spec=spec) # type: ignore
 
     @classmethod
-    def choice(cls, *parsers: Syntax[Any, S], sort: bool=True) -> Syntax[Any, S]:
+    def ochoice(cls, *parsers: Syntax[Any, S], sort: bool=True) -> Syntax[Any, S]:
         """
         Create a choice syntax from multiple parsers.
         Args:
@@ -1085,16 +1081,23 @@ class Syntax(Generic[A, S]):
         return reduce(lambda a, b: a | b, sorted_parsers) if len(sorted_parsers) > 0 else cls.success(Nothing())
 
     @classmethod
-    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Seq, S]:
-        syntaxes = []
-        cache = cls._syntax_cache
+    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool], default:bool = True) -> Syntax[Seq, S]:
+        infered_default: Optional[bool] = None
         for X in steps:
-            step, keep = X if isinstance(X, tuple) else (X, True)
-            if isinstance(step.spec, SeqSpec):
-                for substep, subkeep in step.spec.steps:
-                    syntaxes.append((substep.syntax(cls, cache=cache), subkeep and keep))
-            else:
-                syntaxes.append((step, keep))
+            if isinstance(X, tuple):
+                if len(X) != 2:
+                    raise SyncraftError("Invalid tuple in seq steps", offender=X, expect="Tuple of (Syntax, bool)")
+                elif infered_default is None:
+                    infered_default = bool(X[1])
+                elif infered_default != bool(X[1]):
+                    infered_default = None
+                    break
+        if infered_default is not None:
+            default = infered_default
+        syntaxes = []
+        for X in steps:
+            step, keep = X if isinstance(X, tuple) else (X, default)
+            syntaxes.append((step, bool(keep)))
         def seq_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
             algs = [(step(acls, **global_kwargs), keep) for step, keep in syntaxes]
             return acls.seq(*algs)

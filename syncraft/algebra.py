@@ -402,6 +402,7 @@ class Algebra(Generic[A, S]):
                     data:Any = ast.mapped
                 else:
                     data = ast 
+                print('calling map', data)
                 return Right((f(data), s))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
@@ -478,7 +479,7 @@ class Algebra(Generic[A, S]):
         return cast(Algebra[OrElse[A, B], S], alg)
         
     @classmethod
-    def choice(cls, *options: Algebra[Any, S], reorder: int) -> Algebra[Choice[Any], S]:
+    def choice(cls, *options: Algebra[Any, S], sample_interval: int) -> Algebra[Choice[Any], S]:
         if not options:
             raise SyncraftError("At least one option is required for choice", offender=options, expect="non-empty options")
         @dataclass
@@ -499,8 +500,8 @@ class Algebra(Generic[A, S]):
                                                   Either[Any, Tuple[Choice[Any], S]]]:
             nonlocal counter
             counter += 1
-            if reorder > 0:
-                if counter % reorder == 0:
+            if sample_interval > 0:
+                if counter % sample_interval == 0:
                     counter = 0
                     sampling = True
                 else:

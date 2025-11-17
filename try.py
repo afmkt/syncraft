@@ -1,11 +1,13 @@
 from __future__ import annotations
 import pytest
-from syncraft.regex import (
-    parse, verify, parse_regex, braced_quantifier,
-    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex_syntax,
-    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
-)
+from dataclasses import dataclass, replace
+# from syncraft.regex import (
+#     parse, verify, parse_regex,
+#     literal, anchor, shorthand,atom, dot, char_class, group, piece, branch, regex_syntax,
+#     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
+#     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
+# )
+from syncraft.regex import Quantifier
 from syncraft.charset import CharSet
 from syncraft.syntax import Syntax
 from syncraft.algebra import Error
@@ -31,29 +33,44 @@ from syncraft.alphabet import Alphabet
 from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from rich import print
+from syncraft.parser import parse_word
 lit = Syntax.literal
 
+# B = Builder[str]
+# S = Syntax.config(builtin=True)
 
-def test_graph():
-    g = regex_syntax.graph()
-    assert g.edges, "Graph should have edges"
-    assert g.root, "Graph should have roots"
-    s = Syntax.from_graph(g)
-    assert s is not None, "Should be able to reconstruct syntax from graph"
-    g1 = s.graph()
-    
-    # Test structural consistency (the main fix validation)
-    # print(g1.str_node)
-    assert g1.root == g.root, "Reconstructed graph root should match original"
-    assert len(g1.edges) == len(g.edges), "Reconstructed graph should have same number of edges"
-    assert g1.nodes == g.nodes, "Reconstructed graph should have same set of nodes"
-    assert g1.edges == g.edges, "Reconstructed graph should have same set of edges"
-    assert g1 == g, "Reconstructed graph should be equal to original"
+# number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text)).named('number')
+# lbrace = S.lex(lbrace=B.lit("{")).named('"{"')
+# rbrace = S.lex(rbrace=B.lit("}")).named('"}"')
+# question = S.lex(question=B.lit("?")).named('"?"')
+# star = S.lex(star=B.lit("*")).named('"*"')
+# plus = S.lex(plus=B.lit("+")).named('"+"')
+# braced_quantifier = S.choice((lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])))
+# quantifier = (S.choice(braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1])).named('quantifier') 
+
+number = lit('3').many(at_least=1).map(lambda tok: int(tok.text)).named('number')
+lbrace = lit('{').named('"{"')
+rbrace = lit('}').named('"}"')
+question = lit('?').named('"?"')
+star = lit('*').named('"*"')
+plus = lit('+').named('"+"')
+
+braced_quantifier = Syntax.ochoice(
+    lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])
+)
+quantifier = (Syntax.ochoice(braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1]))
 
 
 
 def test_regex():
-    print(parse_regex(quantifier, '{3}'))
+    e, _ = parse_word(quantifier, '{ 3 }', cache=None)
+    if isinstance(e, Error):
+        print(e.error)
+    else:
+        print('+' * 100)
+        print(e)
+    
+    # print('\n', parse_regex(quantifier, '{3}'))
 
     # TEST_CASES = [
     #     ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),

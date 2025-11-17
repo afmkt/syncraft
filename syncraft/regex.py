@@ -349,7 +349,7 @@ def _group_body() -> Syntax[Any, Any]:
                 negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
                 inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
                 inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
-                sort = False
+                # sort = False
             )
 
 
@@ -376,12 +376,8 @@ class Quantifier:
 # - {n} → minimum=n, maximum=n
 # - {n,} → minimum=n, maximum=None
 # - {n,m} → minimum=n, maximum=m
-braced_quantifier = S.ichoice(
-    (lbrace >> number // rbrace)
-        .debug(on_success=lambda v, s: print(f"braced_quantifier debug before: {v.mapped}"))
-        .map(lambda n: Quantifier(minimum=n[0], maximum=n[0]))
-        .debug(on_success=lambda v, s: print(f"braced_quantifier debug after: {v}")),
-    # FIXME:
+braced_quantifier = S.choice(
+    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])),
     (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t[0], maximum=None)),
     (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier)
 )
@@ -392,12 +388,12 @@ braced_quantifier = S.ichoice(
 # - * → minimum=0, maximum=None
 # - + → minimum=1, maximum=None
 # - braced_quantifier followed by ? → same as braced_quantifier but greedy=False
-quantifier = (S.ichoice(
-    # FIXME
+quantifier = (S.choice(
+    braced_quantifier,
     question.map(lambda _: Quantifier(minimum=0, maximum=1)),
     star.map(lambda _: Quantifier(minimum=0, maximum=None)),
     plus.map(lambda _: Quantifier(minimum=1, maximum=None)),
-    braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1])).named('quantifier') 
+    ) + ~question).map(lambda t: replace(t[0], greedy=not t[1])).named('quantifier') 
 
 
 @dataclass(frozen=True)
