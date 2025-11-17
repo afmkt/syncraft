@@ -125,7 +125,7 @@ class AnchorKind(Enum):
 B = Builder[str]
 S = Syntax.config( builtin=True)
 # number            = digit { digit } ;
-number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text)).named('number')
+number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda m: int(m.text)).named('number')
 
 # dot               = "." ;
 dot = S.lex(dot=B.lit(".")).named('"."')

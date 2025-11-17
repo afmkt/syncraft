@@ -34,21 +34,12 @@ from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from rich import print
 from syncraft.parser import parse_word
+
+
 lit = Syntax.literal
 
-# B = Builder[str]
-# S = Syntax.config(builtin=True)
 
-# number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda tok: int(tok.text)).named('number')
-# lbrace = S.lex(lbrace=B.lit("{")).named('"{"')
-# rbrace = S.lex(rbrace=B.lit("}")).named('"}"')
-# question = S.lex(question=B.lit("?")).named('"?"')
-# star = S.lex(star=B.lit("*")).named('"*"')
-# plus = S.lex(plus=B.lit("+")).named('"+"')
-# braced_quantifier = S.choice((lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])))
-# quantifier = (S.choice(braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1])).named('quantifier') 
-
-number = lit('3').many(at_least=1).map(lambda tok: int(tok.text)).named('number')
+number = lit('3').many(at_least=1).map(lambda m: int(m[0].text)).named('number')
 lbrace = lit('{').named('"{"')
 rbrace = lit('}').named('"}"')
 question = lit('?').named('"?"')
@@ -65,12 +56,13 @@ quantifier = (Syntax.ochoice(braced_quantifier) + ~question).map(lambda t: repla
 def test_regex():
     e, _ = parse_word(quantifier, '{ 3 }', cache=None)
     if isinstance(e, Error):
-        print(e.error)
+        print(e.deepest.error)
+        print('-' * 100)
     else:
-        print('+' * 100)
         print(e)
+        print('+' * 100)
+
     
-    # print('\n', parse_regex(quantifier, '{3}'))
 
     # TEST_CASES = [
     #     ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
@@ -82,7 +74,6 @@ def test_regex():
         
     #     vr = verify(pattern, profile=True)
     #     assert vr.ok, f"Pattern failed to parse: {pattern}\n\nRe Error: {vr.err_re}\n\nSyncraft Error: {vr.err_syncraft}"
-
 
 
 

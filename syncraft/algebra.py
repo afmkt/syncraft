@@ -73,7 +73,8 @@ class Error:
     def str_this(self) -> str:
         spec = self.spec
         if spec and hasattr(spec, 'location'):
-            return f"{spec} ({spec.location})"
+            if spec.location is not None:
+                return f"{spec} ({spec.location})"
         return f"{spec}"
 
 
@@ -402,7 +403,7 @@ class Algebra(Generic[A, S]):
                     data:Any = ast.mapped
                 else:
                     data = ast 
-                print('calling map', data)
+                # print('calling map', data)
                 return Right((f(data), s))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
