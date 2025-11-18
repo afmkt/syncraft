@@ -43,10 +43,6 @@ TODO
 
 - [ ]  Semantic layer (datalog + unification). for AST analysis
 
-- [ ]  Add choice to syntax, algebra, ast, add dynamic reordering of choices
-
 - [ ]  integrate bimap to the algebra, store the inverse map in the closure, so that bimap works like map but bidirectionally and the user won't need to store the  inverse map everywhere. 
-
-- [ ]  Add more tests for Alphabet
 
 - [ ]  flat the Seq structure in AST.bimap

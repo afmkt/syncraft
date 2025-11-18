@@ -36,8 +36,7 @@ class AlphabetProtocol(Protocol[C]):
 
 
 class Alphabet(Generic[C], AlphabetProtocol[C]):
-    registry: ClassVar[Dict[Type[Any] | frozenset[Any], 
-                                AlphabetProtocol[Any]]] = dict()
+    registry: ClassVar[Dict[Type[Any] | frozenset[Any], AlphabetProtocol[Any]]] = dict()
     
     @property
     def space(self) -> Type[C] | frozenset[C] | Type[Enum]:
@@ -71,7 +70,11 @@ class Alphabet(Generic[C], AlphabetProtocol[C]):
         return decorator
     
     @classmethod
-    def register_finite(cls, symbols: Type[Enum] | Sequence[C]) -> AlphabetProtocol[C]:
+    def finite(cls, symbols: Type[Enum] | Sequence[C]) -> AlphabetProtocol[C]:
+        try:
+            return cls._get(symbols)
+        except ValueError:
+            pass
         alphabet = FiniteAlphabet.create(symbols)
         cls.registry[alphabet.space] = alphabet
         return alphabet
@@ -100,12 +103,17 @@ class TextAlphabet(AlphabetProtocol[str]):
         return ((0, 0x10FFFF), )
     
     def encode(self, symbol: str) -> int:
-        assert len(symbol) == 1, "Text symbol must be a single character"
-        return ord(symbol)
-    
+        try:
+            return ord(symbol)
+        except Exception:
+            raise CodepointError(f"Text symbol must be a single character, got {symbol!r}", offender=symbol, expect=str)
+
     def decode(self, code: int) -> str:
-        return chr(code)
-    
+        try:
+            return chr(code)
+        except Exception:
+            raise CodepointError(f"Code {code!r} is not a valid Unicode code point", offender=code, expect=self.codes)
+
     def concat(self, cs: Sequence[str]) -> str:
         return ''.join(cs)
     
@@ -127,28 +135,41 @@ class ByteAlphabet(AlphabetProtocol[bytes]):
         return symbol[0]
     
     def decode(self, code: int) -> bytes:
-        return bytes([code])
-    
+        try:
+            return bytes([code])
+        except Exception:
+            raise CodepointError(f"Code {code!r} is not a valid byte", offender=code, expect=self.codes)
+
     def concat(self, cs: Sequence[bytes]) -> bytes:
         return b''.join(cs)
 
 
 @dataclass(frozen=True)
 class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
-    space: Type[Enum] | frozenset[C]
+    _space: Type[Enum] | frozenset[C]
     code2int: FrozenDict[C, int] = field(default_factory=FrozenDict)
     int2code: FrozenDict[int, C] = field(default_factory=FrozenDict)
 
+    @property
+    def space(self) -> Type[Enum] | frozenset[C]:
+        return self._space
+    
     @cached_property
     def codes(self) -> Tuple[Tuple[int, int], ...]:
         return ((0, len(self.code2int) - 1), )
     
     def encode(self, symbol: C) -> int:
-        return self.code2int[symbol]
-    
+        try:
+            return self.code2int[symbol]
+        except Exception:
+            raise CodepointError(f"Symbol {symbol!r} not in alphabet", offender=symbol, expect=self.space)
+
     def decode(self, code: int) -> C:
-        return self.int2code[code]
-    
+        try:
+            return self.int2code[code]
+        except Exception:
+            raise CodepointError(f"Code {code!r} not in alphabet", offender=code, expect=self.codes)
+
     def concat(self, cs: Sequence[C]) -> Tuple[C, ...]:
         return tuple(cs)
     
@@ -158,10 +179,10 @@ class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
             elements = list(symbols)
             code2int: FrozenDict[C, int] = FrozenDict({s: i for i, s in enumerate(elements)})
             int2code: FrozenDict[int, C] = FrozenDict({i: s for s, i in code2int.items()})
-            return cls(space=symbols, code2int=code2int, int2code=int2code)
+            return cls(_space=symbols, code2int=code2int, int2code=int2code)
         else:
             _elements = list(symbols)
             _code2int: FrozenDict[C, int] = FrozenDict({s: i for i, s in enumerate(_elements)})
             _int2code: FrozenDict[int, C] = FrozenDict({i: s for s, i in _code2int.items()})
-            return cls(space=frozenset(_elements), code2int=_code2int, int2code=_int2code)
+            return cls(_space=frozenset(_elements), code2int=_code2int, int2code=_int2code)
     

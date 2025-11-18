@@ -122,7 +122,7 @@ def test_codeuniverse_byte():
     assert u.codes == ((0, 0xFF),)
     with pytest.raises(CodepointError):
         u.encode(b'AB')
-    with pytest.raises(ValueError):
+    with pytest.raises(CodepointError):
         u.decode(0x100)
 
 
