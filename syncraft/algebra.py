@@ -283,7 +283,7 @@ class Algebra(Generic[A, S]):
             else:
                 e = e.push(f"{self.name}")
             raise e
-        except Exception as err:
+        except Exception:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
             return Left(Error(

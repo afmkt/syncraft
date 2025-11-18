@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import (
     Optional, Any, TypeVar, Tuple, cast,
     Generic, Callable, Union, Protocol, Type, List, ClassVar, TYPE_CHECKING,
-    Dict, Hashable
+    Dict, Hashable, overload, Literal
 )
 from functools import cached_property
 if TYPE_CHECKING:
@@ -45,65 +45,35 @@ S = TypeVar('S')
 S1 = TypeVar('S1')
 
 
-@dataclass(frozen=True)
-class Biarrow(Generic[A, B]):
-    forward: Callable[[A], B]
-    inverse: Callable[[B], A]
-    def __rshift__(self, other: Biarrow[B, C]) -> Biarrow[A, C]:
-        def fwd(a: A) -> C:
-            b = self.forward(a)
-            return other.forward(b)
-        def inv(c: C) -> A:
-            b = other.inverse(c)
-            return self.inverse(b)
-        return Biarrow(
-            forward=fwd,
-            inverse=inv
-        )
-    @staticmethod
-    def identity()->Biarrow[A, A]:
-        return Biarrow(
-            forward=lambda x: x,
-            inverse=lambda y: y
-        )
-            
-    @staticmethod
-    def when(condition: Callable[..., bool], 
-             then: Biarrow[A, B], 
-             otherwise: Optional[Biarrow[A, B]] = None) -> Callable[..., Biarrow[A, B]]:
-        def _when(*args:Any, **kwargs:Any) -> Biarrow[A, B]:
-            return then if condition(*args, **kwargs) else (otherwise or Biarrow.identity())
-        return _when
-
-
-@dataclass(frozen=True)
-class Lens(Generic[C, A]):
-    get: Callable[[C], A]
-    set: Callable[[C, A], C]    
-
-    def modify(self, source: C, f: Callable[[A], A]) -> C:
-        return self.set(source, f(self.get(source)))
     
-    def bimap(self, ff: Callable[[A], B], bf: Callable[[B], A]) -> Lens[C, B]:
-        def getf(data: C) -> B:
-            return ff(self.get(data))
+def identity(x: Any) -> Any:
+    return x
 
-        def setf(data: C, value: B) -> C:
-            return self.set(data, bf(value))
+class Reversible(Generic[A, B]):
+    def __init__(self, value: B, mapper: Callable[[B], A] = identity) -> None:
+        self._data: Tuple[B, Callable[[B], A]] = (value, mapper)
 
-        return Lens(get=getf, set=setf)
+    def __iter__(self):
+        yield from self._data
 
-    def __truediv__(self, other: Lens[A, B]) -> Lens[C, B]:
-        def get_composed(obj: C) -> B:
-            return other.get(self.get(obj))        
-        def set_composed(obj: C, value: B) -> C:
-            return self.set(obj, other.set(self.get(obj), value))
-        return Lens(get=get_composed, set=set_composed)
+    def __len__(self) -> int:
+        return len(self._data)
     
-    def __rtruediv__(self, other: Lens[B, C])->Lens[B, A]:
-        return other.__truediv__(self)
-    
-
+    @overload
+    def __getitem__(self, index: Literal[0]) -> B: ...
+    @overload
+    def __getitem__(self, index: Literal[1]) -> Callable[[B], A]: ...
+    def __getitem__(self, index: int | slice) -> Any:
+        return self._data[index]
+    @property
+    def value(self) -> B:
+        return self._data[0]
+    @property
+    def mapper(self) -> Callable[[B], A]:
+        return self._data[1]
+    @property
+    def inverse(self) -> A:
+        return self.mapper(self.value)
 @dataclass(frozen=True)
 class Bimap(Generic[A, B]):
     """A reversible mapping that returns both a forward value and an inverse function.
@@ -122,53 +92,30 @@ class Bimap(Generic[A, B]):
             a compatible ``B`` back into an ``A``.
         """
         return self.run_f(a)    
-    def __rshift__(self, other: Bimap[B, C] | Biarrow[B, C]) -> Bimap[A, C]:
+    def __rshift__(self, other: Bimap[B, C]) -> Bimap[A, C]:
         """Compose this mapping with another mapping/arrow.
 
         ``self >> other`` first applies ``self``, then ``other``. The produced
         inverse runs ``other``'s inverse followed by ``self``'s inverse.
         """
-        if isinstance(other, Biarrow):
-            def biarrow_then_run(a: A) -> Tuple[C, Callable[[C], A]]:
-                b, inv1 = self(a)
-                c = other.forward(b)
-                def inv(c2: C) -> A:
-                    b2 = other.inverse(c2)
-                    return inv1(b2)
-                return c, inv
-            return Bimap(biarrow_then_run)
-        elif isinstance(other, Bimap):
-            def bimap_then_run(a: A) -> Tuple[C, Callable[[C], A]]:
-                b, inv1 = self(a)
-                c, inv2 = other(b)
-                def inv(c2: C) -> A:
-                    return inv1(inv2(c2))
-                return c, inv
-            return Bimap(bimap_then_run)
-        else:
-            raise SyncraftError("Unsupported type for Bimap >>", offender=other, expect=(Bimap , Biarrow))
-    def __rrshift__(self, other: Bimap[C, A] | Biarrow[C, A]) -> Bimap[C, B]:
+        def bimap_then_run(a: A) -> Tuple[C, Callable[[C], A]]:
+            b, inv1 = self(a)
+            c, inv2 = other(b)
+            def inv(c2: C) -> A:
+                return inv1(inv2(c2))
+            return c, inv
+        return Bimap(bimap_then_run)
+
+    def __rrshift__(self, other: Bimap[C, A]) -> Bimap[C, B]:
         """Right-composition so arrows or bimaps can be on the left of ``>>``."""
-        if isinstance(other, Biarrow):
-            def biarrow_then_run(c: C) -> Tuple[B, Callable[[B], C]]:
-                a = other.forward(c)
-                b2, inv1 = self(a)
-                def inv(a2: B) -> C:
-                    a3 = inv1(a2)
-                    return other.inverse(a3)
-                return b2, inv
-            return Bimap(biarrow_then_run)
-        elif isinstance(other, Bimap):
-            def bimap_then_run(c: C)->Tuple[B, Callable[[B], C]]:
-                a, a2c = other(c)
-                b2, b2a = self(a)
-                def inv(b3: B) -> C:
-                    a2 = b2a(b3)
-                    return a2c(a2)
-                return b2, inv
-            return Bimap(bimap_then_run)
-        else:
-            raise SyncraftError("Unsupported type for Bimap <<", offender=other, expect=(Bimap , Biarrow))
+        def bimap_then_run(c: C)->Tuple[B, Callable[[B], C]]:
+            a, a2c = other(c)
+            b2, b2a = self(a)
+            def inv(b3: B) -> C:
+                a2 = b2a(b3)
+                return a2c(a2)
+            return b2, inv
+        return Bimap(bimap_then_run)
 
 
     @staticmethod
@@ -201,31 +148,6 @@ class Bimap(Generic[A, B]):
             return abc, inv_f
         return Bimap(when_run)
     
-
-@dataclass(frozen=True)
-class Reducer(Generic[A, S]):
-    run_f: Callable[[A, S], S]
-    def __call__(self, a: A, s: S) -> S:
-        return self.run_f(a, s)
-    
-    def map(self, f: Callable[[B], A]) -> Reducer[B, S]:
-        def map_run(b: B, s: S) -> S:
-            return self(f(b), s)
-        return Reducer(map_run)
-    
-    def __rshift__(self, other: Reducer[A, S]) -> Reducer[A, S]:
-        return Reducer(lambda a, s: other(a, self(a, s)))
-    
-    def zip(self, other: Reducer[A, S1])-> Reducer[A, Tuple[S, S1]]:
-        return Reducer(lambda a, s: (self(a, s[0]), other(a, s[1])))
-    
-    def diff(self, other: Reducer[B, S]) -> Reducer[Tuple[A, B], S]:
-        return Reducer(lambda ab, s: other(ab[1], self(ab[0], s)))
-    
-    def filter(self, f: Callable[[A, S], bool]) -> Reducer[A, S]:
-        return Reducer(lambda a, s: self(a, s) if f(a, s) else s)
-
-
 
 @dataclass(frozen=True)    
 class AST:

@@ -38,7 +38,7 @@ from syncraft.parser import parse_word
 
 
 
-def test_groups_flags_scoped_with_disable():
+def test1():
     """Test parsing of scoped flag groups with disabled flags."""
     # result = parse_regex(group, "(?im-s:abc)") --- IGNORE ---
     tmp = parse("(?im-s:abc)", raw=False)
@@ -56,10 +56,10 @@ def test_groups_flags_scoped_with_disable():
         assert p.atom.text == char
         assert not p.quantifier
 
-
+    
 
 
 
 if __name__ == "__main__":
     # print(str(regex_syntax.svg(3)))
-    test_groups_flags_scoped_with_disable()
+    test1()

@@ -43,6 +43,6 @@ TODO
 
 - [ ]  Semantic layer (datalog + unification). for AST analysis
 
-- [ ]  integrate bimap to the algebra, store the inverse map in the closure, so that bimap works like map but bidirectionally and the user won't need to store the  inverse map everywhere. 
-
 - [ ]  flat the Seq structure in AST.bimap
+
+

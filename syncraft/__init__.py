@@ -43,7 +43,6 @@ from .constraint import (
 from .ast import (
 	AST,
     Bimap,
-    Biarrow,
 	Token,
 	Then,
 	ThenKind,
@@ -92,7 +91,7 @@ __all__ = [
 	# constraints
 	"Constraint", "Quantifier", "forall", "exists", "FrozenDict", "CallWith",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "Collect", "Bimap", "Biarrow", "Nothing",
+	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "Collect", "Bimap", "Nothing",
     # input
 	"StreamCursor",
     # convenience exports
