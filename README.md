@@ -43,6 +43,6 @@ TODO
 
 - [ ]  Semantic layer (datalog + unification). for AST analysis
 
-- [ ]  flat the Seq structure in AST.bimap
+- [ ]  test Seq, Choice, Then, and OrElse
 
 

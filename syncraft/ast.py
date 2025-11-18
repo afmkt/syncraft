@@ -156,8 +156,7 @@ class AST:
     @cached_property
     def mapped(self) -> Any:
         """Apply the default bimap and return only the forward value."""
-        v, _ = self.bimap()
-        return v
+        return self.bimap().value
     
     def svg(self, depth: int = 5) -> Optional[SVGVisualization]:
         try:

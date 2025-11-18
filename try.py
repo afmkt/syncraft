@@ -69,4 +69,4 @@ def test2():
 
 if __name__ == "__main__":
     # print(str(regex_syntax.svg(3)))
-    test1()
+    test2()
