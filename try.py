@@ -58,7 +58,14 @@ def test1():
 
     
 
-
+def test2():
+    A = Syntax.literal("a")
+    B = Syntax.literal("b")
+    C = Syntax.literal("c")
+    S = A // B // C
+    x, _ = parse_word(S, "a b c", cache=None)
+    print(x)
+    print(x.mapped)
 
 if __name__ == "__main__":
     # print(str(regex_syntax.svg(3)))

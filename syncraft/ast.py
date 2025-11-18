@@ -204,15 +204,12 @@ class Lazy(AST, Generic[A]):
     
     @property
     def is_then(self) -> bool:
-        if self.flatten: 
-            if isinstance(self.value, AST):
-                return self.value.is_then
-        return False
+        return self.flatten and isinstance(self.value, AST) and self.value.is_then
     
-    def bimap(self) -> Reversible[Lazy[A], C]:
+    def bimap(self) -> Reversible[Lazy[A], Any]:
         """Defer to the provided mapping ``r``."""
         tmp: Reversible[A, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
-        def invf(c: C) -> Lazy[A]:
+        def invf(c: Any) -> Lazy[A]:
             return replace(self, value=tmp.mapper(c))    
         return Reversible(tmp.value, invf)
 
@@ -226,14 +223,14 @@ class Marked(AST, Generic[A]):
     """
     name: str
     value: A
-    def bimap(self) -> Reversible[Marked[A], Marked[B]]:
+    def bimap(self) -> Reversible[Marked[A], Marked[Any]]:
         """Transform the inner value while preserving the mark name.
 
         Returns a new ``Marked`` with transformed value and an inverse that
         expects a ``Marked`` to recover the original.
         """
         tmp : Reversible[A, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
-        def invf(m: Marked[B]) -> Marked[A]:
+        def invf(m: Marked[Any]) -> Marked[A]:
             return Marked(name = m.name, value = tmp.mapper(m.value))
         return Reversible(Marked(name=self.name, value=tmp.value), invf)
         
@@ -261,11 +258,9 @@ class OrElse(AST, Generic[A, B]):
     
     @property
     def is_then(self) -> bool:
-        if isinstance(self.value, AST):
-            return self.value.is_then
-        return False
+        return isinstance(self.value, AST) and self.value.is_then
 
-    def bimap(self) -> Reversible[OrElse[A, B], Optional[C]]:
+    def bimap(self) -> Reversible[OrElse[A, B], Optional[Any]]:
         """Map over the held value if present; propagate ``None`` otherwise.
 
         The inverse resets ``kind`` to ``None`` to avoid biasing the result.
@@ -276,7 +271,7 @@ class OrElse(AST, Generic[A, B]):
             return Reversible(None, lambda c: replace(self, value=None, kind=None))
         else:
             tmp: Reversible[A|B, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
-            def invf(c: Optional[C]) -> OrElse[A, B]:
+            def invf(c: Optional[Any]) -> OrElse[A, B]:
                 return replace(self, value=tmp.mapper(c) if c is not None else None, kind=None)
             return Reversible(tmp.value, lambda c: invf(c))
 
@@ -293,11 +288,9 @@ class Choice(AST, Generic[A]):
     
     @property
     def is_then(self) -> bool:
-        if isinstance(self.value, AST):
-            return self.value.is_then
-        return False
+        return isinstance(self.value, AST) and self.value.is_then
 
-    def bimap(self) -> Reversible[Choice[A], Optional[B]]:
+    def bimap(self) -> Reversible[Choice[A], Optional[Any]]:
         """Map over the held value if present; propagate ``None`` otherwise.
 
         The inverse resets ``index`` to ``None`` to avoid biasing the result.
@@ -308,7 +301,7 @@ class Choice(AST, Generic[A]):
             return Reversible(None, lambda c: replace(self, value=None, index=None))
         else:
             tmp: Reversible[A, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
-            def invf(c: Optional[B]) -> Choice[A]:
+            def invf(c: Optional[Any]) -> Choice[A]:
                 return replace(self, value=tmp.mapper(c) if c is not None else None, index=None)
             return Reversible(tmp.value, invf)
 
@@ -316,7 +309,7 @@ class Choice(AST, Generic[A]):
 class Many(AST, Generic[A]):
     """A finite sequence of values within the AST."""
     value: Tuple[A, ...]
-    def bimap(self) -> Reversible[Many[A], List[B]]:
+    def bimap(self) -> Reversible[Many[A], List[Any]]:
         """Map each element to a list and provide an inverse.
 
         The inverse accepts a list of transformed elements. If the provided
@@ -324,7 +317,7 @@ class Many(AST, Generic[A]):
         the extra values are inverted using the last element's inverse.
         """
         ret : List[Reversible[A, Any]] = [v.bimap() if isinstance(v, AST) else Reversible(v) for v in self.value]
-        def inv(bs: List[B]) -> Many[A]:
+        def inv(bs: List[Any]) -> Many[A]:
             if len(bs) <= len(ret):
                 return Many(value = tuple(ret[i].mapper(bs[i]) for i in range(len(bs)))) 
             else:
@@ -339,21 +332,49 @@ class Many(AST, Generic[A]):
 @dataclass(frozen=True)
 class Seq(AST):
     value: Tuple[Tuple[Any, bool], ...]
+    @property
+    def arity(self)->int:
+        count = 0
+        for data, include in self.value:
+            if include:
+                if isinstance(data, AST):
+                    count += data.arity
+                else:
+                    count += 1
+        return count
+    @property
+    def is_then(self) -> bool:
+        return True
+    
     def bimap(self) -> Reversible[Seq, Tuple[Any, ...]]:
         vs = []
         invs = []
         for data, include in self.value:
             if include:
-                v, inv = data.bimap() if isinstance(data, AST) else Reversible(data)
-                vs.append(v)
-                invs.append(inv)
+                if isinstance(data, AST):
+                    rev = data.bimap()
+                    invs.append(rev.mapper)
+                    if data.is_then:
+                        vs.extend(rev.value)
+                    else:
+                        vs.append(rev.value)
+                else:
+                    rev = Reversible(data)
+                    invs.append(rev.mapper)
+                    vs.append(rev.value)
+
         def invf(bs: Tuple[Any, ...]) -> Seq:
             new_elements = []
             b_index = 0
             for data, include in self.value:
                 if include:
-                    new_elements.append((invs[b_index](bs[b_index]), True))
-                    b_index += 1
+                    if isinstance(data, AST) and data.is_then:
+                        size = data.arity
+                        new_elements.append((invs[b_index](bs[b_index:b_index + size]), True))
+                        b_index += size
+                    else:
+                        new_elements.append((invs[b_index](bs[b_index]), True))
+                        b_index += 1
                 else:
                     new_elements.append((data, False))
             return replace(self, value=tuple(new_elements))
