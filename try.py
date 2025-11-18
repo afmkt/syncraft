@@ -1,12 +1,12 @@
 from __future__ import annotations
 import pytest
 from dataclasses import dataclass, replace
-# from syncraft.regex import (
-#     parse, verify, parse_regex,
-#     literal, anchor, shorthand,atom, dot, char_class, group, piece, branch, regex_syntax,
-#     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-#     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
-# )
+from syncraft.regex import (
+    parse, verify, parse_regex,
+    literal, anchor, shorthand,atom, dot, char_class, group, piece, branch, regex_syntax,
+    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
+)
 from syncraft.regex import Quantifier
 from syncraft.charset import CharSet
 from syncraft.syntax import Syntax
@@ -36,44 +36,25 @@ from rich import print
 from syncraft.parser import parse_word
 
 
-lit = Syntax.literal
 
 
-number = lit('3').many(at_least=1).map(lambda m: int(m[0].text)).named('number')
-lbrace = lit('{').named('"{"')
-rbrace = lit('}').named('"}"')
-question = lit('?').named('"?"')
-star = lit('*').named('"*"')
-plus = lit('+').named('"+"')
-
-braced_quantifier = Syntax.ochoice(
-    lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])
-)
-quantifier = (Syntax.ochoice(braced_quantifier) + ~question).map(lambda t: replace(t[0], greedy=not t[1]))
-
-
-
-def test_regex():
-    e, _ = parse_word(quantifier, '{ 3 }', cache=None)
-    if isinstance(e, Error):
-        print(e.deepest.error)
-        print('-' * 100)
-    else:
-        print(e)
-        print('+' * 100)
-
-    
-
-    # TEST_CASES = [
-    #     ("quoted_string", r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)", True),
-    #     ("flag_disable", r"(?-i)a", True),
-    #     ('fuzzing', '(?!)', False),
-    #     ('fuzzing', '(?w)e*L+|[^wW]?\\S*\\D+', True),
-    # ]
-    # for name, pattern, should_pass in TEST_CASES:
-        
-    #     vr = verify(pattern, profile=True)
-    #     assert vr.ok, f"Pattern failed to parse: {pattern}\n\nRe Error: {vr.err_re}\n\nSyncraft Error: {vr.err_syncraft}"
+def test_groups_flags_scoped_with_disable():
+    """Test parsing of scoped flag groups with disabled flags."""
+    # result = parse_regex(group, "(?im-s:abc)") --- IGNORE ---
+    tmp = parse("(?im-s:abc)", raw=False)
+    assert isinstance(tmp, Regex)
+    result = tmp.branches[0].pieces[0].atom
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.FLAGS_SCOPED
+    assert result.inline_flags == ("i", "m")
+    assert result.disabled_flags == ("s",)
+    assert isinstance(result.pattern, Regex)
+    assert len(result.pattern.branches[0].pieces) == 3
+    for i, char in enumerate("abc"):
+        p = result.pattern.branches[0].pieces[i]
+        assert isinstance(p.atom, LiteralAtom)
+        assert p.atom.text == char
+        assert not p.quantifier
 
 
 
@@ -81,4 +62,4 @@ def test_regex():
 
 if __name__ == "__main__":
     # print(str(regex_syntax.svg(3)))
-    test_regex()
+    test_groups_flags_scoped_with_disable()

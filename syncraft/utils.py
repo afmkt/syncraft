@@ -62,7 +62,7 @@ def func(level: int = 0) -> None | str:
     
 
 class CallWith:
-    cache: Dict[Callable[...,Any], inspect.Signature] = dict()
+    cache: WeakKeyDictionary[Callable[...,Any], inspect.Signature] = WeakKeyDictionary()
     @staticmethod
     def get_callable_signature(obj: Any, follow_wrapped: bool = True) -> inspect.Signature:
         """

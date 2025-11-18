@@ -318,27 +318,30 @@ inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda
 def _group_body() -> Syntax[Any, Any]:
     # Forward reference to regex since groups can contain full regex patterns with alternation
     # group = "(" regex ")"
-    plain = lparen >> regex_syntax.mark('pattern') // rparen
+    plain = regex_syntax.mark('pattern').between(lparen, rparen)
     # group = "(?:" regex ")"
-    noncapturing = (S.lex(_=B.lit("(?:")).named('"(?:"') >> regex_syntax.mark('pattern') // rparen)
+    noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex_syntax.mark('pattern'), rparen)
     # group = "(?P<" name ">" regex ")"
-    named = S.lex(gp_named=B.lit("(?P<")).named('"(?P<"') >> name.mark('name') // greater + regex_syntax.mark('pattern') // rparen
+    named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex_syntax.mark('pattern'), rparen)
     # group = "(?=" regex ")"
-    lookahead = S.lex(gp_lookahead=B.lit("(?=" )).named('"(?="') >> regex_syntax.mark('pattern') // rparen
+    lookahead = S.seq(S.lex(gp_lookahead=B.lit("(?=")).named('"(?="'), +regex_syntax.mark('pattern'), rparen)
     # group = "(?!" regex ")"
-    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"') >> regex_syntax.mark('pattern') // rparen
+    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex_syntax.mark('pattern'), rparen)
     # group = "(?<=" regex ")"
-    lookbehind = S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="') >> regex_syntax.mark('pattern') // rparen
+    lookbehind = S.seq(S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="'), +regex_syntax.mark('pattern'), rparen)
     # group = "(?<!" regex ")"
-    negative_lookbehind = S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"') >> regex_syntax.mark('pattern') // rparen
+    negative_lookbehind = S.seq(S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"'), +regex_syntax.mark('pattern'), rparen)
     # group = "(?" inline_flags ")"
-    inline_flag_only = S.lex(gp_inline_flags=B.lit("(?")).named('"(?"') >> inline_flags // rparen
+    inline_flag_only = S.seq(S.lex(gp_inline_flags=B.lit("(?")).named('"(?"'), 
+                             +inline_flags, 
+                             rparen)
     # group = "(?" inline_flags ":" regex ")"
-    inline_flag_with_colon = (S.lex(gp_inline_flags_colon=B.lit("(?")).named('"(?"')
-                              >> inline_flags
-                              // colon 
-                              + regex_syntax.mark('pattern') 
-                              // rparen)
+    inline_flag_with_colon = S.seq(S.lex(gp_inline_flags_colon=B.lit("(?")).named('"(?"'), 
+                                   +inline_flags, 
+                                   colon, 
+                                   +regex_syntax.mark('pattern'), 
+                                   rparen)
+
     return S.choice(
                 plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),
                 noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing'),
@@ -349,7 +352,6 @@ def _group_body() -> Syntax[Any, Any]:
                 negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
                 inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
                 inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
-                # sort = False
             )
 
 
@@ -362,9 +364,9 @@ group = S.lazy(_group_body).named('group')
 # - \Z → ABSOLUTE_END
 # - \b → WORD_BOUNDARY
 # - \B → NOT_WORD_BOUNDARY
-anchor = (caret | 
-          dollar | 
-          boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind').named('anchor')
+anchor = S.choice(caret, 
+                  dollar,
+                  boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind').named('anchor')
 
 @dataclass(frozen=True)
 class Quantifier:
@@ -377,9 +379,9 @@ class Quantifier:
 # - {n,} → minimum=n, maximum=None
 # - {n,m} → minimum=n, maximum=m
 braced_quantifier = S.choice(
-    (lbrace >> number // rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])),
-    (lbrace >> number // comma // rbrace).map(lambda t: Quantifier(minimum=t[0], maximum=None)),
-    (lbrace >> number.mark('minimum') + (comma >> number.mark('maximum')) // rbrace).to(Quantifier)
+    S.seq(lbrace, +number, rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])),
+    S.seq(lbrace, +number, comma, rbrace).map(lambda t: Quantifier(minimum=t[0], maximum=None)),
+    S.seq(lbrace, +number.mark('minimum'), comma, +number.mark('maximum'), rbrace).to(Quantifier)
 )
 
 

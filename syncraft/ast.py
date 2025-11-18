@@ -608,7 +608,12 @@ class Collect(AST, Generic[A, E]):
                     index.append(i - named_count)
             named = {v.name: v.value for v in b if isinstance(v, Marked)}
             unnamed = [v for v in b if not isinstance(v, Marked)]
-            ret: E = self.collector(*unnamed, **named)
+            c = CallWith(self.collector, *unnamed, **named)
+            if c.missing_args or c.missing_kwargs:
+                raise SyncraftError("Collector cannot be called with provided arguments", 
+                                     offender=self.collector, 
+                                     expect="callable with matching signature")
+            ret: E = c()
             def invf(e: E) -> Tuple[Any, ...]:
                 if not is_dataclass(e):
                     raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")

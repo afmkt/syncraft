@@ -1088,8 +1088,8 @@ class Syntax(Generic[A, S]):
                 if len(X) != 2:
                     raise SyncraftError("Invalid tuple in seq steps", offender=X, expect="Tuple of (Syntax, bool)")
                 elif infered_default is None:
-                    infered_default = bool(X[1])
-                elif infered_default != bool(X[1]):
+                    infered_default = not bool(X[1])
+                elif infered_default == bool(X[1]):
                     infered_default = None
                     break
         if infered_default is not None:
