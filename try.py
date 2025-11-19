@@ -37,14 +37,21 @@ from syncraft.regex import benchmark_fair, verify
 
     
 
-def test2():
-    A = Syntax.literal("a")
-    B = Syntax.literal("b")
-    C = Syntax.literal("c")
-    S = A // B // C
-    x, _ = parse_word(S, "a b c", cache=None)
-    print(x)
-    print(x.mapped)
+def test1_simple_then() -> None:
+    A, B, C = Syntax.literal("a"), Syntax.literal("b"), Syntax.literal("c")
+    syntax = A // B // C
+    sql = "a b c"
+    ast, bound = parse_word(syntax, sql, cache=Cache())
+    print("---" * 40)
+    print(ast)
+    generated, bound = gen.generate_with(syntax, ast)
+    print("---" * 40)
+    print(generated)
+    assert ast == generated
+    value, bmap = generated.bimap
+    # print(value)
+    u, v = gen.generate_with(syntax, bmap(value))
+    assert u == generated
 
 
 def test_parse_bytes_input_with_lexer_bind() -> None:
@@ -62,3 +69,4 @@ def test_parse_bytes_input_with_lexer_bind() -> None:
 
 if __name__ == "__main__":
     benchmark_fair()
+    # test1_simple_then()

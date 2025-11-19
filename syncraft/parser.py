@@ -333,7 +333,7 @@ class ParserState(Bindable, Generic[T]):
                 return replace(self, index=min(self.index + 1, len(self.input)), column=self.column + 1)
         return replace(self, index=min(self.index + 1, len(self.input)))
             
-    
+        
     
 @dataclass(frozen=True, slots=True)
 class Parser(Algebra[T, ParserState[T]]):
