@@ -35,7 +35,7 @@ class AlphabetProtocol(Protocol[C]):
     def decode(self, code: int) -> C: ...
 
 
-class Alphabet(Generic[C], AlphabetProtocol[C]):
+class Alphabet(AlphabetProtocol[C]):
     registry: ClassVar[Dict[Type[Any] | frozenset[Any], AlphabetProtocol[Any]]] = dict()
     
     @property

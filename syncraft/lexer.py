@@ -96,7 +96,7 @@ class LexerProtocol(Protocol, Generic[C]):
     
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
-    
+
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
@@ -118,12 +118,10 @@ class LexerBase(LexerProtocol[C]):
             if fabuilder is None:
                 payload_kind = 'token'
             else:
-                
-                payload_kind = fabuilder.payload_kind
+                payload_kind = 'text'
 
         if payload_kind in ('text', 'bytes'):
-            alphabet: AlphabetProtocol[str | bytes] = Alphabet(str) if payload_kind == 'text' else Alphabet(bytes)
-            return {**kwargs, 'alphabet': kwargs.pop('alphabet', alphabet)}
+            return kwargs
         elif payload_kind in ('token',):
             tkspec: Optional[TokenSpec[Any]]  = TokenSpecBase.from_kwargs(**kwargs)
             assert tkspec is not None, f"TokenSpec could not be infered from the given parameters {kwargs}."
@@ -143,7 +141,9 @@ class LexerBase(LexerProtocol[C]):
             c = CallWith(sub.create, **kwargs)
             if c.missing_args or c.missing_kwargs:
                 continue
-            return c()
+            ret = c()
+            if ret is not None:
+                return ret
         return None
 
 @dataclass
@@ -221,9 +221,7 @@ class Lexer(LexerBase[C]):
         return frozenset(all_tags)
 
     @classmethod
-    def create(cls, 
-               *, 
-               alphabet: AlphabetProtocol[C], 
+    def create(cls, *, 
                default_mode:str|None=None,
                builtin: bool = False,
                cache_path: str | Path | None = None,
@@ -244,8 +242,10 @@ class Lexer(LexerBase[C]):
             return acc, path
         
         builders, dir = fabuilder(**kwargs)
+        if not builders:
+            return None
         return cls.cache.load(builders=builders, 
-                              factory=lambda: cls.from_builders(alphabet, *builders, default_mode=default_mode),
+                              factory=lambda: cls.from_builders(*builders, default_mode=default_mode),
                               dir=dir)
         
 
@@ -281,9 +281,17 @@ class Lexer(LexerBase[C]):
             
 
     @staticmethod
-    def one_mode(alphabet: AlphabetProtocol[C], *rules: Builder[C]) -> "Mode[C]":
+    def one_mode(*rules: Builder[C]) -> "Mode[C]":
         if not rules:
             raise SyncraftError("Cannot build a Mode with no rules", offender=rules, expect="at least one rule")
+        alphabet: Optional[AlphabetProtocol[C]] = None
+        for rule in rules:
+            if alphabet is None:
+                alphabet = rule.alphabet
+                break
+                
+        assert alphabet is not None, "Cannot build a Mode without an alphabet"
+
         skip: Set[Tag] = set()
         priority: Dict[Tag, int] = {}
         non_greedy: Set[Tag] = set()
@@ -314,10 +322,7 @@ class Lexer(LexerBase[C]):
         )
 
     @classmethod
-    def from_builders(cls, 
-                      alphabet: AlphabetProtocol[Any], 
-                      *rules: Builder[C],
-                      default_mode: str | None = None) -> "Lexer[C]":
+    def from_builders(cls, *rules: Builder[C], default_mode: str | None = None) -> "Lexer[C]":
         if len(rules) == 0:
             raise SyncraftError("Cannot build a Lexer with no rules", offender=rules, expect="at least one rule")
         modes: Dict[str | None, Set[Builder[C]]] = defaultdict(set)
@@ -347,11 +352,10 @@ class Lexer(LexerBase[C]):
                     actions[rule.tag] = rule.action
                     modes[mode_name].add(rule)
 
-        
 
         lexer_modes: Dict[str | None, Mode[C]] = {}
         for mname, mode_rules in modes.items():
-            lexer_modes[mname] = cls.one_mode(alphabet, *mode_rules)
+            lexer_modes[mname] = cls.one_mode(*mode_rules)
 
         lexer = cls(modes=lexer_modes, actions=actions, default_mode=default_mode)
         lexer.push_mode(default_mode)

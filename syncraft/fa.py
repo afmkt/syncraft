@@ -10,12 +10,12 @@ from functools import cached_property
 from syncraft.algebra import (
     SyncraftError
 )
-from syncraft.input import PayloadKind
+
 from collections import deque
 from syncraft.utils import  FrozenDict
 
 from syncraft.charset import CharSet, MixedUniverseError
-from syncraft.alphabet import CodepointError, AlphabetProtocol
+from syncraft.alphabet import CodepointError, AlphabetProtocol, Alphabet
 from enum import Enum
 from collections import defaultdict
 from functools import reduce
@@ -1207,24 +1207,24 @@ class Builder(Generic[C]):
             yield from child.walk()
 
     @property
-    def payload_kind(self) -> Optional[PayloadKind]:    
+    def alphabet(self) -> Optional[AlphabetProtocol[Any]]:    
         for node in self.walk():
             if node.kind == _NodeKind.LITERAL:
                 if isinstance(node.text, bytes):
-                    return 'bytes'
+                    return Alphabet(bytes)
                 elif isinstance(node.text, str):
-                    return 'text'
+                    return Alphabet(str)
             elif node.kind == _NodeKind.RANGE:
                 for start, end in node.intervals:
                     if isinstance(start, bytes) or isinstance(end, bytes):
-                        return 'bytes'
+                        return Alphabet(bytes)
                     elif isinstance(start, str) or isinstance(end, str):
-                        return 'text'
+                        return Alphabet(str)
             elif node.kind == _NodeKind.ONEOF:
                 if isinstance(node.text, bytes):
-                    return 'bytes'
+                    return Alphabet(bytes)
                 elif isinstance(node.text, str):
-                    return 'text'
+                    return Alphabet(str)
         return None
 
 

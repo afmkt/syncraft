@@ -10,7 +10,7 @@ import pytest
 from syncraft.ast import SyncraftError
 
 def _lexer_with_parentheses() -> Lexer[str]:
-    alphabet: AlphabetProtocol[str] = Alphabet(str)
+    
     base: Builder[str] = Builder.lit("a").tagged("IDENT")
     open_paren: Builder[str] = Builder.lit("(").tagged("OPEN").act(
         ModeAction(ModeActionEnum.PUSH, mode="paren")
@@ -22,7 +22,6 @@ def _lexer_with_parentheses() -> Lexer[str]:
         ModeAction(ModeActionEnum.BELONG, mode="paren")
     )
     return Lexer.from_builders(
-        alphabet,
         base,
         open_paren,
         close_paren,
@@ -53,11 +52,11 @@ def test_mode_actions_should_emit_mode_specific_tags() -> None:
 
 
 def test_skip_rules_should_suppress_tokens() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet(str)
+    
     rule_a: Builder[str] = Builder.lit("a").tagged("A")
     rule_b: Builder[str] = Builder.lit("b").tagged("B")
     whitespace: Builder[str] = Builder.lit(" ").tagged("WS").skipped()
-    lexer = Lexer.from_builders(alphabet, rule_a, rule_b, whitespace)
+    lexer = Lexer.from_builders(rule_a, rule_b, whitespace)
 
     tokens = _collect_tokens(lexer, "a b")
     assert [tok.tag for tok in tokens] == ["A", "B"]
@@ -65,14 +64,12 @@ def test_skip_rules_should_suppress_tokens() -> None:
 
 
 def _lexer_with_skip() -> Lexer[str]:
-    alphabet: AlphabetProtocol[str] = Alphabet(str)
     letter: Builder[str] = Builder.lit("a").tagged("A")
     skip_ws: Builder[str] = Builder.lit(" ").tagged("WS").skipped()
-    return Lexer.from_builders(alphabet, letter, skip_ws)
+    return Lexer.from_builders(letter, skip_ws)
 
 
 def _lexer_with_modes() -> Lexer[str]:
-    alphabet: AlphabetProtocol[str] = Alphabet(str)
     base: Builder[str] = Builder.lit("a").tagged("IDENT")
     open_paren: Builder[str] = Builder.lit("(").tagged("OPEN").act(
         ModeAction(ModeActionEnum.PUSH, mode="paren")
@@ -83,7 +80,7 @@ def _lexer_with_modes() -> Lexer[str]:
     inner: Builder[str] = Builder.lit("b").tagged("INNER").act(
         ModeAction(ModeActionEnum.BELONG, mode="paren")
     )
-    return Lexer.from_builders(alphabet, base, open_paren, close_paren, inner)
+    return Lexer.from_builders(base, open_paren, close_paren, inner)
 
 
 def test_skip_rules_return_none_when_selected() -> None:
@@ -119,9 +116,9 @@ def test_pop_mode_requires_known_mode() -> None:
 
 
 def test_match_reports_correct_span_boundaries() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet(str)
+    
     rule: Builder[str] = Builder.lit("ab").tagged("AB")
-    lexer = Lexer.from_builders(alphabet, rule)
+    lexer = Lexer.from_builders(rule)
 
     tokens = _collect_tokens(lexer, "ab")
     assert len(tokens) == 1
@@ -132,21 +129,21 @@ def test_match_reports_correct_span_boundaries() -> None:
 
 
 def test_greedy_rule_short_circuits_longer_match() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet(str)
+    
     long_rule: Builder[str] = Builder.lit("ab").tagged("LONG")
     short_rule: Builder[str] = Builder.lit("a", tag="SHORT", non_greedy=True)
     trailing: Builder[str] = Builder.lit("b").tagged("B")
 
-    greedy_lexer = Lexer.from_builders(alphabet, long_rule, short_rule, trailing)
+    greedy_lexer = Lexer.from_builders(long_rule, short_rule, trailing)
     tokens = _collect_tokens(greedy_lexer, "ab")
     assert [tok.tag for tok in tokens] == ["SHORT", "B"]
 
 
 def test_default_lexer_still_prefers_maximal_munch() -> None:
-    alphabet: AlphabetProtocol[str] = Alphabet(str)
+    
     long_rule: Builder[str] = Builder.lit("ab").tagged("LONG")
     short_rule: Builder[str] = Builder.lit("a").tagged("SHORT")
 
-    lexer = Lexer.from_builders(alphabet, long_rule, short_rule)
+    lexer = Lexer.from_builders(long_rule, short_rule)
     tokens = _collect_tokens(lexer, "ab")
     assert [tok.tag for tok in tokens] == ["LONG"]
