@@ -43,6 +43,7 @@ TODO
 
 - [ ]  Semantic layer (datalog + unification). for AST analysis
 
-- [ ]  test Seq, Choice, Then, and OrElse
+- [ ]  test Seq, Choice, Then, and OrElse, the arity and is_then is not consistent in Seq and Choice, OrElse, and Then, 
+       when is_then == False arity == ?
 
 

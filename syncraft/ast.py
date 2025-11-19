@@ -520,7 +520,7 @@ class Collect(AST, Generic[A, E]):
     """
     collector: Collector
     value: A
-    def bimap(self) -> Reversible[Collect[A, E], B | E]:
+    def bimap(self) -> Reversible[Collect[A, E], E]:
         """Map the inner value, collect it, and supply a matching inverse.
 
         For multi-field tuples derived from ``Then``, the inverse rebuilds the
@@ -530,7 +530,8 @@ class Collect(AST, Generic[A, E]):
         """
 
         b, inner_f = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
-        if isinstance(b, tuple):
+        inner_then = isinstance(self.value, AST) and self.value.is_then
+        if inner_then and isinstance(b, tuple):
             index: List[str | int] = []
             named_count = 0
             for i, v in enumerate(b):
