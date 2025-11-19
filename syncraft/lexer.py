@@ -96,9 +96,7 @@ class LexerProtocol(Protocol, Generic[C]):
     
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
-
-    @classmethod
-    def bind(cls, *args: Any, **kwargs: Any) -> Type["LexerProtocol[Any]"]:...
+    
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
@@ -250,15 +248,6 @@ class Lexer(LexerBase[C]):
                               factory=lambda: cls.from_builders(alphabet, *builders, default_mode=default_mode),
                               dir=dir)
         
-            
-    @classmethod
-    def bind(cls,*, alphabet: AlphabetProtocol[C], default_mode:str|None=None) -> Type["Lexer[Any]"]:
-        class BoundLexer(Lexer[Any]):
-            @classmethod
-            def from_kwargs(cls, **kwargs: Any) -> Optional["Lexer[C]"]:
-                return Lexer.create(alphabet=alphabet, default_mode=default_mode, **kwargs)
-        return BoundLexer
-
 
     def reset(self) -> None:
         self.current_mode.reset()
@@ -505,14 +494,6 @@ class ExtLexer(LexerBase[T]):
         ret.register(**kwargs)
         return ret
     
-    @classmethod
-    def bind(cls,*, tkspec: TokenSpec[T]) -> Type["ExtLexer[Any]"]:
-        class BoundLexer(ExtLexer[Any]):
-            @classmethod
-            def from_kwargs(cls, **kwargs: Any) -> Optional["ExtLexer[T]"]:
-                return ExtLexer.create(tkspec=tkspec, **kwargs)
-        return BoundLexer
-
     
     def clone(self) -> "ExtLexer[T]":
         return replace(self, rules=dict(self.rules))

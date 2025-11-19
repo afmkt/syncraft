@@ -215,14 +215,11 @@ shorthand = S.lex(shorthand=B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"]))
 # category_name     = unicode_letter { unicode_letter } ;
 category_name = unicode_category.many().map(lambda ts: tuple(t.text for t in ts)).named('category_name')
 # unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
-unicode_category_escape = (
-    (escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace) 
-     |
-    (escaped_P.map(lambda _: True).mark('negated') + category_name.mark('categories') // rbrace)
-).named('unicode_category_escape')
+unicode_category_escape = S.choice((escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace),
+                                   (escaped_P.map(lambda _: True).mark('negated') + category_name.mark('categories') // rbrace)).named('unicode_category_escape')
 
 # unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
-unicode_name = (unicode_letter + (unicode_letter | underscore | space | hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])).named('unicode_name')
+unicode_name = (unicode_letter + S.choice(unicode_letter, underscore, space, hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])).named('unicode_name')
 # name_continue     = unicode_letter | unicode_digit | "_" ;
 name_continue = unicode_letter | underscore
 # name_start        = unicode_letter | "_" ;
@@ -230,9 +227,9 @@ name_start = unicode_letter | underscore
 # name              = name_start { name_continue } ;
 name = (name_start + name_continue.many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])).named('name')
 # unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
-unicode_escape = ((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16))) | 
-                  (escaped_u >> hex_quad).map(lambda t: chr(int(t[0], 16))) | 
-                  (escaped_U >> hex_octa).map(lambda t: chr(int(t[0], 16))) | 
+unicode_escape = S.choice((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16))), 
+                  (escaped_u >> hex_quad).map(lambda t: chr(int(t[0], 16))),
+                  (escaped_U >> hex_octa).map(lambda t: chr(int(t[0], 16))), 
                   ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t[0]))).named('unicode_escape')
 # escaped_metachar  = "\\" meta_char ;
 escaped_metachar = (backslash >> meta_char).map(lambda t: t[0]).named('escaped_metachar')
@@ -273,7 +270,7 @@ class CharClassAtom:
 
 
 # range             = class_atom "-" class_atom ;
-range = (class_atom.mark('start') // minus + class_atom.mark('end')).to(CharRange).named('range')
+range = S.seq(class_atom.mark('start'), -minus, class_atom.mark('end')).to(CharRange).named('range')
 
 # class_item = range | class_atom ;
 class_item = range | class_atom
@@ -285,7 +282,7 @@ class_item = range | class_atom
 # so we append ']' to the list of class_item value in this case
 class_class_items = (~leading_rsquare + class_item.many()).map(lambda t: (t[1] + [']']) if t[0] else t[1]).named('class_class_items')
 # char_class        = "[" [ "^" ] class_class_items "]" ;
-char_class = (lsquare >> (~caret).map(bool).mark('negated') + class_class_items.mark('items') // rsquare).named('char_class')
+char_class = S.seq(-lsquare, (~caret).map(bool).mark('negated'), class_class_items.mark('items'), -rsquare).named('char_class')
 
 
 class GroupKind(Enum):

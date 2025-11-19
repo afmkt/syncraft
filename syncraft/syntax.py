@@ -721,17 +721,7 @@ class Syntax(Generic[A, S]):
         if f is None:
             return self 
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success)) 
-
-
-    @staticmethod
-    def default_debug_on_fail(error: Any, input: S) -> None:
-        print(f"Syntax failed with error: {error} on input state: {input}")
-
-    @staticmethod
-    def default_debug_on_success(value: Any, input: S) -> None:
-        print(f"Syntax succeeded with value: {value} on input state: {input}")
-
-
+    
     def debug(self, 
               *,
               on_fail: Optional[Callable[[Any, S], None] | Any] = None, 
@@ -753,8 +743,8 @@ class Syntax(Generic[A, S]):
         return self.on_fail(on_failure).on_success(on_succeeded)
 
     ############################################################### facility combinators ############################################################
-    def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Then[B, Then[A, C]], S]:
-        return (left >> self // right)
+    def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Seq, S]:
+        return self.seq(left , +self , right)
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Then[A, Many[Then[B, A]]], S]:
         """Parse this syntax separated by the given separator.
@@ -809,7 +799,7 @@ class Syntax(Generic[A, S]):
         sep: Syntax[C, S],
         open: Syntax[B, S],
         close: Syntax[D, S],
-    ) -> Syntax[Then[B, Then[Then[A, Many[Then[C, A]]], D]], S]:
+    ) -> Syntax[Seq, S]:
         """Parse a parenthesized, separator-delimited list.
 
         Shorthand for self.sep_by(sep).between(open, close).
@@ -1065,21 +1055,7 @@ class Syntax(Generic[A, S]):
             return acls.choice(*algs, sample_interval=sample_interval)
         spec = ChoiceSpec(options=tuple(step.spec for step in syntaxes), sample_interval=sample_interval, name=None, file=None, line=None, func=None)
         return cls(alg_f=choice_f, spec=spec) # type: ignore
-
-    @classmethod
-    def ochoice(cls, *parsers: Syntax[Any, S], sort: bool=True) -> Syntax[Any, S]:
-        """
-        Create a choice syntax from multiple parsers.
-        Args:
-            *parsers: Syntax parsers to combine.
-            sort: Whether to sort parsers by complexity before combining.
-        """
-        if sort:
-            sorted_parsers = sorted(parsers, key=lambda p: p.spec.complexity)
-        else:
-            sorted_parsers = list(parsers)
-        return reduce(lambda a, b: a | b, sorted_parsers) if len(sorted_parsers) > 0 else cls.success(Nothing())
-
+    
     @classmethod
     def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool], default:bool = True) -> Syntax[Seq, S]:
         infered_default: Optional[bool] = None
