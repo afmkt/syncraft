@@ -6,12 +6,11 @@ from typing import (
     Generic, Callable, Union, Protocol, Type, List, ClassVar, TYPE_CHECKING,
     Dict, Hashable, overload, Literal
 )
-from functools import cached_property
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from dataclasses import dataclass, replace, is_dataclass, fields
+from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
-from syncraft.utils import CallWith
+from syncraft.utils import CallWith, MISSING
 
 class SyncraftError(Exception):
     def __init__(self, message: str, offender: Any, expect: Any = None, **kwargs: Any) -> None:
@@ -74,7 +73,7 @@ class Reversible(Generic[A, B]):
     
     
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Bimap(Generic[A, B]):
     """A reversible mapping that returns both a forward value and an inverse function.
 
@@ -132,39 +131,35 @@ class Bimap(Generic[A, B]):
         return Bimap(lambda a: Reversible(a, lambda b: b))
     
 
-@dataclass(frozen=True)    
+@dataclass(frozen=True, slots=True)    
 class AST:
-    """Base class for all Syncraft AST nodes.
-
-    Nodes implement ``bimap`` to transform contained values while providing an
-    inverse that can reconstruct the original node from transformed output.
-    """
+    _bimmapped_cache: Reversible[Any, Any] = field(default=MISSING, init=False, repr=False, compare=False, hash=False)
     @property
     def arity(self)->int:
         return 1
     @property
     def is_then(self)->bool:
         return False
-    def bimap(self) -> Reversible[Any, Any]:
-        """Apply a bimap to this node, returning a value and an inverse.
-
-        The default behavior defers to the provided mapping ``r`` with the
-        node itself as input. The ``r`` only applies to the leaf node of AST tree.
-        """
+    
+    def _bimap(self) -> Reversible[Any, Any]:
         return Reversible(self)
     
-    @cached_property
-    def mapped(self) -> Any:
-        """Apply the default bimap and return only the forward value."""
-        return self.bimap().value
+    @property
+    def bimap(self) -> Reversible[Any, Any]:
+        if self._bimmapped_cache is MISSING:
+            object.__setattr__(self, '_bimmapped_cache', self._bimap())
+        return self._bimmapped_cache
     
-    def svg(self, depth: int = 5) -> Optional[SVGVisualization]:
+    @property
+    def mapped(self) -> Any:
+        return self.bimap.value
+    
+    def vis(self, depth: int = 5) -> Optional[SVGVisualization]:
         try:
             from syncraft.vis import ast2svg
             svg_content = ast2svg(self, max_depth=depth)
             return svg_content
         except ImportError:
-            # Gracefully handle case where dev dependencies aren't available
             return None
         
 class MetaNothing(type):
@@ -176,7 +171,7 @@ class MetaNothing(type):
         return "Nothing"
     def __bool__(cls)->bool:
         return False
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Nothing(AST, metaclass=MetaNothing):
     """Singleton sentinel representing the absence of a value in the AST."""
     def __call__(self)-> Nothing:
@@ -190,7 +185,7 @@ class Nothing(AST, metaclass=MetaNothing):
     def __repr__(self)->str:
         return "Nothing"
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Lazy(AST, Generic[A]):
     value: A
     flatten: bool 
@@ -205,15 +200,15 @@ class Lazy(AST, Generic[A]):
     def is_then(self) -> bool:
         return self.flatten and isinstance(self.value, AST) and self.value.is_then
     
-    def bimap(self) -> Reversible[Lazy[A], Any]:
+    def _bimap(self) -> Reversible[Lazy[A], Any]:
         """Defer to the provided mapping ``r``."""
-        tmp: Reversible[A, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
+        tmp: Reversible[A, Any] = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
         def invf(c: Any) -> Lazy[A]:
             return replace(self, value=tmp.mapper(c))    
         return Reversible(tmp.value, invf)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Marked(AST, Generic[A]):
     """Annotate a AST node with a name.
 
@@ -222,13 +217,13 @@ class Marked(AST, Generic[A]):
     """
     name: str
     value: A
-    def bimap(self) -> Reversible[Marked[A], Marked[Any]]:
+    def _bimap(self) -> Reversible[Marked[A], Marked[Any]]:
         """Transform the inner value while preserving the mark name.
 
         Returns a new ``Marked`` with transformed value and an inverse that
         expects a ``Marked`` to recover the original.
         """
-        tmp : Reversible[A, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
+        tmp : Reversible[A, Any] = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
         def invf(m: Marked[Any]) -> Marked[A]:
             return Marked(name = m.name, value = tmp.mapper(m.value))
         return Reversible(Marked(name=self.name, value=tmp.value), invf)
@@ -241,7 +236,7 @@ class OrElseKind(Enum):
 OrElseKind.__str__ = lambda self: self.value   # type: ignore
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class OrElse(AST, Generic[A, B]):
     """Represent a binary alternative between left and right values.
 
@@ -259,7 +254,7 @@ class OrElse(AST, Generic[A, B]):
     def is_then(self) -> bool:
         return isinstance(self.value, AST) and self.value.is_then
 
-    def bimap(self) -> Reversible[OrElse[A, B], Optional[Any]]:
+    def _bimap(self) -> Reversible[OrElse[A, B], Optional[Any]]:
         """Map over the held value if present; propagate ``None`` otherwise.
 
         The inverse resets ``kind`` to ``None`` to avoid biasing the result.
@@ -269,13 +264,13 @@ class OrElse(AST, Generic[A, B]):
         if self.value is None:
             return Reversible(None, lambda c: replace(self, value=None, kind=None))
         else:
-            tmp: Reversible[A|B, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
+            tmp: Reversible[A|B, Any] = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
             def invf(c: Optional[Any]) -> OrElse[A, B]:
                 return replace(self, value=tmp.mapper(c) if c is not None else None, kind=None)
             return Reversible(tmp.value, lambda c: invf(c))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Choice(AST, Generic[A]):
     index: Optional[int]
     value: Optional[A]
@@ -289,7 +284,7 @@ class Choice(AST, Generic[A]):
     def is_then(self) -> bool:
         return isinstance(self.value, AST) and self.value.is_then
 
-    def bimap(self) -> Reversible[Choice[A], Optional[Any]]:
+    def _bimap(self) -> Reversible[Choice[A], Optional[Any]]:
         """Map over the held value if present; propagate ``None`` otherwise.
 
         The inverse resets ``index`` to ``None`` to avoid biasing the result.
@@ -299,23 +294,23 @@ class Choice(AST, Generic[A]):
         if self.value is None:
             return Reversible(None, lambda c: replace(self, value=None, index=None))
         else:
-            tmp: Reversible[A, Any] = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
+            tmp: Reversible[A, Any] = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
             def invf(c: Optional[Any]) -> Choice[A]:
                 return replace(self, value=tmp.mapper(c) if c is not None else None, index=None)
             return Reversible(tmp.value, invf)
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Many(AST, Generic[A]):
     """A finite sequence of values within the AST."""
     value: Tuple[A, ...]
-    def bimap(self) -> Reversible[Many[A], List[Any]]:
+    def _bimap(self) -> Reversible[Many[A], List[Any]]:
         """Map each element to a list and provide an inverse.
 
         The inverse accepts a list of transformed elements. If the provided
         list is shorter than the original, only the prefix is used. If longer,
         the extra values are inverted using the last element's inverse.
         """
-        ret : List[Reversible[A, Any]] = [v.bimap() if isinstance(v, AST) else Reversible(v) for v in self.value]
+        ret : List[Reversible[A, Any]] = [v.bimap if isinstance(v, AST) else Reversible(v) for v in self.value]
         def inv(bs: List[Any]) -> Many[A]:
             if len(bs) <= len(ret):
                 return Many(value = tuple(ret[i].mapper(bs[i]) for i in range(len(bs)))) 
@@ -328,7 +323,7 @@ class Many(AST, Generic[A]):
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Seq(AST):
     value: Tuple[Tuple[Any, bool], ...]
     @property
@@ -345,13 +340,13 @@ class Seq(AST):
     def is_then(self) -> bool:
         return True
     
-    def bimap(self) -> Reversible[Seq, Tuple[Any, ...]]:
+    def _bimap(self) -> Reversible[Seq, Tuple[Any, ...]]:
         vs = []
         invs = []
         for data, include in self.value:
             if include:
                 if isinstance(data, AST):
-                    rev = data.bimap()
+                    rev = data.bimap
                     invs.append(rev.mapper)
                     if data.is_then:
                         vs.extend(rev.value)
@@ -387,7 +382,7 @@ class ThenKind(Enum):
 
 ThenKind.__str__ = lambda self: self.value   # type: ignore
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Then(AST, Generic[A, B]):
     """Pair two values with a composition kind (both, left, or right).
 
@@ -439,7 +434,7 @@ class Then(AST, Generic[A, B]):
         return False
 
 
-    def bimap(self) -> Reversible[Then[A, B], Any | Tuple[Any, ...]]:
+    def _bimap(self) -> Reversible[Then[A, B], Any | Tuple[Any, ...]]:
         """Transform the left/right values according to ``kind``.
 
         - ``LEFT``: map and return the left value; inverse sets only ``left``.
@@ -454,7 +449,7 @@ class Then(AST, Generic[A, B]):
         right_size = self.right_arity
         match self.kind:
             case ThenKind.LEFT:
-                left = self.left.bimap() if isinstance(self.left, AST) else Reversible(self.left)
+                left = self.left.bimap if isinstance(self.left, AST) else Reversible(self.left)
                 def invl(c: Any) -> Then[A, B]:
                     return replace(self, left=cast(A, left.mapper(c)))
                 def invl0(c: Any) -> Then[A, B]:
@@ -466,7 +461,7 @@ class Then(AST, Generic[A, B]):
                 else:
                     return Reversible((left.value,), invl0)
             case ThenKind.RIGHT:
-                right = self.right.bimap() if isinstance(self.right, AST) else Reversible(self.right)
+                right = self.right.bimap if isinstance(self.right, AST) else Reversible(self.right)
                 def invr(c: Any) -> Then[A, B]:
                     return replace(self, right=cast(B, right.mapper(c)))
                 
@@ -478,8 +473,8 @@ class Then(AST, Generic[A, B]):
                 else:
                     return Reversible((right.value,), invr0)
             case ThenKind.BOTH:
-                left = self.left.bimap() if isinstance(self.left, AST) else Reversible(self.left)
-                right = self.right.bimap() if isinstance(self.right, AST) else Reversible(self.right)
+                left = self.left.bimap if isinstance(self.left, AST) else Reversible(self.left)
+                right = self.right.bimap if isinstance(self.right, AST) else Reversible(self.right)
                 # if isinstance(self.left, Then):
                 if self.left_is_then:
                     left_v = left.value
@@ -509,27 +504,12 @@ class DataclassInstance(Protocol):
 E = TypeVar("E", bound=DataclassInstance)
 
 Collector = Type[E] | Callable[..., E]
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Collect(AST, Generic[A, E]):
-    """Apply a collector to a value to build a dataclass-like instance.
-
-    When the inner value is a ``Then`` and the forward result is a tuple, any
-    ``Marked`` elements become named arguments to the collector; the remainder
-    are passed positionally. The inverse breaks the produced instance back into
-    a structure compatible with the original ``Then``.
-    """
     collector: Collector
     value: A
-    def bimap(self) -> Reversible[Collect[A, E], E]:
-        """Map the inner value, collect it, and supply a matching inverse.
-
-        For multi-field tuples derived from ``Then``, the inverse rebuilds the
-        appropriate mix of ``Marked`` and positional elements using the
-        collector's dataclass fields. For single-argument collectors, the first
-        field of the dataclass is used.
-        """
-
-        b, inner_f = self.value.bimap() if isinstance(self.value, AST) else Reversible(self.value)
+    def _bimap(self) -> Reversible[Collect[A, E], E]:
+        b, inner_f = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
         inner_then = isinstance(self.value, AST) and self.value.is_then
         if inner_then and isinstance(b, tuple):
             index: List[str | int] = []
@@ -601,7 +581,7 @@ class Collect(AST, Generic[A, E]):
 
 
 Char = TypeVar('Char', bound=Hashable)
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Token(AST, Generic[Char]):
     text: str | bytes | Tuple[Char, ...]
     token_type: Optional[Union[str, Enum]] = None

@@ -16,7 +16,7 @@ from syncraft.syntax import Syntax
 
 
 T=TypeVar('T', bound=Hashable)
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Finder(Generator[T], Generic[T]):
     """Generator backend used to search/inspect parse trees.
 

@@ -6,7 +6,6 @@ from typing import (
 )
 
 from dataclasses import dataclass, field, replace
-from functools import cached_property
 from syncraft.algebra import (
     SyncraftError
 )
@@ -25,7 +24,7 @@ Tag = str | Enum
 C = TypeVar('C', bound=Hashable)
 
 FAStateBuilder = Callable[[], 'FAState']
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FAState:
     _counter: ClassVar[int] = 0  # shared across all states
     id: int = field(default_factory=lambda: FAState._next_id())
@@ -49,7 +48,7 @@ class FAState:
     
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ReverseDFA(Generic[C]):
     alphabet: AlphabetProtocol[C]
     final: FAState
@@ -72,7 +71,7 @@ class ReverseDFA(Generic[C]):
             current = next_state
         return self.alphabet.concat(result[::-1])
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DFA(Generic[C]):
     alphabet: AlphabetProtocol[C]
     init: FAState
@@ -584,7 +583,7 @@ class DFA(Generic[C]):
     def runner(self, *, non_greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
         return DFARunner.create(self, non_greedy=non_greedy)
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class NFA(Generic[C]):
     alphabet: AlphabetProtocol[C]
     init: FAState
@@ -836,7 +835,7 @@ class NFA(Generic[C]):
 Automata = TypeVar('Automata', bound=NFA | DFA)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RunnerResult(Generic[C, Automata]):
     runner: Runner[C, Automata]
     error: bool
@@ -844,7 +843,7 @@ class RunnerResult(Generic[C, Automata]):
     accepted: Optional[Tuple[int, frozenset[Tag]]] = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Runner(Protocol[C, Automata]):
     fa: Automata
     accepted: Tuple[Tuple[int, frozenset[FAState] | FAState, frozenset[Tag]], ...] = field(default_factory=tuple)
@@ -875,7 +874,7 @@ class Runner(Protocol[C, Automata]):
     def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, Automata]: ...
     def is_accepted(self) -> bool: ...
     def is_valid(self) -> bool: ...
-    @cached_property
+    @property
     def resumable(self) -> frozenset[CharSet[C]]: ...
     def tags(self) -> frozenset[Tag]: ...    
     def reset(self) -> Runner[C, Automata]:
@@ -884,7 +883,7 @@ class Runner(Protocol[C, Automata]):
         
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class NFARunner(Runner[C, NFA[C]]):
     current: frozenset[FAState] = field(default_factory=frozenset)
     @classmethod
@@ -981,7 +980,7 @@ class NFARunner(Runner[C, NFA[C]]):
     def is_valid(self) -> bool:
         return bool(self.current)
 
-    @cached_property
+    @property
     def resumable(self) -> frozenset[CharSet[C]]:
         result: Set[CharSet[C]] = set()
         for s in self.current:
@@ -1010,7 +1009,7 @@ class NFARunner(Runner[C, NFA[C]]):
 
     
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DFARunner(Runner[C, DFA[C]]):
     current: Optional[FAState] = None
 
@@ -1105,7 +1104,7 @@ class DFARunner(Runner[C, DFA[C]]):
     def is_valid(self) -> bool:
         return bool(self.current)
     
-    @cached_property
+    @property
     def resumable(self) -> frozenset[CharSet[C]]:
         keys = self.dfa.transitions.get(self.current, {}).keys()
         filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
@@ -1151,13 +1150,13 @@ class ModeActionEnum(Enum):
     PUSH = "PUSH"
     BELONG = "BELONG"
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ModeAction:
     action: ModeActionEnum
     mode: str
     belong: str | None = None  # only used for PUSH action
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Builder(Generic[C]):
     kind: _NodeKind
     tag: Tag | None = None

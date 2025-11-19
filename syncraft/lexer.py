@@ -35,7 +35,7 @@ T = TypeVar('T', bound=Hashable)
 
 Tag = str | Enum
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LexerError:
     message: str
     index: int
@@ -72,7 +72,7 @@ class Mode(Generic[C]):
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LexerResult(Generic[C]):
     tag: Tag | None
     start: int
@@ -95,11 +95,11 @@ class LexerProtocol(Protocol, Generic[C]):
     def candidate(self) -> Either[LexerError, None | LexerResult[C]]: ...
     
     @classmethod
-    def create(cls, *args: Any, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
+    def create(cls, *args: Any, **kwargs: Any) -> Optional[LexerProtocol[C]]: ...
 
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: ...
+    def from_kwargs(cls, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]: ...
 
 
 
@@ -135,16 +135,15 @@ class LexerBase(LexerProtocol[C]):
 
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> Optional["LexerProtocol[C]"]: 
+    def from_kwargs(cls, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]:
         kwargs = cls.normalise_kwargs(kwargs)
         for sub in all_subclasses(cls):
             c = CallWith(sub.create, **kwargs)
-            if c.missing_args or c.missing_kwargs:
-                continue
-            ret = c()
-            if ret is not None:
-                return ret
-        return None
+            if not c.missing_args and not c.missing_kwargs:
+                ret = c()
+                if ret is not None:
+                    return ret, c.unused_kwargs
+        return None, kwargs
 
 @dataclass
 class LexerCache:
@@ -473,7 +472,7 @@ class Lexer(LexerBase[C]):
     
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ExtRule(Generic[T]):
     predicate: Callable[[T], bool]
     generator: Callable[[Any, random.Random], T]

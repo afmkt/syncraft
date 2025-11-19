@@ -30,7 +30,7 @@ YieldChannelType = Incomplete[S]
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Error:
     this: Optional[Any] = None
     message: Optional[str] = None
@@ -225,7 +225,7 @@ class Error:
         return current
 
 
-@dataclass(frozen=True)        
+@dataclass(frozen=True, slots=True)        
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]

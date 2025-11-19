@@ -8,7 +8,6 @@ from typing import (
 
 import random
 
-from functools import cached_property
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, YieldChannelType, Error
@@ -39,7 +38,7 @@ T = TypeVar('T', bound=Hashable)
 B = TypeVar('B')
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class GenState(Bindable, Generic[T]):
     ast: Optional[ParseResult[T]] = None
     restore_pruned: bool = False
@@ -108,7 +107,7 @@ class GenState(Bindable, Generic[T]):
 
 
 
-    @cached_property
+    @property
     def pruned(self)->bool:
         """Whether the current branch is pruned (``ast`` is ``None``)."""
         return self.ast is None
@@ -157,7 +156,7 @@ class GenState(Bindable, Generic[T]):
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):      
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState[T]] | Tuple[Algebra[Any, GenState[T]], bool]) -> Algebra[Seq, GenState[T]]:
@@ -304,7 +303,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     
  
     @classmethod
-    def choice(cls, *options: Algebra[Any, GenState[T]], reorder: int) -> Algebra[Choice[Any], GenState[T]]:
+    def choice(cls, *options: Algebra[Any, GenState[T]], sample_interval: int) -> Algebra[Choice[Any], GenState[T]]:
         if not options:
             raise SyncraftError("At least one option is required for choice", offender=options, expect="non-empty options")
         def choice_run(input: GenState[T], cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
@@ -454,10 +453,11 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             *,
             lexer_class: Type[LexerProtocol] | None = None,
             **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
+        lexer:LexerProtocol[Any] | None
         if lexer_class is None:
-            lexer:LexerProtocol[Any] | None = LexerBase.from_kwargs(**kwargs)
+            lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
         else:
-            lexer = lexer_class.from_kwargs(**kwargs)            
+            lexer, remaining_kwargs = lexer_class.from_kwargs(**kwargs)            
         
         if lexer is None:
             raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")

@@ -9,10 +9,10 @@ from typing import (
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING
 )
 from dataclasses import dataclass, field, replace
-from functools import reduce, cached_property
+
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict
+from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
@@ -21,6 +21,7 @@ from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect,
 
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import Builder
+
 
 
 
@@ -37,7 +38,7 @@ D = TypeVar('D')  # Result type for else branch
 S = TypeVar('S', bound=Bindable)  # State type
 
 N = TypeVar('N', bound=Hashable)  # Node type for graphs
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Graph(Generic[N]):
     edges: FrozenDict[N, frozenset[N]]
     root: N
@@ -98,7 +99,7 @@ class Graph(Generic[N]):
     def __str__(self) -> str:
         return self.str_tree(self.root)
         
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SyntaxSpec:
     name: Optional[str] = field(compare=False, hash=False)
     file: Optional[str] = field(compare=False, hash=False) 
@@ -183,7 +184,7 @@ class SyntaxSpec:
         
     
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LazySpec(SyntaxSpec):
     lazy_state: LazyState[Any, Any]
 
@@ -217,7 +218,7 @@ class LazySpec(SyntaxSpec):
         lazy_cache[key] = target
         return (target,)
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MarkedSpec(SyntaxSpec):
     mname: str
     spec: SyntaxSpec
@@ -244,7 +245,7 @@ class MarkedSpec(SyntaxSpec):
         return (self.spec,)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CollectSpec(SyntaxSpec):
     collector: Collector = field(compare=False, hash=False)
     id: Hashable
@@ -271,7 +272,7 @@ class CollectSpec(SyntaxSpec):
     def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.spec,)
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SeqSpec(SyntaxSpec):
     steps: Tuple[Tuple[SyntaxSpec, bool], ...]
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
@@ -297,7 +298,7 @@ class SeqSpec(SyntaxSpec):
     def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return tuple(step for step, keep in self.steps)
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
@@ -348,7 +349,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
         return (self.left, self.right)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ChoiceSpec(SyntaxSpec):
     sample_interval: int
     options: Tuple[SyntaxSpec, ...]
@@ -376,7 +377,7 @@ class ChoiceSpec(SyntaxSpec):
     def _children(self, *, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return self.options
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class OrElseSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
@@ -420,7 +421,7 @@ class OrElseSpec(SyntaxSpec, Generic[A, B]):
     def _children(self, *, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.left, self.right)
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ManySpec(SyntaxSpec, Generic[A]):
     spec: SyntaxSpec
     at_least: int
@@ -453,7 +454,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LexSpec(SyntaxSpec):
     fname: str
     args: Tuple[Any, ...] = field(default_factory=tuple)
@@ -543,17 +544,19 @@ class LazyState(Generic[A, S]):
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class Syntax(Generic[A, S]):
     """
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
     """
+    
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
+    _lexspec_cache: frozenset[LexSpec] = field(default = MISSING, init=False, repr=False, compare=False, hash=False)
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     
-    def svg(self, depth: int = 3) -> Optional[SVGVisualization]:
+    def vis(self, depth: int = 3) -> Optional[SVGVisualization]:
         from syncraft.vis import syntax2svg
         return syntax2svg(self.spec, max_depth=depth)
         
@@ -1030,13 +1033,15 @@ class Syntax(Generic[A, S]):
                                             line=spec.line, 
                                             func=spec.func))
     
-    @cached_property
+    @property
     def lexspec(self) -> frozenset[LexSpec]:
-        result: Set[LexSpec] = set()
-        for _, node in self.spec.walk():
-            if isinstance(node, LexSpec):
-                result.add(node)
-        return frozenset(result)
+        if self._lexspec_cache is MISSING:            
+            result: Set[LexSpec] = set()
+            for _, node in self.spec.walk():
+                if isinstance(node, LexSpec):
+                    result.add(node)
+            object.__setattr__(self, '_lexspec_cache', frozenset(result))
+        return self._lexspec_cache
 
 
     @classmethod

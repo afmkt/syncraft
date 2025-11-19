@@ -27,12 +27,12 @@ ast, _ = parse_word(syntax, "a b, a b, a b")
 See also: `literal`, combinators like `+` and `.sep_by`, and `parse_word` in the [API reference](reference.md).
 
 ## 3. Convert AST to a friendlier value with bimap
-`AST.bimap()` returns a pair `(value, inverse)` where:
+`AST.bimap` returns a pair `(value, inverse)` where:
 - `value` is a simplified Python structure; and
 - `inverse` maps a value back to an AST for round-tripping.
 
 ```python
-value, inverse = ast.bimap()
+value, inverse = ast.bimap
 print(value)
 ```
 
@@ -64,7 +64,7 @@ C = literal(",")
 syntax = (A + B).to(Pair).sep_by(C)
 
 ast, _ = parse_word(syntax, "a b, a b, a b")
-value, inverse = ast.bimap()
+value, inverse = ast.bimap
 print(value)
 ```
 
@@ -110,9 +110,9 @@ Many(
 See also: `bimap` on AST and `generate` in the [API reference](reference.md).
 
 > Note
-> `ast.bimap()` drops `OrElse.kind` to `None` by design. For left‑recursive grammars, the Parser’s LR recovery
+> `ast.bimap` drops `OrElse.kind` to `None` by design. For left‑recursive grammars, the Parser’s LR recovery
 > produces `Then(kind=BOTH, ...)` chains that the Generator cannot generally re‑thread without those branch hints.
-> Therefore, left‑recursive grammars are not guaranteed to round‑trip after `bimap()`; mutually left‑recursive
+> Therefore, left‑recursive grammars are not guaranteed to round‑trip after `bimap`; mutually left‑recursive
 > cases are especially prone to failure. If round‑trip is a requirement, prefer right‑recursive/iterative forms
 > (e.g., `Term (op Term)*`), or preserve/re‑introduce explicit branch kinds before `validate()`/`generate_with()`.
 > See the left‑recursion how‑to for details.

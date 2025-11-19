@@ -14,7 +14,7 @@ from syncraft.ast import SyncraftError
 from syncraft.utils import FrozenDict
 from syncraft.input import PayloadKind
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Binding:
     bindings : frozenset[Tuple[str, Any]] = frozenset()
     def bind(self, name: str, node: Any) -> Binding:
@@ -30,7 +30,7 @@ class Binding:
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Bindable:
     """Mixin that carries named bindings produced during evaluation.
 
@@ -71,11 +71,11 @@ class Quantifier(Enum):
     FORALL = "forall"
     EXISTS = "exists"
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ConstraintResult:
     result: bool
     unbound: frozenset[str] = frozenset()
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Constraint:
     """A composable boolean check over a set of bound values.
 
@@ -189,14 +189,14 @@ def predicate(f: Callable[..., bool],
     """Create a constraint from a Python predicate function.
 
     The predicate's parameters define the required bindings. When ``bimap`` is
-    true, arguments with a ``bimap()`` method are mapped to their forward value
+    true, arguments with a ``bimap`` method are mapped to their forward value
     before evaluation, making it convenient to write predicates over AST values.
 
     Args:
         f: The boolean function to wrap as a constraint.
         name: Optional human-friendly name; defaults to ``f.__name__``.
         quant: Quantification over bound values (forall or exists).
-        bimap: Whether to call ``bimap()`` on arguments before evaluation.
+        bimap: Whether to call ``bimap`` on arguments before evaluation.
 
     Returns:
         Constraint: A composable constraint.
@@ -205,8 +205,8 @@ def predicate(f: Callable[..., bool],
     sig = inspect.signature(f)
     if bimap:
         def wrapper(*args: Any, **kwargs:Any) -> bool:
-            mapped_args = [a.bimap()[0] if hasattr(a, "bimap") else a for a in args]
-            mapped_kwargs = {k: (v.bimap()[0] if hasattr(v, "bimap") else v) for k,v in kwargs.items()}
+            mapped_args = [a.bimap[0] if hasattr(a, "bimap") else a for a in args]
+            mapped_kwargs = {k: (v.bimap[0] if hasattr(v, "bimap") else v) for k,v in kwargs.items()}
             return f(*mapped_args, **mapped_kwargs)
         
         return Constraint.predicate(wrapper, sig=sig, name=name, quant=quant)
@@ -235,7 +235,7 @@ def all_binding(a: FrozenDict[str, Tuple[Any, ...]], *names: str) -> Generator[F
     
 
 ####################################################################################################################################
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Var:
     name: str
 

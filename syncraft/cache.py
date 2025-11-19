@@ -26,7 +26,7 @@ L = TypeVar('L')  # Left type for combined results
 R = TypeVar('R')  # Right type for combined results
 S = TypeVar('S', bound=Bindable)
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Either(Generic[L, R]):
     def __bool__(self) -> bool:
         return isinstance(self, Right)
@@ -38,12 +38,12 @@ class Either(Generic[L, R]):
 Ret = Either[Any, Tuple[Any, S]]
 Rule = Callable[[S, "Cache[S]"], Generator[Any, Any, Ret]]
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Left(Either[L, Any]):
     value: Optional[L] = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Right(Either[Any, R]):
     value: R
 
@@ -55,7 +55,7 @@ class Right(Either[Any, R]):
         return None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Incomplete(Generic[S]):
     state: S
 
@@ -93,7 +93,7 @@ class LeftRecursionError(SyncraftError):
         metrics_line = ("[" + metrics + "]\n") if metrics else ""
         return f"\n{stack}\n{metrics_line}" + "\n".join(hint_lines)
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class InProgress(Generic[S]):
     rule: Rule
     revision: int = 0   # the number of successful growth attempts so far
@@ -144,7 +144,7 @@ class CacheEntry(Generic[S]):
         return None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Group(Generic[S]):
     leader: Tuple[Rule, int]
     members: frozenset[Tuple[Rule, int]] = field(default_factory=frozenset)

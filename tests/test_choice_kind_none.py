@@ -19,7 +19,7 @@ def test_validate_and_generate_with_after_bimap_resets_choice_kind():
     assert not isinstance(ast, Error)
 
     # Apply bimap then reconstruct the AST. OrElse.bimap resets kind to None.
-    x, invf = ast.bimap()  # x is a flattened tuple-like view; invf reconstructs AST with kind=None in OrElse nodes
+    x, invf = ast.bimap  # x is a flattened tuple-like view; invf reconstructs AST with kind=None in OrElse nodes
     reconstructed = invf(x)
 
     # validate() should succeed even when OrElse.kind is None
@@ -46,7 +46,7 @@ def test_mutual_left_recursion_with_base_after_bimap_A():
     ast, _ = parse_word(A, 'a b a', cache=Cache())
     assert not isinstance(ast, Error)
 
-    x, invf = ast.bimap()
+    x, invf = ast.bimap
     reconstructed = invf(x)
 
     v1, b1 = validate(A, reconstructed)
@@ -67,7 +67,7 @@ def test_mutual_left_recursion_with_base_after_bimap_B():
     ast, _ = parse_word(B, 'b a b', cache=Cache())
     assert not isinstance(ast, Error)
 
-    x, invf = ast.bimap()
+    x, invf = ast.bimap
     reconstructed = invf(x)
 
     v1, b1 = validate(B, reconstructed)

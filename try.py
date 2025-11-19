@@ -1,12 +1,8 @@
 from __future__ import annotations
 import pytest
 from dataclasses import dataclass, replace
-from syncraft.regex import (
-    parse, verify, parse_regex,
-    literal, anchor, shorthand,atom, dot, char_class, group, piece, branch, regex_syntax,
-    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
-)
+
+from syncraft.cache import Cache
 from syncraft.regex import Quantifier
 from syncraft.charset import CharSet
 from syncraft.syntax import Syntax
@@ -35,26 +31,9 @@ import syncraft.generator as gen
 from rich import print
 from syncraft.parser import parse_word
 
+from syncraft.regex import benchmark_fair, verify
 
 
-
-def test1():
-    """Test parsing of scoped flag groups with disabled flags."""
-    # result = parse_regex(group, "(?im-s:abc)") --- IGNORE ---
-    tmp = parse("(?im-s:abc)", raw=False)
-    assert isinstance(tmp, Regex)
-    result = tmp.branches[0].pieces[0].atom
-    assert isinstance(result, GroupAtom)
-    assert result.kind == GroupKind.FLAGS_SCOPED
-    assert result.inline_flags == ("i", "m")
-    assert result.disabled_flags == ("s",)
-    assert isinstance(result.pattern, Regex)
-    assert len(result.pattern.branches[0].pieces) == 3
-    for i, char in enumerate("abc"):
-        p = result.pattern.branches[0].pieces[i]
-        assert isinstance(p.atom, LiteralAtom)
-        assert p.atom.text == char
-        assert not p.quantifier
 
     
 
@@ -67,6 +46,19 @@ def test2():
     print(x)
     print(x.mapped)
 
+
+def test_parse_bytes_input_with_lexer_bind() -> None:
+    syntax_cls = Syntax.config(alphabet=Alphabet(bytes))
+    byte_token = syntax_cls.lex(BYTE=Builder.lit(b"\x01"))
+
+    value, state = parser_run(syntax=byte_token, data=StreamCursor.from_data(b"\x01"), cache=None)
+
+    assert isinstance(value, Token)
+    assert value.token_type == "BYTE"
+    assert isinstance(value.text, bytes)
+    assert value.text == b"\x01"
+    assert state is not None
+    assert state.ended
+
 if __name__ == "__main__":
-    # print(str(regex_syntax.svg(3)))
-    test2()
+    benchmark_fair()

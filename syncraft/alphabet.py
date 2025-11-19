@@ -93,7 +93,7 @@ class Alphabet(AlphabetProtocol[C]):
 
 
 @Alphabet.register(str)
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TextAlphabet(AlphabetProtocol[str]):
     @property
     def space(self) -> Type[str]:
@@ -118,7 +118,7 @@ class TextAlphabet(AlphabetProtocol[str]):
         return ''.join(cs)
     
 @Alphabet.register(bytes)
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ByteAlphabet(AlphabetProtocol[bytes]):
     @property
     def space(self) -> Type[bytes]:
@@ -144,7 +144,7 @@ class ByteAlphabet(AlphabetProtocol[bytes]):
         return b''.join(cs)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
     _space: Type[Enum] | frozenset[C]
     code2int: FrozenDict[C, int] = field(default_factory=FrozenDict)
@@ -154,7 +154,7 @@ class FiniteAlphabet(AlphabetProtocol[C], Generic[C]):
     def space(self) -> Type[Enum] | frozenset[C]:
         return self._space
     
-    @cached_property
+    @property
     def codes(self) -> Tuple[Tuple[int, int], ...]:
         return ((0, len(self.code2int) - 1), )
     

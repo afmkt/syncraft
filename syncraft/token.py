@@ -88,7 +88,7 @@ class TokenSpecBase(TokenSpec[T]):
         tags, params = self._resolve_tag_kwargs(params)
         return config, params, tags
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TokenMatcher(TokenSpecBase[T]):
     pred: Callable[[T], bool]
     gen: Callable[[Any, random.Random], T]
@@ -116,7 +116,7 @@ class TokenMatcher(TokenSpecBase[T]):
         self.normalise_kwargs(dict(kwargs))
         return self.gen
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Scalar(TokenSpecBase[T]):
     constructor: Callable[..., T]
     pattern: re.Pattern = field(default=re.compile(".*"), metadata={"is_config": True})
@@ -160,7 +160,7 @@ class Scalar(TokenSpecBase[T]):
         return gen
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Structured(TokenSpecBase[T]):
     constructor: Callable[..., T]
     case_sensitive: bool = field(default=True, metadata={"is_config": True})

@@ -22,7 +22,7 @@ class LegacyRun:
     def is_accepted(self, _fa):
         return self._runner.is_accepted()
     def resumable(self, _fa):
-        # Under new Runner API, resumable is a cached_property (frozenset of CharSet)
+        
         return self._runner.resumable
 
 def run(fa: NFA | DFA, inp) -> LegacyRun:

@@ -86,7 +86,7 @@ def underline(text: str, ul: bool) -> str:
         return text
 
 @total_ordering
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ParserState(Bindable, Generic[T]):
 
     input: Tuple[T, ...] | str | bytes = field(default_factory=tuple, compare=False, hash=False)
@@ -335,7 +335,7 @@ class ParserState(Bindable, Generic[T]):
             
     
     
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Parser(Algebra[T, ParserState[T]]):
 
     @classmethod
@@ -343,10 +343,11 @@ class Parser(Algebra[T, ParserState[T]]):
             *,
             lexer_class: Type[LexerProtocol] | None = None,
             **kwargs: Any) -> Algebra[T, ParserState[T]]:
+        lexer:LexerProtocol[Any] | None
         if lexer_class is None:
-            lexer:LexerProtocol[Any] | None = LexerBase.from_kwargs(**kwargs)
+            lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
         else:
-            lexer = lexer_class.from_kwargs(**kwargs)            
+            lexer, remaining_kwargs = lexer_class.from_kwargs(**kwargs)            
         if lexer is None:
             raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
         ntags = lexer.tags()

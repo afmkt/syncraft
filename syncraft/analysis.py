@@ -3,7 +3,7 @@ from typing import Any, Tuple
 from dataclasses import dataclass, field, replace
 from syncraft.syntax import Syntax, SyntaxSpec, Graph
 from syncraft.utils import FrozenDict
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Analyzer:
     graph: Graph
     metadata: FrozenDict[str, Any] = field(default_factory=FrozenDict)

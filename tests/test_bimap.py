@@ -25,7 +25,7 @@ def test1_simple_then() -> None:
     # print("---" * 40)
     # print(generated)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     # print(value)
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
@@ -42,7 +42,7 @@ def test2_named_results() -> None:
     # print("---" * 40)
     # print(generated)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u,v = gen.generate_with(syntax, bmap(value))
     assert u == generated
     
@@ -59,7 +59,7 @@ def test3_many_literals() -> None:
     # print("---" * 40)
     # print(generated)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
 
@@ -76,7 +76,7 @@ def test4_mixed_many_named() -> None:
     # print("---" * 40)
     # print(generated)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
 
@@ -92,7 +92,7 @@ def test5_nested_then_many() -> None:
     # print("---" * 40)
     # print(generated)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value), restore_pruned=True)
     assert u == generated
 
@@ -106,7 +106,7 @@ def test_then_flatten():
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
 
@@ -122,7 +122,7 @@ def test_named_in_then():
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
 
@@ -135,7 +135,7 @@ def test_named_in_many():
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
 
@@ -149,7 +149,7 @@ def test_named_in_or():
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
 
@@ -169,7 +169,7 @@ def test_deep_mix():
     # print('---' * 40)
     # print(generated)
     assert ast == generated
-    value, bmap = generated.bimap()
+    value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == generated
 
@@ -189,7 +189,7 @@ def test_backtracking_many() -> None:
     syntax = (A.many() + B)  # must not eat the final "a" needed for B
     sql = "a a a a b"
     ast, bound = parse_word(syntax, sql, cache=Cache())
-    value, bmap = ast.bimap()
+    value, bmap = ast.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == ast
 
@@ -216,7 +216,7 @@ def test_named_many() -> None:
     syntax = A.many()
     sql = "a a"
     ast, bound = parse_word(syntax, sql, cache=Cache())
-    value, bmap = ast.bimap()
+    value, bmap = ast.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == ast
 
@@ -227,7 +227,7 @@ def test_or_named() -> None:
     syntax = A | B
     sql = "b"
     ast, bound = parse_word(syntax, sql, cache=Cache())
-    value, bmap = ast.bimap()
+    value, bmap = ast.bimap
     u, v = gen.generate_with(syntax, bmap(value))
     assert u == ast
 
@@ -275,10 +275,10 @@ def test_optional():
     A = literal("a").mark("a")
     syntax = A.optional
     ast1, bound = parse_word(syntax, "", cache=Cache())
-    v1, _ = ast1.bimap()
+    v1, _ = ast1.bimap
     assert isinstance(v1, Nothing)
     ast2, bound = parse_word(syntax, "a", cache=Cache())
-    v2, _ = ast2.bimap()
+    v2, _ = ast2.bimap
     assert v2 == Marked(name='a', value=from_string('a'))
 
 def test_nothing():
@@ -294,7 +294,7 @@ def test_many_optional():
     syntax = A.optional.many()
     ast1, _ = parse_word(syntax, "a a b", cache=Cache())
     # print(ast1)
-    ast2, inv = ast1.bimap()
+    ast2, inv = ast1.bimap
     assert Many(value=(OrElse(kind=None, value=from_string('a')), OrElse(kind=None, value=from_string('a')))) == inv(ast2)
 
 
@@ -307,7 +307,7 @@ def test_grouping():
     print(s)
     ast, _ = parse_word(s, "a b d c", cache=Cache())    
     print(ast)
-    x, inv = ast.bimap()
+    x, inv = ast.bimap
     print(x)
     assert inv(x) == ast
 
@@ -315,7 +315,7 @@ def test_grouping():
     print(s1)
     ast1, _ = parse_word(s1, "a b d c", cache=Cache())
     print(ast1)
-    y, inv = ast1.bimap()
+    y, inv = ast1.bimap
     print(y)
     assert inv(y) == ast1
     assert x == y, "Grouping in 'then' operations should not affect parsing results"

@@ -50,7 +50,7 @@ def test_to() -> None:
     # print(ast)
     g, bound = gen.generate_with(syntax, ast, restore_pruned=True)
     assert ast == g
-    x, f = g.bimap()
+    x, f = g.bimap
     # print(1, x)
     u,v = gen.generate_with(syntax, f(x), restore_pruned=True)
     assert u == ast
@@ -59,7 +59,7 @@ def test_to() -> None:
     # print(f(x))
     ast2, bound = gen.generate_with(syntax, f(x), restore_pruned=True) 
     # print(ast2)``
-    y, fy = ast2.bimap()
+    y, fy = ast2.bimap
     # print(3, y)
     assert y == x
     u, v = gen.generate_with(syntax, fy(y), restore_pruned=True)

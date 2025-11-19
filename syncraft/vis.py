@@ -15,7 +15,7 @@ from syncraft.syntax import (
 from syncraft.ast import ThenKind
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SVGVisualization:
     svg: str
     style: Optional[str]

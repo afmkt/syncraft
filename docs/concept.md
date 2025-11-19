@@ -34,7 +34,7 @@ Bidirectional mapping appears in two closely related places:
 
 1) On Syntax/Algebra: `syntax.bimap(f, i)` applies a forward mapping `f : A -> B` to produced values and uses the inverse `i : B -> A` to keep the backend state coherent. That coherence is enforced by the Algebra: e.g., Parser and Generator provide different implementations for the inverse mapping over their states. The forward and inverse functions are defined independently. This corresponds to a Biarrow: `Biarrow[A, B] = (A -> B, B -> A)`.
 
-2) On AST nodes: `ast.bimap()` computes a projected value together with a data‑dependent inverse function that can rebuild the original AST from a compatible projection. Every node implements a `bimap` that returns `(value, inverse)`. The signature is `A -> (B, B -> A)`: the forward mapping returns the transformed value `B` along with an inverse function. The forward mapping dictates how the inverse works; they are no longer independent. This corresponds to a Bimap: `Bimap[A, B] = A -> (B, B -> A)`.
+2) On AST nodes: `ast.bimap` computes a projected value together with a data‑dependent inverse function that can rebuild the original AST from a compatible projection. Every node implements a `bimap` that returns `(value, inverse)`. The signature is `A -> (B, B -> A)`: the forward mapping returns the transformed value `B` along with an inverse function. The forward mapping dictates how the inverse works; they are no longer independent. This corresponds to a Bimap: `Bimap[A, B] = A -> (B, B -> A)`.
 
 
 3) Why both? Many conversions are projective (they drop information). Reconstructing requires injecting context that was lost. That’s hard with a plain `Biarrow`, but feasible with a `Bimap` which returns a specialized inverse closure carrying the needed context.
@@ -59,7 +59,7 @@ Key pieces:
 - `bind(name)`: records the current value under a symbolic name in the state’s bindings.
 - `forall(f)` / `exists(f)`: wrap a predicate function. The function’s parameter names define which bindings it needs. The quantifier runs the predicate over the Cartesian product of all bound values for those names.
 - `Constraint` composition: `&` (and), `|` (or), `^` (xor), `~` (not). Evaluation returns a `ConstraintResult` with `result: bool` and `unbound: set[str]` for any missing variables.
-- Value projection: by default, predicates see the projected value via `bimap()` if the argument provides it, so you can write clean, semantic‑level checks.
+- Value projection: by default, predicates see the projected value via `bimap` if the argument provides it, so you can write clean, semantic‑level checks.
 
 Example: ensure all references differ from their declarations (toy grammar, schematic):
 

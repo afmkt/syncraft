@@ -21,7 +21,7 @@ C = TypeVar('C', bound=Hashable)
 
     
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CharSet(Generic[C]):
     START_CP: ClassVar[int] = -1
     END_CP: ClassVar[int] = -2

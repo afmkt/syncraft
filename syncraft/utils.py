@@ -9,6 +9,8 @@ import threading
 from weakref import WeakKeyDictionary, WeakValueDictionary
 import os
 
+MISSING: Any = object()
+
 def callable_str(obj:Any, with_id: bool=False)->str:
     if not callable(obj):
         return repr(obj)
@@ -413,7 +415,7 @@ R = TypeVar('R')
 R1 = TypeVar('R1')
 R2 = TypeVar('R2')
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Yield(Generic[Y, S, R, Y1, S1, R1]):
     yield_f: Callable[[Y], Y1] = cast(Callable[[Y], Y1], lambda y: y)
     send_f: Callable[[S1], S] = cast(Callable[[S1], S], lambda s: s)

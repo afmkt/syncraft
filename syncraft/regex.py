@@ -59,8 +59,8 @@ class_class_items = leading_rsquare? class_item { class_item } ;
 leading_rsquare   = "]" ;
 class_literal     = unicode_scalar - {"\\", "]"} ;
 
-class_item        = range | class_atom ;
-range             = class_atom "-" class_atom ;
+class_item        = irange | class_atom ;
+irange            = class_atom "-" class_atom ;
 class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
 escaped_class_meta= "\\" class_meta_char ;
 class_meta_char   = "-" | "]" | "\\" ;
@@ -205,7 +205,7 @@ class ShorthandKind(Enum):
             r"\S": cls.NOT_SPACE,
         }[literal]
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ShorthandAtom:
     kind: ShorthandKind
 
@@ -243,7 +243,7 @@ class_meta_char = minus | rsquare | backslash
 escaped_class_meta= (backslash >> class_meta_char).map(lambda t: t[0])
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UnicodeCategoryAtom:
     categories: Tuple[str, ...]
     negated: bool = False   
@@ -259,21 +259,21 @@ class_atom = S.choice(class_literal,
                     escaped_class_meta).map(lambda t: t.text if isinstance(t, Token) else t).named('class_atom')
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CharRange:
     start: str
     end: str
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CharClassAtom:
     items: Tuple[Union[str, CharRange], ...]
     negated: bool = False
 
 
-# range             = class_atom "-" class_atom ;
-range = S.seq(class_atom.mark('start'), -minus, class_atom.mark('end')).to(CharRange).named('range')
+# irange             = class_atom "-" class_atom ;
+irange = S.seq(class_atom.mark('start'), -minus, class_atom.mark('end')).to(CharRange).named('irange')
 
-# class_item = range | class_atom ;
-class_item = range | class_atom
+# class_item = irange | class_atom ;
+class_item = irange | class_atom
 
 # class_class_items = leading_rsquare? class_item { class_item } ;
 # leading_rsquare == ']' indicates that the first character in the class is a literal ']'
@@ -295,7 +295,7 @@ class GroupKind(Enum):
     FLAGS = auto()
     FLAGS_SCOPED = auto()
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class GroupAtom:
     kind: GroupKind
     pattern: Optional[Regex] = None
@@ -364,7 +364,7 @@ anchor = S.choice(caret,
                   dollar,
                   boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind').named('anchor')
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Quantifier:
     minimum: int
     maximum: Optional[int]     # None → unbounded
@@ -394,18 +394,18 @@ quantifier = (S.choice(
     ) + ~question).map(lambda t: replace(t[0], greedy=not t[1])).named('quantifier') 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LiteralAtom:
     text: str
 
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AnchorAtom:
     kind: AnchorKind
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DotAtom:
     pass
 
@@ -422,7 +422,7 @@ atom = S.choice(
         ).named('atom')
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Piece:
     atom: Union[LiteralAtom,
                 DotAtom,
@@ -436,14 +436,14 @@ class Piece:
 # piece             = atom [ quantifier ] ;
 piece = (atom.mark('atom') + (~quantifier).mark('quantifier')).to(Piece).named('piece')
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Branch:
     pieces: Tuple[Piece, ...]
 
 # branch            = piece { piece } ;
 branch = piece.many().mark('pieces').to(Branch).named('branch')
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Regex:
     branches: Tuple[Branch, ...]
 
@@ -501,11 +501,14 @@ class VerifyResult:
 
 
 def verify(pattern: str, profile: bool = False) -> VerifyResult:
+    import timeit
+    timeit.timeit(lambda: None, number=1)  # Warm up timer
     myerr = None
     err = None
     cache: Cache[Any] = Cache()
     if profile:
         cache = cache.with_profiler()
+    
     parsed = parse(pattern, raw=False, cache=cache)
     if cache.profiler is not None:
         cache.profiler.report()
@@ -526,3 +529,43 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
         err_syncraft=myerr,
         err_re=err
     )
+
+
+def benchmark_fair():
+    # ITERATOR to feed unique patterns
+    import timeit
+    
+    base_pattern = r"(?P<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+    unique_patterns = [f"{base_pattern}(?#{i})" for i in range(1000)]    
+    pat_iter = iter(unique_patterns)
+    
+    def run_syncraft():
+        try:
+            p = next(pat_iter)
+            # You are already correctly passing a new cache here
+            parse(p, raw=False, cache=Cache()) 
+        except StopIteration:
+            pass
+
+    # Reset iterator for the second test
+    pat_iter_re = iter(unique_patterns)
+
+    def run_re():
+        try:
+            p = next(pat_iter_re)
+            # This forces a compile because 'p' has never been seen before
+            re.compile(p)
+        except StopIteration:
+            pass
+
+    # 2. Run Benchmark (1000 loops for 1000 patterns)
+    t_syncraft = timeit.timeit(run_syncraft, number=1000)
+    t_re = timeit.timeit(run_re, number=1000)
+
+    print("--- FAIR COMPARISON (Cold Start) ---")
+    print(f"Syncraft: {t_syncraft/1000:.5f} s/parse")
+    print(f"Regex:    {t_re/1000:.5f} s/compile")
+    
+    ratio = (t_syncraft) / (t_re)
+    print(f"Multiplier: Syncraft is {ratio:.1f}x slower than C-compiled Regex")
+
