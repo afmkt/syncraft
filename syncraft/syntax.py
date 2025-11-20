@@ -818,7 +818,7 @@ class Syntax(Generic[A, S]):
         return self.sep_by(sep=sep).between(left=open, right=close)
 
     @property
-    def optional(self) -> Syntax[OrElse[A, Nothing], S]:
+    def optional(self) -> Syntax[OrElse[A, type[Nothing]], S]:
         """Make this syntax optional.
 
         Returns a OrElse of the value or Nothing when absent.
@@ -826,7 +826,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing OrElse of value or Nothing.
         """
-        return (self | self.success(Nothing())).named(f"({str(self.spec)})?", _location=False)
+        return (self | self.success(Nothing)).named(f"({str(self.spec)})?", _location=False)
         
     @property
     def cut(self) -> Syntax[A, S]:
@@ -1187,7 +1187,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
                     assert result.value is not None, "Algebra returned Left with None value"
                     ret = result.value, None
                 else:
-                    ret = Error(this=result, message="Algebra returned data that is not Left or Right"), None
+                    ret = Error.new(this=result, message="Algebra returned data that is not Left or Right"), None
             finally:
                 self.finalize(ret)
             yield ret  # type: ignore

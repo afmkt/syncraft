@@ -520,7 +520,7 @@ class Parser(Algebra[T, ParserState[T]]):
                                 token = lexeme
                             return Right((token, state.advance())) # type: ignore
                         case Left(LexerError(message=err_msg, index=index, offender=offender, expect=expect)):
-                            return Left(Error(message="Cannot match token at end of input", this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
+                            return Left(Error.new(message="Cannot match token at end of input", this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
                         case e:
                             raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or LexerError")
                 elif state.pending:
@@ -530,7 +530,7 @@ class Parser(Algebra[T, ParserState[T]]):
                 else:
                     match lexer.match(ntags, state.current, state.cache_key):
                         case Left(LexerError(message=err_msg, index=index, offender=offender, expect=expect)):
-                            return Left(Error(message=err_msg, this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
+                            return Left(Error.new(message=err_msg, this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):

@@ -40,6 +40,27 @@ class Error:
     previous: Optional[Error] = field(default=None)
     depth: Optional[int] = field(default=None)
 
+    @classmethod
+    def new(cls, 
+            *, 
+            this: Any, 
+            message: Optional[str] = None, 
+            error: Optional[Any] = None, 
+            state: Optional[Any] = None,
+            committed: bool = False,
+            depth: Optional[int] = None,
+            previous: Optional[Error] = None
+            ) -> Error:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'this', this)
+        object.__setattr__(obj, 'message', message)
+        object.__setattr__(obj, 'error', error)
+        object.__setattr__(obj, 'state', state)
+        object.__setattr__(obj, 'committed', committed)
+        object.__setattr__(obj, 'previous', previous)
+        object.__setattr__(obj, 'depth', depth)
+        return obj
+
     @staticmethod
     def get_syntax(f: Any) -> Syntax | None:
         if isinstance(f, Algebra):  # for Algebra subclasses
@@ -200,13 +221,7 @@ class Error:
             message: Optional[str] = None,
             error: Optional[Any] = None, 
             state: Optional[Any] = None) -> Error:
-        new = Error(
-            this=this,
-            error=error,
-            message=message,
-            state=state
-        )
-        return replace(new, previous=self)
+        return self.new(this=this, message=message, error=error, state=state, previous=self)
     
     @property
     def list(self) -> List[Error]:
@@ -286,7 +301,7 @@ class Algebra(Generic[A, S]):
         except Exception:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-            return Left(Error(
+            return Left(Error.new(
                 message="Unexpected error during parsing",
                 error=traceback_details,
                 this=self,
@@ -319,7 +334,7 @@ class Algebra(Generic[A, S]):
                                                 S, 
                                                 Either[Any, Tuple[A, S]]]:
             yield from ()
-            return Left(Error(
+            return Left(Error.new(
                 error=error,
                 this=cls,
                 state=input
@@ -343,7 +358,7 @@ class Algebra(Generic[A, S]):
                 case Error():
                     return replace(e, committed=True)
                 case _:
-                    err = Error(error=e, this=self)
+                    err = Error.new(error=e, this=self)
                     return replace(err, committed=True)
         return self.map_error(commit_error)
 
@@ -543,7 +558,7 @@ class Algebra(Generic[A, S]):
             if last_error is not None:
                 return Left(last_error)
             else:
-                return Left(Error(
+                return Left(Error.new(
                     message="No options provided",
                     this=cls,
                     state=input
@@ -618,7 +633,7 @@ class Algebra(Generic[A, S]):
                             ret.append(value)
                         current_input = next_input
                         if at_most is not None and len(ret) > at_most:
-                            return Left(Error(
+                            return Left(Error.new(
                                     message=f"Expected at most {at_most} matches, got {len(ret)}",
                                     this=self,
                                     state=current_input
@@ -627,7 +642,7 @@ class Algebra(Generic[A, S]):
                 if inner_error is not None:
                     return inner_error
                 else:
-                    return Left(Error(
+                    return Left(Error.new(
                             message=f"Expected at least {at_least} matches, got {len(ret)}",
                             this=self,
                             state=current_input

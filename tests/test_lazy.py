@@ -38,7 +38,7 @@ def test_simple_recursion()->None:
             from_string('a'), 
             (
                 from_string('a'), 
-                Nothing()
+                Nothing
             )
         )
     )
@@ -66,7 +66,7 @@ def test_direct_recursion_equivalence()->None:
             from_string('a'), 
             (
                 from_string('a'), 
-                Nothing()
+                Nothing
             )
         )
     )
@@ -129,7 +129,7 @@ def test_recursion() -> None:
             from_string('a'), 
             (
                 from_string('a'), 
-                Nothing(), 
+                Nothing, 
                 from_string('b')
             ), 
             from_string('b')

@@ -185,7 +185,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                                            GenState[T], 
                                                            Either[Any, Tuple[Seq, GenState[T]]]]:
             if not input.pruned and not isinstance(input.ast, Seq):
-                return Left(Error(this=input.ast, 
+                return Left(Error.new(this=input.ast, 
                                     message=f"Expect Seq got {input.ast}",
                                     state=input))
             if input.pruned:
@@ -203,7 +203,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 result = []
                 ast_seq = cast(Seq, input.ast)
                 if len(ast_seq.value) != len(normaize_steps):
-                    return Left(Error(this=input.ast, 
+                    return Left(Error.new(this=input.ast, 
                                         message=f"Expect Seq of length {len(normaize_steps)} got {len(ast_seq.value)}",
                                         state=input))
                 inp = input
@@ -230,7 +230,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                                                 GenState[T], 
                                                                 Either[Any, Tuple[B, GenState[T]]]]:
             if not input.pruned and (not isinstance(input.ast, Then) or isinstance(input.ast, Nothing)):
-                return Left(Error(this=self, 
+                return Left(Error.new(this=self, 
                                     message=f"Expect Then got {input.ast}",
                                     state=input))
             lft = input.left() 
@@ -293,7 +293,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 return Right((Many(value=tuple(ret)), input))
             else:
                 if not isinstance(input.ast, Many) or isinstance(input.ast, Nothing):
-                    return Left(Error(this=self, 
+                    return Left(Error.new(this=self, 
                                       message=f"Expect Many got {input.ast}",
                                       state=input))
                 ret = []
@@ -304,7 +304,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             if value is not Nothing:
                                 ret.append(value)
                             if at_most is not None and len(ret) > at_most:
-                                return Left(Error(
+                                return Left(Error.new(
                                         message=f"Expected at most {at_most} matches, got {len(ret)}",
                                         this=self,
                                         state=input.inject(x)
@@ -312,7 +312,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Left(_):
                             pass
                 if len(ret) < at_least:
-                    return Left(Error(
+                    return Left(Error.new(
                         message=f"Expected at least {at_least} matches, got {len(ret)}",
                         this=self,
                         state=input.inject(x)
@@ -340,7 +340,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         return Left(error)
             else:
                 if not isinstance(input.ast, Choice):
-                    return Left(Error(this=input.ast, 
+                    return Left(Error.new(this=input.ast, 
                                       message=f"Expect Choice got {input.ast}",
                                       state=input))
                 ast_choice = input.ast
@@ -353,7 +353,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             case Left(err):
                                 if isinstance(err, Error) and err.committed:
                                     return Left(replace(err, committed=False))
-                    return Left(Error(this=input.ast, 
+                    return Left(Error.new(this=input.ast, 
                                       message=f"None of the choices matched for {input.ast}",
                                       state=input))
                 else:
@@ -419,7 +419,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 return result
             else:
                 if not isinstance(input.ast, OrElse):
-                    return Left(Error(this=self, 
+                    return Left(Error.new(this=self, 
                                       message=f"Expect OrElse got {input.ast}",
                                       state=input))
                 else:
@@ -452,7 +452,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             else:
                 current = input.ast
                 if not isinstance(current, Lazy) or isinstance(current, Nothing):
-                    return Left(Error(this=alg, 
+                    return Left(Error.new(this=alg, 
                                       message=f"Expect Lazy got {current}",
                                       state=input))
                 result = (yield from alg.run(input.inject(current.value), cache))
@@ -512,7 +512,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 current = input.ast
                 if not lexer.varify(ntags, current):
                     return Left(
-                            Error(
+                            Error.new(
                                 this=lex_run,
                                 message=f"Expected token tag {name}, but got {current}.",
                                 state=input,
