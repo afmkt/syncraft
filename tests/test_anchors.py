@@ -9,12 +9,13 @@ def test_start_anchor_simple():
     uni = Alphabet(str)
     base = NFA.from_charset('a', uni)
     anchored = base.start()
-    r = anchored.runner().start().runner
+    r = anchored.dfa.runner()
+    r.start()
     # At beginning, consuming 'a' should accept
     res = r.step('a', 0)
     assert res.accepted
     # If any prefix exists, it should fail
-    r2 = anchored.runner()
+    r2 = anchored.dfa.runner()
     res2 = r2.step('b', 0)
     assert not res2.accepted
 
@@ -23,17 +24,17 @@ def test_end_anchor_simple():
     uni = Alphabet(str)
     base = NFA.from_charset('a', uni)
     anchored = base.end()
-    r = anchored.runner()
+    r = anchored.dfa.runner()
     # After consuming 'a', not yet accepted until finalize()
     res = r.step('a', 0)
     assert not res.accepted
-    fin = res.runner.finalize()
+    fin = r.finalize()
     assert fin.accepted
     # If extra trailing symbol exists, finalize should not help
-    r2 = anchored.runner()
+    r2 = anchored.dfa.runner()
     res2 = r2.step('a', 0)
-    res2b = res2.runner.step('b', 1)
-    fin2 = res2b.runner.finalize()
+    res2b = r2.step('b', 1)
+    fin2 = r2.finalize()
     assert not fin2.accepted
 
 
@@ -52,15 +53,16 @@ def test_both_anchors_empty():
     # Now anchor at both ends
     start_anchored = empty.start()
     both = start_anchored.end()
-    r = both.runner().start().runner
+    r = both.dfa.runner()
+    r.start()
 
     # Without consuming anything, finalize should accept (consumes END)
     fin = r.finalize()
     assert fin.accepted
     # With any symbol, it should fail
-    r2 = both.runner()
+    r2 = both.dfa.runner()
     res2 = r2.step('x', 0)
-    fin2 = res2.runner.finalize()
+    fin2 = r2.finalize()
     assert not fin2.accepted
 def test_anchor_feature_placeholder():
     assert True

@@ -580,8 +580,8 @@ class DFA(Generic[C]):
                    transitions=transitions
                )
 
-    def runner(self, *, non_greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
-        return DFARunner.create(self, non_greedy=non_greedy)
+    def runner(self, *, non_greedy: frozenset[Tag] | None = None) -> Runner[C]:
+        return Runner.create(self, non_greedy=non_greedy)
     
 @dataclass(frozen=True, slots=True)
 class NFA(Generic[C]):
@@ -836,18 +836,22 @@ Automata = TypeVar('Automata', bound=NFA | DFA)
 
 
 @dataclass(frozen=True, slots=True)
-class RunnerResult(Generic[C, Automata]):
-    runner: Runner[C, Automata]
+class RunnerResult:
     error: bool
     final: bool
     accepted: Optional[Tuple[int, frozenset[Tag]]] = None
 
 
-@dataclass(frozen=True, slots=True)
-class Runner(Protocol[C, Automata]):
-    fa: Automata
-    accepted: Tuple[Tuple[int, frozenset[FAState] | FAState, frozenset[Tag]], ...] = field(default_factory=tuple)
+    
+
+@dataclass(slots=True)
+class Runner(Generic[C]):
+    fa: DFA[C]
+    accepted: Tuple[Tuple[int, frozenset[Tag]], ...] = field(default_factory=tuple)
     non_greedy: frozenset[Tag] = field(default_factory=frozenset)
+
+    current: Optional[FAState] = None
+
 
     @property
     def dfa(self) -> DFA[C]:
@@ -864,160 +868,17 @@ class Runner(Protocol[C, Automata]):
     
     @property
     def candidates(self)-> Tuple[Tuple[int, frozenset[Tag]],...]:
-        return tuple((pos, tags) for (pos, _, tags) in self.accepted)
+        return tuple((pos, tags) for (pos, tags) in self.accepted)
 
-    @classmethod
-    def create(cls, a: Automata, *, non_greedy: frozenset[Tag] | None = None) -> Self: ...
-    def finalize(self) -> RunnerResult[C, Automata]: ...
-    def start(self) -> RunnerResult[C, Automata]: ...
-    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, Automata]: ...
-    def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, Automata]: ...
-    def is_accepted(self) -> bool: ...
-    def is_valid(self) -> bool: ...
-    @property
-    def resumable(self) -> frozenset[CharSet[C]]: ...
-    def tags(self) -> frozenset[Tag]: ...    
-    def reset(self) -> Runner[C, Automata]:
+    def reset(self) -> Runner[C]:
         return self.create(self.fa, non_greedy=self.non_greedy)
-        
-        
 
-
-@dataclass(frozen=True, slots=True)
-class NFARunner(Runner[C, NFA[C]]):
-    current: frozenset[FAState] = field(default_factory=frozenset)
-    @classmethod
-    def create(cls, nfa: NFA[C], *, non_greedy: frozenset[Tag] | None = None) -> NFARunner[C]:
-        return cls(current=nfa.closure({nfa.init}), fa=nfa, non_greedy=non_greedy or frozenset())
-
-    def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, NFA[C]]: 
-
-        if not next_state:
-            if self.accepted:
-                return RunnerResult(
-                    runner=replace(self, current=frozenset(), accepted=tuple()),
-                    error=False,
-                    final=True,
-                    accepted=(self.accepted[-1][0], 
-                              self.accepted[-1][2]),
-                )
-            else:
-                return RunnerResult(
-                    runner=replace(self, current=frozenset(), accepted=tuple()),
-                    error=True,
-                    final=True,
-                    accepted=None,
-                )                        
-        else:
-            assert isinstance(next_state, frozenset)  # type checker hint
-            new_current = self.fa.closure(next_state)
-            new_runner = replace(self, current=new_current)
-            has_future_non_anchor = False
-            for s2 in new_current:
-                for cs2 in new_runner.fa.transitions.get(s2, {}).keys():
-                    if not any(lo < 0 or hi < 0 for (lo, hi) in cs2.interval):
-                        has_future_non_anchor = True
-                        break
-                if has_future_non_anchor:
-                    break
-            if new_runner.is_accepted():
-                accepted_tags = new_runner.tags()
-                new_accepted = new_runner.accepted + ((pos, new_current, accepted_tags),)
-                new_runner = replace(new_runner, accepted=new_accepted)
-                non_greedy_hit = bool(new_runner.non_greedy & accepted_tags)
-                if non_greedy_hit or not has_future_non_anchor:
-                    return RunnerResult(
-                        runner=replace(new_runner, accepted=()),
-                        error=False,
-                        final=True,
-                        accepted=(pos, accepted_tags),
-                    )
-            return RunnerResult(
-                runner=new_runner,
-                error=False,
-                final=False,
-                accepted=None,
-            )
-
-
-    def start(self) -> RunnerResult[C, NFA[C]]:
-        start_states = self.current
-        advanced: set[FAState] = set()
-        for s in start_states:
-            entry = self.fa.transitions.get(s, {})
-            for cs, tgts in entry.items():
-                if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
-                    advanced.update(tgts)
-        if advanced:
-            start_states = self.fa.closure(advanced)
-        return self.advance_state(start_states, pos=0)
-
-    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, NFA[C]]:
-        ss: str|bytes
-        if isinstance(symbol, str):
-            ss = symbol
-        elif isinstance(symbol, int):
-            ss = bytes([symbol])
-        else:   
-            raise ValueError(f"{symbol} is not valid input type")
-        assert len(ss) == 1, "symbol must be a single character"
-        next_states = set()
-        for s in self.current:
-            entry: FrozenDict[CharSet[C], frozenset[FAState]] = self.fa.transitions.get(s, {})
-            k: CharSet[C] = CharSet.create(ss, alphabet=self.fa.alphabet)
-            if k in entry:
-                next_states.update(entry[k])
-            else:
-                for char_class, targets in entry.items():
-                    if isinstance(char_class, CharSet) and char_class(symbol):
-                        next_states.update(targets)
-
-        return self.advance_state(frozenset(next_states), pos=pos)
-    
-    def is_accepted(self) -> bool:
-        return any(st in self.nfa.accept for st in self.current)
-    
-    def is_valid(self) -> bool:
-        return bool(self.current)
-
-    @property
-    def resumable(self) -> frozenset[CharSet[C]]:
-        result: Set[CharSet[C]] = set()
-        for s in self.current:
-            result.update(self.nfa.transitions.get(s, {}).keys())
-        filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
-        return frozenset(filtered)
-
-    def tags(self) -> frozenset[Tag]:
-        tags: Set[Tag] = set()
-        for s in self.current:
-            tags.update(self.nfa.accept.get(s, frozenset()))
-        return frozenset(tags)
-    
-    def finalize(self) -> RunnerResult[C, NFA[C]]:
-        next_states: set[FAState] = set()
-        for s in self.current:
-            entry = self.fa.transitions.get(s, {})
-            for cs, tgts in entry.items():
-                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
-                    next_states.update(tgts)
-        if next_states:
-            new_current = self.fa.closure(next_states)
-        else:
-            new_current = self.current
-        return self.advance_state(new_current, pos=self.accepted[-1][0] if self.accepted else 0)
-
-    
-
-@dataclass(frozen=True, slots=True)
-class DFARunner(Runner[C, DFA[C]]):
-    current: Optional[FAState] = None
 
     @classmethod
-    def create(cls, dfa: DFA[C], *, non_greedy: frozenset[Tag] | None = None) -> DFARunner[C]:
+    def create(cls, dfa: DFA[C], *, non_greedy: frozenset[Tag] | None = None) -> Runner[C]:
         return cls(current=dfa.init, fa=dfa, non_greedy=non_greedy if non_greedy is not None else frozenset())
 
-    def start(self) -> RunnerResult[C, DFA[C]]:
+    def start(self) -> RunnerResult:
         start_state = self.current
         entry = self.fa.transitions.get(start_state, {})
         for cs, tgt in entry.items():
@@ -1026,57 +887,66 @@ class DFARunner(Runner[C, DFA[C]]):
                 break
         return self.advance_state(start_state, pos=0)
 
+    def finalize(self) -> RunnerResult:
+        cur = self.current
+        if cur is not None:
+            entry = self.fa.transitions.get(cur, {})
+            for cs, tgt in entry.items():
+                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
+                    cur = tgt
+                    break
+        
+        return self.advance_state(cur, pos=self.accepted[-1][0] if self.accepted else 0)
+
+
     def _has_future_non_anchor(self, state: Optional[FAState]) -> bool:
         if state is None:
             return False
         for cs in self.fa.transitions.get(state, {}).keys():
-            # Only count non-anchor charsets as future steps
             if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval):
                 return True
         return False
     
-    def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult[C, DFA[C]]:
-        assert not isinstance(next_state, frozenset), "DFA cannot have multiple current states"
-        new_runner = replace(self, current=next_state)
-        has_future = self._has_future_non_anchor(next_state)
+    def advance_state(self, next_state: None | FAState, pos: int) -> RunnerResult:
+        self.current = next_state
         if next_state is None:
-            if new_runner.accepted:
+            if self.accepted:
+                result = (self.accepted[-1][0], self.accepted[-1][1])
+                self.accepted = tuple()
                 return RunnerResult(
-                    runner=replace(new_runner, current=None, accepted=tuple()),
                     error=False,
                     final=True,
-                    accepted=(new_runner.accepted[-1][0], 
-                              new_runner.accepted[-1][2]),
+                    accepted=result,
                 )
             else:
                 return RunnerResult(
-                    runner=replace(new_runner, current=None, accepted=tuple()),
                     error=True,
                     final=True,
                     accepted=None,
                 )
         else:
-            if new_runner.is_accepted() and next_state is not None:
-                accepted_tags = new_runner.tags()
-                new_accepted = new_runner.accepted + ((pos, next_state, accepted_tags),)
-                new_runner = replace(new_runner, accepted=new_accepted)
-                non_greedy_hit = bool(new_runner.non_greedy & accepted_tags)
+            has_future = self._has_future_non_anchor(next_state)
+            if self.is_accepted() and next_state is not None:
+                accepted_tags = self.tags()
+                new_accepted = self.accepted + ((pos, accepted_tags),)
+                self.accepted = new_accepted
+                # new_runner = replace(self, accepted=new_accepted)
+                non_greedy_hit = bool(self.non_greedy & accepted_tags)
                 if non_greedy_hit or not has_future:
+                    self.accepted = tuple()
                     return RunnerResult(
-                        runner=replace(new_runner, accepted=()),
                         error=False,
                         final=True,
                         accepted=(pos, accepted_tags),
                     )
             return RunnerResult(
-                runner=new_runner,
                 error=False,
                 final=False,
                 accepted=None,
             )
 
 
-    def step(self, symbol: str | int | C, pos: int) -> RunnerResult[C, DFA[C]]:
+    def step(self, symbol: str | int | C, pos: int) -> RunnerResult:
         ss: str|bytes
         if isinstance(symbol, str):
             ss = symbol
@@ -1114,18 +984,140 @@ class DFARunner(Runner[C, DFA[C]]):
     def tags(self) -> frozenset[Tag]:
         return self.dfa.accept.get(self.current, frozenset())
 
-    def finalize(self) -> RunnerResult[C, DFA[C]]:
-        cur = self.current
-        if cur is not None:
-            entry = self.fa.transitions.get(cur, {})
-            for cs, tgt in entry.items():
-                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
-                    cur = tgt
+
+
+
+@dataclass(slots=True)
+class NFARunner(Generic[C]):
+    fa: NFA[C]
+    accepted: Tuple[Tuple[int, frozenset[Tag]], ...] = field(default_factory=tuple)
+    non_greedy: frozenset[Tag] = field(default_factory=frozenset)
+
+    current: frozenset[FAState] = field(default_factory=frozenset)
+    @classmethod
+    def create(cls, nfa: NFA[C], *, non_greedy: frozenset[Tag] | None = None) -> NFARunner[C]:
+        return cls(current=nfa.closure({nfa.init}), fa=nfa, non_greedy=non_greedy or frozenset())
+
+    def advance_state(self, next_state: None | FAState | frozenset[FAState], pos: int) -> RunnerResult: 
+
+        if not next_state:
+            if self.accepted:
+                result = (self.accepted[-1][0], self.accepted[-1][1])
+                self.accepted = tuple()
+                self.current = frozenset()
+                return RunnerResult(
+                    error=False,
+                    final=True,
+                    accepted=result,
+                )
+            else:
+                self.accepted = tuple()
+                self.current = frozenset()
+                return RunnerResult(
+                    error=True,
+                    final=True,
+                    accepted=None,
+                )                        
+        else:
+            assert isinstance(next_state, frozenset)  # type checker hint
+            new_current = self.fa.closure(next_state)
+            self.current = new_current
+            # new_runner = replace(self, current=new_current)
+            has_future_non_anchor = False
+            for s2 in new_current:
+                for cs2 in self.fa.transitions.get(s2, {}).keys():
+                    if not any(lo < 0 or hi < 0 for (lo, hi) in cs2.interval):
+                        has_future_non_anchor = True
+                        break
+                if has_future_non_anchor:
                     break
-        
-        return self.advance_state(cur, pos=self.accepted[-1][0] if self.accepted else 0)
+            if self.is_accepted():
+                accepted_tags = self.tags()
+                self.accepted = self.accepted + ((pos, accepted_tags),)
+
+                # new_runner = replace(new_runner, accepted=new_accepted)
+                non_greedy_hit = bool(self.non_greedy & accepted_tags)
+                if non_greedy_hit or not has_future_non_anchor:
+                    self.accepted = tuple()
+                    return RunnerResult(
+                        # runner=replace(new_runner, accepted=()),
+                        error=False,
+                        final=True,
+                        accepted=(pos, accepted_tags),
+                    )
+            return RunnerResult(
+                error=False,
+                final=False,
+                accepted=None,
+            )
 
 
+    def start(self) -> RunnerResult:
+        start_states = self.current
+        advanced: set[FAState] = set()
+        for s in start_states:
+            entry = self.fa.transitions.get(s, {})
+            for cs, tgts in entry.items():
+                if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
+                    advanced.update(tgts)
+        if advanced:
+            start_states = self.fa.closure(advanced)
+        return self.advance_state(start_states, pos=0)
+
+    def step(self, symbol: str | int | C, pos: int) -> RunnerResult:
+        ss: str|bytes
+        if isinstance(symbol, str):
+            ss = symbol
+        elif isinstance(symbol, int):
+            ss = bytes([symbol])
+        else:   
+            raise ValueError(f"{symbol} is not valid input type")
+        assert len(ss) == 1, "symbol must be a single character"
+        next_states = set()
+        for s in self.current:
+            entry: FrozenDict[CharSet[C], frozenset[FAState]] = self.fa.transitions.get(s, {})
+            k: CharSet[C] = CharSet.create(ss, alphabet=self.fa.alphabet)
+            if k in entry:
+                next_states.update(entry[k])
+            else:
+                for char_class, targets in entry.items():
+                    if isinstance(char_class, CharSet) and char_class(symbol):
+                        next_states.update(targets)
+
+        return self.advance_state(frozenset(next_states), pos=pos)
+    
+    def is_accepted(self) -> bool:
+        return any(st in self.fa.accept for st in self.current)
+    
+    def is_valid(self) -> bool:
+        return bool(self.current)
+
+    @property
+    def resumable(self) -> frozenset[CharSet[C]]:
+        result: Set[CharSet[C]] = set()
+        for s in self.current:
+            result.update(self.fa.transitions.get(s, {}).keys())
+        filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
+        return frozenset(filtered)
+
+    def tags(self) -> frozenset[Tag]:
+        tags: Set[Tag] = set()
+        for s in self.current:
+            tags.update(self.fa.accept.get(s, frozenset()))
+        return frozenset(tags)
+    
+    def finalize(self) -> RunnerResult:
+        next_states: set[FAState] = set()
+        for s in self.current:
+            entry = self.fa.transitions.get(s, {})
+            for cs, tgts in entry.items():
+                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
+                    next_states.update(tgts)
+        if next_states:
+            new_current = self.fa.closure(next_states)
+        else:
+            new_current = self.current
+        return self.advance_state(new_current, pos=self.accepted[-1][0] if self.accepted else 0)
 
 
 class _NodeKind(str, Enum):

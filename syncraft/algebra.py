@@ -460,6 +460,7 @@ class Algebra(Generic[A, S]):
                                                     S,
                                                     Either[Any, Tuple[OrElse[A, B], S]]]:
             inp = input.enter()
+            backup = inp.backup()
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
@@ -467,6 +468,7 @@ class Algebra(Generic[A, S]):
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
                         return Left(replace(err, committed=False))
+                    inp.restore(backup)
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
@@ -511,9 +513,11 @@ class Algebra(Generic[A, S]):
                 sampling = False
 
             inp = input.enter()
+            backup = inp.backup()
             last_error: Optional[Error] = None
             for p in profile:
                 option = options[p.index]
+                inp.restore(backup)
                 if sampling:
                     start_time = time.perf_counter()
                     result = yield from option.run(inp, cache)
@@ -601,13 +605,14 @@ class Algebra(Generic[A, S]):
             current_input = input
             inner_error = None
             while True:
+                current_cache_key = current_input.cache_key
                 result = yield from self.run(current_input, cache)
                 match result:
                     case Left(E):
                         inner_error = Left(E)
                         break
                     case Right((value, next_input)):
-                        if next_input == current_input:
+                        if next_input.cache_key == current_cache_key:
                             break  # No progress, stop to avoid infinite loop
                         elif value is not Nothing:
                             ret.append(value)

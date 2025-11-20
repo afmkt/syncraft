@@ -58,7 +58,6 @@ def _accept(dfa: DFA[str], s: str) -> bool:
     r: Any = dfa.runner()
     for i, ch in enumerate(s):
         rr = r.step(ch, i)
-        r = rr.runner
     return r.is_accepted()
 
 

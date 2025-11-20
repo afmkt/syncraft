@@ -47,7 +47,7 @@ class LexerError:
 
 @dataclass
 class Mode(Generic[C]):
-    runner: Runner[C, DFA[C]]
+    runner: Runner[C]
     rdfa: ReverseDFA[C]
     priority: Dict[Tag, int] = field(default_factory=dict)
     skip: frozenset[Tag] = field(default_factory=frozenset)
@@ -145,7 +145,7 @@ class LexerBase(LexerProtocol[C]):
                     return ret, c.unused_kwargs
         return None, kwargs
 
-@dataclass
+@dataclass(slots=True)
 class LexerCache:
 
     dict: Dict[str, Lexer[Any]] = field(default_factory=dict)
@@ -199,9 +199,8 @@ class LexerCache:
                     expect="a Lexer instance",
                 )
             
-@dataclass
+@dataclass(slots=True)
 class Lexer(LexerBase[C]):
-
     modes: Dict[str | None, Mode[C]]     
     actions: Dict[Tag | None, ModeAction]
     default_mode: str | None 
@@ -441,7 +440,7 @@ class Lexer(LexerBase[C]):
                 offender=char,
                 expect=frozenset(),
             ))
-        mode.runner = rr.runner
+        # mode.runner = rr.runner
         if rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
             tag = mode.select_tag(accepted_tags)
@@ -477,7 +476,7 @@ class ExtRule(Generic[T]):
     predicate: Callable[[T], bool]
     generator: Callable[[Any, random.Random], T]
 
-@dataclass
+@dataclass(slots=True)
 class ExtLexer(LexerBase[T]):
     tkspec: TokenSpec[T]
     rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
-    List, Generator as PyGenerator, cast, Type
+    List, Generator as PyGenerator, cast, Type, Self
 )
 
 
@@ -27,7 +27,7 @@ from syncraft.utils import FrozenDict
 from syncraft.fa import Builder
 from syncraft.syntax import Syntax, RunnerProtocol
 
-from syncraft.constraint import Bindable
+from syncraft.constraint import Bindable, Binding
 from syncraft.input import StreamCursor, PayloadKind
 
 
@@ -40,9 +40,30 @@ B = TypeVar('B')
 
 @dataclass(frozen=True, slots=True)
 class GenState(Bindable, Generic[T]):
+    binding: Binding = field(default_factory=Binding)
     ast: Optional[ParseResult[T]] = None
     restore_pruned: bool = False
     seed: int = 0
+
+    def backup(self) -> Tuple[int, ...]: 
+        return ()
+
+
+    def restore(self, state: Tuple[int, ...]) -> None: 
+        return None
+
+    @classmethod
+    def new(cls, 
+            binding: Binding,
+            ast: Optional[ParseResult[T]],
+            restore_pruned: bool,
+            seed: int) -> Self:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'binding', binding)
+        object.__setattr__(obj, 'ast', ast)
+        object.__setattr__(obj, 'restore_pruned', restore_pruned)
+        object.__setattr__(obj, 'seed', seed)
+        return obj
 
     def __str__(self) -> str:
         if isinstance(self.ast, AST):
@@ -53,96 +74,88 @@ class GenState(Bindable, Generic[T]):
     def unused_cache_key(self) -> int:
         return 0
 
-    def map(self, f: Callable[[Any], Any]) -> GenState[T]:
-        """Return a copy with ``ast`` replaced by ``f(ast)``.
-
-        Args:
-            f: Mapping function applied to the current ``ast``.
-
-        Returns:
-            GenState[T]: A new state with the mapped ``ast``.
-        """
-        return replace(self, ast=f(self.ast))
+    def bind(self, name: str, node:Any)->GenState[T]:
+        new_binding = self.binding.bind(name, node)
+        return GenState.new(
+            binding=new_binding,
+            ast=self.ast,
+            restore_pruned=self.restore_pruned,
+            seed=self.seed
+        )
     
+    def clone(self) -> GenState[T]:
+        return self
+
+    @property
+    def payload_kind(self) -> Optional[PayloadKind]:
+        return None
+
+    def map(self, f: Callable[[Any], Any]) -> GenState[T]:
+        return GenState.new(
+            binding=self.binding,
+            ast=f(self.ast),
+            restore_pruned=self.restore_pruned,
+            seed=self.seed
+        )
+    
+    @property
+    def cache_key(self) -> int:
+        return hash(self)
+
     def inject(self, a: Any) -> GenState[T]:
-        """Return a copy with ``ast`` set to ``a``.
-
-        Shorthand for ``map(lambda _: a)``.
-
-        Args:
-            a: The value to place into ``ast``.
-
-        Returns:
-            GenState[T]: A new state with ``ast`` equal to ``a``.
-        """
         return self.map(lambda _: a)
     
     def fork(self, tag: Any) -> GenState[T]:
-        """Create a deterministic fork of the state using ``tag``.
+        return GenState.new(
+            binding=self.binding,
+            ast=self.ast,
+            restore_pruned=self.restore_pruned,
+            seed=hash((self.seed, tag))
+        )
 
-        The new ``seed`` is derived from the current ``seed`` and ``tag`` so
-        that repeated forks with the same inputs are reproducible.
-
-        Args:
-            tag: Any value used to derive the child seed.
-
-        Returns:
-            GenState[T]: A new state with a forked ``seed``.
-        """
-        return replace(self, seed=hash((self.seed, tag)))
 
     def rng(self, tag: Any = None) -> random.Random:
-        """Get a deterministic RNG for this state.
-
-        If ``tag`` is provided, the RNG seed is derived from ``(seed, tag)``;
-        otherwise the state's ``seed`` is used.
-
-        Args:
-            tag: Optional label to derive a sub-seed.
-
-        Returns:
-            random.Random: A RNG instance seeded deterministically.
-        """
         return random.Random(self.seed if tag is None else hash((self.seed, tag)))
-
-
 
     @property
     def pruned(self)->bool:
-        """Whether the current branch is pruned (``ast`` is ``None``)."""
         return self.ast is None
     
     def left(self)-> GenState[T]:
-        """Focus on the left side of a ``Then`` node or prune.
-
-        When ``restore_pruned`` is true, traversal is allowed even if the
-        ``Then`` is marked as coming from the right branch.
-
-        Returns:
-            GenState[T]: State focused on the left child or pruned when not
-            applicable.
-        """
         if self.ast is None:
             return self
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.RIGHT or self.restore_pruned):
-            return replace(self, ast=self.ast.left)
-        return replace(self, ast=None) 
+            return GenState.new(
+                binding=self.binding,
+                ast=self.ast.left,
+                restore_pruned=self.restore_pruned,
+                seed=self.seed
+            )
+        return GenState.new(
+            binding=self.binding,
+            ast=None,
+            restore_pruned=self.restore_pruned,
+            seed=self.seed
+        )
+        
 
     def right(self) -> GenState[T]:
-        """Focus on the right side of a ``Then`` node or prune.
-
-        When ``restore_pruned`` is true, traversal is allowed even if the
-        ``Then`` is marked as coming from the left branch.
-
-        Returns:
-            GenState[T]: State focused on the right child or pruned when not
-            applicable.
-        """
         if self.ast is None:
             return self
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.LEFT or self.restore_pruned):
-            return replace(self, ast=self.ast.right)
-        return replace(self, ast=None)
+            return GenState.new(
+                binding=self.binding,
+                ast=self.ast.right,
+                restore_pruned=self.restore_pruned,
+                seed=self.seed
+            )
+        return GenState.new(
+            binding=self.binding,
+            ast=None,
+            restore_pruned=self.restore_pruned,
+            seed=self.seed
+        )
+        
     
     @classmethod
     def from_ast(cls, 
@@ -150,7 +163,13 @@ class GenState(Bindable, Generic[T]):
                  ast: Optional[ParseResult[T]], 
                  seed: int = 0, 
                  restore_pruned:bool=False) -> GenState[T]:
-        return cls(ast=ast, seed=seed, restore_pruned=restore_pruned)
+        return cls.new(
+            binding=Binding(),
+            ast=ast,
+            restore_pruned=restore_pruned,
+            seed=seed
+        )
+        
     
 
 

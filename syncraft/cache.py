@@ -93,7 +93,7 @@ class LeftRecursionError(SyncraftError):
         metrics_line = ("[" + metrics + "]\n") if metrics else ""
         return f"\n{stack}\n{metrics_line}" + "\n".join(hint_lines)
     
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class InProgress(Generic[S]):
     rule: Rule
     revision: int = 0   # the number of successful growth attempts so far
@@ -109,8 +109,12 @@ class InProgress(Generic[S]):
             new_cache_key = new_state.cache_key
             old_state = self.state
             if old_state is None or new_cache_key > old_state.cache_key:
-                return replace(self, result=new_result, revision = self.revision + 1, growing=True)
-        return replace(self, growing=False)
+                self.result = new_result
+                self.revision += 1
+                self.growing = True
+                return self
+        self.growing = False
+        return self
     
     def __str__(self) -> str:
         return f"InProgress(rule={callable_str(self.rule)}, result={self.result})"
@@ -124,7 +128,7 @@ class InProgress(Generic[S]):
         return None
 
 
-@dataclass
+@dataclass(slots=True)
 class CacheEntry(Generic[S]):
     payload: Ret | InProgress[S]
     state: S
@@ -144,8 +148,8 @@ class CacheEntry(Generic[S]):
         return None
 
 
-@dataclass(frozen=True, slots=True)
-class Group(Generic[S]):
+@dataclass(slots=True)
+class Group:
     leader: Tuple[Rule, int]
     members: frozenset[Tuple[Rule, int]] = field(default_factory=frozenset)
     def __bool__(self) -> bool:
@@ -168,7 +172,7 @@ def set_random_seed(seed: int) -> None:
 
 
 
-@dataclass
+@dataclass(slots=True)
 class Cache(Generic[S]):
     DEFAULT_LOGGING: ClassVar[bool | Callable[..., Any]] = False
     DEFAULT_RANDOMIZATION: ClassVar[bool] = False  # Default to False to be less intrusive
@@ -181,7 +185,7 @@ class Cache(Generic[S]):
     start2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
     end2rules: DefaultDict[int, set[Rule]] = field(default_factory=lambda: defaultdict(set))
 
-    groups: dict[int, Group[S]] = field(default_factory=dict)  # Groups per position
+    groups: dict[int, Group] = field(default_factory=dict)  # Groups per position
     max_revision: int = 512  # Protection against runaway single-head growth
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
@@ -223,7 +227,7 @@ class Cache(Generic[S]):
         if existing_group is None:
             if not has_lazy:
                 return None
-            ret: Group[S] = Group(leader=(offender, pos), members=frozenset(members))
+            existing_group = Group(leader=(offender, pos), members=frozenset(members))
             if not has_choice:
                 raise LeftRecursionError(
                     "Left recursion detected but no OrElse rule found in group",
@@ -231,9 +235,9 @@ class Cache(Generic[S]):
                     reason='no-choice'
                 )            
         else:
-            ret = replace(existing_group, members=existing_group.members | frozenset(members))
-        self.groups[pos] = ret
-        
+            existing_group.members = existing_group.members | frozenset(members)
+        self.groups[pos] = existing_group
+
 
     
     def log(self, *args: Any, **kwargs: Any) -> None:
@@ -296,7 +300,7 @@ class Cache(Generic[S]):
                         return Left() 
             
             head: InProgress[S] = InProgress(rule=f)
-            entry = CacheEntry(payload=head, state=key)
+            entry = CacheEntry(payload=head, state=key.clone())
             cache_bucket[cache_key] = entry
             self.start2rules[cache_key].add(f)
             seed = yield from self.run_rule(f, key)
@@ -316,8 +320,7 @@ class Cache(Generic[S]):
             self.end2rules[end_key].add(entry.payload.rule)
             new_payload = entry.payload.grow(entry.payload.rule, entry.start_key, seed)
             if new_payload.growing:
-                new_entry = replace(entry, payload=new_payload)
-                self.cache[entry.payload.rule][entry.start_key] = new_entry
+                entry.payload = new_payload
 
     def post_process(self, rule: Rule, seed: Ret) -> Generator[Any, Any, Ret]:
         # Find the group where this rule is the leader
@@ -352,7 +355,7 @@ class Cache(Generic[S]):
                     new_result = yield from self.run_rule(f, entry.state)  # Use f, not rule
                     new_payload = payload.grow(f, pos, new_result)  # Use f, not rule
                     if new_payload.growing:
-                        self.cache[f][pos] = replace(entry, payload=new_payload)
+                        entry.payload = new_payload
                         changed = True
 
                         if new_payload.result is not None:
@@ -470,8 +473,7 @@ class Cache(Generic[S]):
                 if old_end is None or new_end > old_end:
                     # Update the InProgress entry with the improved result
                     new_payload = entry.payload.grow(rule, pos, new_result)
-                    new_entry = replace(entry, payload=new_payload)
-                    self.cache[rule][pos] = new_entry
+                    entry.payload = new_payload
                     
                     # Update end2rules mapping if needed
                     if old_end is not None:

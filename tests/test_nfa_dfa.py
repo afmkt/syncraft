@@ -33,11 +33,10 @@ def run(fa: NFA | DFA, inp) -> LegacyRun:
     Behavior matches expectations of existing tests.
     """
     seq = _normalize_input(inp)
-    runner: Any = fa.runner()
+    runner: Any = fa.dfa.runner()
     accepted: list[tuple[int, tuple[enum.Enum | str, ...]]] = []
     for i, sym in enumerate(seq):
         rr = runner.step(sym, i)
-        runner = rr.runner
         if runner.is_accepted():
             # store sorted tags for determinism
             accepted.append((i, tuple(sorted(runner.tags(), key=str))))

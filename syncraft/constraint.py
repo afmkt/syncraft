@@ -1,10 +1,10 @@
 from __future__ import annotations
 from typing import (
     Callable, Tuple, Optional, Any, Self, 
-    Generator, List, Dict
+    Generator, List, Dict, Protocol, runtime_checkable
 )
 from enum import Enum
-from dataclasses import dataclass, field, replace, is_dataclass, fields
+from dataclasses import dataclass, is_dataclass, fields
 
 from collections import defaultdict
 from itertools import product
@@ -29,43 +29,30 @@ class Binding:
         return FrozenDict({k: tuple(vs) for k, vs in ret.items()})
 
 
-
-@dataclass(frozen=True, slots=True)
-class Bindable:
-    """Mixin that carries named bindings produced during evaluation.
-
-    Instances accumulate bindings of name->node pairs. Subclasses should return
-    a new instance from ``bind`` to preserve immutability.
-    """
-    binding: Binding = field(default_factory=Binding)
-
+@runtime_checkable
+class Bindable(Protocol):
     @property
-    def cache_key(self) -> int:
-        """Return a hashable cache key representing this instance."""
-        return hash(self)
+    def cache_key(self) -> int: ...
 
-    def unused_cache_key(self) -> int:
-        raise NotImplementedError("unused_cache_key is not implemented for this class.")
+    def unused_cache_key(self) -> int: ...
 
-    def map(self, f: Callable[[Any], Any])->Self: 
-        """Optionally transform the underlying value (no-op by default)."""
-        return self
+    def map(self, f: Callable[[Any], Any])->Self: ...
     
-    def bind(self, name: str, node:Any)->Self:
-        """Return a copy with ``node`` recorded under ``name`` in bindings."""
-        return replace(self, binding=self.binding.bind(name, node))
+    def bind(self, name: str, node:Any)->Self: ...
 
-    def enter(self) -> Self:
-        """Enter a new binding scope (no-op by default)."""
-        return self
+    def enter(self) -> Self: ...
     
-    def leave(self) -> Self:
-        """Leave the current binding scope (no-op by default)."""
-        return self
+    def leave(self) -> Self: ...
 
+    def clone(self) -> Self: ...
+
+    def backup(self) -> Tuple[int, ...]: ...
+
+    def restore(self, state: Tuple[int, ...]) -> None: ...
+    
     @property
-    def payload_kind(self) -> Optional[PayloadKind]:
-        return None
+    def payload_kind(self) -> Optional[PayloadKind]: ...
+        
 
 class Quantifier(Enum):
     FORALL = "forall"

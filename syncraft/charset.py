@@ -29,18 +29,20 @@ class CharSet(Generic[C]):
     interval: Tuple[Tuple[int, int], ...]
     alphabet: AlphabetProtocol[C]
 
+    @classmethod
+    def new(cls, interval: Tuple[Tuple[int, int], ...], alphabet: AlphabetProtocol[C]) -> 'CharSet[C]':
+        c = cls.__new__(cls)
+        object.__setattr__(c, 'interval', interval)
+        object.__setattr__(c, 'alphabet', alphabet)
+        return c
+
     @staticmethod
     @lru_cache(maxsize=4096)  
     def _build(alphabet: AlphabetProtocol[Any], codepoints: Tuple[int, ...]) -> 'CharSet':
 
         intv: Tuple[Tuple[int, int], ...] = tuple((c, c) for c in codepoints)
 
-        return CharSet(interval=intv, alphabet=alphabet)
-
-    @classmethod
-    def cache_info(cls):  # pragma: no cover - utility
-        """Expose LRU cache statistics (hits, misses, current size, max size)."""
-        return cls._build.cache_info()  # type: ignore[attr-defined]
+        return CharSet.new(interval=intv, alphabet=alphabet)
 
 
     @staticmethod
@@ -174,11 +176,13 @@ class CharSet(Generic[C]):
 
     @classmethod
     def any(cls, alphabet: AlphabetProtocol) -> CharSet[C]:
-        return cls(interval=alphabet.codes, alphabet=alphabet)
+        return cls.new(interval=alphabet.codes, alphabet=alphabet)
+        
     
     @classmethod
     def none(cls, alphabet: AlphabetProtocol) -> CharSet[C]:
-        return cls(interval=tuple(), alphabet=alphabet)
+        return cls.new(interval=tuple(), alphabet=alphabet)
+        
 
     def sample(self, rnd: random.Random) -> C:
         range = rnd.choice(self.interval)
@@ -223,7 +227,8 @@ class CharSet(Generic[C]):
         if self.alphabet != other.alphabet:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.alphabet} and {other.alphabet}", offender=other.alphabet, expect=self.alphabet)
         intv = tuple(self.merge_intervals(list(self.interval) + list(other.interval)))
-        return CharSet(intv, alphabet=self.alphabet)
+        return CharSet.new(interval=intv, alphabet=self.alphabet)
+        
     
     def __or__(self, other: CharSet[C]) -> CharSet[C]:
         return self.union(other)
@@ -238,8 +243,8 @@ class CharSet(Generic[C]):
         if self.alphabet != other.alphabet:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.alphabet} and {other.alphabet}", offender=other.alphabet, expect=self.alphabet)
         intv = tuple(self.intersect_interval(list(self.interval), list(other.interval)))
+        return CharSet.new(interval=intv, alphabet=self.alphabet)
         
-        return CharSet(intv, alphabet=self.alphabet)
     
     def __and__(self, other: CharSet[C]) -> CharSet[C]:
         return self.intersect(other)
@@ -254,7 +259,8 @@ class CharSet(Generic[C]):
         if self.alphabet != other.alphabet:
             raise MixedUniverseError(f"Cannot union char classes with different universes: {self.alphabet} and {other.alphabet}", offender=other.alphabet, expect=self.alphabet)
         intv = tuple(self.difference_interval(list(self.interval), list(other.interval)))
-        return CharSet(intv, alphabet=self.alphabet)
+        return CharSet.new(interval=intv, alphabet=self.alphabet)
+        
     
     def __sub__(self, other: CharSet[C]) -> CharSet[C]:
         return self.difference(other)
@@ -264,7 +270,8 @@ class CharSet(Generic[C]):
         if self.interval == ():
             return CharSet.any(alphabet=self.alphabet)
         intv = tuple(self.difference_interval(list(self.alphabet.codes), list(self.interval)))
-        return CharSet(intv, alphabet=self.alphabet)
+        return CharSet.new(interval=intv, alphabet=self.alphabet)
+        
     
     def __neg__(self) -> CharSet[C]:
         return self.complement
