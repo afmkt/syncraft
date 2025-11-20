@@ -41,7 +41,7 @@ class Finder(Generator[T], Generic[T]):
                                                                 GenState[T],
                                                                 Either[Any, Tuple[Any, GenState[T]]]]:
             yield from ()
-            return Right((input.ast, input))
+            return Right.new((input.ast, input))
         return cls(anything_run)
 
 

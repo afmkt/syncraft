@@ -702,7 +702,7 @@ class Syntax(Generic[A, S]):
             if callable(f):
                 return f(alg.syntax, input, error) # type: ignore
             else:
-                return Left(f)
+                return Left.new(f)
         if f is None:
             return self
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_fail(_on_fail)) 
@@ -720,7 +720,7 @@ class Syntax(Generic[A, S]):
             if callable(f):
                 return f(alg.syntax, input, result) # type: ignore
             else:
-                return Right((f, result[1])) 
+                return Right.new((f, result[1])) 
         if f is None:
             return self 
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success)) 
@@ -734,14 +734,14 @@ class Syntax(Generic[A, S]):
                 on_success(result[0], result[1])
             elif on_success is not None:
                 print(on_success)
-            return Right(result)
+            return Right.new(result)
 
         def on_failure(syntax: Optional[Syntax[A, S]], input: S, error: Any) -> Either[Any, Tuple[A, S]]:
             if callable(on_fail):
                 on_fail(error, input)
             elif on_fail is not None:
                 print(on_fail)
-            return Left(error)
+            return Left.new(error)
         
         return self.on_fail(on_failure).on_success(on_succeeded)
 

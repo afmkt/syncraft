@@ -515,32 +515,32 @@ class Parser(Algebra[T, ParserState[T]]):
                     match lexer.candidate():
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
                             if lexeme is None:
-                                token = Token(text=state.slice(start, end), token_type=tag)
+                                token = Token.new(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return Right((token, state.advance())) # type: ignore
+                            return Right.new((token, state.advance())) # type: ignore
                         case Left(LexerError(message=err_msg, index=index, offender=offender, expect=expect)):
-                            return Left(Error.new(message="Cannot match token at end of input", this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
+                            return Left.new(Error.new(message="Cannot match token at end of input", this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
                         case e:
                             raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or LexerError")
                 elif state.pending:
-                    tmp = yield Incomplete(state)
+                    tmp = yield Incomplete.new(state)
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
                     state = tmp
                 else:
                     match lexer.match(ntags, state.current, state.cache_key):
                         case Left(LexerError(message=err_msg, index=index, offender=offender, expect=expect)):
-                            return Left(Error.new(message=err_msg, this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
+                            return Left.new(Error.new(message=err_msg, this=lex_run, state=state, error=LexerError(message=err_msg, index=index, offender=offender, expect=expect)))
                         case Right(None):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
                             if lexeme is None:
-                                token = Token(text=state.slice(start, end), token_type=tag)
+                                token = Token.new(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
                             if end > state.index:
                                 state = state.advance()
-                            return Right((token, state)) # type: ignore
+                            return Right.new((token, state)) # type: ignore
                         case e:
                             raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or None or LexerError")
 
@@ -596,7 +596,7 @@ def parse_word(syntax: Syntax[Any, Any],
                *, 
                cache: None| Cache[Any]
                ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    tokens: List[Token]  = [Token(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    tokens: List[Token]  = [Token.new(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens, cache=cache)
 
     

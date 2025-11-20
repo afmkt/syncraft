@@ -41,11 +41,21 @@ Rule = Callable[[S, "Cache[S]"], Generator[Any, Any, Ret]]
 @dataclass(frozen=True, slots=True)
 class Left(Either[L, Any]):
     value: Optional[L] = None
+    @classmethod
+    def new(cls, value: Optional[L] = None) -> Left[L]:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'value', value)
+        return obj
 
 
 @dataclass(frozen=True, slots=True)
 class Right(Either[Any, R]):
     value: R
+    @classmethod
+    def new(cls, value: R) -> Right[R]:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'value', value)
+        return obj
 
     @property
     def state(self)->Optional[Any]:
@@ -58,6 +68,11 @@ class Right(Either[Any, R]):
 @dataclass(frozen=True, slots=True)
 class Incomplete(Generic[S]):
     state: S
+    @classmethod
+    def new(cls, state: S) -> Incomplete[S]:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'state', state)
+        return obj
 
 class LeftRecursionError(SyncraftError):
 
@@ -100,6 +115,15 @@ class InProgress(Generic[S]):
     growing: bool = False # if the lastest growth attempt was successful
     result: Optional[Ret] = None
 
+    @classmethod
+    def new(cls, rule: Rule, revision: int = 0, growing: bool = False, result: Optional[Ret] = None) -> InProgress[S]:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'rule', rule)
+        object.__setattr__(obj, 'revision', revision)
+        object.__setattr__(obj, 'growing', growing)
+        object.__setattr__(obj, 'result', result)
+        return obj
+
     def grow(self, rule: Rule, cache_key: int, new_result: Ret) -> InProgress[S]:
         assert rule is self.rule, f"Rule mismatch during grow: {rule} != {self.rule}"
 
@@ -132,6 +156,12 @@ class InProgress(Generic[S]):
 class CacheEntry(Generic[S]):
     payload: Ret | InProgress[S]
     state: S
+    @classmethod
+    def new(cls, payload: Ret | InProgress[S], state: S) -> CacheEntry[S]:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'payload', payload)
+        object.__setattr__(obj, 'state', state)
+        return obj
     @property
     def start_key(self) -> int:
         return self.state.cache_key
@@ -297,7 +327,7 @@ class Cache(Generic[S]):
                         return existing.payload.result
                     else:
                         self.build_group(f, cache_key)  # Group is stored in self.groups[cache_key]
-                        return Left() 
+                        return Left.new() 
             
             head: InProgress[S] = InProgress(rule=f)
             entry = CacheEntry(payload=head, state=key.clone())

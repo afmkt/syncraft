@@ -692,7 +692,8 @@ class NFA(Generic[C]):
     
     @classmethod
     def oneof(cls, *, s: str | bytes | Sequence[C], cs_factory: CharSetFactory[C], negation:bool = False, tag: Optional[Tag] = None) -> NFA[Any]:
-        charset: CharSet = cs_factory.create(s)
+        
+        charset: CharSet = cs_factory.create(s) # type: ignore
         if negation:
             charset = cs_factory.complement(charset)
         return cls.from_raw_charset(cs_factory=cs_factory, c=charset, tag=tag)
@@ -708,7 +709,7 @@ class NFA(Generic[C]):
         else:
             ss  = s
         for ch in ss:
-            p = cls.oneof(s=ch, cs_factory=cs_factory)
+            p = cls.oneof(s=ch, cs_factory=cs_factory) # type: ignore
             nfa = p if nfa is None else nfa.then(p)
         assert nfa is not None, "from_string produced no NFA"
         if tag:
@@ -833,6 +834,13 @@ class RunnerResult:
     final: bool
     accepted: Optional[Tuple[int, frozenset[Tag]]] = None
 
+    @classmethod
+    def new(cls, *, error: bool, final: bool, accepted: Optional[Tuple[int, frozenset[Tag]]] = None) -> RunnerResult:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'error', error)
+        object.__setattr__(obj, 'final', final)
+        object.__setattr__(obj, 'accepted', accepted)
+        return obj
 
     
 
@@ -907,13 +915,13 @@ class Runner(Generic[C]):
             if self.accepted:
                 result = (self.accepted[-1][0], self.accepted[-1][1])
                 self.accepted = tuple()
-                return RunnerResult(
+                return RunnerResult.new(
                     error=False,
                     final=True,
                     accepted=result,
                 )
             else:
-                return RunnerResult(
+                return RunnerResult.new(
                     error=True,
                     final=True,
                     accepted=None,
@@ -928,12 +936,12 @@ class Runner(Generic[C]):
                 non_greedy_hit = bool(self.non_greedy & accepted_tags)
                 if non_greedy_hit or not has_future:
                     self.accepted = tuple()
-                    return RunnerResult(
+                    return RunnerResult.new(
                         error=False,
                         final=True,
                         accepted=(pos, accepted_tags),
                     )
-            return RunnerResult(
+            return RunnerResult.new(
                 error=False,
                 final=False,
                 accepted=None,
@@ -1000,7 +1008,7 @@ class NFARunner(Generic[C]):
                 result = (self.accepted[-1][0], self.accepted[-1][1])
                 self.accepted = tuple()
                 self.current = frozenset()
-                return RunnerResult(
+                return RunnerResult.new(
                     error=False,
                     final=True,
                     accepted=result,
@@ -1008,7 +1016,7 @@ class NFARunner(Generic[C]):
             else:
                 self.accepted = tuple()
                 self.current = frozenset()
-                return RunnerResult(
+                return RunnerResult.new(
                     error=True,
                     final=True,
                     accepted=None,
@@ -1034,13 +1042,13 @@ class NFARunner(Generic[C]):
                 non_greedy_hit = bool(self.non_greedy & accepted_tags)
                 if non_greedy_hit or not has_future_non_anchor:
                     self.accepted = tuple()
-                    return RunnerResult(
+                    return RunnerResult.new(
                         # runner=replace(new_runner, accepted=()),
                         error=False,
                         final=True,
                         accepted=(pos, accepted_tags),
                     )
-            return RunnerResult(
+            return RunnerResult.new(
                 error=False,
                 final=False,
                 accepted=None,

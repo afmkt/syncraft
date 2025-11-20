@@ -246,6 +246,8 @@ class Algebra(Generic[A, S]):
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
     syntax: Syntax | None = None
 
+
+
     @staticmethod
     def _flag(func: Callable[..., Any], **kwargs: Hashable) -> Callable[..., Any]:
         for key, value in kwargs.items():
@@ -289,7 +291,7 @@ class Algebra(Generic[A, S]):
                 result = (yield from cache.exec(self.run_f, input))
                 match result:
                     case Left(Error() as e):
-                        return Left(e.push(this=self, state=input))
+                        return Left.new(e.push(this=self, state=input))
                     case _:
                         return result
         except LeftRecursionError as e:
@@ -301,7 +303,7 @@ class Algebra(Generic[A, S]):
         except Exception:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-            return Left(Error.new(
+            return Left.new(Error.new(
                 message="Unexpected error during parsing",
                 error=traceback_details,
                 this=self,
@@ -322,7 +324,7 @@ class Algebra(Generic[A, S]):
             result = (yield from alg.run(input, cache))
             match result:
                 case Right((value, state)):
-                    return Right((Lazy(value, flatten=flatten), state))
+                    return Right.new((Lazy(value, flatten=flatten), state))
                 case _:
                     return result
         return cls(algebra_lazy_run)
@@ -334,7 +336,7 @@ class Algebra(Generic[A, S]):
                                                 S, 
                                                 Either[Any, Tuple[A, S]]]:
             yield from ()
-            return Left(Error.new(
+            return Left.new(Error.new(
                 error=error,
                 this=cls,
                 state=input
@@ -348,7 +350,7 @@ class Algebra(Generic[A, S]):
                                                     S, 
                                                     Either[Any, Tuple[A, S]]]:
             yield from ()
-            return Right((value, input))
+            return Right.new((value, input))
         return cls(success_run)
     
     
@@ -419,7 +421,7 @@ class Algebra(Generic[A, S]):
                 else:
                     data = ast 
                 # print('calling map', data)
-                return Right((f(data), s))            
+                return Right.new((f(data), s))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
         alg = replace(self, run_f=map_run) # type: ignore
@@ -436,7 +438,7 @@ class Algebra(Generic[A, S]):
                                                     Either[Any, Tuple[A, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Left):
-                return Left(f(parsed.value))
+                return Left.new(f(parsed.value))
             else:
                 return parsed
         return replace(self, run_f=map_error_run) 
@@ -463,7 +465,7 @@ class Algebra(Generic[A, S]):
                                                         S, 
                                                         Either[Any, Tuple[B, S]]]:
                 yield from ()
-                return Right(f(a, input))
+                return Right.new(f(a, input))
             return replace(self, run_f=map_all_run_f) # type: ignore
         return self.flat_map(map_all_f)
 
@@ -479,17 +481,17 @@ class Algebra(Generic[A, S]):
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
-                    return Right((OrElse(kind=OrElseKind.LEFT, value=value), state.leave()))
+                    return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), state.leave()))
                 case Left(err):
                     if isinstance(err, Error) and err.committed:
-                        return Left(replace(err, committed=False))
+                        return Left.new(replace(err, committed=False))
                     inp.restore(backup)
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
-                            return Right((OrElse(kind=OrElseKind.RIGHT, value=other_value), other_state.leave()))
+                            return Right.new((OrElse(kind=OrElseKind.RIGHT, value=other_value), other_state.leave()))
                         case Left(other_err):
-                            return Left(other_err)
+                            return Left.new(other_err)
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
         
@@ -545,20 +547,26 @@ class Algebra(Generic[A, S]):
                         p.successes += 1
                         if sampling:
                             profile.sort(key=lambda ps: ps.deficiency)
-                        return Right((Choice(value=value, index=p.index), state.leave()))
+                        return Right.new((Choice(value=value, index=p.index), state.leave()))
                     case Left(err):
                         p.failures += 1
                         if sampling:
                             profile.sort(key=lambda ps: ps.deficiency)
                         if isinstance(err, Error) and err.committed:
-                            return Left(replace(err, committed=False))
+                            return Left.new(Error.new(this=err.this, 
+                                                      message=err.message, 
+                                                      error=err.error, 
+                                                      state=err.state, 
+                                                      depth=err.depth, 
+                                                      previous=err.previous, 
+                                                      committed=False))
                         last_error = err
             if sampling:
                 profile.sort(key=lambda ps: ps.deficiency)
             if last_error is not None:
-                return Left(last_error)
+                return Left.new(last_error)
             else:
-                return Left(Error.new(
+                return Left.new(Error.new(
                     message="No options provided",
                     this=cls,
                     state=input
@@ -581,8 +589,8 @@ class Algebra(Generic[A, S]):
                         results.append((value, keep))
                         inp = state
                     case Left(err):
-                        return Left(err)
-            return Right((Seq(value=tuple(results)), inp))
+                        return Left.new(err)
+            return Right.new((Seq(value=tuple(results)), inp))
         return cls(run_f=seq_run) # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
@@ -624,7 +632,7 @@ class Algebra(Generic[A, S]):
                 result = yield from self.run(current_input, cache)
                 match result:
                     case Left(E):
-                        inner_error = Left(E)
+                        inner_error = Left.new(E)
                         break
                     case Right((value, next_input)):
                         if next_input.cache_key == current_cache_key:
@@ -633,7 +641,7 @@ class Algebra(Generic[A, S]):
                             ret.append(value)
                         current_input = next_input
                         if at_most is not None and len(ret) > at_most:
-                            return Left(Error.new(
+                            return Left.new(Error.new(
                                     message=f"Expected at most {at_most} matches, got {len(ret)}",
                                     this=self,
                                     state=current_input
@@ -642,12 +650,12 @@ class Algebra(Generic[A, S]):
                 if inner_error is not None:
                     return inner_error
                 else:
-                    return Left(Error.new(
+                    return Left.new(Error.new(
                             message=f"Expected at least {at_least} matches, got {len(ret)}",
                             this=self,
                             state=current_input
                         )) 
-            return Right((Many(value=tuple(ret)), current_input))
+            return Right.new((Many(value=tuple(ret)), current_input))
         return replace(self, run_f=many_run) # type: ignore
     
 

@@ -582,9 +582,16 @@ class Collect(AST, Generic[A, E]):
 
 Char = TypeVar('Char', bound=Hashable)
 @dataclass(frozen=True, slots=True)
-class Token(AST, Generic[Char]):
+class Token(Generic[Char]):
     text: str | bytes | Tuple[Char, ...]
     token_type: Optional[Union[str, Enum]] = None
+    @classmethod
+    def new(cls, text: str | bytes | Tuple[Char, ...], token_type: Optional[Union[str, Enum]] = None) -> Token[Char]:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'text', text)
+        object.__setattr__(obj, 'token_type', token_type)
+        return obj
+    
     def __str__(self) -> str:
         if isinstance(self.text, str):
             if self.token_type is None:
