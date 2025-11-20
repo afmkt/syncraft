@@ -1,10 +1,15 @@
 import random
 from syncraft.fa import NFA
 from syncraft.alphabet import Alphabet, AlphabetProtocol
+from syncraft.charset import CharSet, CharSetFactory
+
+
+
 
 def test_dfa_reverse_simple():
     # DFA for 'abc' tagged as 'word'
-    nfa = NFA.from_string('abc', tag='word', alphabet=Alphabet(str))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.seq(s='abc', tag='word', cs_factory=cs_factory)
     dfa = nfa.dfa
     rev = dfa.reverse
     s = rev.gen('word', random.Random(42))
@@ -12,7 +17,8 @@ def test_dfa_reverse_simple():
 
 def test_dfa_reverse_multiple_tags():
     # DFA for 'a' tagged as 'A', 'b' tagged as 'B'
-    nfa = NFA.from_string('a', tag='A', alphabet=Alphabet(str)) | NFA.from_string('b', tag='B', alphabet=Alphabet(str))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.seq(s='a', tag='A', cs_factory=cs_factory) | NFA.seq(s='b', tag='B', cs_factory=cs_factory)
     dfa = nfa.dfa
     rev = dfa.reverse
     s_a = rev.gen('A', random.Random(1))
@@ -22,7 +28,8 @@ def test_dfa_reverse_multiple_tags():
 
 def test_dfa_reverse_randomness():
     # DFA for 'ab' and 'ac' both tagged as 'X'
-    nfa = NFA.from_string('ab', tag='X', alphabet=Alphabet(str)) | NFA.from_string('ac', tag='X', alphabet=Alphabet(str))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.seq(s='ab', tag='X', cs_factory=cs_factory) | NFA.seq(s='ac', tag='X', cs_factory=cs_factory)
     dfa = nfa.dfa
     rev = dfa.reverse
     # Should be able to generate both 'ab' and 'ac'
@@ -30,7 +37,8 @@ def test_dfa_reverse_randomness():
     assert results == {'ab', 'ac'}
 
 def test_dfa_reverse_invalid_tag():
-    nfa = NFA.from_string('a', tag='A', alphabet=Alphabet(str))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.seq(s='a', tag='A', cs_factory=cs_factory)
     dfa = nfa.dfa
     rev = dfa.reverse
     try:

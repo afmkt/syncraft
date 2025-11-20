@@ -13,7 +13,7 @@ from syncraft.algebra import (
 from collections import deque
 from syncraft.utils import  FrozenDict
 
-from syncraft.charset import CharSet, MixedUniverseError
+from syncraft.charset import CharSet, MixedUniverseError, CharSetFactory
 from syncraft.alphabet import CodepointError, AlphabetProtocol, Alphabet
 from enum import Enum
 from collections import defaultdict
@@ -50,10 +50,10 @@ class FAState:
 
 @dataclass(frozen=True, slots=True)
 class ReverseDFA(Generic[C]):
-    alphabet: AlphabetProtocol[C]
+    cs_factory: CharSetFactory[C]
     final: FAState
     accept: FrozenDict[Tag|None, frozenset[FAState]] = field(default_factory=FrozenDict)    
-    transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = field(default_factory=FrozenDict)
 
     def gen(self, tag: Tag | None, rnd: random.Random) -> C | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
@@ -61,22 +61,23 @@ class ReverseDFA(Generic[C]):
             raise SyncraftError(f"Tag '{tag}' not accepted by this DFA", offender=tag, expect=f"one of {list(self.accept.keys())}")
         current = rnd.choice(list(current_states))
         result: List[C] = []
+        sample_f = self.cs_factory.sample
         while current != self.final:
             if current not in self.transitions:
                 break
-            char_set: CharSet[C]
+            char_set: CharSet
             next_state: FAState 
             char_set, next_state = random.choice(list(self.transitions[current].items()))
-            result.append(char_set.sample(rnd))
+            result.append(sample_f(char_set, rnd))
             current = next_state
-        return self.alphabet.concat(result[::-1])
+        return self.cs_factory.alphabet.concat(result[::-1])
 
 @dataclass(frozen=True, slots=True)
 class DFA(Generic[C]):
-    alphabet: AlphabetProtocol[C]
+    cs_factory: CharSetFactory[C]
     init: FAState
     accept: FrozenDict[FAState, frozenset[Tag]] = field(default_factory=FrozenDict)
-    transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = field(default_factory=FrozenDict)
 
     @property
     def reverse(self) -> ReverseDFA[C]:
@@ -86,12 +87,12 @@ class DFA(Generic[C]):
             for t in tags:
                 acc_map[t].add(s)
 
-        trans: Dict[FAState, Dict[CharSet[C], FAState]] = defaultdict(dict)  
+        trans: Dict[FAState, Dict[CharSet, FAState]] = defaultdict(dict)  
         for s, mapping in self.transitions.items():
             for cs, tgt in mapping.items():
                 trans[tgt][cs] = s
         return ReverseDFA(
-            alphabet=self.alphabet,
+            cs_factory=self.cs_factory,
             final=self.init,
             accept=FrozenDict({t: frozenset(ss) for t, ss in acc_map.items()}),
             transitions=FrozenDict({s: FrozenDict(m) for s,m in trans.items()}))
@@ -103,14 +104,14 @@ class DFA(Generic[C]):
         
         states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys()) | {self.init}
         st_map: dict[FAState, FAState] = {k: fabuilder() for k in states}
-        new_universe = self.alphabet
+        new_universe = self.cs_factory
         new_init = st_map[self.init]
         new_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({st_map[s]: v for s, v in self.accept.items()})
-        new_trans: dict[FAState, FrozenDict[CharSet[C], FAState]] = {}
+        new_trans: dict[FAState, FrozenDict[CharSet, FAState]] = {}
         for k, v in self.transitions.items():
             new_trans[st_map[k]] = FrozenDict({cs: st_map[tgt] for cs, tgt in v.items()})
 
-        return DFA(alphabet=new_universe,
+        return DFA(cs_factory=new_universe,
                    init=new_init, 
                    accept=new_accept, 
                    transitions=FrozenDict(new_trans))
@@ -134,7 +135,7 @@ class DFA(Generic[C]):
             # Edge: single state DFA (maybe accepting)
             return self
 
-        alphabet = self.alphabet
+        # alphabet = self.alphabet
         fabuilder = FAState.builder()
 
         # Collect all states explicitly referenced.
@@ -147,12 +148,12 @@ class DFA(Generic[C]):
         all_intvs: List[Tuple[int, int]] = []
         for mapping in self.transitions.values():
             for cs in mapping.keys():
-                all_intvs.extend(cs.interval)
+                all_intvs.extend(cs)
         # If no intervals (degenerate), return self
         if not all_intvs:
             return self
-        pieces: List[Tuple[int, int]] = list(CharSet.partition_charsets(all_intvs))
-        piece_charsets: List[CharSet[C]] = [CharSet.from_interval([p], alphabet) for p in pieces]
+        pieces: List[Tuple[int, int]] = list(self.cs_factory.partition_charsets(all_intvs))
+        piece_charsets: List[CharSet] = [self.cs_factory.from_interval([p]) for p in pieces]
 
         # Map: state -> list[target_state or None] per piece; also build reverse maps.
         sink: Optional[FAState] = None
@@ -173,7 +174,7 @@ class DFA(Generic[C]):
                 # Find matching outgoing transition (deterministic => first overlap)
                 for cs, dest in mapping.items():
                     # CharSets used in DFA transitions are disjoint per state, so cheap overlap
-                    if cs.overlaps(pcs.interval[0]):
+                    if self.cs_factory.overlaps(cs, pcs[0]):
                         tgt = dest
                         break
                 if tgt is None:
@@ -266,7 +267,7 @@ class DFA(Generic[C]):
                 new_accept[rep] = frozenset(tags)
 
         # Rebuild transitions only for pieces that were REAL in the original DFA (skip synthesized sink edges)
-        new_transitions: Dict[FAState, Dict[CharSet[C], FAState]] = {}
+        new_transitions: Dict[FAState, Dict[CharSet, FAState]] = {}
         for block in P:
             exemplar = next(iter(block))
             rep = block_rep[exemplar]
@@ -286,13 +287,13 @@ class DFA(Generic[C]):
                     grouped[-1][0].append(pieces[idx])
                 else:
                     grouped.append(([pieces[idx]], tgt_rep))
-            rep_trans: Dict[CharSet[C], FAState] = {}
+            rep_trans: Dict[CharSet, FAState] = {}
             for intv_list, tgt_rep in grouped:
-                cs = CharSet.from_interval(intv_list, alphabet)
+                cs = self.cs_factory.from_interval(intv_list)
                 rep_trans[cs] = tgt_rep
             if rep_trans:
                 # Optional: merge adjacent for same target (already contiguous grouping but safe)
-                rep_trans = DFA.merge_adjacent_transitions(alphabet, rep_trans)
+                rep_trans = DFA.merge_adjacent_transitions(self.cs_factory, rep_trans)
                 new_transitions[rep] = rep_trans
 
         # Prune unreachable states (e.g. sink representative if all synthesized edges were removed)
@@ -312,7 +313,7 @@ class DFA(Generic[C]):
         new_init = block_rep[self.init]
 
         return DFA(
-            alphabet=alphabet,
+            cs_factory=self.cs_factory,
             init=new_init,
             accept=FrozenDict(new_accept),
             transitions=FrozenDict({s: FrozenDict(m) for s, m in new_transitions.items()})
@@ -326,13 +327,13 @@ class DFA(Generic[C]):
         
     @property
     def any(self) -> DFA[C]:
-        alphabet = self.alphabet
+        cs_factory = self.cs_factory
         # Single state DFA accepting everything
         s = FAState()
-        transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({s: FrozenDict({CharSet.any(alphabet): s})})
+        transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = FrozenDict({s: FrozenDict({cs_factory.any(): s})})
         accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({s: frozenset()})
         return DFA(
-            alphabet=alphabet,
+            cs_factory=cs_factory,
             init=s,
             accept=accept,
             transitions=transitions
@@ -345,13 +346,13 @@ class DFA(Generic[C]):
         return self.complement
                        
 
-    def _product(self, other: "DFA[C]", 
+    def _product(self, other: DFA[C], 
                  op: Literal['intersection', 'union', 'difference'],
                  accept_func: Callable[[Tuple[bool, frozenset[Tag]], Tuple[bool, frozenset[Tag]]], Tuple[bool, frozenset[Tag]]]) -> "DFA[C]":
-        if self.alphabet != other.alphabet:
+        if self.cs_factory != other.cs_factory:
             raise MixedUniverseError("Cannot combine DFAs with different universes",
-                                    offender=(self.alphabet, other.alphabet))
-
+                                    offender=(self.cs_factory, other.cs_factory))
+        cs_factory = self.cs_factory
         # sentinel sink states for "no transition" from a DFA on a piece
         sink1 = FAState()
         sink2 = FAState()
@@ -362,23 +363,23 @@ class DFA(Generic[C]):
         state_map[start_pair] = FAState()
         work_list = deque([start_pair])
 
-        transitions: dict[FAState, dict[CharSet[C], FAState]] = {}
+        transitions: dict[FAState, dict[CharSet, FAState]] = {}
         accept: dict[FAState, frozenset[Tag]] = {}
 
         while work_list:
             s1, s2 = work_list.popleft()
             new_state = state_map[(s1, s2)]
 
-            trans1: dict[CharSet[C], FAState] = dict(self.transitions.get(s1, {}))
-            trans2: dict[CharSet[C], FAState] = dict(other.transitions.get(s2, {}))
+            trans1: dict[CharSet, FAState] = dict(self.transitions.get(s1, {}))
+            trans2: dict[CharSet, FAState] = dict(other.transitions.get(s2, {}))
 
             # collect all intervals from both transition maps and partition them
             lintvs: List[Tuple[int, int]] = []
             rintvs: List[Tuple[int, int]] = []
             for cs in trans1.keys():
-                lintvs.extend(cs.interval)
+                lintvs.extend(cs)
             for cs in trans2.keys():
-                rintvs.extend(cs.interval)
+                rintvs.extend(cs)
 
             # If there are no intervals on either side, we leave transitions empty.
             if not lintvs and not rintvs:
@@ -386,27 +387,27 @@ class DFA(Generic[C]):
             else:
                 match op:
                     case 'intersection':
-                        pieces = CharSet.intersect_interval(lintvs, rintvs)
+                        pieces = cs_factory.intersect_interval(lintvs, rintvs)
                     case 'union':
-                        pieces = CharSet.partition_charsets(lintvs + rintvs)
+                        pieces = cs_factory.partition_charsets(lintvs + rintvs)
                     case 'difference':
-                        pieces = CharSet.difference_interval(lintvs, rintvs)
-                next_trans: dict[CharSet[C], FAState] = {}
+                        pieces = cs_factory.difference_interval(lintvs, rintvs)
+                next_trans: dict[CharSet, FAState] = {}
 
                 for p in pieces:
-                    piece_cs: CharSet[C] = CharSet.from_interval([p], self.alphabet)
+                    piece_cs: CharSet = cs_factory.from_interval([p])
 
                     # find target in trans1 that covers this piece (if any)
                     t1 = None
                     for cs1, tgt1 in trans1.items():
-                        if cs1.overlaps(p):
+                        if cs_factory.overlaps(cs1, p):
                             t1 = tgt1
                             break
 
                     # find target in trans2 that covers this piece (if any)
                     t2 = None
                     for cs2, tgt2 in trans2.items():
-                        if cs2.overlaps(p):
+                        if cs_factory.overlaps(cs2, p):
                             t2 = tgt2
                             break
 
@@ -422,7 +423,7 @@ class DFA(Generic[C]):
                     next_trans[piece_cs] = state_map[tgt_pair]
 
                 # merge adjacent CharSets that target the same state (keeps DFAs tidy)
-                transitions[new_state] = DFA.merge_adjacent_transitions(self.alphabet, next_trans)
+                transitions[new_state] = DFA.merge_adjacent_transitions(cs_factory, next_trans)
 
             # acceptance of the product state
             b1 = s1 in self.accept
@@ -433,13 +434,13 @@ class DFA(Generic[C]):
 
         # Optionally: we created sink1/sink2 FAState values; if any pair uses them they are already in state_map
         # Build frozen structures
-        frozen_transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] = FrozenDict({
+        frozen_transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = FrozenDict({
             s: FrozenDict(t) for s, t in transitions.items()
         })
         frozen_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict(accept)
 
         return DFA(
-            alphabet=self.alphabet,
+            cs_factory=cs_factory,
             init=state_map[start_pair],
             accept=frozen_accept,
             transitions=frozen_transitions            
@@ -482,7 +483,7 @@ class DFA(Generic[C]):
         all_states.update(self.accept.keys())
         all_states.add(self.init)
         state_map: dict[FAState, FAState] = {s: FAState() for s in all_states}
-        nfa_trans: dict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = {}
+        nfa_trans: dict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = {}
         for s, trans in self.transitions.items():
             nfa_s = state_map[s]
             nfa_trans[nfa_s] = FrozenDict(
@@ -492,7 +493,7 @@ class DFA(Generic[C]):
             {state_map[s]: tags for s, tags in self.accept.items()}
         )
         return NFA(
-            alphabet=self.alphabet,
+            cs_factory=self.cs_factory,
             init=state_map[self.init],
             accept=nfa_accept,
             transitions=FrozenDict(nfa_trans),
@@ -517,48 +518,49 @@ class DFA(Generic[C]):
 
 
     @staticmethod
-    def merge_adjacent_transitions(alphabet: AlphabetProtocol[C], transitions: dict[CharSet[C], FAState]) -> dict[CharSet[C], FAState]:
+    def merge_adjacent_transitions(cs_factory: CharSetFactory[C], transitions: dict[CharSet, FAState]) -> dict[CharSet, FAState]:
         """Merge consecutive CharSets with the same target into a single CharSet."""
         merged: List[Tuple[List[Tuple[int,int]], FAState]] = []
-        sorted_trans = sorted(transitions.items(), key=lambda x: x[0].interval)
+        sorted_trans = sorted(transitions.items(), key=lambda x: x[0])
         
         for charset, target in sorted_trans:
             if merged and merged[-1][1] == target:
-                merged[-1][0].extend(charset.interval)  # merge intervals
+                merged[-1][0].extend(charset)  # merge intervals
             else:
-                merged.append((list(charset.interval), target))
-        
-        return {CharSet.from_interval(intv, alphabet): target for intv, target in merged}
+                merged.append((list(charset), target))
 
+        return {cs_factory.from_interval(intv): target for intv, target in merged}
+    
     @classmethod
     def from_nfa(cls, nfa: NFA[C]) -> DFA[C]:
+        cs_factory = nfa.cs_factory
         start:frozenset[FAState] = nfa.closure({nfa.init})
         work_list = deque([start])
         dfa_states : dict[frozenset[FAState], FAState] = {start: FAState()}
-        trans: dict[FAState, dict[CharSet[C], FAState]] = {}
+        trans: dict[FAState, dict[CharSet, FAState]] = {}
         while work_list:
             current = work_list.popleft()
             current_dfa_state = dfa_states[current]
-            edges: List[Tuple[CharSet[C], frozenset[FAState]]] = []
+            edges: List[Tuple[CharSet, frozenset[FAState]]] = []
             for s in current:
                 for e, targets in nfa.transitions.get(s, {}).items():
                     edges.append((e, targets))
 
-            intvs: List[Tuple[int, int]] = [interval for e, _ in edges for interval in (e.interval if isinstance(e.interval, tuple) and isinstance(e.interval[0], int) else e.interval)]
-            pieces: List[Tuple[int, int]] = list(CharSet.partition_charsets(intvs))
+            intvs: List[Tuple[int, int]] = [interval for e, _ in edges for interval in (e if isinstance(e, tuple) and isinstance(e[0], int) else e)]
+            pieces: List[Tuple[int, int]] = list(cs_factory.partition_charsets(intvs))
             for p in pieces:
                 tgt_states: Set[FAState] = set()
                 for e, targets in edges:
-                    if e.overlaps(p):
+                    if cs_factory.overlaps(e, p):
                         tgt_states.update(targets)                         
                 closure = nfa.closure(tgt_states)
                 if closure not in dfa_states:
                     dfa_states[closure] = FAState()
                     work_list.append(closure)
-                trans.setdefault(current_dfa_state, {})[CharSet.from_interval([p], nfa.alphabet)] = dfa_states[closure]
+                trans.setdefault(current_dfa_state, {})[cs_factory.from_interval([p])] = dfa_states[closure]
 
         for s, e in trans.items():
-            trans[s] = DFA.merge_adjacent_transitions(nfa.alphabet, e)
+            trans[s] = DFA.merge_adjacent_transitions(cs_factory, e)
         accept: dict[FAState, frozenset[Tag]] = {}
         for nfa_states, fa_state in dfa_states.items():
             tags: Set[Tag] = set()
@@ -569,12 +571,12 @@ class DFA(Generic[C]):
             if is_accept:
                 accept[fa_state] = frozenset(tags)
 
-        transitions: FrozenDict[FAState, FrozenDict[CharSet[C], FAState]] =FrozenDict({k: FrozenDict(v) for k, v in trans.items()})
+        transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] =FrozenDict({k: FrozenDict(v) for k, v in trans.items()})
         dead_states = [s for s in transitions if not transitions[s]]
         assert len(dead_states) <= 1, f"DFA can have at most one dead state, found {len(dead_states)}: {dead_states}"
         
         return cls(
-                   alphabet=nfa.alphabet,
+                   cs_factory=cs_factory,
                    init=dfa_states[start],
                    accept=FrozenDict(accept),
                    transitions=transitions
@@ -585,10 +587,10 @@ class DFA(Generic[C]):
     
 @dataclass(frozen=True, slots=True)
 class NFA(Generic[C]):
-    alphabet: AlphabetProtocol[C]
+    cs_factory: CharSetFactory[C]
     init: FAState
     accept: FrozenDict[FAState, frozenset[Tag]] = field(default_factory=FrozenDict)
-    transitions: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = field(default_factory=FrozenDict)
     epsilon: FrozenDict[FAState, frozenset[FAState]] = field(default_factory=FrozenDict)
 
 
@@ -597,27 +599,27 @@ class NFA(Generic[C]):
         # New synthetic start state with a START-labeled edge into original init
         new_start = FAState()
         # Build transitions with the same FrozenDict shape
-        trans: dict[FAState, dict[CharSet[C], frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
-        trans[new_start] = {CharSet.start(self.alphabet): frozenset({self.init})}
-        frozen_trans: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = FrozenDict({s: FrozenDict(m) for s, m in trans.items()})
+        trans: dict[FAState, dict[CharSet, frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
+        trans[new_start] = {self.cs_factory.start(): frozenset({self.init})}
+        frozen_trans: FrozenDict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = FrozenDict({s: FrozenDict(m) for s, m in trans.items()})
         return replace(self, init=new_start, transitions=frozen_trans)
 
 
     def end(self) -> NFA[C]:
         # Create a new accept state reachable via END from all previous accepts
         new_accept = FAState()
-        trans: dict[FAState, dict[CharSet[C], frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
+        trans: dict[FAState, dict[CharSet, frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
         # Add END edge from each old accept to new_accept
         for acc in self.accept.keys():
             mapping = trans.get(acc, {})
-            mapping[CharSet.end(self.alphabet)] = frozenset({new_accept})
+            mapping[self.cs_factory.end()] = frozenset({new_accept})
             trans[acc] = mapping
         # Only the new_accept carries tags (union of all old tags)
         tags = set()
         for t in self.accept.values():
             tags.update(t)
         accept_fd: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({new_accept: frozenset(tags)})
-        frozen_trans: FrozenDict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = FrozenDict({s: FrozenDict(m) for s, m in trans.items()})
+        frozen_trans: FrozenDict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = FrozenDict({s: FrozenDict(m) for s, m in trans.items()})
         return replace(self, accept=accept_fd, transitions=frozen_trans)
 
 
@@ -637,7 +639,7 @@ class NFA(Generic[C]):
             return state_map[s]
         new_start = get_clone(self.init)
         new_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({get_clone(a):b for a,b in self.accept.items()})
-        new_transitions: dict[FAState, FrozenDict[CharSet[C], frozenset[FAState]]] = {}
+        new_transitions: dict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = {}
         for k, v in self.transitions.items():
             new_transitions[get_clone(k)] = FrozenDict({
                 c: frozenset(get_clone(s) for s in targets)
@@ -672,14 +674,15 @@ class NFA(Generic[C]):
     
 
     @classmethod
-    def from_raw_charset(cls, 
-                         c: CharSet[C], 
+    def from_raw_charset(cls, *,
+                         c: CharSet, 
+                         cs_factory: CharSetFactory[C],
                          tag: Optional[Tag] = None) -> NFA[C]:
-        assert c.interval != tuple(), "charset cannot be empty"
+        assert c != tuple(), "charset cannot be empty"
         current: FAState = FAState()
         accept: FAState = FAState()
         return cls(
-                   alphabet=c.alphabet,
+                   cs_factory=cs_factory,
                    init=current, 
                    accept=FrozenDict({accept: frozenset({tag}) if tag else frozenset()}),
                    transitions=FrozenDict({
@@ -688,46 +691,34 @@ class NFA(Generic[C]):
                    epsilon=FrozenDict())
     
     @classmethod
-    def from_charset(cls, 
-                  char: str | bytes | Sequence[C], 
-                  alphabet: AlphabetProtocol[C], 
-                  negation:bool = False,  
-                  tag: Optional[Tag] = None) -> NFA[Any]:
-        charset: CharSet[C] = CharSet.create(char, alphabet=alphabet)
+    def oneof(cls, *, s: str | bytes | Sequence[C], cs_factory: CharSetFactory[C], negation:bool = False, tag: Optional[Tag] = None) -> NFA[Any]:
+        charset: CharSet = cs_factory.create(s)
         if negation:
-            charset = -charset
-        if charset.interval == tuple():
-            raise CodepointError(f"Character {char!r} is not valid in the specified alphabet {alphabet}", offender=char, alphabet=alphabet)
-        return cls.from_raw_charset(charset, tag=tag)
+            charset = cs_factory.complement(charset)
+        return cls.from_raw_charset(cs_factory=cs_factory, c=charset, tag=tag)
 
     @classmethod
-    def from_string(cls, 
-                    s: str | bytes | Sequence[C], 
-                    alphabet: AlphabetProtocol[C], 
-                    tag: Optional[Tag] = None) -> NFA[Any]:
+    def seq(cls, *,
+            s: str | bytes | Sequence[C], 
+            cs_factory: CharSetFactory[C], 
+            tag: Optional[Tag] = None) -> NFA[Any]:
         nfa = None
-        if isinstance(s, str):
-            for ch in list(s):
-                p = cls.from_charset(ch, alphabet=alphabet)
-                nfa = p if nfa is None else nfa.then(p)
-            assert nfa is not None, "from_string produced no NFA"
-            if tag:
-                nfa = nfa.tagged(tag)
-            return nfa
-        elif isinstance(s, bytes):
-            for b in s:
-                p = cls.from_charset(bytes([b]), alphabet=alphabet)
-                nfa = p if nfa is None else nfa.then(p)
-            assert nfa is not None, "from_string produced no NFA"
-            if tag:
-                nfa = nfa.tagged(tag)
-            return nfa
+        if isinstance(s, bytes):
+            ss: Sequence[Any] = [bytes([x]) for x in list(s)]
         else:
-            raise SyncraftError(f"Cannot create NFA from {s!r}", offender=s, expect="str, bytes or Sequence[Enum|C]")
+            ss  = s
+        for ch in ss:
+            p = cls.oneof(s=ch, cs_factory=cs_factory)
+            nfa = p if nfa is None else nfa.then(p)
+        assert nfa is not None, "from_string produced no NFA"
+        if tag:
+            nfa = nfa.tagged(tag)
+        return nfa
+                
 
     def then(self, other: NFA[C]) -> NFA[C]:
-        if self.alphabet != other.alphabet:
-            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.alphabet, other.alphabet))
+        if self.cs_factory != other.cs_factory:
+            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.cs_factory, other.cs_factory))
         this = self.clone()
             
         eps = {**this.epsilon}
@@ -742,17 +733,18 @@ class NFA(Generic[C]):
             new_transitions[k] = new_transitions.get(k, FrozenDict()) | v
             
         return this.__class__(
-                              alphabet=this.alphabet,
+                              cs_factory=this.cs_factory,
                               init=this.init, 
                               accept=FrozenDict({k: frozenset() for k in other.accept}), 
                               transitions=FrozenDict(new_transitions), 
                               epsilon=FrozenDict(eps))
+    
     def __rshift__(self, other: NFA[C]) -> NFA[C]:
         return self.then(other)
     
     def union(self, other: NFA[C]) -> NFA[C]:
-        if self.alphabet != other.alphabet:
-            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.alphabet, other.alphabet))
+        if self.cs_factory != other.cs_factory:
+            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.cs_factory, other.cs_factory))
         if self is other:
             return self
         new_current: FAState = FAState()
@@ -768,7 +760,7 @@ class NFA(Generic[C]):
         
 
         return replace(self,
-                       alphabet=self.alphabet,
+                       cs_factory=self.cs_factory,
                        init=new_current, 
                        accept=FrozenDict({k: self.accept.get(k, frozenset()) | other.accept.get(k, frozenset()) for k in (self.accept | other.accept).keys()}), 
                        transitions=FrozenDict(new_transitions), 
@@ -881,8 +873,9 @@ class Runner(Generic[C]):
     def start(self) -> RunnerResult:
         start_state = self.current
         entry = self.fa.transitions.get(start_state, {})
+        START = self.fa.cs_factory.start()
         for cs, tgt in entry.items():
-            if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
+            if cs == START:
                 start_state = tgt
                 break
         return self.advance_state(start_state, pos=0)
@@ -891,8 +884,9 @@ class Runner(Generic[C]):
         cur = self.current
         if cur is not None:
             entry = self.fa.transitions.get(cur, {})
+            END = self.fa.cs_factory.end()
             for cs, tgt in entry.items():
-                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
+                if cs == END:
                     cur = tgt
                     break
         
@@ -903,7 +897,7 @@ class Runner(Generic[C]):
         if state is None:
             return False
         for cs in self.fa.transitions.get(state, {}).keys():
-            if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval):
+            if not any(lo < 0 or hi < 0 for (lo, hi) in cs):
                 return True
         return False
     
@@ -946,23 +940,24 @@ class Runner(Generic[C]):
             )
 
 
-    def step(self, symbol: str | int | C, pos: int) -> RunnerResult:
-        ss: str|bytes
-        if isinstance(symbol, str):
-            ss = symbol
-        elif isinstance(symbol, int):
-            ss = bytes([symbol])
-        else:   
-            raise ValueError(f"{symbol} is not valid input type")
-        assert len(ss) == 1, "symbol must be a single character"
+    def step(self, symbol: C, pos: int) -> RunnerResult:
+        # ss: str|bytes
+        # if isinstance(symbol, str):
+        #     ss = symbol
+        # elif isinstance(symbol, int):
+        #     ss = bytes([symbol])
+        # else:   
+        #     raise ValueError(f"{symbol} is not valid input type")
+        # assert len(ss) == 1, "symbol must be a single character"
         next_state: Optional[FAState] = None
-        entry: FrozenDict[CharSet[C], FAState] = self.fa.transitions.get(self.current, {})
-        k: CharSet[C] = CharSet.create(ss, alphabet=self.fa.alphabet)
+        entry: FrozenDict[CharSet, FAState] = self.fa.transitions.get(self.current, {})
+        k: CharSet = self.fa.cs_factory.create_one(symbol)
         if k in entry:
             next_state = entry[k]
         else:
-            for char_class, targets in entry.items():
-                if isinstance(char_class, CharSet) and char_class(symbol):
+            matches = self.fa.cs_factory.matches
+            for char_set, targets in entry.items():
+                if matches(char_set, symbol):
                     next_state = targets
                     break
         return self.advance_state(next_state, pos)
@@ -975,9 +970,9 @@ class Runner(Generic[C]):
         return bool(self.current)
     
     @property
-    def resumable(self) -> frozenset[CharSet[C]]:
+    def resumable(self) -> frozenset[CharSet]:
         keys = self.dfa.transitions.get(self.current, {}).keys()
-        filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
+        filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs)]
         return frozenset(filtered)
 
 
@@ -1026,7 +1021,7 @@ class NFARunner(Generic[C]):
             has_future_non_anchor = False
             for s2 in new_current:
                 for cs2 in self.fa.transitions.get(s2, {}).keys():
-                    if not any(lo < 0 or hi < 0 for (lo, hi) in cs2.interval):
+                    if not any(lo < 0 or hi < 0 for (lo, hi) in cs2):
                         has_future_non_anchor = True
                         break
                 if has_future_non_anchor:
@@ -1055,33 +1050,35 @@ class NFARunner(Generic[C]):
     def start(self) -> RunnerResult:
         start_states = self.current
         advanced: set[FAState] = set()
+        START = self.fa.cs_factory.start()
         for s in start_states:
             entry = self.fa.transitions.get(s, {})
             for cs, tgts in entry.items():
-                if cs.interval == ((CharSet.START_CP, CharSet.START_CP),):
+                if cs == START:
                     advanced.update(tgts)
         if advanced:
             start_states = self.fa.closure(advanced)
         return self.advance_state(start_states, pos=0)
 
-    def step(self, symbol: str | int | C, pos: int) -> RunnerResult:
-        ss: str|bytes
-        if isinstance(symbol, str):
-            ss = symbol
-        elif isinstance(symbol, int):
-            ss = bytes([symbol])
-        else:   
-            raise ValueError(f"{symbol} is not valid input type")
-        assert len(ss) == 1, "symbol must be a single character"
+    def step(self, symbol: C, pos: int) -> RunnerResult:
+        # ss: str|bytes
+        # if isinstance(symbol, str):
+        #     ss = symbol
+        # elif isinstance(symbol, int):
+        #     ss = bytes([symbol])
+        # else:   
+        #     raise ValueError(f"{symbol} is not valid input type")
+        # assert len(ss) == 1, "symbol must be a single character"
         next_states = set()
         for s in self.current:
-            entry: FrozenDict[CharSet[C], frozenset[FAState]] = self.fa.transitions.get(s, {})
-            k: CharSet[C] = CharSet.create(ss, alphabet=self.fa.alphabet)
+            entry: FrozenDict[CharSet, frozenset[FAState]] = self.fa.transitions.get(s, {})
+            k: CharSet = self.fa.cs_factory.create_one(symbol)
             if k in entry:
                 next_states.update(entry[k])
             else:
-                for char_class, targets in entry.items():
-                    if isinstance(char_class, CharSet) and char_class(symbol):
+                matches = self.fa.cs_factory.matches
+                for char_set, targets in entry.items():
+                    if matches(char_set, symbol):
                         next_states.update(targets)
 
         return self.advance_state(frozenset(next_states), pos=pos)
@@ -1093,11 +1090,11 @@ class NFARunner(Generic[C]):
         return bool(self.current)
 
     @property
-    def resumable(self) -> frozenset[CharSet[C]]:
-        result: Set[CharSet[C]] = set()
+    def resumable(self) -> frozenset[CharSet]:
+        result: Set[CharSet] = set()
         for s in self.current:
             result.update(self.fa.transitions.get(s, {}).keys())
-        filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs.interval)]
+        filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs)]
         return frozenset(filtered)
 
     def tags(self) -> frozenset[Tag]:
@@ -1108,10 +1105,11 @@ class NFARunner(Generic[C]):
     
     def finalize(self) -> RunnerResult:
         next_states: set[FAState] = set()
+        END = self.fa.cs_factory.end()
         for s in self.current:
             entry = self.fa.transitions.get(s, {})
             for cs, tgts in entry.items():
-                if cs.interval == ((CharSet.END_CP, CharSet.END_CP),):
+                if cs == END:
                     next_states.update(tgts)
         if next_states:
             new_current = self.fa.closure(next_states)
@@ -1371,6 +1369,7 @@ class Builder(Generic[C]):
         return replace(self, non_greedy=non_greedy)
 
     def compile(self, alphabet: AlphabetProtocol[C]) -> NFA[C] | DFA[C]: 
+        cs_factory = CharSetFactory(alphabet=alphabet)
         match self.kind:
             case _NodeKind.RANGE:
                 if not self.intervals:
@@ -1381,8 +1380,8 @@ class Builder(Generic[C]):
                     code_end = alphabet.encode(end) # type: ignore
                     if code_start < code_end:
                         codes.append((code_start, code_end))
-                charset = CharSet.from_interval(codes, alphabet=alphabet) # type: ignore
-                return NFA.from_raw_charset(charset, tag=self.tag)
+                charset = cs_factory.from_interval(codes) # type: ignore
+                return NFA.from_raw_charset(cs_factory=cs_factory, c=charset, tag=self.tag)
             case _NodeKind.UNION:
                 left = self.children[0].compile(alphabet).nfa
                 right = self.children[1].compile(alphabet).nfa
@@ -1394,11 +1393,11 @@ class Builder(Generic[C]):
             case _NodeKind.LITERAL:
                 if self.text is None:
                     raise SyncraftError("Literal Builder must have text", offender=self, expect="text is str, bytes, or Sequence")
-                return NFA.from_string(self.text, alphabet=alphabet, tag=self.tag)
+                return NFA.seq(s=self.text, cs_factory=cs_factory, tag=self.tag)
             case _NodeKind.ONEOF:
                 if self.text is None:
                     raise SyncraftError("OneOf Builder must have text", offender=self, expect="text is str, bytes, or Sequence")
-                return NFA.from_charset(self.text, alphabet=alphabet, tag=self.tag)
+                return NFA.oneof(s=self.text, cs_factory=cs_factory, tag=self.tag)
             case _NodeKind.STAR:
                 inner = self.children[0].compile(alphabet).nfa
                 return inner.star

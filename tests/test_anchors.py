@@ -1,13 +1,13 @@
 from enum import Enum
-from syncraft.charset import CharSet
+from syncraft.charset import CharSet, CharSetFactory
 from syncraft.alphabet import Alphabet
 from syncraft.fa import NFA, FAState
 from syncraft.utils import FrozenDict
 
 
 def test_start_anchor_simple():
-    uni = Alphabet(str)
-    base = NFA.from_charset('a', uni)
+    uni = CharSetFactory(alphabet=Alphabet(str))
+    base = NFA.oneof(s='a', cs_factory=uni)
     anchored = base.start()
     r = anchored.dfa.runner()
     r.start()
@@ -21,8 +21,8 @@ def test_start_anchor_simple():
 
 
 def test_end_anchor_simple():
-    uni = Alphabet(str)
-    base = NFA.from_charset('a', uni)
+    uni = CharSetFactory(alphabet=Alphabet(str))
+    base = NFA.oneof(s='a', cs_factory=uni)
     anchored = base.end()
     r = anchored.dfa.runner()
     # After consuming 'a', not yet accepted until finalize()
@@ -40,11 +40,11 @@ def test_end_anchor_simple():
 
 def test_both_anchors_empty():
     # ^$ should match empty only. Construct NFA with epsilon accept and then add both anchors.
-    uni = Alphabet(str)
+    uni = CharSetFactory(alphabet=Alphabet(str))
     # Build empty-match NFA: init is also accept, no transitions.
     init = FAState()
     empty = NFA(
-        alphabet=uni,
+        cs_factory=uni,
         init=init,
         accept=FrozenDict({init: frozenset()}),
         transitions=FrozenDict(),

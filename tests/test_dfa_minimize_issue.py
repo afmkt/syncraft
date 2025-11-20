@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 from syncraft.fa import DFA, FAState  # type: ignore
-from syncraft.charset import CharSet
+from syncraft.charset import CharSet, CharSetFactory
 from syncraft.alphabet import Alphabet
 from syncraft.utils import FrozenDict
 
@@ -32,9 +32,9 @@ from syncraft.utils import FrozenDict
 
 
 def _build_dfa():
-    u = Alphabet(str)
-    a = CharSet.create('a', u)
-    b = CharSet.create('b', u)
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    a = cs_factory.create('a')
+    b = cs_factory.create('b')
     S = FAState()
     P = FAState()
     Q = FAState()
@@ -47,7 +47,7 @@ def _build_dfa():
     }
     accept = {F: frozenset()}  # no tags needed
     return DFA(
-        alphabet=u,
+        cs_factory=cs_factory,
         init=S,
         accept=FrozenDict(accept),
         transitions=FrozenDict({s: FrozenDict(m) for s, m in transitions.items()}),
@@ -120,11 +120,12 @@ def _all_strings(alphabet: str, max_len: int):
 
 def test_minimize_preserves_language_small():
     """Property: Minimized DFA must agree with original on all strings up to length 3."""
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     u = Alphabet(str)
     # Build a DFA from an NFA for pattern: (ab|ba) a?  (just some branching / optional)
     from syncraft.fa import NFA
-    a = NFA.from_charset('a', alphabet=u)
-    b = NFA.from_charset('b', alphabet=u)
+    a = NFA.oneof(s='a', cs_factory=cs_factory)
+    b = NFA.oneof(s='b', cs_factory=cs_factory)
     pattern = (a.then(b) | b.then(a)).then(a.optional)
     dfa = pattern.dfa
     m = dfa.minimize

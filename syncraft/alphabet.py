@@ -130,9 +130,12 @@ class ByteAlphabet(AlphabetProtocol[bytes]):
     def encode(self, symbol: bytes | int) -> int:
         if isinstance(symbol, int):
             return symbol
-        if not isinstance(symbol, bytes) or not len(symbol) == 1:
-            raise CodepointError(f"Byte symbol must be of type bytes, got {symbol!r}", offender=symbol, expect="bytes")
-        return symbol[0]
+        else:
+            try:
+                assert len(symbol) == 1
+                return symbol[0] # type: ignore
+            except Exception:
+                raise CodepointError(f"Byte symbol must be of type bytes, got {symbol!r}", offender=symbol, expect="bytes")
     
     def decode(self, code: int) -> bytes:
         try:

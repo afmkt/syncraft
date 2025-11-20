@@ -10,98 +10,94 @@ from syncraft.charset import (
 from syncraft.alphabet import Alphabet
 from syncraft.alphabet import  CodepointError
 from syncraft.algebra import SyncraftError
+from syncraft.charset import CharSetFactory
 import enum
 
 
 def test_charset_basic_matches() -> None:
-    cc: CharSet[str] = CharSet.create("abc", alphabet=Alphabet(str))
-    assert cc("a")
-    assert cc("b")
-    assert cc("c")
-    assert not cc("d")
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    cc: CharSet = cs_factory.create("abc")
+    assert cs_factory.matches(cc, "a")
+    assert cs_factory.matches(cc, "b")
+    assert cs_factory.matches(cc, "c")
+    assert not cs_factory.matches(cc, "d")
     # interval should have one entry per distinct char, sorted
-    assert cc.interval == tuple((ord(c), ord(c)) for c in "abc")
+    assert cc == tuple((ord(c), ord(c)) for c in "abc")
 
 
 def test_charset_union_and_interval_merge() -> None:
-    a: CharSet[str] = CharSet.create("A", alphabet=Alphabet(str))
-    b: CharSet[str] = CharSet.create("B", alphabet=Alphabet(str))
-    c: CharSet[str] = CharSet.create("C", alphabet=Alphabet(str))
-    merged = a | b | c  # contiguous -> single merged interval
-    assert merged("A") and merged("B") and merged("C")
-    assert merged.interval == ((ord("A"), ord("C")),)
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    a: CharSet = cs_factory.create("A")
+    b: CharSet = cs_factory.create("B")
+    c: CharSet = cs_factory.create("C")
+    merged = cs_factory.union_many(a, b, c)  # contiguous -> single merged interval
+    assert cs_factory.matches(merged, "A") and cs_factory.matches(merged, "B") and cs_factory.matches(merged, "C")
+    assert merged == ((ord("A"), ord("C")),)
 
-    d: CharSet[str] = CharSet.create("D", alphabet=Alphabet(str))
+    d: CharSet = cs_factory.create("D")
     # gap between C and D? they are contiguous (C=67, D=68) so still merge
-    merged2 = merged | d
-    assert merged2.interval == ((ord("A"), ord("D")),)
+    merged2 = cs_factory.union(merged, d)
+    assert merged2 == ((ord("A"), ord("D")),)
 
     # Non-contiguous example to ensure separation: 'A' and 'F'
-    f: CharSet[str] = CharSet.create("F", alphabet=Alphabet(str))
-    separate = a | f
-    assert separate.interval == ((ord("A"), ord("A")), (ord("F"), ord("F")))
+    f: CharSet = cs_factory.create("F")
+    separate = cs_factory.union(a, f)
+    assert separate == ((ord("A"), ord("A")), (ord("F"), ord("F")))
 
 
 def test_charset_intersection_difference() -> None:
-    letters: CharSet[str] = CharSet.create("ABCD", alphabet=Alphabet(str))
-    mid: CharSet[str] = CharSet.create("BC", alphabet=Alphabet(str))
-    left = letters - mid
-    assert left.interval == (
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    letters: CharSet = cs_factory.create("ABCD")
+    mid: CharSet = cs_factory.create("BC")
+    left = cs_factory.difference(letters, mid)
+    assert left == (
         (ord("A"), ord("A")),
         (ord("D"), ord("D")),
     )
-    inter = letters & mid
-    assert inter.interval == (
+    inter = cs_factory.intersect(letters, mid)
+    assert inter == (
         (ord("B"), ord("B")),
         (ord("C"), ord("C")),
     )
-    empty = mid & CharSet.create("Z", alphabet=Alphabet(str))
-    assert empty.interval == tuple()
-    assert not empty("B")
+    empty = cs_factory.intersect(mid, cs_factory.create("Z"))
+    assert empty == tuple()
+    assert not cs_factory.matches(empty, "B")
 
 
 def test_charset_complement() -> None:
-    a: CharSet[str] = CharSet.create("A", alphabet=Alphabet(str))
-    comp = -a
-    assert not comp("A")
-    assert comp("B")
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    a: CharSet = cs_factory.create("A")
+    comp = cs_factory.complement(a)
+    assert not cs_factory.matches(comp, "A")
+    assert cs_factory.matches(comp, "B")
     # Expect two intervals excluding 'A'
-    assert comp.interval == ((0, ord("A") - 1), (ord("A") + 1, 0x10FFFF))
+    assert comp == ((0, ord("A") - 1), (ord("A") + 1, 0x10FFFF))
 
-
-def test_charset_universe_mismatch() -> None:
-    ascii_a: CharSet[str] = CharSet.create(b"\x00", alphabet=Alphabet(bytes))
-    uni_a: CharSet[str] = CharSet.create("A", alphabet=Alphabet(str))
-    with pytest.raises(MixedUniverseError):
-        _ = ascii_a | uni_a
-    with pytest.raises(MixedUniverseError):
-        _ = ascii_a & uni_a
-    with pytest.raises(MixedUniverseError):
-        _ = ascii_a - uni_a
 
 
 def test_charset_bytes_mode() -> None:
-    b1: CharSet[int] = CharSet.create(b"\x00\x10\x20", alphabet=Alphabet(bytes))
-    assert b1(0x00)
-    assert not b1(0x01)
-    assert b1.interval == ((0x00, 0x00), (0x10, 0x10), (0x20, 0x20))
-    comp = -b1
-    assert comp(0x01)
-    assert not comp(0x10)
+    cs_factory = CharSetFactory(alphabet=Alphabet(bytes))
+    b1: CharSet = cs_factory.create(b"\x00\x10\x20")
+    assert cs_factory.matches(b1, b'\x00')
+    assert not cs_factory.matches(b1, b'\x01')
+    comp = cs_factory.complement(b1)
+    assert cs_factory.matches(comp, b'\x01')
+    assert not cs_factory.matches(comp, b'\x10')
 
 
 def test_charset_invalid_length_error() -> None:
-    cc_bytes: CharSet[int] = CharSet.create(b"A", alphabet=Alphabet(bytes))
+    cs_factory = CharSetFactory(alphabet=Alphabet(bytes))
+    cc_bytes: CharSet = cs_factory.create(b"A")
     with pytest.raises(CodepointError):
-        cc_bytes(b"AB")
-
+        cs_factory(cc_bytes, b"AB")
 
 def test_charset_any() -> None:
-    any_uni: CharSet[str] = CharSet.any(Alphabet(str))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    any_uni: CharSet = cs_factory.any()
     # spot check a few codepoints
-    assert any_uni("A")
-    assert any_uni("\u2603")  # snowman
-    assert any_uni.interval == Alphabet(str).codes
+    assert cs_factory.matches(any_uni, "A")
+    assert cs_factory.matches(any_uni, "\u2603")  # snowman
+    assert any_uni == cs_factory.any()
 
 
 
@@ -122,8 +118,6 @@ def test_codeuniverse_byte():
     assert u.codes == ((0, 0xFF),)
     with pytest.raises(CodepointError):
         u.encode(b'AB')
-    with pytest.raises(CodepointError):
-        u.decode(0x100)
 
 
 

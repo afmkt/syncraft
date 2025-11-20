@@ -19,30 +19,13 @@ class MixedUniverseError(SyncraftError):
 C = TypeVar('C', bound=Hashable)
 
 
-    
+CharSet = Tuple[Tuple[int, int], ...]
 
 @dataclass(frozen=True, slots=True)
-class CharSet(Generic[C]):
+class CharSetFactory(Generic[C]):
     START_CP: ClassVar[int] = -1
     END_CP: ClassVar[int] = -2
-
-    interval: Tuple[Tuple[int, int], ...]
     alphabet: AlphabetProtocol[C]
-
-    @classmethod
-    def new(cls, interval: Tuple[Tuple[int, int], ...], alphabet: AlphabetProtocol[C]) -> 'CharSet[C]':
-        c = cls.__new__(cls)
-        object.__setattr__(c, 'interval', interval)
-        object.__setattr__(c, 'alphabet', alphabet)
-        return c
-
-    @staticmethod
-    @lru_cache(maxsize=4096)  
-    def _build(alphabet: AlphabetProtocol[Any], codepoints: Tuple[int, ...]) -> 'CharSet':
-
-        intv: Tuple[Tuple[int, int], ...] = tuple((c, c) for c in codepoints)
-
-        return CharSet.new(interval=intv, alphabet=alphabet)
 
 
     @staticmethod
@@ -125,170 +108,143 @@ class CharSet(Generic[C]):
                 merged.append((start, end))
         return merged
 
-    @classmethod
-    def create(cls, char: str | bytes | Sequence[C], alphabet: AlphabetProtocol) -> 'CharSet[C]':
-        # Fast path: single character string
-        if isinstance(char, str) and len(char) == 1:
-            cp = alphabet.encode(char)
-            return cls._build(alphabet, (cp,))
-        # Fast path: single byte
-        if isinstance(char, bytes) and len(char) == 1:
-            cp = alphabet.encode(char)
-            return cls._build(alphabet, (cp,))
+    def create_one(self, c: C) -> CharSet:
+        codepoint = self.alphabet.encode(c)
+        return ((codepoint, codepoint),)
 
-        # Normalize input to iterable of elements
-        if isinstance(char, (str, bytes)):
-            iterable: Iterable[Any] = char  # iterate over characters
+    def create(self, chars: Sequence[C] | bytes) -> CharSet:
+        if not chars:
+            return self.none()
         else:
-            raise SyncraftError(f"Expected str, bytes, or list/tuple of Enum or characters, got {type(char)}", offender=char, expect="str, bytes, or list/tuple of Enum or characters")
+            # for bytes the c is an int, Alphabet.encode handles that
+            codepoints = {self.alphabet.encode(c) for c in chars} # type: ignore
+            return tuple((cp, cp) for cp in sorted(codepoints))
+        
 
-        codepoints_set = {alphabet.encode(x) for x in iterable}
-        if not codepoints_set:
-            # Preserve earlier semantics: represent empty via none()
-            return CharSet.none(alphabet)
-        codepoints = tuple(sorted(codepoints_set))
-        return cls._build(alphabet, codepoints)
+    
+    def from_interval(self, intv: Sequence[Tuple[int, int]]) -> CharSet:
+        merged = tuple(self.merge_intervals(intv))
+        return merged
+        
 
-    @classmethod
-    def from_interval(cls, intv: Sequence[Tuple[int, int]], alphabet: AlphabetProtocol) -> CharSet[C]:
-        merged = tuple(cls.merge_intervals(intv))
-        return cls(interval=merged, alphabet=alphabet)
+    
+    def start(self) -> CharSet:
+        return ((self.START_CP, self.START_CP),)
 
-    @classmethod
-    def start(cls, alphabet: AlphabetProtocol) -> CharSet[C]:
-        return cls.from_interval([(cls.START_CP, cls.START_CP)], alphabet=alphabet)
+    def end(self) -> CharSet:
+        return ((self.END_CP, self.END_CP),)
 
-    @classmethod
-    def end(cls, alphabet: AlphabetProtocol) -> CharSet[C]:
-        return cls.from_interval([(cls.END_CP, cls.END_CP)], alphabet=alphabet)
+    
+    def is_start(self, cs: CharSet) -> bool:
+        return cs == ((self.START_CP, self.START_CP),)
 
-    @classmethod
-    def is_start(cls, cs: 'CharSet') -> bool:
-        return cs.interval == ((cls.START_CP, cls.START_CP),)
+    def is_end(self, cs: CharSet) -> bool:
+        return cs == ((self.END_CP, self.END_CP),)
 
-    @classmethod
-    def is_end(cls, cs: 'CharSet') -> bool:
-        return cs.interval == ((cls.END_CP, cls.END_CP),)
+    def is_anchor(self, cs: CharSet) -> bool:
+        anchor_set = (self.START_CP, self.END_CP)
+        return any(start in anchor_set or end in anchor_set for start, end in cs)
 
-    def is_anchor(self) -> bool:
-        return any(start in (self.START_CP, self.END_CP) or end in (self.START_CP, self.END_CP)
-                   for start, end in self.interval)
-
-    @classmethod
-    def any(cls, alphabet: AlphabetProtocol) -> CharSet[C]:
-        return cls.new(interval=alphabet.codes, alphabet=alphabet)
+    def any(self) -> CharSet:
+        return self.alphabet.codes
         
     
-    @classmethod
-    def none(cls, alphabet: AlphabetProtocol) -> CharSet[C]:
-        return cls.new(interval=tuple(), alphabet=alphabet)
+    def none(self) -> CharSet:
+        return tuple()
         
 
-    def sample(self, rnd: random.Random) -> C:
-        range = rnd.choice(self.interval)
+    def sample(self, cs: CharSet, rnd: random.Random) -> C:
+        range = rnd.choice(cs)
         point = rnd.randint(range[0], range[1])
         return self.alphabet.decode(point)
 
-    def overlaps(self, intv: Tuple[int, int]) -> bool:
-        for start, end in self.interval:
+    def overlaps(self, cs: CharSet, intv: Tuple[int, int]) -> bool:
+        for start, end in cs:
             if (end >= intv[0] and start <= intv[1]):
                 return True
         return False
 
 
-    def matches(self, cc: C) -> bool:
+    def matches(self, cs: CharSet, cc: C) -> bool:
         c = self.alphabet.encode(cc)
-        return any(start <= c <= end for start, end in self.interval)
-    
+        return any(start <= c <= end for start, end in cs)
+
         
-    def __call__(self, c: C) -> bool:
+    def __call__(self, cs: CharSet, c: C) -> bool:
 
-        return self.matches(c)
-
-    def __contains__(self, c: C) -> bool:
-        return self.matches(c)
-        
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, CharSet):
-            return NotImplemented
-        return self.interval == other.interval and self.alphabet == other.alphabet
-
-    def __hash__(self) -> int:
-        return hash((self.interval, self.alphabet))
+        return self.matches(cs, c)
 
 
-    def union(self, other: CharSet[C]) -> CharSet[C]:
-        if self is other:
-            return self
-        if self.interval == ():
+
+    def union(self, this: CharSet, other: CharSet) -> CharSet:
+        if this is other:
+            return this
+        if this == ():
             return other
-        if other.interval == ():
-            return self
-        if self.alphabet != other.alphabet:
-            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.alphabet} and {other.alphabet}", offender=other.alphabet, expect=self.alphabet)
-        intv = tuple(self.merge_intervals(list(self.interval) + list(other.interval)))
-        return CharSet.new(interval=intv, alphabet=self.alphabet)
+        if other == ():
+            return this
+        intv = tuple(self.merge_intervals(list(this) + list(other)))
+        return intv
         
-    
-    def __or__(self, other: CharSet[C]) -> CharSet[C]:
-        return self.union(other)
-    
-    def intersect(self, other: CharSet[C]) -> CharSet[C]:
-        if self is other:
-            return self
-        if self.interval == ():
-            return self
-        if other.interval == ():
+    def union_many(self, *charsets: CharSet) -> CharSet:
+        intervals: list[Tuple[int, int]] = []
+        for cs in charsets:
+            if cs == ():
+                continue
+            intervals.extend(cs)
+        if not intervals:
+            return self.none()
+        merged = tuple(self.merge_intervals(intervals))
+        return merged
+
+    def intersect(self, this: CharSet, other: CharSet) -> CharSet:
+        if this is other:
+            return this
+        if this == ():
+            return this
+        if other == ():
             return other
-        if self.alphabet != other.alphabet:
-            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.alphabet} and {other.alphabet}", offender=other.alphabet, expect=self.alphabet)
-        intv = tuple(self.intersect_interval(list(self.interval), list(other.interval)))
-        return CharSet.new(interval=intv, alphabet=self.alphabet)
-        
+        return tuple(self.intersect_interval(list(this), list(other)))
     
-    def __and__(self, other: CharSet[C]) -> CharSet[C]:
-        return self.intersect(other)
+    def intersect_many(self, *charsets: CharSet) -> CharSet:
+        if not charsets:
+            return self.any()
+        result = charsets[0]
+        for cs in charsets[1:]:
+            result = self.intersect(result, cs)
+            if result == ():
+                break
+        return result
+        
 
-    def difference(self, other: CharSet[C]) -> CharSet[C]:
-        if self is other:
-            return CharSet.none(alphabet=self.alphabet)
-        if self.interval == ():
-            return self
-        if other.interval == ():
-            return self
-        if self.alphabet != other.alphabet:
-            raise MixedUniverseError(f"Cannot union char classes with different universes: {self.alphabet} and {other.alphabet}", offender=other.alphabet, expect=self.alphabet)
-        intv = tuple(self.difference_interval(list(self.interval), list(other.interval)))
-        return CharSet.new(interval=intv, alphabet=self.alphabet)
+    def difference(self, this: CharSet, other: CharSet) -> CharSet:
+        if this is other:
+            return self.none()
+        if this == ():
+            return this
+        if other == ():
+            return this
+        return tuple(self.difference_interval(list(this), list(other)))
         
+            
+    def complement(self, cs: CharSet) -> CharSet:
+        if cs == ():
+            return self.any()
+        return tuple(self.difference_interval(list(self.alphabet.codes), list(cs)))
     
-    def __sub__(self, other: CharSet[C]) -> CharSet[C]:
-        return self.difference(other)
-    
-    @property
-    def complement(self) -> CharSet[C]:
-        if self.interval == ():
-            return CharSet.any(alphabet=self.alphabet)
-        intv = tuple(self.difference_interval(list(self.alphabet.codes), list(self.interval)))
-        return CharSet.new(interval=intv, alphabet=self.alphabet)
-        
-    
-    def __neg__(self) -> CharSet[C]:
-        return self.complement
-
-    def __bool__(self) -> bool:
-        return self.interval != ()
-    
-    def __str__(self) -> str:
+    def str(self, cs: CharSet) -> str:
         parts = []
-        for start, end in self.interval:
+        START_CP = self.START_CP
+        END_CP = self.END_CP
+        alphabet = self.alphabet
+        for start, end in cs:
             def fmt(cp: int) -> str:
-                if cp == CharSet.START_CP:
+                if cp == START_CP:
                     return "<START>"
-                if cp == CharSet.END_CP:
+                if cp == END_CP:
                     return "<END>"
                 try:
-                    return str(self.alphabet.decode(cp))
+                    return str(alphabet.decode(cp))
                 except Exception:
                     return f"<{cp}>"
             if start == end:

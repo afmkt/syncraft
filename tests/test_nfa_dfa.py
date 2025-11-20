@@ -3,6 +3,7 @@ import enum
 from syncraft.fa import NFA, DFA
 from syncraft.alphabet import Alphabet
 from syncraft.utils import FrozenDict
+from syncraft.charset import CharSetFactory
 from dataclasses import dataclass
 from typing import Any, List, Tuple
 
@@ -49,10 +50,11 @@ def match(fa: NFA | DFA, inp) -> bool:
 
 # --- Large, degenerate, and recursive automata tests ---
 def test_large_chain_dfa():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     n = 1000
-    nfa = NFA.from_charset('a', alphabet=Alphabet(str))
+    nfa = NFA.oneof(s='a', cs_factory=cs_factory)
     for _ in range(n-1):
-        nfa = nfa.then(NFA.from_charset('a', alphabet=Alphabet(str)))
+        nfa = nfa.then(NFA.oneof(s='a', cs_factory=cs_factory))
     dfa = nfa.dfa
     m = dfa.minimize
     assert match(dfa, 'a'*n)
@@ -63,10 +65,11 @@ def test_large_chain_dfa():
     assert not match(m, 'a'*n + 'b')
 
 def test_large_or_dfa():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     chars = [chr(32+i) for i in range(1000)]
-    nfa = NFA.from_charset(chars[0], alphabet=Alphabet(str))
+    nfa = NFA.oneof(s=chars[0], cs_factory=cs_factory)
     for c in chars[1:]:
-        nfa = nfa | NFA.from_charset(c, alphabet=Alphabet(str))
+        nfa = nfa | NFA.oneof(s=c, cs_factory=cs_factory)
     dfa = nfa.dfa
     d = dfa.minimize
     for c in chars:
@@ -77,15 +80,17 @@ def test_large_or_dfa():
 
 
 def test_deeply_nested_nfa():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     seq = [chr(65+i) for i in range(20)]
-    nfa = NFA.from_charset(seq[0], alphabet=Alphabet(str))
+    nfa = NFA.oneof(s=seq[0], cs_factory=cs_factory)
     for c in seq[1:]:
-        nfa = nfa.then(NFA.from_charset(c, alphabet=Alphabet(str)))
+        nfa = nfa.then(NFA.oneof(s=c, cs_factory=cs_factory))
     assert match(nfa, ''.join(seq))
     assert not match(nfa, ''.join(seq[:-1]))
 
 def test_recursive_nfa_star():
-    nfa = NFA.from_charset('a', alphabet=Alphabet(str)).then(NFA.from_charset('b', alphabet=Alphabet(str))).star
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s='a', cs_factory=cs_factory).then(NFA.oneof(s='b', cs_factory=cs_factory)).star
     for n in range(0, 20, 2):
         s = ['a','b']*(n//2)
         assert match(nfa, ''.join(s))
@@ -114,7 +119,8 @@ def assert_both(nfa: NFA[str], dfa: DFA[str], input: str, expected: bool)->None:
     assert m_result == expected, f"Minimized DFA failed on input {input}: expected {expected}, got {m_result}"
 
 def test_from_char()->None:
-    nfa: NFA[str] = NFA.from_charset('a', alphabet=Alphabet(str))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa: NFA[str] = NFA.oneof(s='a', cs_factory=cs_factory)
     dfa = DFA.from_nfa(nfa)
     assert nfa.init in nfa.transitions
     assert_both(nfa, dfa, 'a', True)
@@ -122,13 +128,14 @@ def test_from_char()->None:
     assert_both(nfa, dfa, '', False)
 
 def test_then():
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).then(NFA.from_charset("b", alphabet=Alphabet(str)))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).then(NFA.oneof(s="b", cs_factory=cs_factory))
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, "ab", True)
     assert_both(nfa, dfa, "a", False)
     assert_both(nfa, dfa, "b", False)
     assert_both(nfa, dfa, "ac", False)
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).then(NFA.from_charset("a", alphabet=Alphabet(str)))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).then(NFA.oneof(s="a", cs_factory=cs_factory))
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, "aa", True)
     assert_both(nfa, dfa, "ac", False)
@@ -137,7 +144,7 @@ def test_then():
     assert_both(nfa, dfa, "b", False)
     assert_both(nfa, dfa, "ab", False)
     assert_both(nfa, dfa, "aaa", False)
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory)
     nfa = nfa.then(nfa).then(nfa)  # aaa
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, "aaa", True)
@@ -149,7 +156,8 @@ def test_then():
     assert_both(nfa, dfa, "aaaa", False)
 
 def test_or_else():
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).union(NFA.from_charset("b", alphabet=Alphabet(str)))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).union(NFA.oneof(s="b", cs_factory=cs_factory))
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, "a", True)
     assert_both(nfa, dfa, "b", True)
@@ -157,7 +165,8 @@ def test_or_else():
     assert_both(nfa, dfa, '', False)
 
 def test_optional():
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).optional
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).optional
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, '', True)
     assert_both(nfa, dfa, "a", True)
@@ -165,7 +174,8 @@ def test_optional():
     assert_both(nfa, dfa, "aa", False)
 
 def test_many():
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).many()
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).many()
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, '', False)
     assert_both(nfa, dfa, "a", True)
@@ -175,7 +185,7 @@ def test_many():
     assert_both(nfa, dfa, "ab", False)
     assert_both(nfa, dfa, "ba", False)
     assert_both(nfa, dfa, "aab", False)
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).many(2, 4)
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).many(2, 4)
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, '', False)
     assert_both(nfa, dfa, "a", False)
@@ -191,7 +201,8 @@ def test_many():
     assert_both(nfa, dfa, 'aaaaab', False)
 
 def test_plus():
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).plus
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).plus
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, "a", True)
     assert_both(nfa, dfa, "aa", True)
@@ -199,7 +210,8 @@ def test_plus():
     assert_both(nfa, dfa, '', False)
 
 def test_star():
-    nfa = NFA.from_charset("a", alphabet=Alphabet(str)).star
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s="a", cs_factory=cs_factory).star
     dfa = DFA.from_nfa(nfa)
     assert_both(nfa, dfa, '', True)
     assert_both(nfa, dfa, "a", True)
@@ -209,9 +221,10 @@ def test_star():
         assert_both(nfa, dfa, bad, False)
 
 def test_complex()->None:
-    a: NFA[str] = NFA.from_charset('a', alphabet=Alphabet(str))
-    b: NFA[str] = NFA.from_charset('b', alphabet=Alphabet(str))
-    c: NFA[str] = NFA.from_charset('c', alphabet=Alphabet(str))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    a: NFA[str] = NFA.oneof(s='a', cs_factory=cs_factory)
+    b: NFA[str] = NFA.oneof(s='b', cs_factory=cs_factory)
+    c: NFA[str] = NFA.oneof(s='c', cs_factory=cs_factory)
     a_or_b = a.union(b)
     a_or_b_then_c = a_or_b.then(c)
     nfa = a_or_b_then_c.many(2, 4)
@@ -231,7 +244,8 @@ def test_complex()->None:
     assert_both(nfa, dfa, ''.join(['a', 'c', 'a', 'c']), True)
 
 def test_runner()->None:
-    nfa: NFA[str] = NFA.from_charset("a", alphabet=Alphabet(str)).then(NFA.from_charset("b", alphabet=Alphabet(str))).then(NFA.from_charset("c", alphabet=Alphabet(str)))
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa: NFA[str] = NFA.oneof(s="a", cs_factory=cs_factory).then(NFA.oneof(s="b", cs_factory=cs_factory)).then(NFA.oneof(s="c", cs_factory=cs_factory))
     dfa = DFA.from_nfa(nfa)
     m = dfa.minimize
     runner = run(nfa, "abc")
@@ -265,8 +279,9 @@ def test_runner()->None:
     assert not mrunner3.is_accepted(m)
 
 def test_dfa_tagged():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     u = Alphabet(str)
-    a = NFA.from_charset('a', alphabet=u).dfa
+    a = NFA.oneof(s='a', cs_factory=cs_factory).dfa
     ma = a.minimize
     tagged = a.tagged('X')
     tagged_m = ma.tagged('X')
@@ -276,12 +291,13 @@ def test_dfa_tagged():
         assert 'X' in tags
 
 def test_dfa_combinator_chain():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     u = Alphabet(str)
-    a = NFA.from_charset('a', alphabet=u).dfa
+    a = NFA.oneof(s='a', cs_factory=cs_factory).dfa
     ma = a.minimize
-    b = NFA.from_charset('b', alphabet=u).dfa
+    b = NFA.oneof(s='b', cs_factory=cs_factory).dfa
     mb = b.minimize
-    c = NFA.from_charset('c', alphabet=u).dfa
+    c = NFA.oneof(s='c', cs_factory=cs_factory).dfa
     mc = c.minimize
     combo = ((a | b) & -c)
     combo_m = ((ma | mb) & -mc)
@@ -297,10 +313,11 @@ def test_dfa_combinator_chain():
 
 # --- Additional DFA algebra tests using helper match ---
 def test_dfa_combinators_basic():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     u = Alphabet(str)
-    a = NFA.from_charset('a', alphabet=u).dfa
+    a = NFA.oneof(s='a', cs_factory=cs_factory).dfa
     ma = a.minimize
-    b = NFA.from_charset('b', alphabet=u).dfa
+    b = NFA.oneof(s='b', cs_factory=cs_factory).dfa
     mb = b.minimize
     # complement
     not_a = -a
@@ -338,7 +355,8 @@ def test_dfa_combinators_basic():
 
 
 def test_dead_state():
-    nfa = NFA.from_charset('a', alphabet=Alphabet(str)).then(NFA.from_charset('b', alphabet=Alphabet(str)).optional)
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.oneof(s='a', cs_factory=cs_factory).then(NFA.oneof(s='b', cs_factory=cs_factory).optional)
     dfa = nfa.dfa
     m = dfa.minimize
     dead_states = [state for state, trans in dfa.transitions.items() if not trans]
@@ -349,10 +367,11 @@ def test_dead_state():
 
 def test_dfa_combinator_chain_again():
     # sanity duplicate-like test ensuring no accidental state sharing issues
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
     u = Alphabet(str)
-    a = NFA.from_charset('a', alphabet=u).dfa
-    b = NFA.from_charset('b', alphabet=u).dfa
-    c = NFA.from_charset('c', alphabet=u).dfa
+    a = NFA.oneof(s='a', cs_factory=cs_factory).dfa
+    b = NFA.oneof(s='b', cs_factory=cs_factory).dfa
+    c = NFA.oneof(s='c', cs_factory=cs_factory).dfa
     combo = ((a | b) & -c)
     assert match(combo, 'a')
     assert match(combo, 'b')
