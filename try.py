@@ -23,6 +23,7 @@ from syncraft.regex import benchmark_fair, verify
 
 def test():
     pattern = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$'
+    # pattern = r'ab[a-c]{2,5}d+e?f*g(h|i|j){3}'
     ret = parse(pattern, raw = False, cache=None)
     print(str(ret))
 

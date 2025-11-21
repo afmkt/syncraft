@@ -1134,6 +1134,9 @@ class Syntax(Generic[A, S]):
                                              file=None, 
                                              line=None, 
                                              func=None))
+    @classmethod
+    def eof(cls) -> Syntax[Any, Any]:
+        return cls.factory('eof')
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:

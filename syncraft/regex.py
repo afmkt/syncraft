@@ -123,6 +123,14 @@ class AnchorKind(Enum):
 
 B = Builder[str]
 S = Syntax.config( builtin=True)
+
+def exception(t: Token) -> None:
+    print(f"Unexpected token: {t}")
+    raise Exception(f"Unexpected token: {t}")
+
+dollar = S.lex(dollar=B.lit("$")).named('"$"')#.map(exception)
+
+
 # number            = digit { digit } ;
 number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda m: int(m.text)).named('number')
 
@@ -150,11 +158,10 @@ equal = S.lex(equal=B.lit("=")).named('"="')
 bang = S.lex(bang=B.lit("!")).named('"!"')
 caret = S.lex(caret=B.lit("^")).named('"^"')
 
-def exception(t: Token) -> None:
-    print(f"Unexpected token: {t}")
-    raise Exception(f"Unexpected token: {t}")
 
-dollar = S.lex(dollar=B.lit("$")).named('"$"')#.map(exception)
+
+
+
 backslash = S.lex(backslash=B.lit("\\")).named('"\\"')
 minus = S.lex(minus=B.lit("-")).named('"-"')
 # boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
@@ -457,8 +464,9 @@ class Regex:
 # regex             = branch { "|" branch } ;
 regex_syntax = branch.sep_by(or_).mark('branches').to(Regex).named('regex')
 
+regex_full = (regex_syntax // S.eof()).map(lambda r: r[0]).named('regex_full')
 
-regex_parser = parser(syntax=regex_syntax, payload_kind='text')
+regex_parser = parser(syntax=regex_full, payload_kind='text')
 
 
 @overload

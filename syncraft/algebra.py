@@ -523,11 +523,9 @@ class Algebra(Generic[A, S]):
                 sampling = False
 
             inp = input.enter()
-            backup = inp.backup()
             last_error: Optional[Error] = None
             for p in profile:
                 option = options[p.index]
-                inp.restore(backup)
                 if sampling:
                     start_time = time.perf_counter()
                     result = yield from option.run(inp, cache)
@@ -602,7 +600,23 @@ class Algebra(Generic[A, S]):
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
             return other.map(combine, raw=True)        
         return self.flat_map(then_right_f)
-        
+
+    @classmethod
+    def eof(cls) -> Algebra[type[Nothing], S]:
+        def eof_run(input: S, 
+                    cache:Cache[S]) -> Generator[YieldChannelType, 
+                                               S, 
+                                               Either[Any, Tuple[type[Nothing], S]]]:
+            if input.ended:
+                yield from ()
+                return Right.new((Nothing, input))
+            else:
+                return Left.new(Error.new(
+                    message="Expected end of input",
+                    this=cls,
+                    state=input
+                ))
+        return cls(run_f=eof_run) # type: ignore        
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
         if at_least < 0 or (at_most is not None and at_most < at_least):
@@ -618,8 +632,8 @@ class Algebra(Generic[A, S]):
                 current_cache_key = current_input.cache_key
                 result = yield from self.run(current_input, cache)
                 match result:
-                    case Left(E):
-                        inner_error = Left.new(E)
+                    case Left():
+                        inner_error = result
                         break
                     case Right((value, next_input)):
                         if next_input.cache_key == current_cache_key:

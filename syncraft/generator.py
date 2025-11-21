@@ -45,6 +45,10 @@ class GenState(Bindable, Generic[T]):
     restore_pruned: bool = False
     seed: int = 0
 
+    @property
+    def ended(self) -> bool:
+        return False
+
     @classmethod
     def new(cls, 
             binding: Binding,

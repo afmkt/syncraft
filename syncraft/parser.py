@@ -408,20 +408,6 @@ class ParserState(Bindable, Generic[T]):
     def ended(self) -> bool:
         return self.index >= len(self.input) and self.final
 
-
-    # def advance(self) -> ParserState[T]:
-    #     if isinstance(self.input, str):
-    #         if self.current == '\n':
-    #             self.index = min(self.index + 1, len(self.input))
-    #             self.line = self.line + 1
-    #             self.column = 1
-    #             return self
-    #         else:
-    #             self.index = min(self.index + 1, len(self.input))
-    #             self.column = self.column + 1
-    #             return self
-    #     self.index = min(self.index + 1, len(self.input))
-    #     return self
         
     def advance(self) -> ParserState[T]:
         if isinstance(self.input, str):
