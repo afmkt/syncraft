@@ -108,7 +108,7 @@ def test_literal_quantifiers():
         ("quantifier_exact", r"a{3}", True),
         ("quantifier_range", r"a{2,5}", True),
         ("quantifier_minimum", r"a{2,}", True),
-        ("quantifier_maximum_only", r"a{,5}", True),     # invalid in Python but valid stress test
+        ("quantifier_maximum_only", r"a{,5}", False),     # invalid in Python but valid stress test
         ("lazy_star", r"a*?", True),
         ("non_capturing_repeat", r"(?:ab)*", True),
     ] 

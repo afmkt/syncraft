@@ -974,7 +974,8 @@ class Runner(Generic[C]):
     
     @property
     def resumable(self) -> frozenset[CharSet]:
-        keys = self.dfa.transitions.get(self.current, {}).keys()
+        entry = self.dfa.transitions.get(self.current, {}) 
+        keys = entry.keys()
         filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs)]
         return frozenset(filtered)
 

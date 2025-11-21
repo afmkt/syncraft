@@ -134,8 +134,6 @@ number = S.lex(number=B.oneof("0123456789").many(at_least=1)).map(lambda m: int(
 # dot               = "." ;
 dot = S.lex(dot=B.lit(".")).named('"."')
 or_ = S.lex(or_=B.lit("|")).named('"|"')
-# leading_rsquare   = "]" ;
-leading_rsquare   = S.lex(leading_rsquare=B.lit("]")).named('leading_rsquare')
 
 whitespace = S.lex(whitespace=B.oneof(" \t\n\r\f\v")).named('whitespace')
 question = S.lex(question=B.lit("?")).named('"?"')
@@ -181,8 +179,9 @@ unicode_letter = S.lex(unicode_letter=B.unicode_category(["Lu", "Ll", "Lt", "Lm"
 unicode_digit = S.lex(unicode_digit=B.unicode_category(["Nd"])).named('unicode_digit')
 # class_literal     = unicode_scalar - {"\\", "]"} ;
 class_literal = S.lex(class_literal=B.range("\u0000", "\U0010FFFF") - B.oneof("\\]")).named('class_literal')
-# literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
-literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof("\\.[](){}|+*?^$")).map(lambda x: x.text).named('literal_char')
+# literal_char      = unicode_scalar - {"\\", ".", "[", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
+# literal_char should include ']', because literal_char is used outside of char_set, class_literal has excluded ']', so we need to include ']' in literal_char
+literal_char = S.lex(literal_char=B.range("\u0000", "\U0010FFFF") - B.oneof("\\.[(){}|+*?^$")).map(lambda x: x.text).named('literal_char')
 
 # hex_octa          = hex_quad hex_quad ;
 hex_octa = S.lex(hex_octa=B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text).named('hex_octa')
@@ -285,11 +284,10 @@ irange = S.seq(class_atom.mark('start'), -minus, class_atom.mark('end')).to(Char
 class_item = irange | class_atom
 
 # class_class_items = leading_rsquare? class_item { class_item } ;
-# leading_rsquare == ']' indicates that the first character in the class is a literal ']'
-# if ~leading_rsquare is absent, t[0] is Nothing bool(Nothing) → False, we just take the class_item.many() == t[1]
-# if ~leading_rsquare is present, t[0] is the leading_rsquare Token bool(Token) → True, we should include ']' in the class_item
-# so we append ']' to the list of class_item value in this case
-class_class_items = (~leading_rsquare + class_item.many()).map(lambda t: (t[1] + [']']) if t[0] else t[1]).named('class_class_items')
+# ']' or '-' at the beginning indicates that the first character in the class is a literal ']' or '-'
+# if ~(rsquare | minus) is absent, t[0] is Nothing bool(Nothing) → False, we just take the class_item.many() == t[1]
+# if ~(rsquare | minus) is present, t[0] is the Token object, bool(Token) → True, we should include Token.text in the class_item
+class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda t: (t[1] + [t[0].text]) if t[0] else t[1]).named('class_class_items')
 # char_class        = "[" [ "^" ] class_class_items "]" ;
 char_class = S.seq(-lsquare, (~caret).map(bool).mark('negated'), class_class_items.mark('items'), -rsquare).named('char_class')
 
@@ -319,7 +317,7 @@ flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts)).named('flag_seq
 # inline_flags      = flag_seq [ "-" flag_seq ] ;
 inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda t: t[0] if t is not Nothing else None).mark('disabled_flags').named('inline_flags')
 
-
+# (?:(?P<quote>['\"])(?:(?!\1).)*\1)
 def _group_body() -> Syntax[Any, Any]:
     # Forward reference to regex since groups can contain full regex patterns with alternation
     # group = "(" regex ")"
@@ -387,6 +385,7 @@ class Quantifier:
 braced_quantifier = S.choice(
     S.seq(lbrace, +number, rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])),
     S.seq(lbrace, +number, comma, rbrace).map(lambda t: Quantifier(minimum=t[0], maximum=None)),
+    S.seq(lbrace, comma, +number, rbrace).map(lambda t: Quantifier(minimum=0, maximum=t[0])),
     S.seq(lbrace, +number.mark('minimum'), comma, +number.mark('maximum'), rbrace).to(Quantifier)
 )
 
@@ -451,7 +450,7 @@ class Branch:
     pieces: Tuple[Piece, ...]
 
 # branch            = piece { piece } ;
-branch = piece.many(at_least=1).mark('pieces').to(Branch).named('branch')
+branch = piece.many(at_least=0).mark('pieces').to(Branch).named('branch')
 
 @dataclass(frozen=True, slots=True)
 class Regex:
