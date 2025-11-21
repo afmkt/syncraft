@@ -37,9 +37,9 @@ class Error:
     message: Optional[str] = None
     error: Optional[Any] = None    
     state: Optional[Any] = None
-    committed: bool = field(default=False)
-    stack: List[Tuple[Callable[..., Any], int]] = field(default_factory=list)
-    depth: Optional[int] = field(default=None)
+    committed: bool = field(default=False, compare=False, repr=False, hash=False)
+    stack: List[Tuple[Callable[..., Any], int]] = field(default_factory=list, compare=False, repr=False, hash=False)
+    depth: Optional[int] = field(default=None, compare=False, repr=False, hash=False)
 
     @classmethod
     def new(cls, 
@@ -353,10 +353,10 @@ class Algebra(Generic[A, S]):
         def commit_error(e: Any) -> Error:
             match e:
                 case Error():
-                    return replace(e, committed=True)
+                    e.committed = True
+                    return e
                 case _:
-                    err = Error.new(error=e, this=self)
-                    return replace(err, committed=True)
+                    return Error.new(error=e, this=self, committed=True)
         return self.map_error(commit_error)
 
     
