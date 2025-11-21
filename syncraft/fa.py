@@ -57,8 +57,7 @@ class ReverseDFA(Generic[C]):
 
     def gen(self, tag: Tag | None, rnd: random.Random) -> C | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
-        if not current_states:
-            raise SyncraftError(f"Tag '{tag}' not accepted by this DFA", offender=tag, expect=f"one of {list(self.accept.keys())}")
+        assert current_states, f"Tag '{tag}' not accepted by DFA"
         current = rnd.choice(list(current_states))
         result: List[C] = []
         sample_f = self.cs_factory.sample
@@ -349,9 +348,7 @@ class DFA(Generic[C]):
     def _product(self, other: DFA[C], 
                  op: Literal['intersection', 'union', 'difference'],
                  accept_func: Callable[[Tuple[bool, frozenset[Tag]], Tuple[bool, frozenset[Tag]]], Tuple[bool, frozenset[Tag]]]) -> "DFA[C]":
-        if self.cs_factory != other.cs_factory:
-            raise MixedUniverseError("Cannot combine DFAs with different universes",
-                                    offender=(self.cs_factory, other.cs_factory))
+        assert self.cs_factory == other.cs_factory, "Cannot combine DFAs with different universes"
         cs_factory = self.cs_factory
         # sentinel sink states for "no transition" from a DFA on a piece
         sink1 = FAState()
@@ -718,8 +715,7 @@ class NFA(Generic[C]):
                 
 
     def then(self, other: NFA[C]) -> NFA[C]:
-        if self.cs_factory != other.cs_factory:
-            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.cs_factory, other.cs_factory))
+        assert self.cs_factory == other.cs_factory, "Cannot combine NFAs with different universes"
         this = self.clone()
             
         eps = {**this.epsilon}
@@ -744,8 +740,7 @@ class NFA(Generic[C]):
         return self.then(other)
     
     def union(self, other: NFA[C]) -> NFA[C]:
-        if self.cs_factory != other.cs_factory:
-            raise MixedUniverseError("Cannot combine NFAs with different universes", offender=(self.cs_factory, other.cs_factory))
+        assert self.cs_factory == other.cs_factory, "Cannot combine NFAs with different universes"        
         if self is other:
             return self
         new_current: FAState = FAState()
@@ -808,8 +803,8 @@ class NFA(Generic[C]):
         return self.plus
     
     def many(self, at_least: int = 0, at_most: Optional[int] = None) -> NFA[C]:
-        if at_least < 0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
+        assert at_least >= 0, "at_least must be non-negative"
+        assert at_most is None or at_least <= at_most, "at_least must <= at_most"
         if at_least == 1 and at_most is None:
             return self.plus
         nfa = self
@@ -1380,8 +1375,7 @@ class Builder(Generic[C]):
         cs_factory = CharSetFactory(alphabet=alphabet)
         match self.kind:
             case _NodeKind.RANGE:
-                if not self.intervals:
-                    raise SyncraftError("Range Builder must have intervals", offender=self, expect="at least one interval")
+                assert self.intervals, "Range can not be empty"
                 codes = []
                 for (start, end) in self.intervals:
                     code_start = alphabet.encode(start) # type: ignore
@@ -1399,12 +1393,10 @@ class Builder(Generic[C]):
                 right = self.children[1].compile(alphabet).nfa
                 return left.then(right)
             case _NodeKind.LITERAL:
-                if self.text is None:
-                    raise SyncraftError("Literal Builder must have text", offender=self, expect="text is str, bytes, or Sequence")
+                assert self.text is not None, "Literal must have text"
                 return NFA.seq(s=self.text, cs_factory=cs_factory, tag=self.tag)
             case _NodeKind.ONEOF:
-                if self.text is None:
-                    raise SyncraftError("OneOf Builder must have text", offender=self, expect="text is str, bytes, or Sequence")
+                assert self.text is not None, "Literal must have text"
                 return NFA.oneof(s=self.text, cs_factory=cs_factory, tag=self.tag)
             case _NodeKind.STAR:
                 inner = self.children[0].compile(alphabet).nfa

@@ -132,7 +132,7 @@ class ByteAlphabet(AlphabetProtocol[bytes]):
             return symbol
         else:
             try:
-                assert len(symbol) == 1
+                assert len(symbol) == 1, f"Can not encode multiple codepoints {symbol!r}"
                 return symbol[0] # type: ignore
             except Exception:
                 raise CodepointError(f"Byte symbol must be of type bytes, got {symbol!r}", offender=symbol, expect="bytes")

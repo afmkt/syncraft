@@ -493,8 +493,7 @@ class Algebra(Generic[A, S]):
         
     @classmethod
     def choice(cls, *options: Algebra[Any, S], sample_interval: int) -> Algebra[Choice[Any], S]:
-        if not options:
-            raise SyncraftError("At least one option is required for choice", offender=options, expect="non-empty options")
+        assert options, "At least one option is required for choice"
         @dataclass
         class ChoiceState:
             index: int = 0
@@ -619,8 +618,8 @@ class Algebra(Generic[A, S]):
         return cls(run_f=eof_run) # type: ignore        
 
     def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
-        if at_least < 0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
+        assert at_least >= 0, "at_least must be non-negative"
+        assert at_most is None or at_least <= at_most, "at_least must <= at_most"
         def many_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
                                                 S, 

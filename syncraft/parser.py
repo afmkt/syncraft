@@ -462,8 +462,8 @@ class Parser(Algebra[T, ParserState[T]]):
             lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
         else:
             lexer, remaining_kwargs = lexer_class.from_kwargs(**kwargs)            
-        if lexer is None:
-            raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
+        assert lexer, f"Lexer could not be created with the given parameters, {kwargs}"
+
         ntags = lexer.tags()
         # name = f"{','.join([str(tag) for tag in ntags])}"
         def lex_run(state: ParserState[T], 

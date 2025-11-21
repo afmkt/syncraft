@@ -22,14 +22,14 @@ from syncraft.regex import benchmark_fair, verify
 
 
 def test():
-    pattern = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$'
-    # pattern = r'ab[a-c]{2,5}d+e?f*g(h|i|j){3}'
+    pattern = r"""(?:(?P<quote>['\"])(?:(?!\1).)*\1)"""
+    pattern = r"[^a]bc]"
     ret = parse(pattern, raw = False, cache=None)
     print(str(ret))
 
 
 if __name__ == "__main__":
-    # test()
-    r = benchmark_fair()
-    for line in r:
-        print(line)
+    test()
+    # r = benchmark_fair()
+    # for line in r:
+    #     print(line)

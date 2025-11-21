@@ -454,7 +454,7 @@ class Branch:
     pieces: Tuple[Piece, ...]
 
 # branch            = piece { piece } ;
-branch = piece.many().mark('pieces').to(Branch).named('branch')
+branch = piece.many(at_least=1).mark('pieces').to(Branch).named('branch')
 
 @dataclass(frozen=True, slots=True)
 class Regex:

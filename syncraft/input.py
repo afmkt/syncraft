@@ -453,23 +453,14 @@ class StreamCursor(Generic[T]):
             return self._empty
 
     def _normalize(self, chunk: Sequence[T] | str | bytes) -> str | bytes | Tuple[T, ...]:
-        if isinstance(chunk, str):
+        if isinstance(chunk, (str, bytes)):
             if not chunk and not self.source.eof:
                 raise SyncraftError(
                     "Input provided an empty chunk before EOF; unable to progress",
                     offender=self.source,
                     expect="non-empty chunk",
                 )
-            
-            return chunk
-        if isinstance(chunk, bytes):
-            if not chunk and not self.source.eof:
-                raise SyncraftError(
-                    "Input provided an empty chunk before EOF; unable to progress",
-                    offender=self.source,
-                    expect="non-empty chunk",
-                )
-            
+
             return chunk
         seq = tuple(cast(Sequence[T], chunk))
         if not seq and not self.source.eof:

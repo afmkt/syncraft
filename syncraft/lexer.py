@@ -88,6 +88,15 @@ class LexerResult(Generic[C]):
     end: int
     value: Any | None = None
 
+    @classmethod
+    def new(cls, tag: Tag | None, start: int, end: int, value: Any | None = None) -> "LexerResult[C]":
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'tag', tag)
+        object.__setattr__(obj, 'start', start)
+        object.__setattr__(obj, 'end', end)
+        object.__setattr__(obj, 'value', value)
+        return obj
+
 
 @runtime_checkable
 class LexerProtocol(Protocol, Generic[C]):

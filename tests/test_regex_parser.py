@@ -157,8 +157,9 @@ def test_character_classes_simple():
     assert not result.negated
     assert set(result.items) == {"]", "a", "b", "c"}
     # result = parse_regex(atom, "[a]bc]")
-    tmp = parse("[a]bc]", raw=False)
-    assert isinstance(tmp, Regex)
+    pattern = "[a]bc]"
+    tmp = parse(pattern, raw=False)
+    assert isinstance(tmp, Regex), f"Parse {pattern} failed, {str(tmp)}"
     result = tmp.branches[0].pieces[0].atom
 
     assert isinstance(result, CharClassAtom)
@@ -189,8 +190,9 @@ def test_character_classes_negated():
     assert set(result.items) == {"]", "a", "b", "c"} 
 
     # result = parse_regex(atom, "[^a]bc]")
-    tmp = parse("[^a]bc]", raw=False)
-    assert isinstance(tmp, Regex)
+    pattern = "[^a]bc]"
+    tmp = parse(pattern, raw=False)
+    assert isinstance(tmp, Regex), f"Parse {pattern} failed, {str(tmp)}"
     result = tmp.branches[0].pieces[0].atom
 
     assert isinstance(result, CharClassAtom)

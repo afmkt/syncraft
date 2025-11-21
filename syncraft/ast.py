@@ -29,8 +29,7 @@ class SyncraftError(Exception):
         return f"{base} ({details})"
 
 def shallow_dict(a: Any)->Dict[str, Any]:
-    if not is_dataclass(a):
-        raise SyncraftError("Expected dataclass instance for collector inverse", offender=a, expect="dataclass")
+    assert is_dataclass(a), f"Expect dataclass, got {a}"
     return {f.name: getattr(a, f.name) for f in fields(a)}
 
 
@@ -529,8 +528,6 @@ class Collect(AST, Generic[A, E]):
                                      expect="callable with matching signature")
             ret: E = c()
             def invf(e: E) -> Tuple[Any, ...]:
-                if not is_dataclass(e):
-                    raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")
                 named_dict = shallow_dict(e)     
                 unnamed = []           
                 for f in fields(e):
@@ -548,16 +545,13 @@ class Collect(AST, Generic[A, E]):
             named = {b.name: b.value}
             ret1: E = self.collector(**named)
             def invf1(e: E) -> Marked:
-                if not is_dataclass(e):
-                    raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")
                 named_dict = shallow_dict(e)     
                 return Marked(name=fields(e)[0].name, value=named_dict[fields(e)[0].name])
             return Reversible(ret1, lambda e: replace(self, value=inner_f(invf1(e)))) # type: ignore
         else:
             def build_inv(d:B):
                 def inv_one_positional(e: E) -> B:
-                    if not is_dataclass(e):
-                        raise SyncraftError("Expected dataclass instance for collector inverse", offender=e, expect="dataclass")
+                    assert is_dataclass(e), f"Expect dataclass, got {e}"
                     if len(fields(e)) == 1:
                         return d
                     else:

@@ -335,10 +335,7 @@ class DatalogEngine:
 #####################################################################################################################################
 def dataclass_to_facts(obj: Any, *, extended: bool = False, parent: Any = None) -> List[Fact]:
     facts: List[Fact] = []
-
-    if not is_dataclass(obj):
-        raise TypeError(f"Expected dataclass instance, got {type(obj)}")
-
+    assert is_dataclass(obj), f"Expect dataclass, got {obj}"
     cls = type(obj)
     pred = cls.__name__  # use class name as predicate
     args = tuple(getattr(obj, f.name) for f in fields(obj))

@@ -265,8 +265,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         Raises:
             ValueError: If bounds are invalid.
         """
-        if at_least < 0 or (at_most is not None and at_most < at_least):
-            raise SyncraftError(f"Invalid arguments for many: at_least={at_least}, at_most={at_most}", offender=(at_least, at_most), expect="at_least>=0 and (at_most is None or at_most>=at_least)")
+        assert at_least >= 0, "at_least must be non-negative"
+        assert at_most is None or at_least <= at_most, "at_least must <= at_most"
         def many_run(input: GenState[T], 
                      cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                             GenState[T], 
@@ -318,8 +318,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
  
     @classmethod
     def choice(cls, *options: Algebra[Any, GenState[T]], sample_interval: int) -> Algebra[Choice[Any], GenState[T]]:
-        if not options:
-            raise SyncraftError("At least one option is required for choice", offender=options, expect="non-empty options")
+        assert options, "At least one option is required for choice"
         def choice_run(input: GenState[T], cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                                      GenState[T], 
                                                                                      Either[Any, Tuple[Choice[Any], GenState[T]]]]:
@@ -472,9 +471,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
         else:
             lexer, remaining_kwargs = lexer_class.from_kwargs(**kwargs)            
-        
-        if lexer is None:
-            raise SyncraftError("Lexer could not be created with the given parameters.", offender=kwargs, expect="Valid lexer parameters")
+        assert lexer, f"Lexer could not be created with the given parameters, {kwargs}"
         ntags = lexer.tags()
         name = ','.join(str(tag) for tag in ntags)
         def lex_run(input: GenState[T], 
