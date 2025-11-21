@@ -1198,7 +1198,7 @@ class Builder(Generic[C]):
             case _:
                 return f"Builder({self.kind})"
 
-    def walk(self) -> Iterator["Builder[C]"]:
+    def walk(self) -> Iterator[Builder[C]]:
         yield self
         for child in self.children:
             yield from child.walk()

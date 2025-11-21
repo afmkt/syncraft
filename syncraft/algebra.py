@@ -11,6 +11,7 @@ from syncraft.constraint import Bindable
 import time
 import sys
 import traceback
+from syncraft.utils import callable_str
 
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax, SyntaxSpec, Graph
@@ -30,14 +31,14 @@ YieldChannelType = Incomplete[S]
 
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class Error:
     this: Optional[Any] = None
     message: Optional[str] = None
     error: Optional[Any] = None    
     state: Optional[Any] = None
     committed: bool = field(default=False)
-    previous: Optional[Error] = field(default=None)
+    stack: List[Tuple[Callable[..., Any], int]] = field(default_factory=list)
     depth: Optional[int] = field(default=None)
 
     @classmethod
@@ -49,7 +50,8 @@ class Error:
             state: Optional[Any] = None,
             committed: bool = False,
             depth: Optional[int] = None,
-            previous: Optional[Error] = None
+            stack: List[Any] = [],
+            # previous: Optional[Error] = None
             ) -> Error:
         obj = cls.__new__(cls)
         object.__setattr__(obj, 'this', this)
@@ -57,7 +59,7 @@ class Error:
         object.__setattr__(obj, 'error', error)
         object.__setattr__(obj, 'state', state)
         object.__setattr__(obj, 'committed', committed)
-        object.__setattr__(obj, 'previous', previous)
+        object.__setattr__(obj, 'stack', stack)
         object.__setattr__(obj, 'depth', depth)
         return obj
 
@@ -102,7 +104,7 @@ class Error:
     @property
     def compact(self) -> list[str]:
         lines = []
-        deepest = self.deepest
+        deepest = self
         if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
             if hasattr(deepest.state, 'str_input'):
                 lines.append(f"At line: {deepest.state.line if deepest.state.line > 0 else 'N/A'}, column: {deepest.state.column if deepest.state.column > 0 else 'N/A'}, Input: {deepest.state.str_input(ul=False)}")
@@ -118,7 +120,7 @@ class Error:
 
     @property
     def summary(self) -> str:
-        deepest = self.deepest
+        deepest = self
         lines = []
         if deepest.state is not None and hasattr(deepest.state, 'line') and hasattr(deepest.state, 'column'):
             if hasattr(deepest.state, 'str_input'):
@@ -140,16 +142,27 @@ class Error:
         
     @property
     def trace(self) -> str:
+        def str_rule(rule: Callable[..., Any]) -> str:
+            syn = Error.get_syntax(rule)
+            spec = syn.spec if syn else None
+            if spec and hasattr(spec, 'location'):
+                if spec.location is not None:
+                    return f"{str(spec)} ({spec.location})"
+            if spec is None:
+                return callable_str(rule)
+            return f"{str(spec)}"
+
         lines = []
         # Show parsing context with duplicate counts (no limit on stack frames)
-        stack = self.list
+        stack = self.stack
         if len(stack) > 1:
             lines.append("  Trace:")
             # Count duplicates and group them
             rule_counts: Dict[str, int] = {}
             rule_order: List[str] = []
             for entry in stack[::-1]:  # Reverse to show root->leaf progression
-                rule = entry.str_this
+                r, pos = entry
+                rule = str_rule(r)
                 if rule not in rule_counts:
                     rule_counts[rule] = 0
                     rule_order.append(rule)
@@ -215,29 +228,6 @@ class Error:
         return self.contextual
     
     
-    def push(self, 
-            *,
-            this: Optional[Any] = None, 
-            message: Optional[str] = None,
-            error: Optional[Any] = None, 
-            state: Optional[Any] = None) -> Error:
-        return self.new(this=this, message=message, error=error, state=state, previous=self)
-    
-    @property
-    def list(self) -> List[Error]:
-        lst: List[Error] = []
-        current: Optional[Error] = self
-        while current is not None:
-            lst.append(replace(current, depth=len(lst), previous=None))
-            current = current.previous
-        return lst
-    
-    @property
-    def deepest(self) -> Error:
-        current: Error = self
-        while current.previous is not None:
-            current = current.previous
-        return current
 
 
 @dataclass(frozen=True, slots=True)        
@@ -289,11 +279,13 @@ class Algebra(Generic[A, S]):
                 return (yield from self.run_f(input, cache))
             else:
                 result = (yield from cache.exec(self.run_f, input))
-                match result:
-                    case Left(Error() as e):
-                        return Left.new(e.push(this=self, state=input))
-                    case _:
-                        return result
+                if isinstance(result, Left):
+                    if isinstance(result.value, Error):
+                        if not result.value.stack:
+                            result.value.stack = cache.stack + [(self.run_f, input.cache_key)]
+                            # print(str(result.value))
+                return result
+            
         except LeftRecursionError as e:
             if e.offender is self.run_f  or len(e.stack) == 0:
                 e = e.push(f"\u25cf {self.name}")
@@ -303,12 +295,15 @@ class Algebra(Generic[A, S]):
         except Exception:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-            return Left.new(Error.new(
+            err = Error.new(
                 message="Unexpected error during parsing",
                 error=traceback_details,
                 this=self,
-                state=input
-            ))
+                state=input,
+                committed=True,
+                stack=cache.stack if cache is not None else []
+            )
+            return Left.new(err)
         
 
     def as_(self, typ: Type[B])->B:
@@ -477,21 +472,19 @@ class Algebra(Generic[A, S]):
                                                     S,
                                                     Either[Any, Tuple[OrElse[A, B], S]]]:
             inp = input.enter()
-            backup = inp.backup()
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
                     return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), state.leave()))
-                case Left(err):
+                case Left(err) as ERROR:
                     if isinstance(err, Error) and err.committed:
-                        return Left.new(replace(err, committed=False))
-                    inp.restore(backup)
+                        return ERROR
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
                             return Right.new((OrElse(kind=OrElseKind.RIGHT, value=other_value), other_state.leave()))
-                        case Left(other_err):
-                            return Left.new(other_err)
+                        case Left() as OTHER_ERROR:
+                            return OTHER_ERROR
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
             raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
         
@@ -548,18 +541,12 @@ class Algebra(Generic[A, S]):
                         if sampling:
                             profile.sort(key=lambda ps: ps.deficiency)
                         return Right.new((Choice(value=value, index=p.index), state.leave()))
-                    case Left(err):
+                    case Left(err) as ERROR:
                         p.failures += 1
                         if sampling:
                             profile.sort(key=lambda ps: ps.deficiency)
                         if isinstance(err, Error) and err.committed:
-                            return Left.new(Error.new(this=err.this, 
-                                                      message=err.message, 
-                                                      error=err.error, 
-                                                      state=err.state, 
-                                                      depth=err.depth, 
-                                                      previous=err.previous, 
-                                                      committed=False))
+                            return ERROR
                         last_error = err
             if sampling:
                 profile.sort(key=lambda ps: ps.deficiency)
@@ -588,8 +575,8 @@ class Algebra(Generic[A, S]):
                     case Right((value, state)):
                         results.append((value, keep))
                         inp = state
-                    case Left(err):
-                        return Left.new(err)
+                    case Left() as ERROR:
+                        return ERROR
             return Right.new((Seq(value=tuple(results)), inp))
         return cls(run_f=seq_run) # type: ignore
 

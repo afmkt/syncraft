@@ -149,7 +149,12 @@ greater = S.lex(greater=B.lit(">")).named('">"')
 equal = S.lex(equal=B.lit("=")).named('"="')
 bang = S.lex(bang=B.lit("!")).named('"!"')
 caret = S.lex(caret=B.lit("^")).named('"^"')
-dollar = S.lex(dollar=B.lit("$")).named('"$"')
+
+def exception(t: Token) -> None:
+    print(f"Unexpected token: {t}")
+    raise Exception(f"Unexpected token: {t}")
+
+dollar = S.lex(dollar=B.lit("$")).named('"$"').map(exception)
 backslash = S.lex(backslash=B.lit("\\")).named('"\\"')
 minus = S.lex(minus=B.lit("-")).named('"-"')
 # boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
@@ -337,6 +342,7 @@ def _group_body() -> Syntax[Any, Any]:
                                    colon, 
                                    +regex_syntax.mark('pattern'), 
                                    rparen)
+
 
     return S.choice(
                 plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),
@@ -534,7 +540,7 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
 def benchmark_fair():
     # ITERATOR to feed unique patterns
     import timeit
-    
+    result = []
     base_pattern = r"(?P<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
     unique_patterns = [f"{base_pattern}(?#{i})" for i in range(1000)]    
     pat_iter = iter(unique_patterns)
@@ -562,10 +568,12 @@ def benchmark_fair():
     t_syncraft = timeit.timeit(run_syncraft, number=1000)
     t_re = timeit.timeit(run_re, number=1000)
 
-    print("--- FAIR COMPARISON (Cold Start) ---")
-    print(f"Syncraft: {t_syncraft/1000:.5f} s/parse")
-    print(f"Regex:    {t_re/1000:.5f} s/compile")
+    result.append("--- FAIR COMPARISON (Cold Start) ---")
+    
+    result.append(f"Syncraft: {t_syncraft/1000:.5f} s/parse")
+    result.append(f"Regex:    {t_re/1000:.5f} s/compile")
     
     ratio = (t_syncraft) / (t_re)
-    print(f"Multiplier: Syncraft is {ratio:.1f}x slower than C-compiled Regex")
+    result.append(f"Multiplier: Syncraft is {ratio:.1f}x slower than C-compiled Regex")
+    return result
 

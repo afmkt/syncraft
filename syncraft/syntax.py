@@ -288,7 +288,7 @@ class SeqSpec(SyntaxSpec):
         if self.name:
             return self.format("{0}", self.name)
         else:
-            inner = " ".join(str(s) for s in self.steps)
+            inner = " ".join(str(s[0]) for s in self.steps)
             return self.format("({steps})", steps=inner)
         
     @property
@@ -471,8 +471,22 @@ class LexSpec(SyntaxSpec):
         if self.name or not self.kwargs:
             return self.name or self.fname
         else:
-            args = f"{', '.join(f'{k}={v}' for k,v in self.kwargs.items())}"
-            return self.format("{fname}({args})", fname=self.fname, args=args)
+            parts = []
+            for a in self.args:
+                s = str(a)
+                if len(s) > 20:
+                    s = s[:17] + "..."
+                parts.append(s)
+            args = ','.join(parts)
+            kwparts = []
+            for k, v in self.kwargs.items():
+                if v is not None:
+                    s = str(v)
+                    if len(s) > 20:
+                        s = s[:17] + "..."
+                    kwparts.append(f"{k}={s}")
+            kwargs = ', '.join(kwparts)
+            return self.format("{fname}({args}, {kwargs})", fname=self.fname, args=args, kwargs=kwargs)
     
     @property
     def complexity(self) -> float:
@@ -944,7 +958,7 @@ class Syntax(Generic[A, S]):
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, False)
 
-    def __invert__(self) -> Syntax[OrElse[A, Nothing], S]:
+    def __invert__(self) -> Syntax[OrElse[A, type[Nothing]], S]:
         """Syntactic sugar for optional() (tilde operator)."""
         return self.optional
 

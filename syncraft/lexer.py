@@ -42,6 +42,15 @@ class LexerError:
     offender: Hashable
     expect: frozenset[Hashable]
     @classmethod
+    def new(cls, message: str, index: int, offender: Hashable, expect: frozenset[Hashable]) -> LexerError:
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, 'message', message)
+        object.__setattr__(obj, 'index', index)
+        object.__setattr__(obj, 'offender', offender)
+        object.__setattr__(obj, 'expect', expect)
+        return obj
+
+    @classmethod
     def message_only(cls, message: str) -> "LexerError":
         return cls(message=message, index=-1, offender=None, expect=frozenset())
 
@@ -425,7 +434,7 @@ class Lexer(LexerBase[C]):
         if rr.error:
             expecting = mode.runner.resumable
             mode.runner = mode.runner.reset()
-            return Left.new(LexerError(
+            return Left.new(LexerError.new(
                 message="Lexing mismatch",
                 index=index,
                 offender=char,
@@ -434,7 +443,7 @@ class Lexer(LexerBase[C]):
 
         if rr.final and rr.accepted is None:
             mode.runner = mode.runner.reset()
-            return Left.new(LexerError(
+            return Left.new(LexerError.new(
                 message=f"Lexing reached final state at index {index} without acceptance",
                 index=index,
                 offender=char,
@@ -530,7 +539,7 @@ class ExtLexer(LexerBase[T]):
             if tag in self.rules and self.rules[tag].predicate(item):
                 return Right.new(LexerResult(tag=tag, start=index, end=index + 1, value=item))   
                 
-        return Left.new(LexerError(
+        return Left.new(LexerError.new(
             message="External lexer token mismatch",
             index=index,
             offender=item,

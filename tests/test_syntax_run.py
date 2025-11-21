@@ -11,6 +11,5 @@ def test_syntax_run_returns_error_on_incomplete() -> None:
     value, next_state = parse_data(syntax=syntax, data=[], cache=Cache())
 
     assert isinstance(value, Error)
-    value = value.deepest
     assert next_state is None
     assert value.message and "Cannot match token at end of input" in value.message

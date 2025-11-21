@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
@@ -221,6 +221,7 @@ class Cache(Generic[S]):
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
     profiler: Optional[Profile] = None
 
+
     def with_profiler(self) -> Cache[S]:
         if self.profiler is None:
             self.profiler = Profile()
@@ -330,7 +331,7 @@ class Cache(Generic[S]):
                         return Left.new() 
             
             head: InProgress[S] = InProgress(rule=f)
-            entry = CacheEntry(payload=head, state=key.clone())
+            entry = CacheEntry(payload=head, state=key)
             cache_bucket[cache_key] = entry
             self.start2rules[cache_key].add(f)
             seed = yield from self.run_rule(f, key)
