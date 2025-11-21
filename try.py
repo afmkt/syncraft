@@ -30,6 +30,6 @@ def test():
 
 if __name__ == "__main__":
     test()
-    # r = benchmark_fair()
-    # for line in r:
-    #     print(line)
+    r = benchmark_fair()
+    for line in r:
+        print(line)

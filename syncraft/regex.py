@@ -124,11 +124,8 @@ class AnchorKind(Enum):
 B = Builder[str]
 S = Syntax.config( builtin=True)
 
-def exception(t: Token) -> None:
-    print(f"Unexpected token: {t}")
-    raise Exception(f"Unexpected token: {t}")
 
-dollar = S.lex(dollar=B.lit("$")).named('"$"')#.map(exception)
+dollar = S.lex(dollar=B.lit("$")).named('"$"')
 
 
 # number            = digit { digit } ;
