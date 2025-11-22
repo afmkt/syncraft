@@ -258,13 +258,15 @@ class UnicodeCategoryAtom:
 
 
 # class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
-class_atom = S.choice(class_literal.many(),
+class_atom = S.choice(
                     shorthand.to(ShorthandAtom),
                     escaped_metachar,
                     control_escape,
                     unicode_escape,
                     unicode_category_escape.to(UnicodeCategoryAtom),
-                    escaped_class_meta).map(lambda t: t.text if isinstance(t, Token) else t).named('class_atom')
+                    escaped_class_meta,
+                    class_literal,
+                    ).map(lambda t: t.text if isinstance(t, Token) else t).named('class_atom')
 
 
 @dataclass(frozen=True, slots=True)
