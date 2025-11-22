@@ -258,7 +258,7 @@ class UnicodeCategoryAtom:
 
 
 # class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
-class_atom = S.choice(class_literal,
+class_atom = S.choice(class_literal.many(),
                     shorthand.to(ShorthandAtom),
                     escaped_metachar,
                     control_escape,
@@ -427,7 +427,7 @@ atom = S.choice(
         anchor.to(AnchorAtom),
         shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
-        char_class.to(CharClassAtom).debug(),
+        char_class.to(CharClassAtom).debug(disable=True),
         ).named('atom')
 
 

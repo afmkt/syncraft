@@ -740,10 +740,21 @@ class Syntax(Generic[A, S]):
     
     def debug(self, 
               dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = None,
+              *,
+              disable: bool = False,
+              show_stack: bool = True,
+              only_fail: bool = False,
+              only_success: bool = False,
               level:int = 0) -> Syntax[A, S]:
+        if disable:
+            return self
         file=get_file(level+1)
         line=get_line(level+1)
         def default_dbg(syn: Syntax[A, S], input: S, new_state: Optional[S], value: A | Any, stack: List[Tuple[Syntax[Any, S], int]])->None:
+            if new_state is not None and only_fail:
+                return
+            if new_state is None and only_success:
+                return
             def fmt_input(ipt)->str:
                 if hasattr(ipt, 'str_input'):
                     f = getattr(ipt, 'str_input')
@@ -754,7 +765,8 @@ class Syntax(Generic[A, S]):
             print('=' * 20, "DEBUG", dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
             print(f"       Syntax: {syn.spec}")
             print(f"  Input State: {fmt_input(input)}")
-            print(f"    New State: {fmt_input(new_state) if not null else '< NO CHANGE >'}")
+            if new_state is not None:
+                print(f"    New State: {fmt_input(new_state) if not null else '< NO CHANGE >'}")
             indent = " " * 15
             if isinstance(value, Error):
                 lns = [f"{indent if i>0 else ''}{s}" for i, s in enumerate(value.compact)]
@@ -765,9 +777,10 @@ class Syntax(Generic[A, S]):
                     print(f"        Value: {getattr(value, 'mapped')}")
                 else:
                     print(f"        Value: {value}")
-            print( "   Call Stack:")
-            lns = Error.fmt_stack(stack, indent=" " * 13)
-            print('\n'.join(lns))
+            if show_stack:
+                print( "   Call Stack:")
+                lns = Error.fmt_stack(stack, indent=" " * 13)
+                print('\n'.join(lns))
 
         xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = dbg if callable(dbg) else default_dbg
         return replace(self, alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg))
