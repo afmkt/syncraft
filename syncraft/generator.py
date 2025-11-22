@@ -72,9 +72,9 @@ class GenState(Bindable, Generic[T]):
         return 0
 
     def bind(self, name: str, node:Any)->GenState[T]:
-        new_binding = self.binding.bind(name, node)
+        """Return a copy with ``node`` recorded under ``name`` in bindings."""
         return GenState.new(
-            binding=new_binding,
+            binding=self.binding.bind(name, node),
             ast=self.ast,
             restore_pruned=self.restore_pruned,
             seed=self.seed
@@ -317,7 +317,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
     
  
     @classmethod
-    def choice(cls, *options: Algebra[Any, GenState[T]], sample_interval: int) -> Algebra[Choice[Any], GenState[T]]:
+    def choice(cls, *options: Algebra[Any, GenState[T]]) -> Algebra[Choice[Any], GenState[T]]:
         assert options, "At least one option is required for choice"
         def choice_run(input: GenState[T], cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                                      GenState[T], 

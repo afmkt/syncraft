@@ -1021,31 +1021,19 @@ class Syntax(Generic[A, S]):
         return self.optional
 
     ######################################################################## data processing combinators #########################################################
-    def bind(self, name: Optional[str] = None) -> Syntax[A, S]:
-        """Bind the produced value to the name.
-
-        If name is None and the value is Marked, the name of Marked is used.
-        If name is None and the value if Collect, the name of the collector is used.
-
-        Args:
-            name: Optional binding name; must be a valid identifier if provided.
-
-        Returns:
-            Syntax that writes the value into the state's binding table.
-        """
+    def bind(self, name: Optional[str] = None, f: Callable[[A], Any] = lambda x: x) -> Syntax[A, S]:
         if name:
             assert valid_name(name), f"Invalid mark name: {name}"
 
-        def bind_v(v: Any, s: S) -> Tuple[Any, S]:
+        def bind_v(v: A, s: S) -> Tuple[A, S]:
             if name:
-                return v, s.bind(name, v)
+                real_name = name
             elif isinstance(v, Marked):
-                return v.value, s.bind(v.name, v.value)
+                real_name = v.name
             elif isinstance(v, Collect) and isinstance(v.collector, type):
-                return v.value, s.bind(v.collector.__name__, v.value)
-            else:
-                return v, s
-
+                real_name = v.collector.__name__
+            assert real_name, "bind name can't be empty"
+            return v, s.bind(real_name, f(v))
         return self.map_all(bind_v)
 
     def to(self, f: Collector[E], id: Hashable = None) -> Syntax[Collect[A, E], S]:
@@ -1129,7 +1117,7 @@ class Syntax(Generic[A, S]):
     def parallel(cls, *parsers: Syntax[Any, S], reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]]) -> Syntax[Any, S]:
         def parallel_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any)->Algebra[Any, Any]:
             algs = [p(acls, **global_kwargs) for p in parsers]
-            return acls.parallel(*algs, reducer=reducer).flag(is_or_else=True)
+            return acls.parallel(*algs, reducer=reducer)
         spec = ParallelSpec(options=tuple(p.spec for p in parsers), reducer=reducer, name=None, file=None, line=None, func=None)
         return cls(alg_f = parallel_f, spec=spec)
 
