@@ -191,7 +191,7 @@ hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_
 hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text).named('hex_pair')
 
 # meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}" | "|" | "+" | "*" | "?" | "^" | "$" ;
-meta_char = S.lex(meta_char=B.oneof("\\.[](){}|+*?^$")).named('meta_char')
+meta_char = S.lex(meta_char=B.oneof("\"\\.[](){}|+*?^$")).named('meta_char')
 # control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" ;
 control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"])).named('control_escape')
 

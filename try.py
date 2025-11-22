@@ -7,15 +7,25 @@ from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
 plain = regex.mark('pattern').between(lparen, rparen)
 noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern').debug(disable=True), rparen)
+named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
+negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
 
+def test_neg_lookahead():
+    nl = r"(?!\1)"
+    ret = parse_regex(negative_lookahead, nl, raw=False)
+    print(str(ret))
 
-def test():
-    # pattern = r"""(?:(?P<quote>['\"])(?:(?!\1).)*\1)"""
-    # name = r"""(?P<quote>['\"])"""
-    noncap = r"""(?:['"])"""
+def test_noncap():
+    pattern = r"""(?:(?P<quote>['\"])(?:(?!\1).)*\1)"""
+    
+    noncap = r"""(?:['\"])"""
     ret = parse_regex(noncapturing, noncap, raw = False)
     print(str(ret))
 
+def test_named():
+    name = r"""(?P<quote>['\"])"""
+    ret = parse_regex(named, name, raw = False)
+    print(str(ret))
 
 
 def x():
@@ -32,8 +42,8 @@ def x():
     
 
 if __name__ == "__main__":
-    test()
-    x()
-    r = benchmark_fair()
-    for line in r:
-        print(line)
+    test_neg_lookahead()
+    # x()
+    # r = benchmark_fair()
+    # for line in r:
+    #     print(line)

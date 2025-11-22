@@ -769,9 +769,13 @@ class Syntax(Generic[A, S]):
                 print(f"    New State: {fmt_input(new_state) if not null else '< NO CHANGE >'}")
             indent = " " * 15
             if isinstance(value, Error):
+                depth: int | None = None
+                if value.state:
+                    depth = value.state.cache_key - input.cache_key
+                depth_str=f"{depth}" if depth is not None else ""
                 lns = [f"{indent if i>0 else ''}{s}" for i, s in enumerate(value.compact)]
                 s = '\n'.join(lns)
-                print(f"        Error: {s}")
+                print(f"        Error: {s} {depth_str}")
             else:
                 if hasattr(value, 'mapped'):
                     print(f"        Value: {getattr(value, 'mapped')}")
