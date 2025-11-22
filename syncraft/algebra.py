@@ -537,6 +537,23 @@ class Algebra(Generic[A, S]):
         return cast(Algebra[OrElse[A, B], S], alg)
         
     @classmethod
+    def parallel(cls, *options: Algebra[Any, S], reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]]) -> Algebra[Any, S]:
+        assert options, "At least one option is required for parallel"
+        def parallel_run(input: S,
+                         cache: Cache[S]) -> Generator[YieldChannelType, 
+                                                  S, 
+                                                  Either[Any, Tuple[Any, S]]]:
+            inp = input.enter()
+            results = []
+            for i, opt in enumerate(options):
+                r = yield from opt.run(inp, cache)
+                if isinstance(r, Right):
+                    v, s = r.value
+                    results.append((v, s.leave()))
+            return reducer(input, results)
+        return cls(run_f = parallel_run)
+    
+    @classmethod
     def choice(cls, *options: Algebra[Any, S]) -> Algebra[Choice[Any], S]:
         assert options, "At least one option is required for choice"
 

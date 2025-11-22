@@ -15,16 +15,19 @@ def test_neg_lookahead():
     ret = parse_regex(negative_lookahead, nl, raw=False)
     print(str(ret))
 
-def test_noncap():
-    pattern = r"""(?:(?P<quote>['\"])(?:(?!\1).)*\1)"""
-    
-    noncap = r"""(?:['\"])"""
+def test_noncap():    
+    noncap = r"(?:['\"])"
     ret = parse_regex(noncapturing, noncap, raw = False)
     print(str(ret))
 
 def test_named():
-    name = r"""(?P<quote>['\"])"""
+    name = r"(?P<quote>['\"])"
     ret = parse_regex(named, name, raw = False)
+    print(str(ret))
+
+def test_all():
+    pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
+    ret = parse_regex(regex, pattern, raw = False)
     print(str(ret))
 
 
@@ -42,7 +45,10 @@ def x():
     
 
 if __name__ == "__main__":
+    test_noncap()
+    test_named()
     test_neg_lookahead()
+    test_all()
     # x()
     # r = benchmark_fair()
     # for line in r:

@@ -18,27 +18,56 @@ try:
 except ImportError:
     import re
 
-
 r"""
+## Regular Expression Grammar (Simplified PEG/EBNF)
+
 regex             = branch { "|" branch } ;
+
 branch            = piece { piece } ;
+
 piece             = atom [ quantifier ] ;
-atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape ;
 
-category_name     = unicode_letter { unicode_letter } ;
-unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
+atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape | **backreference** ;
+
+--- Atoms and Escapes ---
+
+literal           = escaped_literal | literal_char ;
+
+escaped_literal   = control_escape | **octal_escape** | unicode_escape | escaped_metachar ;
+
+control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" | **"\\0"** ;
+
+escaped_metachar  = "\\" meta_char ;
+
+meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}"
+                  | "|" | "+" | "*" | "?" | "^" | "$" | **' " '** ;
+
+unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
+hex_pair          = hex_digit hex_digit ;
+hex_quad          = hex_digit hex_digit hex_digit hex_digit ;
+hex_octa          = hex_quad hex_quad ;
+hex_digit         = "0".."9" | "a".."f" | "A".."F" ;
+
+**octal_escape      = "\\0" octal_digit octal_digit | "\\" octal_digit octal_digit? ;**
+**octal_digit       = "0".."7" ;**
+
+literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
+
+**backreference     = "\\" number | "\\g<" name ">" ;**
 
 
-
-dot               = "." ;
+--- Quantifiers ---
 
 quantifier        = "?" | "*" | "+" | braced_quantifier [ "?" ] ;
+
 braced_quantifier = "{" number [ "," [ number ] ] "}" ;
+
 number            = digit { digit } ;
+
 digit             = "0".."9" ;
 
-anchor            = "^" | "$" | boundary_escape ;
-boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
+
+--- Groups and Assertions ---
 
 group             = "(" regex ")"
                   | "(?:" regex ")"
@@ -50,51 +79,65 @@ group             = "(" regex ")"
                   | "(?" inline_flags ")"
                   | "(?" inline_flags ":" regex ")"
                   ;
+
 inline_flags      = flag_seq [ "-" flag_seq ] ;
+
 flag_seq          = flag { flag } ;
+
 flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
 
+name              = name_start { name_continue } ;
+
+name_start        = unicode_letter | "_" ;
+
+name_continue     = unicode_letter | unicode_digit | "_" ;
+
+
+--- Character Classes ---
+
 char_class        = "[" [ "^" ] class_class_items "]" ;
+
 class_class_items = leading_rsquare? class_item { class_item } ;
+
 leading_rsquare   = "]" ;
-class_literal     = unicode_scalar - {"\\", "]"} ;
 
 class_item        = irange | class_atom ;
+
 irange            = class_atom "-" class_atom ;
-class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta ;
+
+class_atom        = class_literal | shorthand | control_escape | unicode_escape | escaped_class_meta | **octal_escape** ;
+
 escaped_class_meta= "\\" class_meta_char ;
+
 class_meta_char   = "-" | "]" | "\\" ;
+
+class_literal     = unicode_scalar - {"\\", "]"} ;
 
 shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
 
-literal           = escaped_literal | literal_char ;
-escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
-control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" ;
-escaped_metachar  = "\\" meta_char ;
-meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}"
-                  | "|" | "+" | "*" | "?" | "^" | "$" ;
+unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
 
-unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
-hex_pair          = hex_digit hex_digit ;
-hex_quad          = hex_digit hex_digit hex_digit hex_digit ;
-hex_octa          = hex_quad hex_quad ;
-hex_digit         = "0".."9" | "a".."f" | "A".."F" ;
+category_name     = unicode_letter { unicode_letter } ;
 
-literal_char      = unicode_scalar - {"\\", ".", "[", "]", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
 
-name              = name_start { name_continue } ;
-name_start        = unicode_letter | "_" ;
-name_continue     = unicode_letter | unicode_digit | "_" ;
+--- Anchors and Primitives ---
+
+anchor            = "^" | "$" | boundary_escape ;
+
+boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
+
+dot               = "." ;
 
 unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
 
 unicode_scalar    = any code point U+0000..U+10FFFF ;
+
 unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
+
 unicode_digit     = code point with Unicode category Nd ;
 
-
-
 """
+
 
 
 

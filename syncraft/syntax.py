@@ -348,6 +348,34 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return (self.left, self.right)
 
+@dataclass(frozen=True, slots=True)
+class ParallelSpec(SyntaxSpec):
+    options: Tuple[SyntaxSpec, ...]
+    reducer: Callable[[Any, List[Tuple[Any, Any]]], Either[Any, Tuple[Any, Any]]]
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax[Any, Any]:
+        if self in cache:
+            return cache[self]
+        opts = [opt.syntax(cls, cache=cache) for opt in self.options]
+        ret = cls.parallel(*opts, reducer=self.reducer)
+        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
+        cache[self] = ret
+        return ret
+    
+    def __str__(self) -> str:
+        if self.name:
+            return self.name
+        else:
+            choices = [str(opt) for opt in self.options]
+            inner = " || ".join(str(c) for c in choices)
+            return self.format("({choices})", choices=inner)
+
+    @property
+    def complexity(self) -> float:
+        return 1 + max(opt.complexity for opt in self.options)
+
+    def _children(self, *, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
+        return self.options
+
 
 @dataclass(frozen=True, slots=True)
 class ChoiceSpec(SyntaxSpec):
@@ -1096,13 +1124,21 @@ class Syntax(Generic[A, S]):
     def success(cls, value: B) -> Syntax[B, S]:
         return cls.factory('success', value=value)
     
+
+    @classmethod
+    def parallel(cls, *parsers: Syntax[Any, S], reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]]) -> Syntax[Any, S]:
+        def parallel_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any)->Algebra[Any, Any]:
+            algs = [p(acls, **global_kwargs) for p in parsers]
+            return acls.parallel(*algs, reducer=reducer).flag(is_or_else=True)
+        spec = ParallelSpec(options=tuple(p.spec for p in parsers), reducer=reducer, name=None, file=None, line=None, func=None)
+        return cls(alg_f = parallel_f, spec=spec)
+
     @classmethod
     def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
-        syntaxes = list(parsers)
         def choice_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
-            algs = [step(acls, **global_kwargs) for step in syntaxes]
+            algs = [p(acls, **global_kwargs) for p in parsers]
             return acls.choice(*algs).flag(is_orelse=True)
-        spec = ChoiceSpec(options=tuple(step.spec for step in syntaxes), name=None, file=None, line=None, func=None)
+        spec = ChoiceSpec(options=tuple(p.spec for p in parsers), name=None, file=None, line=None, func=None)
         return cls(alg_f=choice_f, spec=spec) # type: ignore
     
     @classmethod
