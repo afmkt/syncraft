@@ -139,6 +139,39 @@ class Error:
         if deepest.error:
             lines.append(f"    Cause: {self._format_error(deepest.error)}")
         return "\n".join(lines)
+
+    @staticmethod
+    def fmt_stack(stack: List[Tuple[Any, int]], indent: str="") -> List[str]:
+        def str_rule(rule: Callable[..., Any]) -> str:
+            syn = Error.get_syntax(rule)
+            spec = syn.spec if syn else None
+            if spec and hasattr(spec, 'location'):
+                if spec.location is not None:
+                    return f"{str(spec)} ({spec.location})"
+            if spec is None:
+                return callable_str(rule)
+            return f"{str(spec)}"
+
+        lines = []
+        if len(stack) > 0:
+            rule_counts: Dict[str, int] = {}
+            rule_order: List[str] = []
+            for entry in stack[::-1]:  # Reverse to show root->leaf progression
+                r, pos = entry
+                rule = str_rule(r)
+                if rule not in rule_counts:
+                    rule_counts[rule] = 0
+                    rule_order.append(rule)
+                rule_counts[rule] += 1
+            
+            for i, rule in enumerate(rule_order):
+                count = rule_counts[rule]
+                prefix = f"{indent}└─ " if i == len(rule_order) - 1 else f"{indent}├─ "
+                if count > 1:
+                    lines.append(f"{prefix}{rule} [{count}x]")
+                else:
+                    lines.append(f"{prefix}{rule}")
+        return lines
         
     @property
     def trace(self) -> str:
@@ -157,24 +190,8 @@ class Error:
         stack = self.stack
         if len(stack) > 1:
             lines.append("  Trace:")
+            lines.extend(self.fmt_stack(stack, "  "))
             # Count duplicates and group them
-            rule_counts: Dict[str, int] = {}
-            rule_order: List[str] = []
-            for entry in stack[::-1]:  # Reverse to show root->leaf progression
-                r, pos = entry
-                rule = str_rule(r)
-                if rule not in rule_counts:
-                    rule_counts[rule] = 0
-                    rule_order.append(rule)
-                rule_counts[rule] += 1
-            
-            for i, rule in enumerate(rule_order):
-                count = rule_counts[rule]
-                prefix = "  └─ " if i == len(rule_order) - 1 else "  ├─ "
-                if count > 1:
-                    lines.append(f"{prefix}{rule} [{count}x]")
-                else:
-                    lines.append(f"{prefix}{rule}")
         return "\n".join(lines)
 
     @property
@@ -360,10 +377,8 @@ class Algebra(Generic[A, S]):
         return self.map_error(commit_error)
 
     def debug(self, 
-              *,
-              before: Callable[[Syntax[A, S], S, List[Tuple[Syntax[Any, S], int]]], None],
-              fail: Callable[[Syntax[A, S], S, Any], None],
-              success: Callable[[Syntax[A, S], S, A], None]) -> Algebra[A, S]:
+              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None]
+              ) -> Algebra[A, S]:
         syn1 = self.syntax
         def debug_run(input: S,
                       cache: Cache[S]) -> Generator[YieldChannelType, 
@@ -377,13 +392,17 @@ class Algebra(Generic[A, S]):
                 s = Error.get_syntax(rule)
                 if s is not None:
                     stack.append((s, pos))
-            before(syn, input, stack)
             result = yield from self.run(input, cache)
+            error = None
+            value = None
+            new_state = None
             if isinstance(result, Left):
-                fail(syn, input, result.value)
+                error = result.value
             elif isinstance(result, Right):
                 assert isinstance(result.value, tuple) and len(result.value) >= 2
-                success(syn, result.value[1], result.value[0])
+                value = result.value[0]
+                new_state = result.value[1]
+            dbg(syn, input, new_state, error if error is not None else value, stack)
             return result
         return replace(self, run_f=debug_run)
 

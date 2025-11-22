@@ -739,20 +739,38 @@ class Syntax(Generic[A, S]):
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success)) 
     
     def debug(self, 
-              *,
-              before: Callable[[Syntax[A, S], S, List[Tuple[Syntax[Any, S], int]]], None] | Any = None,
-              fail: Callable[[Syntax[A, S], S, Any], None] | Any = None, 
-              success: Callable[[Syntax[A, S], S, A], None] | Any = None) -> Syntax[A, S]:
-        def default_before(syn: Syntax[A, S], input: S, stack: List[Tuple[Syntax[Any, S], int]])->None:
-            pass
-        def default_fail(syn: Syntax[A, S], input: S, err: Any)->None:
-            pass
-        def default_success(syn: Syntax[A, S], input: S, value: A) -> None:
-            pass
-        xbefore: Callable[[Syntax[A, S], S, List[Tuple[Syntax[Any, S], int]]], None]  = before if callable(before) else default_before # type: ignore
-        xfail: Callable[[Syntax[A, S], S, Any], None] = fail if callable(fail) else default_fail # type: ignore
-        xsuccess: Callable[[Syntax[A, S], S, A], None] = success if callable(success) else default_success # type: ignore
-        return replace(self, alg_f = lambda acls, **global_args: self(acls, **global_args).debug(before=xbefore, fail=xfail, success=xsuccess))
+              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = None,
+              level:int = 0) -> Syntax[A, S]:
+        file=get_file(level+1)
+        line=get_line(level+1)
+        def default_dbg(syn: Syntax[A, S], input: S, new_state: Optional[S], value: A | Any, stack: List[Tuple[Syntax[Any, S], int]])->None:
+            def fmt_input(ipt)->str:
+                if hasattr(ipt, 'str_input'):
+                    f = getattr(ipt, 'str_input')
+                    return f(False)
+                else:
+                    return str(ipt)
+            null = new_state is not None and new_state.cache_key == input.cache_key
+            print('=' * 20, "DEBUG", dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
+            print(f"       Syntax: {syn.spec}")
+            print(f"  Input State: {fmt_input(input)}")
+            print(f"    New State: {fmt_input(new_state) if not null else '< NO CHANGE >'}")
+            indent = " " * 15
+            if isinstance(value, Error):
+                lns = [f"{indent if i>0 else ''}{s}" for i, s in enumerate(value.compact)]
+                s = '\n'.join(lns)
+                print(f"        Error: {s}")
+            else:
+                if hasattr(value, 'mapped'):
+                    print(f"        Value: {getattr(value, 'mapped')}")
+                else:
+                    print(f"        Value: {value}")
+            print( "   Call Stack:")
+            lns = Error.fmt_stack(stack, indent=" " * 13)
+            print('\n'.join(lns))
+
+        xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = dbg if callable(dbg) else default_dbg
+        return replace(self, alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg))
             
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Seq, S]:

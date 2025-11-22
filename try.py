@@ -1,12 +1,13 @@
 from __future__ import annotations
-from syncraft.regex import parse, parse_regex, group, regex_syntax, lparen, rparen, name, greater, inline_flags, colon
+from syncraft.regex import parse, parse_regex, group, regex, lparen, rparen, name, greater, inline_flags, colon
 from rich import print
 import timeit
 from syncraft.regex import benchmark_fair, verify
 from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
-plain = regex_syntax.mark('pattern').between(lparen, rparen)
-noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex_syntax.mark('pattern').debug(), rparen)
+plain = regex.mark('pattern').between(lparen, rparen)
+noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern').debug(), rparen)
+
 # named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex_syntax.mark('pattern'), rparen)
 # lookahead = S.seq(S.lex(gp_lookahead=B.lit("(?=")).named('"(?="'), +regex_syntax.mark('pattern'), rparen)
 # negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex_syntax.mark('pattern'), rparen)

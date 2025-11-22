@@ -321,19 +321,19 @@ inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda
 def _group_body() -> Syntax[Any, Any]:
     # Forward reference to regex since groups can contain full regex patterns with alternation
     # group = "(" regex ")"
-    plain = regex_syntax.mark('pattern').between(lparen, rparen)
+    plain = regex.mark('pattern').between(lparen, rparen)
     # group = "(?:" regex ")"
-    noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex_syntax.mark('pattern'), rparen)
+    noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
     # group = "(?P<" name ">" regex ")"
-    named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex_syntax.mark('pattern'), rparen)
+    named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
     # group = "(?=" regex ")"
-    lookahead = S.seq(S.lex(gp_lookahead=B.lit("(?=")).named('"(?="'), +regex_syntax.mark('pattern'), rparen)
+    lookahead = S.seq(S.lex(gp_lookahead=B.lit("(?=")).named('"(?="'), +regex.mark('pattern'), rparen)
     # group = "(?!" regex ")"
-    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex_syntax.mark('pattern'), rparen)
+    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
     # group = "(?<=" regex ")"
-    lookbehind = S.seq(S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="'), +regex_syntax.mark('pattern'), rparen)
+    lookbehind = S.seq(S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="'), +regex.mark('pattern'), rparen)
     # group = "(?<!" regex ")"
-    negative_lookbehind = S.seq(S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"'), +regex_syntax.mark('pattern'), rparen)
+    negative_lookbehind = S.seq(S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"'), +regex.mark('pattern'), rparen)
     # group = "(?" inline_flags ")"
     inline_flag_only = S.seq(S.lex(gp_inline_flags=B.lit("(?")).named('"(?"'), 
                              +inline_flags, 
@@ -342,7 +342,7 @@ def _group_body() -> Syntax[Any, Any]:
     inline_flag_with_colon = S.seq(S.lex(gp_inline_flags_colon=B.lit("(?")).named('"(?"'), 
                                    +inline_flags, 
                                    colon, 
-                                   +regex_syntax.mark('pattern'), 
+                                   +regex.mark('pattern'), 
                                    rparen)
 
 
@@ -427,7 +427,7 @@ atom = S.choice(
         anchor.to(AnchorAtom),
         shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
-        char_class.to(CharClassAtom),
+        char_class.to(CharClassAtom).debug(),
         ).named('atom')
 
 
@@ -458,9 +458,9 @@ class Regex:
 
 
 # regex             = branch { "|" branch } ;
-regex_syntax = branch.sep_by(or_).mark('branches').to(Regex).named('regex')
+regex = branch.sep_by(or_).mark('branches').to(Regex).named('regex')
 
-regex_full = (regex_syntax // S.eof()).map(lambda r: r[0]).named('regex_full')
+regex_full = (regex // S.eof()).map(lambda r: r[0]).named('regex_full')
 
 regex_parser = parser(syntax=regex_full, payload_kind='text')
 

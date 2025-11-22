@@ -2,7 +2,7 @@ from __future__ import annotations
 import pytest
 from syncraft.regex import (
     parse, verify,
-    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex_syntax,
+    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
