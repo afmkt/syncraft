@@ -359,7 +359,33 @@ class Algebra(Generic[A, S]):
                     return Error.new(error=e, this=self, committed=True)
         return self.map_error(commit_error)
 
-    
+    def debug(self, 
+              *,
+              before: Callable[[Syntax[A, S], S, List[Tuple[Syntax[Any, S], int]]], None],
+              fail: Callable[[Syntax[A, S], S, Any], None],
+              success: Callable[[Syntax[A, S], S, A], None]) -> Algebra[A, S]:
+        syn1 = self.syntax
+        def debug_run(input: S,
+                      cache: Cache[S]) -> Generator[YieldChannelType, 
+                                                S, 
+                                                Either[Any, Tuple[A, S]]]:
+            syn = self.syntax
+            assert syn, f"{self} doesn't have associated Syntax"    
+            assert syn is syn1, f"{syn} != {syn1}"
+            stack = []
+            for rule, pos in cache.stack:
+                s = Error.get_syntax(rule)
+                if s is not None:
+                    stack.append((s, pos))
+            before(syn, input, stack)
+            result = yield from self.run(input, cache)
+            if isinstance(result, Left):
+                fail(syn, input, result.value)
+            elif isinstance(result, Right):
+                assert isinstance(result.value, tuple) and len(result.value) >= 2
+                success(syn, result.value[1], result.value[0])
+            return result
+        return replace(self, run_f=debug_run)
 
     def on_fail(self, func: Callable[[Algebra[A, S], S, Any], Either[Any, Tuple[B, S]]]) -> Algebra[A | B, S]:
         assert callable(func), "func must be callable"
@@ -492,63 +518,30 @@ class Algebra(Generic[A, S]):
         return cast(Algebra[OrElse[A, B], S], alg)
         
     @classmethod
-    def choice(cls, *options: Algebra[Any, S], sample_interval: int) -> Algebra[Choice[Any], S]:
+    def choice(cls, *options: Algebra[Any, S]) -> Algebra[Choice[Any], S]:
         assert options, "At least one option is required for choice"
-        @dataclass
-        class ChoiceState:
-            index: int = 0
-            total_time: float = 0.0
-            successes: int = 0
-            failures: int = 0
-            @property
-            def deficiency(self) -> float:
-                return (self.failures + 1) * (self.total_time) / (self.successes + 1) 
-            
-        profile = [ChoiceState(index=index) for index in range(len(options))]
-        counter: int = 0
+
         def choice_run(input: S, 
                        cache:Cache[S]) -> Generator[YieldChannelType, 
                                                   S, 
                                                   Either[Any, Tuple[Choice[Any], S]]]:
-            nonlocal counter
-            counter += 1
-            if sample_interval > 0:
-                if counter % sample_interval == 0:
-                    counter = 0
-                    sampling = True
-                else:
-                    sampling = False
-            else:
-                sampling = False
-
+            
             inp = input.enter()
-            last_error: Optional[Error] = None
-            for p in profile:
-                option = options[p.index]
-                if sampling:
-                    start_time = time.perf_counter()
-                    result = yield from option.run(inp, cache)
-                    end_time = time.perf_counter()
-                    p.total_time += end_time - start_time
-                else:
-                    result = yield from option.run(inp, cache)
+            last_error: Optional[Left[Any]] = None
+            for i, option in enumerate(options):
+                result = yield from option.run(inp, cache)
                 match result:
                     case Right((value, state)):
-                        p.successes += 1
-                        if sampling:
-                            profile.sort(key=lambda ps: ps.deficiency)
-                        return Right.new((Choice(value=value, index=p.index), state.leave()))
+
+                        return Right.new((Choice(value=value, index=i), state.leave()))
                     case Left(err) as ERROR:
-                        p.failures += 1
-                        if sampling:
-                            profile.sort(key=lambda ps: ps.deficiency)
+
                         if isinstance(err, Error) and err.committed:
                             return ERROR
-                        last_error = err
-            if sampling:
-                profile.sort(key=lambda ps: ps.deficiency)
+                        last_error = ERROR
+
             if last_error is not None:
-                return Left.new(last_error)
+                return last_error
             else:
                 return Left.new(Error.new(
                     message="No options provided",

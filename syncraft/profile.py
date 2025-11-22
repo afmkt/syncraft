@@ -1,69 +1,128 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict, TYPE_CHECKING
+from typing import Dict, Callable, Any, List, Optional, Tuple, TYPE_CHECKING, Set
 if TYPE_CHECKING:
     from syncraft.cache import Rule
-from syncraft.constraint import Bindable
-from syncraft.ast import SyncraftError
 from rich import print
 from syncraft.utils import callable_str, is_lazy, is_orelse
 from collections import defaultdict
-import copy
-import random
 
 
 @dataclass
 class ProfileEntry:
-    parent: Rule | None = None
+    rule: Rule
+    pos: int
+    parent: Rule | None 
+    is_lazy: bool 
+    is_orelse: bool 
+
     calls: int = 0
-    total_time: float = 0.0
+    cumtime: float = 0.0
     max_time: float = 0.0
     min_time: float = float('inf')
     successes: int = 0
     failures: int = 0
-    is_lazy: bool = False
-    is_orelse: bool = False
-
-
-@dataclass
-class Profile:
-    dict: Dict[Rule, Dict[int, ProfileEntry]] = field(default_factory=lambda: defaultdict(dict))
-
-    def log(self, parent: Rule | None, rule: Rule, pos: int, duration: float, success: bool) -> None:
-        bucket = self.dict[rule]
-        entry = bucket.get(pos)
-        if entry is None:
-            entry = ProfileEntry(parent=parent, is_lazy=is_lazy(rule), is_orelse=is_orelse(rule))
-            bucket[pos] = entry
-        entry.calls += 1
-        entry.total_time += duration
-        entry.max_time = max(entry.max_time, duration)
-        entry.min_time = min(entry.min_time, duration)
+    consumption: Dict[int, int] = field(default_factory=dict)
+    def log(self, duration: float, success: bool, consumed: int) -> None:
+        self.calls += 1
+        self.cumtime += duration
+        self.max_time = max(self.max_time, duration)
+        self.min_time = min(self.min_time, duration)
         if success:
-            entry.successes += 1
+            self.successes += 1
+            self.consumption[consumed] = self.consumption.get(consumed, 0) + 1
         else:
-            entry.failures += 1
+            self.failures += 1
+
+
+    @property
+    def avg_cumtime(self) -> float:
+        return self.cumtime / self.calls if self.calls > 0 else 0.0
+    
+    @property
+    def success_rate(self) -> float:
+        return self.successes / self.calls if self.calls > 0 else 0.0
+
+    @property
+    def null(self) -> int:
+        return self.consumption.get(0, 0)
+    
+    @property
+    def max_consumption(self) -> int:
+        return max(self.consumption.keys()) if self.consumption else 0
+    
+    @property
+    def avg_consumption(self) -> float:
+        return sum([k * v for k, v in self.consumption.items()]) / sum(self.consumption.values())
+
+
+    def record(self, keep_rule: bool) -> Dict[str, Any]:
+        
+        return {
+                'rule': self.rule if keep_rule else callable_str(self.rule),
+                'parent': self.parent if keep_rule else callable_str(self.parent),
+                'position': self.pos,
+                'calls': self.calls,
+                'cumtime': self.cumtime,
+                'max_time': self.max_time,
+                'min_time': self.min_time,
+                'successes': self.successes,
+                'failures': self.failures,
+                'avg_cumtime': self.avg_cumtime,
+                'success_rate': self.success_rate,
+                'null': self.null,
+                'max_consumption': self.max_consumption,
+                'avg_consumption': self.avg_consumption,
+                'is_lazy': self.is_lazy,
+                'is_orelse': self.is_orelse,
+            }
+
+
+class Profile:
+
+    @staticmethod
+    def deficiency(failures: int, successes: int, cumtime: float) -> float:
+        return (failures + 1) * (cumtime) / (successes + 1)
+
+    def __init__(self, sample_interval: int)->None:
+        self.sample_interval = sample_interval
+        self.dict: Dict[Rule, Tuple[Dict[int, ProfileEntry], int]] = dict()
+
+    
+    def should_log(self, rule: Rule) -> Dict[int, ProfileEntry] | None:
+        record: Tuple[Dict[int, ProfileEntry], int] | None = self.dict.get(rule)
+        if record is None:
+            record = (dict(), 0)
+        bucket, counter = record
+        if counter % self.sample_interval == 0:
+            self.dict[rule] = (bucket, 0)
+            return bucket
+        else:
+            self.dict[rule] = (bucket, counter + 1)
+            return None
+
+
+    def log(self, 
+            *, 
+            record: Dict[int, ProfileEntry], 
+            rule: Rule, 
+            parent: Rule | None, 
+            pos: int, 
+            duration: float, 
+            success: bool, 
+            consumed: int) -> None:
+        entry = record.get(pos)
+        if entry is None:
+            entry = ProfileEntry(rule = rule, pos = pos, parent=parent, is_lazy=is_lazy(rule), is_orelse=is_orelse(rule))
+            record[pos] = entry
+        entry.log(duration=duration, success=success, consumed=consumed)
 
     def flat(self, keep_rule: bool = False) -> List[Dict[str, Any]]:
         result: List[Dict[str, Any]] = []
-        for rule, bucket in self.dict.items():
-            for pos, entry in bucket.items():
-                result.append({
-                    'parent': entry.parent if keep_rule else callable_str(entry.parent),
-                    'rule': rule if keep_rule else callable_str(rule),
-                    'position': pos,
-                    'calls': entry.calls,
-                    'total_time': entry.total_time,
-                    'max_time': entry.max_time,
-                    'min_time': entry.min_time,
-                    'successes': entry.successes,
-                    'failures': entry.failures,
-                    'avg_time': entry.total_time / entry.calls if entry.calls > 0 else 0.0,
-                    'success_rate': entry.successes / entry.calls if entry.calls > 0 else 0.0,
-                    'is_lazy': entry.is_lazy,
-                    'is_orelse': entry.is_orelse,
-                })
+        for bucket, _ in self.dict.values():
+            for entry in bucket.values():
+                result.append(entry.record(keep_rule=keep_rule))
         return result
     
     def agg(self, 
@@ -92,26 +151,31 @@ class Profile:
             result.append(agg_row)
         return result
     
-    def report(self, lines: Optional[int] = None, sort: str = "total_time", filter: Callable[[Dict[str, Any]], bool] = lambda r: callable_str(r['rule']) != 'map_run') -> None:
+
+
+    def report(self, lines: Optional[int] = None, sort: str = "cumtime", filter: Callable[[Dict[str, Any]], bool] = lambda r: callable_str(r['rule']) != 'map_run') -> None:
         agg_functions = {
-            'position': lambda values: 'N/A', # Placeholder for non-numeric column
+            'position': lambda values: values, # Placeholder for non-numeric column
             'calls': sum,
-            'total_time': sum,
+            'cumtime': sum,
             'max_time': max,  # Max of all max_times across positions
             'min_time': min,  # Min of all min_times across positions
             'successes': sum,
             'failures': sum,
             'is_lazy': lambda values: any(values),
             'is_orelse': lambda values: any(values),
-            'avg_time': lambda values: sum(values) / len(values) if values else 0.0, # Not actually used in the final report calculation
-            'success_rate': lambda values: sum(values) / len(values) if values else 0.0 # Not actually used in the final report calculation
+            'avg_cumtime': lambda values: sum(values) / len(values) if values else 0.0, # Not actually used in the final report calculation
+            'success_rate': lambda values: sum(values) / len(values) if values else 0.0, # Not actually used in the final report calculation
+            'null': sum,
+            'max_consumption': max,
+            'avg_consumption': lambda values: sum(values) / len(values) if values else 0.0,
         }        
         rule_data = self.agg(keep_rule=True, **agg_functions) # type: ignore
         if not rule_data:
             print("[Profiler] No profiling data collected.")
             return
         total_calls = sum(r['calls'] for r in rule_data)
-        total_time = sum(r['total_time'] for r in rule_data)
+        cumtime = sum(r['cumtime'] for r in rule_data)
         total_successes = sum(r['successes'] for r in rule_data)        
         total_failures = sum(r['failures'] for r in rule_data)
         overall_success_rate = (total_successes / total_calls) if total_calls > 0 else 0.0
@@ -119,13 +183,13 @@ class Profile:
         print("--- ⏱️ Parser Profiler Report ---")
         print("\n## Overall Summary")
         print(f"Total Calls:   {total_calls:,}")
-        print(f"Total Time:    {total_time:,.4f} seconds")
+        print(f"Total Time:    {cumtime:,.4f} seconds")
         print(f"Total Failures: {total_failures:,}")
         print(f"Total Successes: {total_successes:,}")
         print(f"Success Rate:  {overall_success_rate:.2%}")
         width = 190
         print("\n" + "="*width)        
-        # Sort by total_time descending
+        # Sort by cumtime descending
         rule_data.sort(key=lambda x: x[sort], reverse=True)
         HEADER_FMT = "{:<25} | {:<25} | {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>30}"
         print(HEADER_FMT.format("Rule", "Parent", "Calls", "Total Time", "Avg Time", "Max Time", "Success Rate", "Location"))
@@ -138,7 +202,7 @@ class Profile:
             parent = callable_str(r['parent'])[:24]
             # Format numbers for printing
             calls_str = f"{r['calls']:,}"
-            total_time_str = f"{r['total_time']:,.4f}"
+            total_time_str = f"{r['cumtime']:,.4f}"
             avg_call_time_str = f"{r['avg_time']:.6f}"
             max_time_str = f"{r['max_time']:.6f}"
             success_rate_str = f"{r['success_rate']:.2%}"

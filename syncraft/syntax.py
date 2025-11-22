@@ -351,13 +351,12 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
 
 @dataclass(frozen=True, slots=True)
 class ChoiceSpec(SyntaxSpec):
-    sample_interval: int
     options: Tuple[SyntaxSpec, ...]
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         opts = [opt.syntax(cls, cache=cache) for opt in self.options]
-        ret = cls.choice(*opts, sample_interval=self.sample_interval)
+        ret = cls.choice(*opts)
         ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
@@ -741,24 +740,20 @@ class Syntax(Generic[A, S]):
     
     def debug(self, 
               *,
-              on_fail: Optional[Callable[[Any, S], None] | Any] = None, 
-              on_success: Optional[Callable[[A , S], None] | Any] = None) -> Syntax[A, S]:
-        def on_succeeded(syntax: Optional[Syntax[A, S]], input: S, result: Tuple[A, S]) -> Either[Any, Tuple[A, S]]:
-            if callable(on_success):
-                on_success(result[0], result[1])
-            elif on_success is not None:
-                print(on_success)
-            return Right.new(result)
-
-        def on_failure(syntax: Optional[Syntax[A, S]], input: S, error: Any) -> Either[Any, Tuple[A, S]]:
-            if callable(on_fail):
-                on_fail(error, input)
-            elif on_fail is not None:
-                print(on_fail)
-            return Left.new(error)
-        
-        return self.on_fail(on_failure).on_success(on_succeeded)
-
+              before: Callable[[Syntax[A, S], S, List[Tuple[Syntax[Any, S], int]]], None] | Any = None,
+              fail: Callable[[Syntax[A, S], S, Any], None] | Any = None, 
+              success: Callable[[Syntax[A, S], S, A], None] | Any = None) -> Syntax[A, S]:
+        def default_before(syn: Syntax[A, S], input: S, stack: List[Tuple[Syntax[Any, S], int]])->None:
+            pass
+        def default_fail(syn: Syntax[A, S], input: S, err: Any)->None:
+            pass
+        def default_success(syn: Syntax[A, S], input: S, value: A) -> None:
+            pass
+        xbefore: Callable[[Syntax[A, S], S, List[Tuple[Syntax[Any, S], int]]], None]  = before if callable(before) else default_before # type: ignore
+        xfail: Callable[[Syntax[A, S], S, Any], None] = fail if callable(fail) else default_fail # type: ignore
+        xsuccess: Callable[[Syntax[A, S], S, A], None] = success if callable(success) else default_success # type: ignore
+        return replace(self, alg_f = lambda acls, **global_args: self(acls, **global_args).debug(before=xbefore, fail=xfail, success=xsuccess))
+            
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[Seq, S]:
         return self.seq(left , +self , right)
@@ -1067,12 +1062,12 @@ class Syntax(Generic[A, S]):
         return cls.factory('success', value=value)
     
     @classmethod
-    def choice(cls, *parsers: Syntax[Any, S], sample_interval: int=0) -> Syntax[Choice[Any], S]:
+    def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
         syntaxes = list(parsers)
         def choice_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
             algs = [step(acls, **global_kwargs) for step in syntaxes]
-            return acls.choice(*algs, sample_interval=sample_interval)
-        spec = ChoiceSpec(options=tuple(step.spec for step in syntaxes), sample_interval=sample_interval, name=None, file=None, line=None, func=None)
+            return acls.choice(*algs).flag(is_orelse=True)
+        spec = ChoiceSpec(options=tuple(step.spec for step in syntaxes), name=None, file=None, line=None, func=None)
         return cls(alg_f=choice_f, spec=spec) # type: ignore
     
     @classmethod

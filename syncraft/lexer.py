@@ -447,7 +447,7 @@ class Lexer(LexerBase[C]):
                 message="Lexing mismatch",
                 index=index,
                 offender=char,
-                expect=frozenset(str(e) for e in expecting),
+                expect=frozenset(str(e) for e in expecting) if expecting else tags,
             ))
 
         if rr.final and rr.accepted is None:

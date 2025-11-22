@@ -222,9 +222,9 @@ class Cache(Generic[S]):
     profiler: Optional[Profile] = None
 
 
-    def with_profiler(self) -> Cache[S]:
+    def with_profiler(self, sample_interval: int = 1) -> Cache[S]:
         if self.profiler is None:
-            self.profiler = Profile()
+            self.profiler = Profile(sample_interval=sample_interval)
         return self
 
     def clone(self) -> Cache[S]:
@@ -279,17 +279,31 @@ class Cache(Generic[S]):
     
     def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
         if self.profiler is not None:
-            import time
-            start_time = time.perf_counter()
-            result = yield from rule(key, self)
-            end_time = time.perf_counter()
-            duration = end_time - start_time
-            success = isinstance(result, Right)
-            self.profiler.log(self.stack[-2][0] if len(self.stack) > 1 else None, rule, key.cache_key, duration, success)
-            return result
-        else:
-            result = yield from rule(key, self)
-            return result
+            record = self.profiler.should_log(rule)
+            if record is not None:
+                import time
+                start_time = time.perf_counter()
+                result = yield from rule(key, self)
+                end_time = time.perf_counter()
+                duration = end_time - start_time
+                pos = key.cache_key
+                if isinstance(result, Right):
+                    success = True
+                    consumed = result.value[1].cache_key - pos
+                else:
+                    success = False
+                    consumed = 0
+                parent = self.stack[-2][0] if len(self.stack) > 1 else None
+                self.profiler.log(record=record,
+                                  rule=rule, 
+                                  parent=parent, 
+                                  pos=pos, 
+                                  duration=duration, 
+                                  success=success,
+                                  consumed=consumed)
+                return result
+        result = yield from rule(key, self)
+        return result
     
     def __str__(self) -> str:
         parts = []
