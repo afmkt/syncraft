@@ -49,7 +49,7 @@ if __name__ == "__main__":
     test_named()
     test_neg_lookahead()
     test_all()
-    # x()
-    # r = benchmark_fair()
-    # for line in r:
-    #     print(line)
+    x()
+    r = benchmark_fair()
+    for line in r:
+        print(line)

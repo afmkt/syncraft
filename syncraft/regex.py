@@ -23,7 +23,7 @@ r"""
 
 regex             = branch { "|" branch } ;
 
-branch            = piece { piece } ;
+branch            = { piece } ;
 
 piece             = atom [ quantifier ] ;
 
@@ -39,8 +39,7 @@ control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" | **"\\0"** ;
 
 escaped_metachar  = "\\" meta_char ;
 
-meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}"
-                  | "|" | "+" | "*" | "?" | "^" | "$" | **' " '** ;
+meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}" | "|" | "+" | "*" | "?" | "^" | "$" | **' " '** ;
 
 unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
 hex_pair          = hex_digit hex_digit ;
@@ -233,10 +232,12 @@ hex_quad = S.lex(hex_quad=B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_
 # hex_pair          = hex_digit hex_digit ;
 hex_pair = S.lex(hex_pair=B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text).named('hex_pair')
 
+
 # meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}" | "|" | "+" | "*" | "?" | "^" | "$" ;
 meta_char = S.lex(meta_char=B.oneof("\"\\.[](){}|+*?^$")).named('meta_char')
-# control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" ;
-control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v"])).named('control_escape')
+
+# control_escape    = "\\t" | "\\n" | "\\r" | "\\f" | "\\v" | **"\\0"** ;
+control_escape = S.lex(control_escape=B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"])).named('control_escape')
 
 class ShorthandKind(Enum):
     DIGIT = auto()
@@ -284,8 +285,18 @@ unicode_escape = S.choice((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16
                   ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t[0]))).named('unicode_escape')
 # escaped_metachar  = "\\" meta_char ;
 escaped_metachar = (backslash >> meta_char).map(lambda t: t[0]).named('escaped_metachar')
-# escaped_literal   = control_escape | unicode_escape | escaped_metachar ;
-escaped_literal   = control_escape | unicode_escape | escaped_metachar 
+
+# octal_escape      = "\\0" octal_digit octal_digit | "\\" octal_digit octal_digit? ;
+# octal_digit       = "0".."7" ;
+escaped_0 = S.lex(escaped_0=B.lit("\\0")).named('"\\0"')
+octal_digit = S.lex(octal_digit=B.range("0", "7")).named('octal_digit')
+octal_escape = S.choice(
+    (escaped_0 >> octal_digit + octal_digit).map(lambda t: chr(int(t[0] + t[2], 8))),
+    (backslash >> octal_digit.many(at_least=1)).map(lambda t: chr(int(''.join(t), 8)))
+).named('octal_escape')
+
+# escaped_literal   = control_escape | **octal_escape** | unicode_escape | escaped_metachar ;
+escaped_literal   = control_escape | octal_escape | unicode_escape | escaped_metachar 
 # literal           = escaped_literal | literal_char ;
 literal = escaped_literal | literal_char
 # class_meta_char   = "-" | "]" | "\\" ;
@@ -464,15 +475,24 @@ class DotAtom:
     pass
 
 
-# atom              = literal | char_class | group | anchor | dot | shorthand ;
+# **backreference     = "\\" number | "\\g<" name ">" ;**
+backreference = S.choice(
+    (backslash >> number).named('backreference_number'),
+    (S.lex(_=B.lit("\\g<")) >> name // greater).named('backreference_name')
+).named('backreference')
+
+
+# atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape | **backreference** ;
 atom = S.choice(
         literal.mark('text').to(LiteralAtom).named('literal'),
+        char_class.to(CharClassAtom),
         group,
-        dot.to(DotAtom),
         anchor.to(AnchorAtom),
+        dot.to(DotAtom),
+        
         shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
-        char_class.to(CharClassAtom).debug(disable=True),
+        backreference,
         ).named('atom')
 
 
@@ -494,8 +514,8 @@ piece = (atom.mark('atom') + (~quantifier).mark('quantifier')).to(Piece).named('
 class Branch:
     pieces: Tuple[Piece, ...]
 
-# branch            = piece { piece } ;
-branch = piece.many(at_least=0).mark('pieces').to(Branch).named('branch')
+# branch            = { piece } ;
+branch = piece.many().mark('pieces').to(Branch).named('branch')
 
 @dataclass(frozen=True, slots=True)
 class Regex:
