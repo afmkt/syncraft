@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable, Literal,
-    Generic, Generator, Type, Union, Callable, Self
+    Generic, Generator, Type, Union, Callable, Self, ClassVar, Dict
 )
 from syncraft.lexer import (
     LexerBase,
@@ -88,6 +88,7 @@ def underline(text: str, ul: bool) -> str:
 @total_ordering
 @dataclass(slots=True)
 class ParserState(Bindable, Generic[T]):
+    cache: ClassVar[Dict[int, ParserState[Any]]] = {}
     binding: Binding = field(default_factory=Binding)
 
     input: Tuple[T, ...] | str | bytes = field(default_factory=tuple, compare=False, hash=False)
@@ -112,6 +113,8 @@ class ParserState(Bindable, Generic[T]):
             choice_depth: int, 
             line: int, 
             column: int) -> Self:
+        if base + index in cls.cache:
+            return cls.cache[base + index]  # type: ignore
         obj = cls.__new__(cls)
         object.__setattr__(obj, 'binding', binding)
         object.__setattr__(obj, 'input', input)
@@ -122,6 +125,7 @@ class ParserState(Bindable, Generic[T]):
         object.__setattr__(obj, 'choice_depth', choice_depth)
         object.__setattr__(obj, 'line', line)
         object.__setattr__(obj, 'column', column)
+        cls.cache[base + index] = obj
         return obj
     
 
@@ -351,6 +355,7 @@ class ParserState(Bindable, Generic[T]):
     def gc(self)-> ParserState[T]:
         if self.safe_base > self.base:
             drop = min(self.safe_base - self.base, len(self.input))
+            ParserState.cache = {k: v for k, v in self.cache.items() if k < self.safe_base}
             return ParserState.new(
                 binding=self.binding,
                 input=self.input[drop:],
