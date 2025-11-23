@@ -598,12 +598,8 @@ def parse_file(syntax: Syntax[Any, Any],
                mode: Literal['text', 'binary'] = 'text', 
                cache: None | Cache[ParserState[str | bytes]]
                ) -> Tuple[Any, None | ParserState[str | bytes]]:
-    if mode == 'text':        
-        input : StreamCursor[str] = StreamCursor.from_path(filepath, mode=mode)
-        return parse(syntax, input, cache=cache)
-    else:
-        inputb : StreamCursor[bytes] = StreamCursor.from_path(filepath, mode=mode)
-        return parse(syntax, inputb, cache=cache)
+    input : StreamCursor[Any] = StreamCursor.from_path(filepath, mode=mode)
+    return parse(syntax, input, cache=cache)
 
 def parse_stream(syntax: Syntax[Any, Any],
                  stream: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
@@ -611,5 +607,5 @@ def parse_stream(syntax: Syntax[Any, Any],
                  mode: Literal['text', 'binary'] = 'text', 
                  cache: None | Cache[ParserState[str | bytes]]
                  ) -> Tuple[Any, None | ParserState[str | bytes]]:
-    input : StreamCursor[str | bytes] = StreamCursor.from_stream(stream, mode=mode) # type: ignore
+    input : StreamCursor[Any] = StreamCursor.from_stream(stream, mode=mode) # type: ignore
     return parse(syntax, input, cache=cache)

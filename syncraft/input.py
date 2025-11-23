@@ -351,20 +351,20 @@ class StreamCursor(Generic[T]):
     @overload
     def from_path(cls,
                   path: Union[str, Path],
-                  mode: Literal['text'],
+                  mode: Literal['text'] = 'text',
                   chunk_size: int = 4096) -> StreamCursor[str]: ...
     
     @classmethod
     @overload
     def from_path(cls,
                   path: Union[str, Path],
-                  mode: Literal['binary'],
+                  mode: Literal['binary'] = 'binary',
                   chunk_size: int = 4096) -> StreamCursor[bytes]: ...
 
     @classmethod
     def from_path(cls, 
                   path: Union[str, Path], 
-                  mode: Literal['text', 'binary'],
+                  mode: Literal['text', 'binary'] = 'text',
                   chunk_size: int = 4096) -> StreamCursor[str] | StreamCursor[bytes]:
         input_source = Input.from_path(path, mode=mode, blocksize=chunk_size)
         return cls(input_source, chunk_size=chunk_size) # type: ignore
