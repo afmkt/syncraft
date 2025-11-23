@@ -790,7 +790,12 @@ class Syntax(Generic[A, S]):
                 else:
                     return str(ipt)
             null = new_state is not None and new_state.cache_key == input.cache_key
-            print('=' * 20, "DEBUG", dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
+            GREEN = "\033[92m"
+            RESET = "\033[0m"
+            RED = "\033[91m"
+
+            sign = f"{RED}\u2717{RESET}" if new_state is None else f"{GREEN}\u2714{RESET}"
+            print('=' * 20, "DEBUG", sign, dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
             print(f"       Syntax: {syn.spec}")
             print(f"  Input State: {fmt_input(input)}")
             if new_state is not None:
