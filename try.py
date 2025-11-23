@@ -43,6 +43,43 @@ def x():
     print('tuple key', t2)
     print('int / tuple', float(t1) / t2)
     
+def y():
+    class A:
+        def __init__(self):
+            self.id = 1
+
+    class B:
+        def __init__(self):
+            self.id = 2
+
+    a = A()
+    b = B()
+
+
+    t1 = timeit.timeit(lambda: isinstance(a, A) and isinstance(b, B) and (isinstance(a, B) or isinstance(b, A)), number=1000000)
+    t2 = timeit.timeit(lambda: a.id==1 and b.id == 2 and (a.id == 2 or b.id == 1), number=1000000)
+    print("isinstance", t1)
+    print("id check", t2)
+    print("id check / isinstance", float(t2) / t1)
+
+
+def z():
+    callable_dict = {}
+    tuple_key_dict = {}
+    callables = []
+    tuples = []
+    for i in range(1000):
+        callables.append((lambda x: x + i, i))
+        tuples.append((i, i))
+        callable_dict[callables[-1]] = 'hello'
+        tuple_key_dict[tuples[-1]] = 'hello'
+
+    t1 = timeit.timeit(lambda: [callable_dict[tmp] for tmp in callables], number=100000)
+    t2 = timeit.timeit(lambda: [tuple_key_dict[tmp] for tmp in tuples], number=100000)
+    print("callable key", t1)
+    print("tuple key", t2)
+    print("tuple / callable", float(t2) / t1)
+        
 
 if __name__ == "__main__":
     # test_noncap()
@@ -50,6 +87,8 @@ if __name__ == "__main__":
     # test_neg_lookahead()
     # test_all()
     # x()
-    r = benchmark_fair()
-    for line in r:
-        print(line)
+    # y()
+    z()
+    # r = benchmark_fair()
+    # for line in r:
+    #     print(line)

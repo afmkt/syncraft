@@ -88,7 +88,6 @@ def underline(text: str, ul: bool) -> str:
 @total_ordering
 @dataclass(frozen=True, slots=True)
 class ParserState(Bindable, Generic[T]):
-    # cache: ClassVar[Dict[int, ParserState[Any]]] = {}
     binding: Binding = field(default_factory=Binding)
 
     input: Tuple[T, ...] | str | bytes = field(default_factory=tuple, compare=False, hash=False)
@@ -113,8 +112,6 @@ class ParserState(Bindable, Generic[T]):
             choice_depth: int, 
             line: int, 
             column: int) -> Self:
-        # if base + index in cls.cache:
-        #     return cls.cache[base + index]  # type: ignore
         obj = cls.__new__(cls)
         object.__setattr__(obj, 'binding', binding)
         object.__setattr__(obj, 'input', input)
@@ -125,7 +122,6 @@ class ParserState(Bindable, Generic[T]):
         object.__setattr__(obj, 'choice_depth', choice_depth)
         object.__setattr__(obj, 'line', line)
         object.__setattr__(obj, 'column', column)
-        # cls.cache[base + index] = obj
         return obj
     
 
@@ -312,7 +308,6 @@ class ParserState(Bindable, Generic[T]):
         if isinstance(self.input, str):
             return [underline(str(ch), ul) for ch in segment]
         elif isinstance(self.input, bytes):
-            # Decode printable ASCII bytes, otherwise use hex
             result = []
             for b in segment:
                 if isinstance(b, int) and 32 <= b < 127:
@@ -323,7 +318,6 @@ class ParserState(Bindable, Generic[T]):
                     result.append(str(b))
             return result
         else:
-            # Generic token list
             return [underline(str(token), ul) for token in segment]
 
 
@@ -355,7 +349,6 @@ class ParserState(Bindable, Generic[T]):
     def gc(self)-> ParserState[T]:
         if self.safe_base > self.base:
             drop = min(self.safe_base - self.base, len(self.input))
-            # ParserState.cache = {k: v for k, v in self.cache.items() if k < self.safe_base}
             return ParserState.new(
                 binding=self.binding,
                 input=self.input[drop:],
