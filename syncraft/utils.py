@@ -360,6 +360,8 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
     key in other dictionaries or for set membership. Equality compares the
     underlying mapping to any other Mapping.
     """
+    __slots__ = ("_data", "_hash")
+
     def __init__(self, *args, **kwargs):
         self._data = dict(*args, **kwargs)
         self._hash = None
