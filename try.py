@@ -6,9 +6,9 @@ from syncraft.regex import benchmark_fair, verify
 from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
 plain = regex.mark('pattern').between(lparen, rparen)
-noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern').debug(disable=True), rparen)
+noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
 named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
-negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern').debug(), rparen)
+negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
 
 def test_neg_lookahead():
     nl = r"(?!\1)"
@@ -47,9 +47,9 @@ def x():
 if __name__ == "__main__":
     # test_noncap()
     # test_named()
-    test_neg_lookahead()
+    # test_neg_lookahead()
     # test_all()
     # x()
-    # r = benchmark_fair()
-    # for line in r:
-    #     print(line)
+    r = benchmark_fair()
+    for line in r:
+        print(line)

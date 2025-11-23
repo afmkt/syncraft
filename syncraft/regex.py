@@ -483,16 +483,15 @@ backreference = S.choice(
 
 
 # atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape | **backreference** ;
-atom = S.choice(
+atom = S.choice(        
+        backreference,
         literal.mark('text').to(LiteralAtom).named('literal'),
         char_class.to(CharClassAtom),
-        group,
         anchor.to(AnchorAtom),
         dot.to(DotAtom),
-        
         shorthand.to(ShorthandAtom),
         unicode_category_escape.to(UnicodeCategoryAtom),
-        backreference,
+        group,
         ).named('atom')
 
 
