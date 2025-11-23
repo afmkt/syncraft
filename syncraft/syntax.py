@@ -1119,10 +1119,13 @@ class Syntax(Generic[A, S]):
     
 
     @classmethod
-    def parallel(cls, *parsers: Syntax[Any, S], reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]]) -> Syntax[Any, S]:
+    def parallel(cls, 
+                 *parsers: Syntax[Any, S], 
+                 reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]],
+                 share_cache:bool=True) -> Syntax[Any, S]:
         def parallel_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any)->Algebra[Any, Any]:
             algs = [p(acls, **global_kwargs) for p in parsers]
-            return acls.parallel(*algs, reducer=reducer)
+            return acls.parallel(*algs, reducer=reducer, share_cache=share_cache)
         spec = ParallelSpec(options=tuple(p.spec for p in parsers), reducer=reducer, name=None, file=None, line=None, func=None)
         return cls(alg_f = parallel_f, spec=spec)
 

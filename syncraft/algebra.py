@@ -537,7 +537,10 @@ class Algebra(Generic[A, S]):
         return cast(Algebra[OrElse[A, B], S], alg)
         
     @classmethod
-    def parallel(cls, *options: Algebra[Any, S], reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]]) -> Algebra[Any, S]:
+    def parallel(cls, 
+                 *options: Algebra[Any, S], 
+                 reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]],
+                 share_cache: bool=True) -> Algebra[Any, S]:
         assert options, "At least one option is required for parallel"
         def parallel_run(input: S,
                          cache: Cache[S]) -> Generator[YieldChannelType, 
@@ -545,11 +548,19 @@ class Algebra(Generic[A, S]):
                                                   Either[Any, Tuple[Any, S]]]:
             inp = input.enter()
             results = []
-            for i, opt in enumerate(options):
-                r = yield from opt.run(inp, cache)
-                if isinstance(r, Right):
-                    v, s = r.value
-                    results.append((v, s.leave()))
+            if share_cache:
+                for opt in options:
+                    r = yield from opt.run(inp, cache)
+                    if isinstance(r, Right):
+                        v, s = r.value
+                        results.append((v, s.leave()))
+            else:
+                for opt in options:
+                    new_cache = cache.clone() 
+                    r = yield from opt.run(inp, new_cache)
+                    if isinstance(r, Right):
+                        v, s = r.value
+                        results.append((v, s.leave()))
             return reducer(input, results)
         return cls(run_f = parallel_run)
     
