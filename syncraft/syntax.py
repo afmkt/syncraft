@@ -794,7 +794,7 @@ class Syntax(Generic[A, S]):
             RESET = "\033[0m"
             RED = "\033[91m"
 
-            sign = f"{RED}\u2717{RESET}" if new_state is None else f"{GREEN}\u2714{RESET}"
+            sign = f"{RED}\u2718{RESET}" if new_state is None else f"{GREEN}\u2714{RESET}"
             print('=' * 20, "DEBUG", sign, dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
             print(f"       Syntax: {syn.spec}")
             print(f"  Input State: {fmt_input(input)}")
