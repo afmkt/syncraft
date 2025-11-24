@@ -85,6 +85,7 @@ def test():
     pattern = r'l*[^UUf\w]?|\w{5}\W{0,5}\w*(?w)|J*\B'
     ret = verify(pattern)
     print(ret)
+    print(str(ret.err_syncraft))
 
 
 if __name__ == "__main__":

@@ -367,7 +367,7 @@ class GroupAtom:
     disabled_flags: Optional[Tuple[str, ...]] = None
 
 # flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
-flag = S.lex(flag=B.oneof("aiLmsux")).named('flag')
+flag = S.lex(flag=B.oneof("iLmsuaxw")).named('flag')
 # flag_seq          = flag { flag } ;
 flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts)).named('flag_seq')
 # inline_flags      = flag_seq [ "-" flag_seq ] ;
