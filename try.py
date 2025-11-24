@@ -81,6 +81,12 @@ def z():
     print("tuple / callable", float(t2) / t1)
         
 
+def test():
+    pattern = r'l*[^UUf\w]?|\w{5}\W{0,5}\w*(?w)|J*\B'
+    ret = verify(pattern)
+    print(ret)
+
+
 if __name__ == "__main__":
     # test_noncap()
     # test_named()
@@ -88,7 +94,8 @@ if __name__ == "__main__":
     # test_all()
     # x()
     # y()
-    z()
+    # z()
     # r = benchmark_fair()
     # for line in r:
     #     print(line)
+    test()

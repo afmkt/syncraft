@@ -256,7 +256,9 @@ def test_fuzzing_collection():
         assert vr.ok, f"Pattern failed to parse: {pattern} {should_pass}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_fuzzing():
-    TEST_CASES = generate_random_regex_tests(200, seed=random.randint(0, 2**32 - 1))
+    seed = random.randint(0, 2**32 - 1)
+    print("Fuzzing seed:", seed)
+    TEST_CASES = generate_random_regex_tests(400, seed=seed)
 
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
