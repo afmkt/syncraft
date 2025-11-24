@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable, Literal,
-    Generic, Generator, Type, Union, Callable, Self, ClassVar, Dict
+    Generic, Generator, Type, Union, Callable, Self
 )
 from syncraft.lexer import (
     LexerBase,
@@ -156,10 +156,16 @@ class ParserState(Bindable, Generic[T]):
             line=self.line,
             column=self.column
         )
-        
-    def get(self, name: str) -> Tuple[Any, ...]: 
+
+    def get(self, name: str) -> Tuple[Any, ...] | Any: 
         """Get the binding(s) recorded under ``name``."""
-        return self.binding.bindings.get(name, ())
+        ret = self.binding.bindings.get(name, ())
+        if len(ret) == 1:
+            return ret[0]
+        elif len(ret) == 0:
+            return ...
+        else:
+            return ret
 
 
     @property

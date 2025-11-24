@@ -6,7 +6,6 @@ from typing import (
 from enum import Enum
 from dataclasses import dataclass, is_dataclass, fields
 
-from collections import defaultdict
 from itertools import product
 from inspect import Signature
 import inspect
@@ -39,7 +38,7 @@ class Bindable(Protocol):
 
     def replace(self, name: str, node:Any)->Self: ...
 
-    def get(self, name: str) -> Tuple[Any, ...]: ...
+    def get(self, name: str) -> Tuple[Any, ...] | Any: ...
 
     def enter(self) -> Self: ...
     

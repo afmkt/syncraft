@@ -89,9 +89,15 @@ class GenState(Bindable, Generic[T]):
             seed=self.seed
         )
     
-    def get(self, name: str) -> Tuple[Any, ...]: 
+    def get(self, name: str) -> Tuple[Any, ...] | Any: 
         """Get the binding(s) recorded under ``name``."""
-        return self.binding.bindings.get(name, ()) # type: ignore
+        ret = self.binding.bindings.get(name, ())
+        if len(ret) == 1:
+            return ret[0]
+        elif len(ret) == 0:
+            return ...
+        else:
+            return ret
 
 
     @property

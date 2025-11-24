@@ -1043,7 +1043,7 @@ class Syntax(Generic[A, S]):
             return v, s
         return self.map_all(bind_v)
     
-    def update(self,*, raw:bool=False, **kwargs: Callable[[Tuple[Any, ...], Any], Any]) -> Syntax[A, S]:
+    def update(self,*, raw:bool=False, **kwargs: Callable[[Any, Any], Any]) -> Syntax[A, S]:
         def replace_v(v: A, s: S) -> tuple[A, S]:
             if isinstance(v, AST) and not raw:
                 vv = v.mapped
@@ -1060,7 +1060,7 @@ class Syntax(Generic[A, S]):
             return v, s
         return self.map_all(replace_v)
     
-    def check(self,*, raw:bool=False, **kwargs: Callable[[Tuple[Any, ...], Any], bool]) -> Syntax[A, S]:
+    def check(self,*, raw:bool=False, **kwargs: Callable[[Any, Any], bool]) -> Syntax[A, S]:
         def check_v(this: Optional[Syntax[A, S]], old_s: S, result: Tuple[A, S]) -> Either[Any, Tuple[Any, S]]:
             v, s = result
             if isinstance(v, AST) and not raw:
