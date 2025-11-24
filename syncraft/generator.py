@@ -237,7 +237,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                          cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                 GenState[T], 
                                                                 Either[Any, Tuple[B, GenState[T]]]]:
-            if not input.pruned and (not isinstance(input.ast, Then) or isinstance(input.ast, Nothing)):
+            if not input.pruned and (not isinstance(input.ast, Then) or input.ast is Nothing):
                 return Left.new(Error.new(this=self, 
                                     message=f"Expect Then got {input.ast}",
                                     state=input))
@@ -300,7 +300,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 break
                 return Right.new((Many(value=tuple(ret)), input))
             else:
-                if not isinstance(input.ast, Many) or isinstance(input.ast, Nothing):
+                if not isinstance(input.ast, Many) or input.ast is Nothing:
                     return Left.new(Error.new(this=self, 
                                       message=f"Expect Many got {input.ast}",
                                       state=input))
@@ -458,7 +458,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
             else:
                 current = input.ast
-                if not isinstance(current, Lazy) or isinstance(current, Nothing):
+                if not isinstance(current, Lazy) or current is Nothing:
                     return Left.new(Error.new(this=alg, 
                                       message=f"Expect Lazy got {current}",
                                       state=input))

@@ -1,14 +1,14 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Type, Generator, Union, Hashable, TYPE_CHECKING, Dict
+    Type, Generator, Hashable, TYPE_CHECKING, Dict
 )
 from syncraft.ast import AST, Nothing
 from dataclasses import dataclass, replace, field
 from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
-import time
+
 import sys
 import traceback
 from syncraft.utils import callable_str
