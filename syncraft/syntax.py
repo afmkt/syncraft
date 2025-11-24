@@ -17,7 +17,7 @@ from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, 
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable
 
-from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice
+from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice, AST
 
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import Builder
@@ -1026,20 +1026,61 @@ class Syntax(Generic[A, S]):
         return self.optional
 
     ######################################################################## data processing combinators #########################################################
-    def bind(self, name: Optional[str] = None, f: Callable[[A], Any] = lambda x: x) -> Syntax[A, S]:
-        if name:
-            assert valid_name(name), f"Invalid mark name: {name}"
-
+    def bind(self,*, raw:bool=False, **kwargs: Callable[[Any, S], Any]) -> Syntax[A, S]:
         def bind_v(v: A, s: S) -> Tuple[A, S]:
-            if name:
-                real_name = name
-            elif isinstance(v, Marked):
-                real_name = v.name
-            elif isinstance(v, Collect) and isinstance(v.collector, type):
-                real_name = v.collector.__name__
-            assert real_name, "bind name can't be empty"
-            return v, s.bind(real_name, f(v))
+            if isinstance(v, AST) and not raw:
+                vv = v.mapped
+            else:
+                vv = v
+            for real_name, f in kwargs.items():
+                if real_name == '_':
+                    if isinstance(v, Marked):
+                        real_name = v.name
+                    elif isinstance(v, Collect) and isinstance(v.collector, type):
+                        real_name = v.collector.__name__
+                new_value = f(vv, s)
+                s = s.bind(real_name, new_value)
+            return v, s
         return self.map_all(bind_v)
+    
+    def update(self,*, raw:bool=False, **kwargs: Callable[[Tuple[Any, ...], Any], Any]) -> Syntax[A, S]:
+        def replace_v(v: A, s: S) -> tuple[A, S]:
+            if isinstance(v, AST) and not raw:
+                vv = v.mapped
+            else:
+                vv = v
+            for real_name, f in kwargs.items():
+                if real_name == '_':
+                    if isinstance(v, Marked):
+                        real_name = v.name
+                    elif isinstance(v, Collect) and isinstance(v.collector, type):
+                        real_name = v.collector.__name__
+                new_value = f(s.get(real_name), vv)
+                s = s.replace(real_name, new_value)
+            return v, s
+        return self.map_all(replace_v)
+    
+    def check(self,*, raw:bool=False, **kwargs: Callable[[Tuple[Any, ...], Any], bool]) -> Syntax[A, S]:
+        def check_v(this: Optional[Syntax[A, S]], old_s: S, result: Tuple[A, S]) -> Either[Any, Tuple[Any, S]]:
+            v, s = result
+            if isinstance(v, AST) and not raw:
+                vv = v.mapped
+            else:
+                vv = v
+
+            for real_name, f in kwargs.items():
+                if real_name == '_':
+                    if isinstance(v, Marked):
+                        real_name = v.name
+                    elif isinstance(v, Collect) and isinstance(v.collector, type):
+                        real_name = v.collector.__name__
+                old_value = s.get(real_name)
+                if not f(old_value, vv):
+                    return Left.new(Error.new(this=this, 
+                                              message=f"Check failed for '{real_name}' with value {old_value}", 
+                                              state=old_s))
+            return Right.new(result)
+        return self.on_success(check_v)
 
     def to(self, f: Collector[E], id: Hashable = None) -> Syntax[Collect[A, E], S]:
         """Attach a collector to the produced value.

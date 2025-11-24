@@ -80,6 +80,19 @@ class GenState(Bindable, Generic[T]):
             seed=self.seed
         )
     
+    def replace(self, name: str, node:Any)->GenState[T]:
+        """Return a copy with ``node`` replacing existing binding under ``name``."""
+        return GenState.new(
+            binding=self.binding.replace(name, node),
+            ast=self.ast,
+            restore_pruned=self.restore_pruned,
+            seed=self.seed
+        )
+    
+    def get(self, name: str) -> Tuple[Any, ...]: 
+        """Get the binding(s) recorded under ``name``."""
+        return self.binding.bindings.get(name, ()) # type: ignore
+
 
     @property
     def payload_kind(self) -> Optional[PayloadKind]:
@@ -555,7 +568,7 @@ def generate_with(
 
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
-        return v, s.binding.bound()
+        return v, s.binding.bindings
     else:
         return v, None    
 
@@ -566,7 +579,7 @@ def validate(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> Tuple[AST, Non
     
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
-        return v, s.binding.bound()
+        return v, s.binding.bindings
     else:
         return v, None    
 
@@ -579,7 +592,7 @@ def generate(syntax, seed: Optional[int] = None) -> Tuple[AST, None | FrozenDict
     
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
-        return v, s.binding.bound()
+        return v, s.binding.bindings
     else:
         return v, None
     

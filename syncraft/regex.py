@@ -412,7 +412,7 @@ def _group_body() -> Syntax[Any, Any]:
                 negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
                 inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
                 inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
-            )
+            ).update(group_counter = lambda c, v: c[0] + 1 if len(c) > 0 else 1)
 
 
 group = S.lazy(_group_body).named('group')
@@ -484,7 +484,7 @@ backreference = S.choice(
 
 # atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape | **backreference** ;
 atom = S.choice(        
-        backreference,
+        backreference.check(group_counter=lambda c, v: len(c)> 0 and c[0] >= v[0]),
         literal.mark('text').to(LiteralAtom).named('literal'),
         char_class.to(CharClassAtom),
         anchor.to(AnchorAtom),

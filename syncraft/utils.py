@@ -403,6 +403,11 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
     def __repr__(self):
         return f"{self.__class__.__name__}({self._data})"
     
+    def set(self, key, value) -> "FrozenDict[K, V]":
+        new_data = dict(self._data)
+        new_data[key] = value
+        return FrozenDict(new_data)
+    
 
 
 

@@ -16,17 +16,14 @@ from syncraft.input import PayloadKind
     
 @dataclass(frozen=True, slots=True)
 class Binding:
-    bindings : frozenset[Tuple[str, Any]] = frozenset()
+    bindings : FrozenDict[str, Tuple[Any, ...]] = FrozenDict()
     def bind(self, name: str, node: Any) -> Binding:
-        new_binding = set(self.bindings)
-        new_binding.add((name, node))
-        return Binding(bindings=frozenset(new_binding))
+        old: Any = self.bindings.get(name, ())
+        return Binding(bindings=self.bindings.set(name, old + (node,)))
     
-    def bound(self)->FrozenDict[str, Tuple[Any, ...]]:
-        ret = defaultdict(list)
-        for name, node in self.bindings:
-            ret[name].append(node)
-        return FrozenDict({k: tuple(vs) for k, vs in ret.items()})
+    def replace(self, name: str, node: Any) -> Binding:
+        return Binding(bindings=self.bindings.set(name, (node,)))
+
 
 
 @runtime_checkable
@@ -39,6 +36,10 @@ class Bindable(Protocol):
     def map(self, f: Callable[[Any], Any])->Self: ...
     
     def bind(self, name: str, node:Any)->Self: ...
+
+    def replace(self, name: str, node:Any)->Self: ...
+
+    def get(self, name: str) -> Tuple[Any, ...]: ...
 
     def enter(self) -> Self: ...
     

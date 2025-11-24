@@ -15,7 +15,7 @@ from syncraft.algebra import (
      Algebra, YieldChannelType, S, Error
 )
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from functools import total_ordering
 
 from syncraft.syntax import Syntax, RunnerProtocol
@@ -142,8 +142,24 @@ class ParserState(Bindable, Generic[T]):
             line=self.line,
             column=self.column
         )
+    
+    def replace(self, name: str, node:Any)->ParserState[T]:
+        """Return a copy with ``node`` replacing any existing binding under ``name``."""
+        return ParserState.new(
+            binding=self.binding.replace(name, node),
+            input=self.input,
+            index=self.index,
+            base=self.base,
+            final=self.final,
+            safe_base=self.safe_base,
+            choice_depth=self.choice_depth,
+            line=self.line,
+            column=self.column
+        )
         
-
+    def get(self, name: str) -> Tuple[Any, ...]: 
+        """Get the binding(s) recorded under ``name``."""
+        return self.binding.bindings.get(name, ())
 
 
     @property
@@ -569,7 +585,7 @@ def parse_data(syntax: Syntax[Any, Any],
     input : StreamCursor[T] = StreamCursor.from_data(data)
     v, s = parse(syntax, input, cache=cache)
     if s is not None:
-        return v, s.binding.bound()
+        return v, s.binding.bindings
     else:
         return v, None
 
