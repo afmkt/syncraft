@@ -309,18 +309,18 @@ class Algebra(Generic[A, S]):
             else:
                 e = e.push(f"{self.name}")
             raise e
-        except Exception:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-            err = Error.new(
-                message="Unexpected error during parsing",
-                error=traceback_details,
-                this=self,
-                state=input,
-                committed=True,
-                stack=cache.stack if cache is not None else []
-            )
-            return Left.new(err)
+        # except Exception:
+        #     exc_type, exc_value, exc_traceback = sys.exc_info()
+        #     traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        #     err = Error.new(
+        #         message="Unexpected error during parsing",
+        #         error=traceback_details,
+        #         this=self,
+        #         state=input,
+        #         committed=True,
+        #         stack=cache.stack if cache is not None else []
+        #     )
+        #     return Left.new(err)
         
 
     def as_(self, typ: Type[B])->B:

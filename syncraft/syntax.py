@@ -1108,8 +1108,12 @@ class Syntax(Generic[A, S]):
                     c = CallWith(this_f, vv)
                     if c.missing_args:
                         pesudo_args = [... for _ in c.missing_args]
+                    else:
+                        pesudo_args = []
                     if c.missing_kwargs:
                         pesudo_kwargs = {k: ... for k in c.missing_kwargs}
+                    else:
+                        pesudo_kwargs = {}
                     c = CallWith(this_f, vv, *pesudo_args, **pesudo_kwargs)
                 if not c():
                     return Left.new(Error.new(this=this, 

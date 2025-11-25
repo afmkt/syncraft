@@ -482,6 +482,7 @@ backreference = S.choice(
 ).named('backreference')
 
 def _backreference_check(v: Any, group_counter: Any) -> bool:
+    
     if group_counter is ...:
         return False
     else:

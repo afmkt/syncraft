@@ -100,14 +100,12 @@ grp_body= S.choice(
 
 
 def main():
-    print(str(parse_regex(regex_full, r"(b)(a)(?!\1)")))
+    pattern = [
+        r'(?r)$|\W{4,}.+\U000FEAE1?u*',
+        r'4{1}|e*\b(?0)[FyIn]{4,}',
+    ]
+    print(str(parse_regex(regex_full, pattern[1])))
 
-    # prefix = S.lex(gp_neglh=B.lit("(?!")).many().named('"(?!"')
-    # print(str(parse_regex(prefix, r"(?!(?!")))
-
-    # pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
-    # ret = parse_regex(group, pattern)
-    # print(str(ret))
 
 
 
