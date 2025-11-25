@@ -958,9 +958,10 @@ class Runner(Generic[C]):
         if k in entry:
             next_state = entry[k]
         else:
-            matches = self.fa.cs_factory.matches
+            codepoint = self.fa.cs_factory.alphabet.encode(symbol)
+            matches = self.fa.cs_factory.match_codepoint
             for char_set, targets in entry.items():
-                if matches(char_set, symbol):
+                if matches(char_set, codepoint):
                     next_state = targets
                     break
         return self.advance_state(next_state, pos)

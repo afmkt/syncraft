@@ -26,6 +26,20 @@ def callable_str(obj:Any, with_id: bool=False)->str:
         return f"{prefix}{name}"
 
 
+    
+
+
+def is_grammar(f: Callable[..., Any], name: str) -> bool:
+    if hasattr(f, 'syntax'):
+        syn = f.syntax
+        spec = syn.spec
+        if spec.name == f'"{name}"':
+            print("name MATCH", spec.name, f'"{name}"')
+            return True
+    return False
+    
+
+
 def is_lazy(func: Callable[..., Any]) -> bool:
     return hasattr(func, 'is_lazy') and func.is_lazy
 

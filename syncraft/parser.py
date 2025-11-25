@@ -17,7 +17,7 @@ from syncraft.algebra import (
 
 from dataclasses import dataclass, field
 from functools import total_ordering
-
+from syncraft.utils import is_grammar
 from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.input import StreamCursor, PayloadKind
 
@@ -497,6 +497,9 @@ class Parser(Algebra[T, ParserState[T]]):
                               YieldChannelType, 
                               ParserState[T], 
                               Either[Any, Tuple[T, ParserState[T]]]]:
+            if is_grammar(lex_run, name='(?!'):
+                print(lexer.filepath)
+                pass
             lexer.reset()
             yield from ()
             while True:

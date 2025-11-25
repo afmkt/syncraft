@@ -291,12 +291,12 @@ escaped_metachar = (backslash >> meta_char).map(lambda t: t[0]).named('escaped_m
 escaped_0 = S.lex(escaped_0=B.lit("\\0")).named('"\\0"')
 octal_digit = S.lex(octal_digit=B.range("0", "7")).named('octal_digit')
 octal_escape = S.choice(
-    (escaped_0 >> octal_digit + octal_digit).map(lambda t: chr(int(t[0] + t[2], 8))),
-    (backslash >> octal_digit.many(at_least=1)).map(lambda t: chr(int(''.join(t), 8)))
+    (escaped_0 >> octal_digit + octal_digit).map(lambda t: chr(int(t[0].text + t[1].text, 8))),
+    (backslash >> octal_digit.many(at_least=1)).map(lambda t: chr(int(''.join([tt.text for tt in t[0]]), 8)))
 ).named('octal_escape')
 
 # escaped_literal   = control_escape | **octal_escape** | unicode_escape | escaped_metachar ;
-escaped_literal   = control_escape | octal_escape | unicode_escape | escaped_metachar 
+escaped_literal   = octal_escape | control_escape | unicode_escape | escaped_metachar 
 # literal           = escaped_literal | literal_char ;
 literal = escaped_literal | literal_char
 # class_meta_char   = "-" | "]" | "\\" ;
@@ -379,17 +379,17 @@ def _group_body() -> Syntax[Any, Any]:
     # group = "(" regex ")"
     plain = regex.mark('pattern').between(lparen, rparen)
     # group = "(?:" regex ")"
-    noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
+    noncapturing = S.seq(S.lex(gp_noncap=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
     # group = "(?P<" name ">" regex ")"
     named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
     # group = "(?=" regex ")"
-    lookahead = S.seq(S.lex(gp_lookahead=B.lit("(?=")).named('"(?="'), +regex.mark('pattern'), rparen)
+    lookahead = S.seq(S.lex(gp_lh=B.lit("(?=")).named('"(?="'), +regex.mark('pattern'), rparen)
     # group = "(?!" regex ")"
-    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
+    negative_lookahead = S.seq(S.lex(gp_neglh=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
     # group = "(?<=" regex ")"
-    lookbehind = S.seq(S.lex(gp_lookbehind=B.lit("(?<=")).named('"(?<="'), +regex.mark('pattern'), rparen)
+    lookbehind = S.seq(S.lex(gp_lb=B.lit("(?<=")).named('"(?<="'), +regex.mark('pattern'), rparen)
     # group = "(?<!" regex ")"
-    negative_lookbehind = S.seq(S.lex(gp_negative_lookbehind=B.lit("(?<!" )).named('"(?<!"'), +regex.mark('pattern'), rparen)
+    negative_lookbehind = S.seq(S.lex(gp_neglb=B.lit("(?<!" )).named('"(?<!"'), +regex.mark('pattern'), rparen)
     # group = "(?" inline_flags ")"
     inline_flag_only = S.seq(S.lex(gp_inline_flags=B.lit("(?")).named('"(?"'), 
                              +inline_flags, 

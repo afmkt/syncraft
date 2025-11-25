@@ -165,6 +165,9 @@ class CharSetFactory(Generic[C]):
         return False
 
 
+    def match_codepoint(self, cs: CharSet, codepoint: int) -> bool:
+        return any(start <= codepoint <= end for start, end in cs)    
+
     def matches(self, cs: CharSet, cc: C) -> bool:
         c = self.alphabet.encode(cc)
         return any(start <= c <= end for start, end in cs)

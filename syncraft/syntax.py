@@ -235,7 +235,7 @@ class MarkedSpec(SyntaxSpec):
         if self.name:
             return self.format("{0}", self.name)
         else:
-            return self.format("{spec}.mark{mname}", spec=str(self.spec), mname=self.mname)
+            return self.format("{spec}.mark({mname})", spec=str(self.spec), mname=self.mname)
         
     @property
     def complexity(self) -> float:
@@ -808,7 +808,8 @@ class Syntax(Generic[A, S]):
                 depth_str=f"{depth}" if depth is not None else ""
                 lns = [f"{indent if i>0 else ''}{s}" for i, s in enumerate(value.compact)]
                 s = '\n'.join(lns)
-                print(f"        Error: {s} {depth_str}")
+                print(f"        Error: {s} --- backtrack depth: {depth_str}")
+                print()
             else:
                 if hasattr(value, 'mapped'):
                     print(f"        Value: {getattr(value, 'mapped')}")
@@ -1100,7 +1101,11 @@ class Syntax(Generic[A, S]):
                                               message=f"Check failed for 'this' with value {vv}: {check_result}", 
                                               state=old_s))
             elif callable(this_f):
-                c = CallWith(this_f, vv, **s.all_bindings)
+                d = s.all_bindings
+                if d:
+                    c = CallWith(this_f, vv, **d)
+                else:
+                    c = CallWith(this_f, vv, ...)
                 if not c():
                     return Left.new(Error.new(this=this, 
                                               message=f"Check failed for 'this' with value {vv}", 

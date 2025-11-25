@@ -119,7 +119,8 @@ class LexerProtocol(Protocol, Generic[C]):
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]: ...
 
-
+    @property
+    def filepath(self) -> Optional[Path]: ...
 
 class LexerBase(LexerProtocol[C]):
     @classmethod
@@ -193,24 +194,24 @@ class LexerCache:
              *,
              builders: Set[Builder[Any]], 
              factory: Callable[[], Lexer[Any]],
-             dir: Path) -> Lexer[Any]:
+             dir: Path) -> Tuple[Lexer[Any], Path]:
         tmp = sorted(repr(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
         with self.lock:
             if key in self.dict:
-                return self.dict[key]
+                return self.dict[key], dir / f"{key}.lex"
             else:
                 lexer = self._load(dir, key)
                 if lexer is not None:
                     self.dict[key] = lexer
-                    return lexer
+                    return lexer, dir / f"{key}.lex"
                 lexer = factory()
                 if lexer is not None:
                     self.dict[key] = lexer
                     self._save(dir, key, lexer)
-                    return lexer
+                    return lexer, dir / f"{key}.lex"
                 raise SyncraftError(
                     "Lexer factory did not produce a lexer",
                     offender=factory,
@@ -224,6 +225,7 @@ class Lexer(LexerBase[C]):
     default_mode: str | None 
     _stack: deque[Mode[C]] = field(default_factory=deque)
     cache: ClassVar[LexerCache] = LexerCache()
+    filepath: Optional[Path] = None
 
     
     def tags(self) -> frozenset[str|Enum|None]:
@@ -260,10 +262,11 @@ class Lexer(LexerBase[C]):
         builders, dir = fabuilder(**kwargs)
         if not builders:
             return None
-        return cls.cache.load(builders=builders, 
+        lexer, path = cls.cache.load(builders=builders, 
                               factory=lambda: cls.from_builders(*builders, default_mode=default_mode),
                               dir=dir)
-        
+        lexer.filepath = path
+        return lexer
 
     def reset(self) -> None:
         self.current_mode.reset()

@@ -572,7 +572,7 @@ def test_neg_lookahead():
     negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
     nl = r"(?!\1)"
     ret = parse_regex(negative_lookahead, nl, raw=False)
-    assert isinstance(ret, Error)
+    assert not isinstance(ret, Error)
 
 def test_noncap():    
     noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)

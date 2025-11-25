@@ -111,10 +111,10 @@ class Error:
             else:
                 lines.append(f"At line: {deepest.state.line if deepest.state.line > 0 else 'N/A'}, column: {deepest.state.column if deepest.state.column > 0 else 'N/A'}")
             if deepest.error:
-                lines.append(f"{self._format_error(deepest.error)}")
+                err_str = self._format_error(deepest.error)
+                lines.extend(err_str.splitlines())
             elif deepest.message:
                 lines.append(f"{deepest.message}")
-            lines.append(f"{deepest.str_this}")
             return lines
         return [str(self)]
 
@@ -300,7 +300,7 @@ class Algebra(Generic[A, S]):
                     if isinstance(result.value, Error):
                         if not result.value.stack:
                             result.value.stack = cache.stack + [(self.run_f, input.cache_key)]
-                            # print(str(result.value))
+                            
                 return result
             
         except LeftRecursionError as e:
@@ -653,7 +653,7 @@ class Algebra(Generic[A, S]):
                 return Left.new(Error.new(
                     message="Expected end of input",
                     this=cls,
-                    state=input
+                    state=input,
                 ))
         return cls(run_f=eof_run) # type: ignore        
 

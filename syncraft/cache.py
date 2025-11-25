@@ -220,6 +220,7 @@ class Cache(Generic[S]):
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
     profiler: Optional[Profile] = None
+    
 
 
     def with_profiler(self, sample_interval: int = 1) -> Cache[S]:
