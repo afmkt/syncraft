@@ -267,4 +267,22 @@ def test_fuzzing():
 
 
 
+def test_advanced():
+    pattern = [
+        r'(?r)$|\W{4,}.+\U000FEAE1?u*',
+        r'4{1}|e*\b(?0)[FyIn]{4,}',
+        r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)',
+        r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
+        r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}'
+    ]
+    vr = verify(pattern[0])
+    assert vr.ok, f"Pattern failed to parse: {pattern[0]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[1])
+    assert vr.ok, f"Pattern failed to parse: {pattern[1]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[2])
+    assert vr.ok, f"Pattern failed to parse: {pattern[2]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[3])     
+    assert vr.ok, f"Pattern failed to parse: {pattern[3]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[4])
+    assert vr.ok, f"Pattern failed to parse: {pattern[4]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
