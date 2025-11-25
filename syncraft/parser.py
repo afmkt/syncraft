@@ -497,9 +497,9 @@ class Parser(Algebra[T, ParserState[T]]):
                               YieldChannelType, 
                               ParserState[T], 
                               Either[Any, Tuple[T, ParserState[T]]]]:
-            if is_grammar(lex_run, name='(?!'):
-                print(lexer.filepath)
-                pass
+            # if is_grammar(lex_run, name='(?!'):
+            #     print(lexer.filepath)
+            #     pass
             lexer.reset()
             yield from ()
             while True:

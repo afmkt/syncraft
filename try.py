@@ -5,7 +5,7 @@ from pyDatalog import pyDatalog as d
 from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
 from syncraft.algebra import Error
-from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, group
+from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind
 import timeit
 
 
@@ -61,13 +61,50 @@ def z():
     print("tuple / callable", float(t2) / t1)
         
 
+plain = regex.mark('pattern').between(lparen, rparen)
+# group = "(?:" regex ")"
+noncapturing = S.seq(S.lex(gp_noncap=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
+# group = "(?P<" name ">" regex ")"
+named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
+# group = "(?=" regex ")"
+lookahead = S.seq(S.lex(gp_lh=B.lit("(?=")).named('"(?="'), +regex.mark('pattern'), rparen)
+# group = "(?!" regex ")"
+negative_lookahead = S.seq(S.lex(gp_neglh=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
+# group = "(?<=" regex ")"
+lookbehind = S.seq(S.lex(gp_lb=B.lit("(?<=")).named('"(?<="'), +regex.mark('pattern'), rparen)
+# group = "(?<!" regex ")"
+negative_lookbehind = S.seq(S.lex(gp_neglb=B.lit("(?<!" )).named('"(?<!"'), +regex.mark('pattern'), rparen)
+# group = "(?" inline_flags ")"
+inline_flag_only = S.seq(S.lex(gp_inline_flags=B.lit("(?")).named('"(?"'), 
+                            +inline_flags, 
+                            rparen)
+# group = "(?" inline_flags ":" regex ")"
+inline_flag_with_colon = S.seq(S.lex(gp_inline_flags_colon=B.lit("(?")).named('"(?"'), 
+                                +inline_flags, 
+                                colon, 
+                                +regex.mark('pattern'), 
+                                rparen)
 
+
+grp_body= S.choice(
+            plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),
+            noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing'),
+            named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="named").named('named'),
+            lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t), id="lookahead").named('lookahead'),
+            negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t), id="negative_lookahead").named('negative_lookahead'),
+            lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t), id="lookbehind").named('lookbehind'),
+            negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
+            inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
+            inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
+        ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
 
 
 def main():
-    # print(str(parse_regex(regex_full, r"(a)(?!\1)")))
-    prefix = S.lex(gp_neglh=B.lit("(?!")).many().named('"(?!"')
-    print(str(parse_regex(prefix, r"(?!(?!")))
+    print(str(parse_regex(regex_full, r"(b)(a)(?!\1)")))
+
+    # prefix = S.lex(gp_neglh=B.lit("(?!")).many().named('"(?!"')
+    # print(str(parse_regex(prefix, r"(?!(?!")))
+
     # pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
     # ret = parse_regex(group, pattern)
     # print(str(ret))

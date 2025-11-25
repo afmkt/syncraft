@@ -1105,7 +1105,12 @@ class Syntax(Generic[A, S]):
                 if d:
                     c = CallWith(this_f, vv, **d)
                 else:
-                    c = CallWith(this_f, vv, ...)
+                    c = CallWith(this_f, vv)
+                    if c.missing_args:
+                        pesudo_args = [... for _ in c.missing_args]
+                    if c.missing_kwargs:
+                        pesudo_kwargs = {k: ... for k in c.missing_kwargs}
+                    c = CallWith(this_f, vv, *pesudo_args, **pesudo_kwargs)
                 if not c():
                     return Left.new(Error.new(this=this, 
                                               message=f"Check failed for 'this' with value {vv}", 

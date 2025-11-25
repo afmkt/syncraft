@@ -477,14 +477,18 @@ class DotAtom:
 
 # **backreference     = "\\" number | "\\g<" name ">" ;**
 backreference = S.choice(
-    (backslash >> number).named('backreference_number'),
-    (S.lex(_=B.lit("\\g<")) >> name // greater).named('backreference_name')
+    (backslash >> number).map(lambda n: n[0]).named('backreference_number'),
+    (S.lex(_=B.lit("\\g<")) >> name // greater).map(lambda n: n[0]).named('backreference_name')
 ).named('backreference')
 
-
+def _backreference_check(v: Any, group_counter: Any) -> bool:
+    if group_counter is ...:
+        return False
+    else:
+        return len(group_counter) >= v
 # atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape | **backreference** ;
 atom = S.choice(        
-        backreference.check(lambda v, group_counter: group_counter is not ... and group_counter >= v[0]),
+        backreference.check(_backreference_check),
         literal.mark('text').to(LiteralAtom).named('literal'),
         char_class.to(CharClassAtom),
         anchor.to(AnchorAtom),
