@@ -1,12 +1,14 @@
 from __future__ import annotations
 from syncraft.regex import (
-    parse_regex, parse,
-    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
+    parse_regex, parse, greater, rparen, name, lparen, colon, inline_flags,
+    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex, 
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
 from syncraft.algebra import Error
 
+from syncraft.syntax import Syntax as S
+from syncraft.fa import Builder as B
 
 
 def test_literal_characters():
@@ -566,3 +568,35 @@ def test_regex_unicode_category_escape():
     assert p.atom.categories == ("L",)
 
 
+def test_neg_lookahead():
+    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
+    nl = r"(?!\1)"
+    ret = parse_regex(negative_lookahead, nl, raw=False)
+    assert not isinstance(ret, Error)
+
+def test_noncap():    
+    noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
+    noncap = r"(?:['\"])"
+    ret = parse_regex(noncapturing, noncap, raw = False)
+    assert not isinstance(ret, Error)
+    
+
+def test_named():
+    named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
+    s = r"(?P<quote>['\"])"
+    ret = parse_regex(named, s, raw = False)
+    assert not isinstance(ret, Error)
+    
+
+def test_complex():
+    pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
+    ret = parse_regex(regex, pattern, raw = False)
+    assert not isinstance(ret, Error)
+    
+
+
+def test_complex1():
+    pattern = r'l*[^UUf\w]?|\w{5}\W{0,5}\w*(?w)|J*\B'
+    ret= parse_regex(regex, pattern, raw = False)
+    assert not isinstance(ret, Error)
+    

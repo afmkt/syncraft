@@ -1,34 +1,10 @@
 from __future__ import annotations
-from syncraft.regex import parse, parse_regex, group, regex, lparen, rparen, name, greater, inline_flags, colon
+
 from rich import print
+from pyDatalog import pyDatalog as d
 import timeit
-from syncraft.regex import benchmark_fair, verify
-from syncraft.syntax import Syntax as S
-from syncraft.fa import Builder as B
-plain = regex.mark('pattern').between(lparen, rparen)
-noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
-named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
-negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
 
-def test_neg_lookahead():
-    nl = r"(?!\1)"
-    ret = parse_regex(negative_lookahead, nl, raw=False)
-    print(str(ret))
 
-def test_noncap():    
-    noncap = r"(?:['\"])"
-    ret = parse_regex(noncapturing, noncap, raw = False)
-    print(str(ret))
-
-def test_named():
-    name = r"(?P<quote>['\"])"
-    ret = parse_regex(named, name, raw = False)
-    print(str(ret))
-
-def test_all():
-    pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
-    ret = parse_regex(regex, pattern, raw = False)
-    print(str(ret))
 
 
 def x():
@@ -81,12 +57,15 @@ def z():
     print("tuple / callable", float(t2) / t1)
         
 
-def test():
-    pattern = r'l*[^UUf\w]?|\w{5}\W{0,5}\w*(?w)|J*\B'
-    ret = verify(pattern)
-    print(ret)
-    print(str(ret.err_syncraft))
 
+
+
+def main():
+    X, Y = d.Variable(), d.Variable()
+    
+    print((X=='world') & (Y=='Hello ' + X))
+
+    
 
 if __name__ == "__main__":
     # test_noncap()
@@ -99,4 +78,5 @@ if __name__ == "__main__":
     # r = benchmark_fair()
     # for line in r:
     #     print(line)
-    test()
+    # test()
+    main()

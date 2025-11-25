@@ -1660,6 +1660,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pydatalog"
+version = "0.17.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/81/177499a23ca0802f9cca7af4df7c2ea74e91e0526c9e411204a58e4f01f9/pyDatalog-0.17.4.tar.gz", hash = "sha256:1db6739b0a204c36d163c4ec37bb816e0ff2d276e12c9aff0b34ee9f102eac79", size = 325546, upload-time = "2022-11-30T16:03:14.072Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/15/95498f9a5e1455438e2927841b0829769136ab266747daad2da70b032516/pyDatalog-0.17.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1e18c34712a9d3bd660a33c294e3c4da987e08cc8f6cfea8f1905735723d589c", size = 1781908, upload-time = "2022-11-30T16:01:36.63Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/93/eb732055bbe8e319b00c77eb71c4051fe58b3057219d4dbd9f4a0f44e371/pyDatalog-0.17.4-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:155359d13ea8503b3479e578aee871f0a93ffee806c3e34b73ce07649e7c96a1", size = 1695672, upload-time = "2022-11-30T16:01:39.794Z" },
+    { url = "https://files.pythonhosted.org/packages/6a/fd/bc03647ce1dc25beaf80606391a7b067d7ad4737d0bb6ee7146647981115/pyDatalog-0.17.4-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:91364894292c771ece2eae6d54af34264b81fe67c8f03d8f0974d416e7ee0f55", size = 1698917, upload-time = "2022-11-30T16:01:42.386Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/d7/3846e4e92d02243d84a9d8c295864b88087707a3b5d7399cbc061d381875/pyDatalog-0.17.4-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:be5e428d3ca3b3f8ea348906288d97327bda4f3bd6e65d145ba7d8371592ab50", size = 1775314, upload-time = "2022-11-30T16:01:44.956Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/43/a422f20cc31535ba6b4db498ff56718069599f184f4c4b192794d0549c2d/pyDatalog-0.17.4-cp310-cp310-win32.whl", hash = "sha256:25bd15c812782055e971deebecc179e3cfddf0e84a6fe1014338c56a5a396a70", size = 250077, upload-time = "2022-11-30T16:01:47.797Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/22/ce7b613734f8f029157c6251ea72c6340e25eef238fbfb1a3ed01dfcd354/pyDatalog-0.17.4-cp310-cp310-win_amd64.whl", hash = "sha256:dd235a78fe05dcdf21e3323abf0370ef934cfb46e4f8bb459ff21d301c583c3b", size = 272093, upload-time = "2022-11-30T16:01:50.416Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2348,6 +2362,7 @@ dev = [
     { name = "mkdocstrings-python" },
     { name = "mypy" },
     { name = "nbval" },
+    { name = "pydatalog" },
     { name = "pytest" },
     { name = "pytest-profiling" },
     { name = "railroad-diagrams" },
@@ -2376,6 +2391,7 @@ dev = [
     { name = "mkdocstrings-python", specifier = ">=1.10.0" },
     { name = "mypy", specifier = ">=1.18.2" },
     { name = "nbval", specifier = ">=0.10.0" },
+    { name = "pydatalog", specifier = ">=0.17.4" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-profiling", specifier = ">=1.8.1" },
     { name = "railroad-diagrams", specifier = ">=3.0.1" },

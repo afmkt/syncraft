@@ -41,7 +41,9 @@ TODO
 
 - [ ]  regex.py convert Regex to Builder, for grammar authoring
 
-- [ ]  Semantic layer (datalog + unification). for AST analysis
+- [ ]  Tiered semantic layer, 1. Callable[..., bool] 2. propositional predicate 3. PyDatalog adapter
+
+
 
 
 
