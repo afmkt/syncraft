@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
-from syncraft.constraint import Bindable
+from syncraft.constraint import Bindable, Constraint
 
 from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice, AST
 
@@ -1026,59 +1026,86 @@ class Syntax(Generic[A, S]):
         return self.optional
 
     ######################################################################## data processing combinators #########################################################
-    def bind(self,*, raw:bool=False, **kwargs: Callable[[Any, S], Any]) -> Syntax[A, S]:
+    def bind(self, 
+             this_f: None | str | Callable[[Any, S], Any] = None,
+             *, 
+             raw:bool=False, 
+             **kwargs: Callable[[Any, S], Any]) -> Syntax[A, S]:
         def bind_v(v: A, s: S) -> Tuple[A, S]:
             if isinstance(v, AST) and not raw:
                 vv = v.mapped
             else:
                 vv = v
+
+            if callable(this_f):
+                new_value = this_f(vv, s)
+                if isinstance(v, Marked):
+                    real_name = v.name
+                elif isinstance(v, Collect) and isinstance(v.collector, type):
+                    real_name = v.collector.__name__
+                else:
+                    raise SyncraftError("bind this_f requires marked or collected value", offender=v, expect="Marked or Collect")
+                s = s.bind(real_name, new_value)
+            elif isinstance(this_f, str):
+                s = s.bind(this_f, vv)
             for real_name, f in kwargs.items():
-                if real_name == '_':
-                    if isinstance(v, Marked):
-                        real_name = v.name
-                    elif isinstance(v, Collect) and isinstance(v.collector, type):
-                        real_name = v.collector.__name__
                 new_value = f(vv, s)
                 s = s.bind(real_name, new_value)
+
             return v, s
         return self.map_all(bind_v)
     
-    def update(self,*, raw:bool=False, **kwargs: Callable[[Any, Any], Any]) -> Syntax[A, S]:
+    def update(self,
+               this_f: None | str | Callable[[Any, Any], Any] = None,
+               *, 
+               raw:bool=False, 
+               **kwargs: Callable[[Any, Any], Any]) -> Syntax[A, S]:
         def replace_v(v: A, s: S) -> tuple[A, S]:
             if isinstance(v, AST) and not raw:
                 vv = v.mapped
             else:
                 vv = v
+            if callable(this_f):
+                if isinstance(v, Marked):
+                    real_name = v.name
+                elif isinstance(v, Collect) and isinstance(v.collector, type):
+                    real_name = v.collector.__name__
+                else:
+                    raise SyncraftError("update this_f requires marked or collected value", offender=v, expect="Marked or Collect")
+                new_value = this_f(s.get(real_name), vv)
+                s = s.replace(real_name, new_value)
+            elif isinstance(this_f, str):
+                s = s.replace(this_f, vv)
+
             for real_name, f in kwargs.items():
-                if real_name == '_':
-                    if isinstance(v, Marked):
-                        real_name = v.name
-                    elif isinstance(v, Collect) and isinstance(v.collector, type):
-                        real_name = v.collector.__name__
                 new_value = f(s.get(real_name), vv)
                 s = s.replace(real_name, new_value)
             return v, s
         return self.map_all(replace_v)
     
-    def check(self,*, raw:bool=False, **kwargs: Callable[[Any, Any], bool]) -> Syntax[A, S]:
+    def check(self,
+              this_f: None | Callable[..., bool] | Constraint = None,
+              *, 
+              raw:bool=False) -> Syntax[A, S]:
         def check_v(this: Optional[Syntax[A, S]], old_s: S, result: Tuple[A, S]) -> Either[Any, Tuple[Any, S]]:
             v, s = result
             if isinstance(v, AST) and not raw:
                 vv = v.mapped
             else:
                 vv = v
-
-            for real_name, f in kwargs.items():
-                if real_name == '_':
-                    if isinstance(v, Marked):
-                        real_name = v.name
-                    elif isinstance(v, Collect) and isinstance(v.collector, type):
-                        real_name = v.collector.__name__
-                old_value = s.get(real_name)
-                if not f(old_value, vv):
+            if isinstance(this_f, Constraint):
+                check_result = this_f(vv, s.all_bindings)
+                if not check_result.result:
                     return Left.new(Error.new(this=this, 
-                                              message=f"Check failed for '{real_name}' with value {old_value}", 
+                                              message=f"Check failed for 'this' with value {vv}: {check_result}", 
                                               state=old_s))
+            elif callable(this_f):
+                c = CallWith(this_f, vv, **s.all_bindings)
+                if not c():
+                    return Left.new(Error.new(this=this, 
+                                              message=f"Check failed for 'this' with value {vv}", 
+                                              state=old_s))
+
             return Right.new(result)
         return self.on_success(check_v)
 

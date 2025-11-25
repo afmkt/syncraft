@@ -484,7 +484,7 @@ backreference = S.choice(
 
 # atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape | **backreference** ;
 atom = S.choice(        
-        backreference.check(group_counter=lambda c, v: c is not ... and c >= v[0]),
+        backreference.check(lambda v, group_counter: group_counter is not ... and group_counter >= v[0]),
         literal.mark('text').to(LiteralAtom).named('literal'),
         char_class.to(CharClassAtom),
         anchor.to(AnchorAtom),

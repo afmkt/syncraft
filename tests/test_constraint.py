@@ -52,5 +52,5 @@ def test_to() -> None:
     def p(condition, then, otherwise)->bool:
         return True
     if bound is not None:
-        forall(p)(bound)
+        forall(p)(None, bound)
     g, bound = gen.generate_with(syntax, ast, restore_pruned=True)

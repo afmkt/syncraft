@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from rich import print
 from pyDatalog import pyDatalog as d
+from syncraft.syntax import Syntax as S
+from syncraft.fa import Builder as B
+from syncraft.algebra import Error
+from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full
 import timeit
 
 
@@ -61,10 +65,15 @@ def z():
 
 
 def main():
-    X, Y = d.Variable(), d.Variable()
-    
-    print((X=='world') & (Y=='Hello ' + X))
+    pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
+    ret = parse_regex(regex_full, pattern)
+    print(str(ret))
 
+def test_neg_lookahead():
+    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
+    nl = r"(?!\1)"
+    ret = parse_regex(negative_lookahead, nl, raw=False)
+    print(str(ret))
     
 
 if __name__ == "__main__":
@@ -78,5 +87,5 @@ if __name__ == "__main__":
     # r = benchmark_fair()
     # for line in r:
     #     print(line)
-    # test()
+    test_neg_lookahead()
     main()

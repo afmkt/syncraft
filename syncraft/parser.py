@@ -156,14 +156,20 @@ class ParserState(Bindable, Generic[T]):
             line=self.line,
             column=self.column
         )
+    
+    @property
+    def all_bindings(self) -> FrozenDict[str, Tuple[Any, ...]]:
+        """Get all bindings recorded in this ParserState."""
+        return self.binding.bindings
 
-    def get(self, name: str) -> Tuple[Any, ...] | Any: 
+
+    def get(self, name: str, unwrapper: bool=True) -> Tuple[Any, ...] | Any: 
         """Get the binding(s) recorded under ``name``."""
         ret = self.binding.bindings.get(name, ())
         if len(ret) == 1:
-            return ret[0]
+            return ret[0] if unwrapper else ret
         elif len(ret) == 0:
-            return ...
+            return ... if unwrapper else ()
         else:
             return ret
 
