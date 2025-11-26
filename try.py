@@ -105,13 +105,15 @@ def main():
         r'4{1}|e*\b(?0)[FyIn]{4,}',
         r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)',
         r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
-        r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}'
+        r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}',
+        r'(?p)\W^|r?u{2,6}',
     ]
     print(parse_regex(regex_full, pattern[0]))
     print(parse_regex(regex_full, pattern[1]))
     print(parse_regex(regex_full, pattern[2]))
     print(parse_regex(regex_full, pattern[3]))
     print(parse_regex(regex_full, pattern[4]))
+    print(parse_regex(regex_full, pattern[5]))
 
 
 def test():
@@ -128,8 +130,8 @@ if __name__ == "__main__":
     # x()
     # y()
     # z()
-    r = benchmark_fair()
-    for line in r:
-        print(line)
+    # r = benchmark_fair()
+    # for line in r:
+    #     print(line)
     # test()
-    # main()
+    main()

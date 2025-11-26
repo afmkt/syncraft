@@ -462,6 +462,10 @@ def _group_body() -> Syntax[Any, Any]:
         S.seq(S.lex(_=B.lit("(?R")).named('"(?R'), rparen),
         # group = "(?r)"
         S.seq(S.lex(_=B.lit("(?r")).named('"(?r'), rparen),
+        # group = "(?P)"
+        S.seq(S.lex(_=B.lit("(?P")).named('"(?P'), rparen),
+        # group = "(?p)"
+        S.seq(S.lex(_=B.lit("(?p")).named('"(?p'), rparen),
         # group = "(?0)"
         S.seq(S.lex(_=B.lit("(?0")).named('"(?0'), rparen),   
     )

@@ -1149,6 +1149,14 @@ class Builder(Generic[C]):
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
 
     # ---- Factory entry points ----
+    def name(self) -> Optional[str]:
+        match self.kind:
+            case _NodeKind.LITERAL:
+                return f"'{self.text!r}'"
+            case _NodeKind.ONEOF:
+                return f"[{self.text!r}]"
+        return None
+            
     def __str__(self) -> str:
         match self.kind:
             case _NodeKind.RANGE:
