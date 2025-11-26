@@ -1,7 +1,7 @@
 from enum import Enum
 from syncraft.charset import CharSet, CharSetFactory
 from syncraft.alphabet import Alphabet
-from syncraft.fa import NFA, FAState
+from syncraft.fa import NFA, FAStateFactory
 from syncraft.utils import FrozenDict
 
 
@@ -42,7 +42,7 @@ def test_both_anchors_empty():
     # ^$ should match empty only. Construct NFA with epsilon accept and then add both anchors.
     uni = CharSetFactory(alphabet=Alphabet(str))
     # Build empty-match NFA: init is also accept, no transitions.
-    init = FAState()
+    init = FAStateFactory.next()
     empty = NFA(
         cs_factory=uni,
         init=init,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
-from syncraft.fa import DFA, FAState  # type: ignore
+from syncraft.fa import DFA, FAStateFactory  # type: ignore
 from syncraft.charset import CharSet, CharSetFactory
 from syncraft.alphabet import Alphabet
 from syncraft.utils import FrozenDict
@@ -35,10 +35,10 @@ def _build_dfa():
     cs_factory = CharSetFactory(alphabet=Alphabet(str))
     a = cs_factory.create('a')
     b = cs_factory.create('b')
-    S = FAState()
-    P = FAState()
-    Q = FAState()
-    F = FAState()
+    S = FAStateFactory.next()
+    P = FAStateFactory.next()
+    Q = FAStateFactory.next()
+    F = FAStateFactory.next()
     transitions = {
         S: {a: P, b: Q},
         P: {a: F, b: P},

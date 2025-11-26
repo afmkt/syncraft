@@ -115,7 +115,7 @@ def main():
 
 
 def test():
-    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).update(group_counter=lambda c, _: 1).named('"(?!"'), +regex.mark('pattern'), rparen)
+    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!"))
     nl = r"(?!\1)"
     ret = parse_regex(negative_lookahead, nl, raw=False)
     assert not isinstance(ret, Error)

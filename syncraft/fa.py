@@ -22,29 +22,26 @@ import random
 
 Tag = str | Enum
 C = TypeVar('C', bound=Hashable)
-
-FAStateBuilder = Callable[[], 'FAState']
+FAState = int
+FAStateBuilder = Callable[[], FAState]
 @dataclass(frozen=True, slots=True)
-class FAState:
+class FAStateFactory:
     _counter: ClassVar[int] = 0  # shared across all states
-    id: int = field(default_factory=lambda: FAState._next_id())
+    # id: int = field(default_factory=lambda: FAStateFactory._next_id())
 
     @classmethod
     def builder(cls, init: int = 0) -> FAStateBuilder:
         def build() -> FAState:
             nonlocal init
             init += 1
-            return cls(id=init)
+            return init
         return build
 
     @classmethod
-    def _next_id(cls) -> int:
+    def next(cls) -> int:
         val = cls._counter
         cls._counter += 1
         return val
-
-    def __str__(self) -> str:
-        return f"s{self.id}"    
     
 
 
@@ -99,7 +96,7 @@ class DFA(Generic[C]):
     
     @property
     def normalized(self)->DFA[C]:
-        fabuilder = FAState.builder()
+        fabuilder = FAStateFactory.builder()
         
         states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys()) | {self.init}
         st_map: dict[FAState, FAState] = {k: fabuilder() for k in states}
@@ -135,7 +132,7 @@ class DFA(Generic[C]):
             return self
 
         # alphabet = self.alphabet
-        fabuilder = FAState.builder()
+        fabuilder = FAStateFactory.builder()
 
         # Collect all states explicitly referenced.
         states: Set[FAState] = set(self.transitions.keys()) | set(self.accept.keys())
@@ -328,7 +325,7 @@ class DFA(Generic[C]):
     def any(self) -> DFA[C]:
         cs_factory = self.cs_factory
         # Single state DFA accepting everything
-        s = FAState()
+        s = FAStateFactory.next()
         transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = FrozenDict({s: FrozenDict({cs_factory.any(): s})})
         accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({s: frozenset()})
         return DFA(
@@ -351,13 +348,13 @@ class DFA(Generic[C]):
         assert self.cs_factory == other.cs_factory, "Cannot combine DFAs with different universes"
         cs_factory = self.cs_factory
         # sentinel sink states for "no transition" from a DFA on a piece
-        sink1 = FAState()
-        sink2 = FAState()
+        sink1 = FAStateFactory.next()
+        sink2 = FAStateFactory.next()
 
         # map (s1, s2) -> new FAState
         state_map: dict[tuple[FAState, FAState], FAState] = {}
         start_pair = (self.init, other.init)
-        state_map[start_pair] = FAState()
+        state_map[start_pair] = FAStateFactory.next()
         work_list = deque([start_pair])
 
         transitions: dict[FAState, dict[CharSet, FAState]] = {}
@@ -414,7 +411,7 @@ class DFA(Generic[C]):
 
                     tgt_pair = (t1 if t1 is not None else sink1, t2 if t2 is not None else sink2)
                     if tgt_pair not in state_map:
-                        state_map[tgt_pair] = FAState()
+                        state_map[tgt_pair] = FAStateFactory.next()
                         work_list.append(tgt_pair)
 
                     next_trans[piece_cs] = state_map[tgt_pair]
@@ -479,7 +476,7 @@ class DFA(Generic[C]):
             all_states.update(trans.values())
         all_states.update(self.accept.keys())
         all_states.add(self.init)
-        state_map: dict[FAState, FAState] = {s: FAState() for s in all_states}
+        state_map: dict[FAState, FAState] = {s: FAStateFactory.next() for s in all_states}
         nfa_trans: dict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = {}
         for s, trans in self.transitions.items():
             nfa_s = state_map[s]
@@ -533,7 +530,7 @@ class DFA(Generic[C]):
         cs_factory = nfa.cs_factory
         start:frozenset[FAState] = nfa.closure({nfa.init})
         work_list = deque([start])
-        dfa_states : dict[frozenset[FAState], FAState] = {start: FAState()}
+        dfa_states : dict[frozenset[FAState], FAState] = {start: FAStateFactory.next()}
         trans: dict[FAState, dict[CharSet, FAState]] = {}
         while work_list:
             current = work_list.popleft()
@@ -552,7 +549,7 @@ class DFA(Generic[C]):
                         tgt_states.update(targets)                         
                 closure = nfa.closure(tgt_states)
                 if closure not in dfa_states:
-                    dfa_states[closure] = FAState()
+                    dfa_states[closure] = FAStateFactory.next()
                     work_list.append(closure)
                 trans.setdefault(current_dfa_state, {})[cs_factory.from_interval([p])] = dfa_states[closure]
 
@@ -594,7 +591,7 @@ class NFA(Generic[C]):
 
     def start(self) -> NFA[C]:
         # New synthetic start state with a START-labeled edge into original init
-        new_start = FAState()
+        new_start = FAStateFactory.next()
         # Build transitions with the same FrozenDict shape
         trans: dict[FAState, dict[CharSet, frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
         trans[new_start] = {self.cs_factory.start(): frozenset({self.init})}
@@ -604,7 +601,7 @@ class NFA(Generic[C]):
 
     def end(self) -> NFA[C]:
         # Create a new accept state reachable via END from all previous accepts
-        new_accept = FAState()
+        new_accept = FAStateFactory.next()
         trans: dict[FAState, dict[CharSet, frozenset[FAState]]] = {s: dict(m) for s, m in self.transitions.items()}
         # Add END edge from each old accept to new_accept
         for acc in self.accept.keys():
@@ -632,7 +629,7 @@ class NFA(Generic[C]):
         state_map: dict[FAState, FAState] = {}
         def get_clone(s: FAState) -> FAState:
             if s not in state_map:
-                state_map[s] = FAState()
+                state_map[s] = FAStateFactory.next()
             return state_map[s]
         new_start = get_clone(self.init)
         new_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({get_clone(a):b for a,b in self.accept.items()})
@@ -676,8 +673,8 @@ class NFA(Generic[C]):
                          cs_factory: CharSetFactory[C],
                          tag: Optional[Tag] = None) -> NFA[C]:
         assert c != tuple(), "charset cannot be empty"
-        current: FAState = FAState()
-        accept: FAState = FAState()
+        current: FAState = FAStateFactory.next()
+        accept: FAState = FAStateFactory.next()
         return cls(
                    cs_factory=cs_factory,
                    init=current, 
@@ -743,7 +740,7 @@ class NFA(Generic[C]):
         assert self.cs_factory == other.cs_factory, "Cannot combine NFAs with different universes"        
         if self is other:
             return self
-        new_current: FAState = FAState()
+        new_current: FAState = FAStateFactory.next()
         eps = {new_current: frozenset({self.init, other.init})}
         for k, v in self.epsilon.items():
             eps[k] = eps.get(k, frozenset()) | v
@@ -766,7 +763,7 @@ class NFA(Generic[C]):
 
     @property
     def star(self) -> NFA[C]:
-        new_current: FAState = FAState()
+        new_current: FAState = FAStateFactory.next()
         eps = {**self.epsilon, new_current: frozenset({self.init})}
         for a in self.accept:
             eps[a] = eps.get(a, frozenset()) | frozenset({self.init})
@@ -778,7 +775,7 @@ class NFA(Generic[C]):
     
     @property
     def optional(self)->NFA[C]:
-        new_current: FAState = FAState()
+        new_current: FAState = FAStateFactory.next()
         eps = {**self.epsilon, new_current: frozenset({self.init})}
         return replace(self,
                         init=new_current, 
