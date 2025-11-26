@@ -41,7 +41,10 @@ TODO
 
 - [ ]  regex.py convert Regex to Builder, for grammar authoring
 
-- [ ]  Tiered semantic layer, 1. Callable[..., bool] 2. propositional predicate 3. PyDatalog adapter
+- [ ]  Tiered semantic layer, 1. Raw: Callable[..., bool] 2. Propositional: forall/exists 3. PyDatalog adapter. 
+       Propositional: ready
+       Raw: ready
+       PyDatalog adapter ??
 
 
 

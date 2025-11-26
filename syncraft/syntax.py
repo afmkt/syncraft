@@ -21,7 +21,8 @@ from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect,
 
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import Builder
-
+from functools import partial
+import hashlib
 
 
 
@@ -250,11 +251,13 @@ class CollectSpec(SyntaxSpec):
     collector: Collector = field(compare=False, hash=False)
     id: Hashable
     spec: SyntaxSpec 
+    kwargs: FrozenDict[str, Any] = field(compare=False, hash=False)
+
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
-        ret = inner.to(self.collector)
+        ret = inner.to(self.collector, id=self.id, **self.kwargs)
         ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
@@ -1123,7 +1126,7 @@ class Syntax(Generic[A, S]):
             return Right.new(result)
         return self.on_success(check_v)
 
-    def to(self, f: Collector[E], id: Hashable = None) -> Syntax[Collect[A, E], S]:
+    def to(self, f: Collector[E], id: Hashable = None, **kwargs: Any) -> Syntax[Collect[A, E], S]:
         """Attach a collector to the produced value.
         A collector can be a dataclass, and the Marked nodes will be 
         mapped to the fields of the dataclass.
@@ -1138,6 +1141,12 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing Collect(value, collector=f).
         """
+        if not callable(f):
+            raise SyncraftError("Collector f must be callable", offender=f, expect="callable")
+        if kwargs:
+            f = partial(f, **kwargs)
+            if id is None:
+                id = hashlib.md5(repr(kwargs).encode('utf-8')).hexdigest()
         def to_f(v: A) -> Collect[A, E]:
             if isinstance(v, Collect):
                 return replace(v, collector=f)
@@ -1148,7 +1157,9 @@ class Syntax(Generic[A, S]):
             return c.value if isinstance(c, Collect) else c
 
         ret = self.iso(to_f, ito_f)
-        return replace(ret, spec=CollectSpec(collector=f, id=id,
+        return replace(ret, spec=CollectSpec(collector=f, 
+                                             id=id,
+                                             kwargs=FrozenDict(kwargs),
                                              spec=self.spec, 
                                              name=self.spec.name, 
                                              file=self.spec.file, 
