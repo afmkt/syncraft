@@ -5,7 +5,7 @@ from pyDatalog import pyDatalog as d
 from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
 from syncraft.algebra import Error
-from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind
+from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
 import timeit
 
 
@@ -128,8 +128,8 @@ if __name__ == "__main__":
     # x()
     # y()
     # z()
-    # r = benchmark_fair()
-    # for line in r:
-    #     print(line)
-    test()
+    r = benchmark_fair()
+    for line in r:
+        print(line)
+    # test()
     # main()

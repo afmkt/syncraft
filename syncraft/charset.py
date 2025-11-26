@@ -153,7 +153,9 @@ class CharSetFactory(Generic[C]):
         return tuple()
         
 
-    def sample(self, cs: CharSet, rnd: random.Random) -> C:
+    def sample(self, cs: CharSet | int, rnd: random.Random) -> C:
+        if isinstance(cs, int):
+            return self.alphabet.decode(cs)
         range = rnd.choice(cs)
         point = rnd.randint(range[0], range[1])
         return self.alphabet.decode(point)

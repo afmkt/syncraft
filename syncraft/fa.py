@@ -50,7 +50,7 @@ class ReverseDFA(Generic[C]):
     cs_factory: CharSetFactory[C]
     final: FAState
     accept: FrozenDict[Tag|None, frozenset[FAState]] = field(default_factory=FrozenDict)    
-    transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[FAState, FrozenDict[CharSet | int, FAState]] = field(default_factory=FrozenDict)
 
     def gen(self, tag: Tag | None, rnd: random.Random) -> C | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
@@ -61,9 +61,9 @@ class ReverseDFA(Generic[C]):
         while current != self.final:
             if current not in self.transitions:
                 break
-            char_set: CharSet
+            char_set: CharSet | int
             next_state: FAState 
-            char_set, next_state = random.choice(list(self.transitions[current].items()))
+            char_set, next_state = rnd.choice(list(self.transitions[current].items()))
             result.append(sample_f(char_set, rnd))
             current = next_state
         return self.cs_factory.alphabet.concat(result[::-1])
@@ -73,7 +73,7 @@ class DFA(Generic[C]):
     cs_factory: CharSetFactory[C]
     init: FAState
     accept: FrozenDict[FAState, frozenset[Tag]] = field(default_factory=FrozenDict)
-    transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[FAState, FrozenDict[CharSet | int, FAState]] = field(default_factory=FrozenDict)
 
     @property
     def reverse(self) -> ReverseDFA[C]:
@@ -326,7 +326,7 @@ class DFA(Generic[C]):
         cs_factory = self.cs_factory
         # Single state DFA accepting everything
         s = FAStateFactory.next()
-        transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = FrozenDict({s: FrozenDict({cs_factory.any(): s})})
+        transitions: FrozenDict[FAState, FrozenDict[CharSet | int, FAState]] = FrozenDict({s: FrozenDict({cs_factory.any(): s})})
         accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict({s: frozenset()})
         return DFA(
             cs_factory=cs_factory,
@@ -428,7 +428,7 @@ class DFA(Generic[C]):
 
         # Optionally: we created sink1/sink2 FAState values; if any pair uses them they are already in state_map
         # Build frozen structures
-        frozen_transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = FrozenDict({
+        frozen_transitions: FrozenDict[FAState, FrozenDict[CharSet | int, FAState]] = FrozenDict({
             s: FrozenDict(t) for s, t in transitions.items()
         })
         frozen_accept: FrozenDict[FAState, frozenset[Tag]] = FrozenDict(accept)
@@ -565,7 +565,7 @@ class DFA(Generic[C]):
             if is_accept:
                 accept[fa_state] = frozenset(tags)
 
-        transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] =FrozenDict({k: FrozenDict(v) for k, v in trans.items()})
+        transitions: FrozenDict[FAState, FrozenDict[CharSet | int, FAState]] =FrozenDict({k: FrozenDict(v) for k, v in trans.items()})
         dead_states = [s for s in transitions if not transitions[s]]
         assert len(dead_states) <= 1, f"DFA can have at most one dead state, found {len(dead_states)}: {dead_states}"
         
