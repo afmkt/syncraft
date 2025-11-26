@@ -107,13 +107,18 @@ def main():
         r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
         r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}'
     ]
-    print(str(parse_regex(regex_full, pattern[0])))
-    print(str(parse_regex(regex_full, pattern[1])))
-    print(str(parse_regex(regex_full, pattern[2])))
-    print(str(parse_regex(regex_full, pattern[3])))
-    print(str(parse_regex(regex_full, pattern[4])))
+    print(parse_regex(regex_full, pattern[0]))
+    print(parse_regex(regex_full, pattern[1]))
+    print(parse_regex(regex_full, pattern[2]))
+    print(parse_regex(regex_full, pattern[3]))
+    print(parse_regex(regex_full, pattern[4]))
 
 
+def test():
+    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).update(group_counter=lambda c, _: 1).named('"(?!"'), +regex.mark('pattern'), rparen)
+    nl = r"(?!\1)"
+    ret = parse_regex(negative_lookahead, nl, raw=False)
+    assert not isinstance(ret, Error)
 
 if __name__ == "__main__":
     # test_noncap()
@@ -126,5 +131,5 @@ if __name__ == "__main__":
     # r = benchmark_fair()
     # for line in r:
     #     print(line)
-    
-    main()
+    test()
+    # main()

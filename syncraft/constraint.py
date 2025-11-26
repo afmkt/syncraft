@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Callable, Tuple, Optional, Any, Self, 
-    Protocol, runtime_checkable
+    Protocol, runtime_checkable, List, Dict
 )
 from enum import Enum
 from dataclasses import dataclass
@@ -130,14 +130,15 @@ class Constraint:
                 raise SyncraftError(f"Unsupported parameter kind: {param.kind}", 
                                     offender=param.kind, 
                                     expect=(inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY))
+                
         def run_f(value: Any, bound: FrozenDict[str, Tuple[Any, ...]]) -> ConstraintResult:
             # positional argument values
-            pos_values = [bound.get(pname, ()) for pname in pos_params]
+            pos_values = [bound.get(pname, ()) for pname in pos_params[1:]]
             # keyword argument values
             kw_values = [bound.get(pname, ()) for pname in kw_params]
 
             # If any param is unbound, fail
-            all_params = pos_params + kw_params
+            all_params = pos_params[1:] + kw_params
             all_values = pos_values + kw_values
             unbound_args = [p for p, vs in zip(all_params, all_values) if not vs]
             if unbound_args:
@@ -159,30 +160,18 @@ class Constraint:
         return cls(run_f=run_f)
 
 
-def predicate(f: Callable[..., bool], 
-              *, 
-              quant: Quantifier = Quantifier.FORALL) -> Constraint:
-    """Create a constraint from a Python predicate function.
 
-    The predicate's parameters define the required bindings.
-
-    Args:
-        f: The boolean function to wrap as a constraint.
-        quant: Quantification over bound values (forall or exists).
-
-    Returns:
-        Constraint: A composable propositional constraint.
-    """
-    sig = inspect.signature(f)    
-    return Constraint.predicate(f, sig=sig, quant=quant)
 
 def forall(f: Callable[..., bool]) -> Constraint:
     """``forall`` wrapper around ``predicate`` (all combinations must satisfy)."""
-    return predicate(f, quant=Quantifier.FORALL)
+    sig = inspect.signature(f)    
+    return Constraint.predicate(f, sig=sig, quant=Quantifier.FORALL)
+    
     
 def exists(f: Callable[..., bool]) -> Constraint:
     """``exists`` wrapper around ``predicate`` (at least one combination)."""
-    return predicate(f, quant=Quantifier.EXISTS)
+    sig = inspect.signature(f)    
+    return Constraint.predicate(f, sig=sig, quant=Quantifier.EXISTS)
 
 
 

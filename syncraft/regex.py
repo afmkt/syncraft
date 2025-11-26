@@ -13,6 +13,7 @@ from syncraft.cache import Cache
 from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
 from syncraft.input import StreamCursor
+from syncraft.constraint import forall
 try:
     import regex as re
 except ImportError:
@@ -172,7 +173,14 @@ class AnchorKind(Enum):
     
 
 
+@dataclass(frozen=True, slots=True)
+class UnsupportedFeature:
+    feature: str
+    message: Optional[str] = None
 
+    def __str__(self) -> str:
+        return f"Unsupported feature: {self.feature}" + (f" - {self.message}" if self.message else "")
+    
 
 
 B = Builder[str]
@@ -395,8 +403,7 @@ inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda
 comment = S.lex(comment=B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1)).map(lambda tok: tok.text).named('comment')
 
 
-# condition_group   = number | name ;
-condition_group = number | name
+
 
 
 # (?:(?P<quote>['\"])(?:(?!\1).)*\1)
@@ -427,26 +434,26 @@ def _group_body() -> Syntax[Any, Any]:
                                    +regex.mark('pattern'), 
                                    rparen)
     # condition_assertion = "(?=" regex ")" | "(?!" regex ")" | "(?<=" regex ")" | "(?<!" regex ")" ;
-    condition_assertion = S.choice(
-        S.seq(S.lex(gp_lh=B.lit("(?=")).named('"(?="'), +regex.mark('pattern'), rparen).to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t), id="lookahead").named('lookahead'),
-        S.seq(S.lex(gp_neglh=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen).to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t), id="negative_lookahead").named('negative_lookahead'),
-        S.seq(S.lex(gp_lb=B.lit("(?<=")).named('"(?<="'), +regex.mark('pattern'), rparen).to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t), id="lookbehind").named('lookbehind'),
-        S.seq(S.lex(gp_neglb=B.lit("(?<!" )).named('"(?<!"'), +regex.mark('pattern'), rparen).to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
+    lookaround_assertion = S.choice(
+        S.seq(S.lex(gp_lh=B.lit("(?=")).named('"(?="'), +regex, rparen),
+        S.seq(S.lex(gp_neglh=B.lit("(?!")).named('"(?!"'), +regex, rparen),
+        S.seq(S.lex(gp_lb=B.lit("(?<=")).named('"(?<="'), +regex, rparen),
+        S.seq(S.lex(gp_neglb=B.lit("(?<!" )).named('"(?<!"'), +regex, rparen),
     ).named('condition_assertion')
     
     # group = "(?" condition_assertion regex [ "|" regex ] ")"
-    group_condition_assertion = S.seq(S.lex(gp_conditional=B.lit("(?")).named('"(?"'), 
-                                        condition_assertion,
+    lookaround_assertion_group = S.seq(S.lex(gp_conditional=B.lit("(?")).named('"(?"'), 
+                                        lookaround_assertion,
                                         +regex.mark('pattern'), 
                                         rparen)
     # group = "(?(" condition_group ")" regex [ "|" regex ] ")"  
-    group_condition = S.seq(S.lex(gp_conditional=B.lit("(?(")).named('"(?("'),
-                            condition_group,
+    group_existence_test = S.seq(S.lex(gp_conditional=B.lit("(?(")).named('"(?("'),
+                            number | name,
                             +regex.mark('pattern'),
                             rparen)
                                       
     # group = "(?P>" name ")"
-    group_recursive = S.choice(
+    recursive_group = S.choice(
         # group = "(?&" name ")"
         S.seq(S.lex(_=B.lit("(?&")).named('"(?&'), +name, rparen),
         # group = "(?" number ")"
@@ -473,10 +480,10 @@ def _group_body() -> Syntax[Any, Any]:
                 negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
                 inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
                 inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
-                group_condition_assertion.to(lambda **t: GroupAtom(kind=GroupKind.CONDITION_ASSERTION, **t), id="group_condition_assertion").named('group_condition_assertion'),
-                group_condition.to(lambda **t: GroupAtom(kind=GroupKind.CONDITION_GROUP, **t), id="group_condition").named('group_condition'),
-                group_recursive.to(lambda **t: GroupAtom(kind=GroupKind.RECURSION, **t), id="group_recursive").named('group_recursive'),
-                comment_group.to(lambda **t: GroupAtom(kind=GroupKind.COMMENT, **t), id="comment_group").named('comment_group'),
+                lookaround_assertion_group.map(lambda _: UnsupportedFeature(feature="lookaround assertion group")).named('lookaround_assertion_group'),
+                group_existence_test.map(lambda _: UnsupportedFeature(feature="group existence test")).named('group_existence_test'),
+                recursive_group.map(lambda _: UnsupportedFeature(feature="recursive group")).named('recursive_group'),
+                comment_group.map(lambda _: UnsupportedFeature(feature="comment group")).named('comment_group'),
             ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
 
 
@@ -546,7 +553,9 @@ backreference = S.choice(
     (S.lex(_=B.lit("\\g<")) >> name // greater).map(lambda n: n[0]).named('backreference_name')
 ).named('backreference')
 
+# @forall
 def _backreference_check(v: Any, group_counter: Any) -> bool:
+    
     if v == 0:
         return True
     if group_counter is ...:
