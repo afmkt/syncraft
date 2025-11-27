@@ -189,51 +189,51 @@ B = Builder[str]
 S = Syntax.config( builtin=True)
 
 
-dollar = S.lex(B.lit("$")).named('"$"')
+dollar = S.lex(B.lit("$"))
 
 
 # number            = digit { digit } ;
 number = S.lex(B.oneof("0123456789").many(at_least=1)).map(lambda m: int(m.text)).named('number')
 
 # dot               = "." ;
-dot = S.lex(B.lit(".")).named('"."')
-or_ = S.lex(B.lit("|")).named('"|"')
+dot = S.lex(B.lit("."))
+or_ = S.lex(B.lit("|"))
 
 whitespace = S.lex(B.oneof(" \t\n\r\f\v")).named('whitespace')
-question = S.lex(B.lit("?")).named('"?"')
-star = S.lex(B.lit("*")).named('"*"')
-plus = S.lex(B.lit("+")).named('"+"')
-lbrace = S.lex(B.lit("{")).named('"{"')
-rbrace = S.lex(B.lit("}")).named('"}"')
-comma = S.lex(B.lit(",")).named('","')
-lparen = S.lex(B.lit("(")).named('"("')
-rparen = S.lex(B.lit(")")).named('")"')
-lsquare = S.lex(B.lit("[")).named('"["')
-rsquare = S.lex(B.lit("]")).named('"]"')
-colon = S.lex(B.lit(":")).named('":"')
-less = S.lex(B.lit("<")).named('"<"')
-greater = S.lex(B.lit(">")).named('">"')
-equal = S.lex(B.lit("=")).named('"="')
-bang = S.lex(B.lit("!")).named('"!"')
-caret = S.lex(B.lit("^")).named('"^"')
+question = S.lex(B.lit("?"))
+star = S.lex(B.lit("*"))
+plus = S.lex(B.lit("+"))
+lbrace = S.lex(B.lit("{"))
+rbrace = S.lex(B.lit("}"))
+comma = S.lex(B.lit(","))
+lparen = S.lex(B.lit("("))
+rparen = S.lex(B.lit(")"))
+lsquare = S.lex(B.lit("["))
+rsquare = S.lex(B.lit("]"))
+colon = S.lex(B.lit(":"))
+less = S.lex(B.lit("<"))
+greater = S.lex(B.lit(">"))
+equal = S.lex(B.lit("="))
+bang = S.lex(B.lit("!"))
+caret = S.lex(B.lit("^"))
 
 
 
 
 
-backslash = S.lex(B.lit("\\")).named('"\\"')
-minus = S.lex(B.lit("-")).named('"-"')
+backslash = S.lex(B.lit("\\"))
+minus = S.lex(B.lit("-"))
 # boundary_escape   = "\\A" | "\\Z" | "\\b" | "\\B" ;
 boundary_escape = S.lex(B.oneof(["\\A", "\\Z", "\\b", "\\B"])).named('boundary_escape')
-escaped_x = S.lex(B.lit("\\x")).named('"\\x"')
-escaped_u = S.lex(B.lit("\\u")).named('"\\u"')
-escaped_U = S.lex(B.lit("\\U")).named('"\\U"')
-escaped_N = S.lex(B.lit("\\N{")).named('"\\N{"')
-escaped_p = S.lex(B.lit("\\p{")).named('"\\p{"')
-escaped_P = S.lex(B.lit("\\P{")).named('"\\P{"')
-underscore = S.lex(B.lit("_")).named('"_"')
-space = S.lex(B.lit(" ")).named('" "')
-hyphen = S.lex(B.lit("-")).named('"-"')
+escaped_x = S.lex(B.lit("\\x"))
+escaped_u = S.lex(B.lit("\\u"))
+escaped_U = S.lex(B.lit("\\U"))
+escaped_N = S.lex(B.lit("\\N{"))
+escaped_p = S.lex(B.lit("\\p{"))
+escaped_P = S.lex(B.lit("\\P{"))
+underscore = S.lex(B.lit("_"))
+space = S.lex(B.lit(" "))
+hyphen = S.lex(B.lit("-"))
 # unicode_scalar    = any code point U+0000..U+10FFFF ;
 unicode_scalar = S.lex(B.range("\u0000", "\U0010FFFF")).named('unicode_scalar')
 # unicode_letter    = code point with Unicode category Lu | Ll | Lt | Lm | Lo ;
@@ -310,7 +310,7 @@ escaped_metachar = (backslash >> meta_char).map(lambda t: t[0]).named('escaped_m
 
 # octal_escape      = "\\0" octal_digit octal_digit | "\\" octal_digit octal_digit? ;
 # octal_digit       = "0".."7" ;
-escaped_0 = S.lex(B.lit("\\0")).named('"\\0"')
+escaped_0 = S.lex(B.lit("\\0"))
 octal_digit = S.lex(B.range("0", "7")).named('octal_digit')
 octal_escape = S.choice(
     (escaped_0 >> octal_digit + octal_digit).map(lambda t: chr(int(t[0].text + t[1].text, 8))),
@@ -414,42 +414,42 @@ def _group_body() -> Syntax[Any, Any]:
     # group = "(" regex ")"
     plain = regex.mark('pattern').between(lparen, rparen)
     # group = "(?:" regex ")"
-    noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
+    noncapturing = S.seq(S.lex(B.lit("(?:")), +regex.mark('pattern'), rparen)
     # group = "(?P<" name ">" regex ")"
-    named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
+    named = S.seq(S.lex(B.lit("(?P<")), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
     # group = "(?=" regex ")"
-    lookahead = S.seq(S.lex(B.lit("(?=")).named('"(?="'), +regex.mark('pattern'), rparen)
+    lookahead = S.seq(S.lex(B.lit("(?=")), +regex.mark('pattern'), rparen)
     # group = "(?!" regex ")"
-    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
+    negative_lookahead = S.seq(S.lex(B.lit("(?!")), +regex.mark('pattern'), rparen)
     # group = "(?<=" regex ")"
-    lookbehind = S.seq(S.lex(B.lit("(?<=")).named('"(?<="'), +regex.mark('pattern'), rparen)
+    lookbehind = S.seq(S.lex(B.lit("(?<=")), +regex.mark('pattern'), rparen)
     # group = "(?<!" regex ")"
-    negative_lookbehind = S.seq(S.lex(B.lit("(?<!" )).named('"(?<!"'), +regex.mark('pattern'), rparen)
+    negative_lookbehind = S.seq(S.lex(B.lit("(?<!" )), +regex.mark('pattern'), rparen)
     # group = "(?" inline_flags ")"
-    inline_flag_only = S.seq(S.lex(B.lit("(?")).named('"(?"'), 
+    inline_flag_only = S.seq(S.lex(B.lit("(?")), 
                              +inline_flags, 
                              rparen)
     # group = "(?" inline_flags ":" regex ")"
-    inline_flag_with_colon = S.seq(S.lex(B.lit("(?")).named('"(?"'), 
+    inline_flag_with_colon = S.seq(S.lex(B.lit("(?")), 
                                    +inline_flags, 
                                    colon, 
                                    +regex.mark('pattern'), 
                                    rparen)
     # condition_assertion = "(?=" regex ")" | "(?!" regex ")" | "(?<=" regex ")" | "(?<!" regex ")" ;
     lookaround_assertion = S.choice(
-        S.seq(S.lex(B.lit("(?=")).named('"(?="'), +regex, rparen),
-        S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +regex, rparen),
-        S.seq(S.lex(B.lit("(?<=")).named('"(?<="'), +regex, rparen),
-        S.seq(S.lex(B.lit("(?<!" )).named('"(?<!"'), +regex, rparen),
+        S.seq(S.lex(B.lit("(?=")), +regex, rparen),
+        S.seq(S.lex(B.lit("(?!")), +regex, rparen),
+        S.seq(S.lex(B.lit("(?<=")), +regex, rparen),
+        S.seq(S.lex(B.lit("(?<!" )), +regex, rparen),
     ).named('condition_assertion')
     
     # group = "(?" condition_assertion regex [ "|" regex ] ")"
-    lookaround_assertion_group = S.seq(S.lex(B.lit("(?")).named('"(?"'), 
+    lookaround_assertion_group = S.seq(S.lex(B.lit("(?")), 
                                         lookaround_assertion,
                                         +regex.mark('pattern'), 
                                         rparen)
     # group = "(?(" condition_group ")" regex [ "|" regex ] ")"  
-    group_existence_test = S.seq(S.lex(B.lit("(?(")).named('"(?("'),
+    group_existence_test = S.seq(S.lex(B.lit("(?(")),
                             number | name,
                             +regex.mark('pattern'),
                             rparen)
@@ -457,23 +457,23 @@ def _group_body() -> Syntax[Any, Any]:
     # group = "(?P>" name ")"
     recursive_group = S.choice(
         # group = "(?&" name ")"
-        S.seq(S.lex(B.lit("(?&")).named('"(?&'), +name, rparen),
+        S.seq(S.lex(B.lit("(?&")), +name, rparen),
         # group = "(?" number ")"
-        S.seq(S.lex(B.lit("(?")).named('"(?"'), +number, rparen),
+        S.seq(S.lex(B.lit("(?")), +number, rparen),
         # group = "(?R)"
-        S.seq(S.lex(B.lit("(?R")).named('"(?R'), rparen),
+        S.seq(S.lex(B.lit("(?R")), rparen),
         # group = "(?r)"
-        S.seq(S.lex(B.lit("(?r")).named('"(?r'), rparen),
+        S.seq(S.lex(B.lit("(?r")), rparen),
         # group = "(?P)"
-        S.seq(S.lex(B.lit("(?P")).named('"(?P'), rparen),
+        S.seq(S.lex(B.lit("(?P")), rparen),
         # group = "(?p)"
-        S.seq(S.lex(B.lit("(?p")).named('"(?p'), rparen),
+        S.seq(S.lex(B.lit("(?p")), rparen),
         # group = "(?0)"
-        S.seq(S.lex(B.lit("(?0")).named('"(?0'), rparen),   
+        S.seq(S.lex(B.lit("(?0")), rparen),   
     )
     
     # group = "(?#" comment ")"
-    comment_group = S.seq(S.lex(B.lit("(?#")).named('"(?#"'), +comment.mark('comment'), rparen)
+    comment_group = S.seq(S.lex(B.lit("(?#")), +comment.mark('comment'), rparen)
 
 
     return S.choice(
@@ -571,7 +571,7 @@ def _backreference_check(v: Any, group_counter: Any) -> bool:
 # atom              = literal | char_class | group | anchor | dot | shorthand | unicode_category_escape | **backreference** ;
 atom = S.choice(        
         backreference.check(_backreference_check),
-        literal.mark('text').to(LiteralAtom).named('literal'),
+        literal.mark('text').to(LiteralAtom),
         char_class.to(CharClassAtom),
         anchor.to(AnchorAtom),
         dot.to(DotAtom),

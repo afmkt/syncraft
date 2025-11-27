@@ -1160,7 +1160,7 @@ class Builder(Generic[C]):
                 ranges_str = ", ".join(f"{start!r}-{end!r}" for start, end in self.intervals)
                 return f"/{ranges_str}/"
             case _NodeKind.LITERAL:
-                return f"'{self.text!r}'"
+                return f"{self.text!r}"
             case _NodeKind.ONEOF:
                 return f"[{self.text!r}]"
             case _NodeKind.STAR:
@@ -1218,7 +1218,7 @@ class Builder(Generic[C]):
                 skip: bool = False, 
                 priority: int = 0,
                 non_greedy: bool = False,
-                action: Optional[ModeAction] = None) -> "Builder[C]":
+                action: Optional[ModeAction] = None) -> Builder[C]:
         return cls(
             kind=_NodeKind.LITERAL,
             text=text,

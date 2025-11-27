@@ -497,7 +497,7 @@ class LexSpec(SyntaxSpec):
         return ret
     
     def __str__(self) -> str:
-        if self.name or not self.kwargs:
+        if self.name or not (self.kwargs or self.args):
             return self.name or self.fname
         else:
             parts = []
@@ -515,8 +515,15 @@ class LexSpec(SyntaxSpec):
                         s = s[:17] + "..."
                     kwparts.append(f"{k}={s}")
             kwargs = ', '.join(kwparts)
-            return self.format("{fname}({args}, {kwargs})", fname=self.fname, args=args, kwargs=kwargs)
-    
+            if args and kwargs:
+                return self.format("{fname}({args}, {kwargs})", fname=self.fname, args=args, kwargs=kwargs)
+            elif args:
+                return self.format("{args}", args=args)
+            elif kwargs:
+                return self.format("{kwargs}", kwargs=kwargs)
+            else:
+                return self.fname
+
     @property
     def complexity(self) -> float:
         return 1

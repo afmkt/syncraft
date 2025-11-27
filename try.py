@@ -66,7 +66,7 @@ def z():
         
 
 def main():
-    from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
+    from syncraft.regex import Regex, parse_regex, group, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
     pattern = [
         r'(?r)$|\W{4,}.+\U000FEAE1?u*',
         r'4{1}|e*\b(?0)[FyIn]{4,}',
@@ -74,73 +74,18 @@ def main():
         r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
         r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}',
         r'(?p)\W^|r?u{2,6}',
-        r't{0,3}|(?f)\\xA4{1,}O',
-        r'$(?b)|C*|\xA5{0,3}[sX]?$',
+        r'(?f)',
+        r'(?b)',
     ]
-    print(parse_regex(regex_full, pattern[0]))
-    print(parse_regex(regex_full, pattern[1]))
-    print(parse_regex(regex_full, pattern[2]))
-    print(parse_regex(regex_full, pattern[3]))
-    print(parse_regex(regex_full, pattern[4]))
-    print(parse_regex(regex_full, pattern[5]))
-    print(parse_regex(regex_full, pattern[6]))
-    print(parse_regex(regex_full, pattern[7]))
+    # print(parse_regex(regex_full, pattern[0]))
+    # print(parse_regex(regex_full, pattern[1]))
+    # print(parse_regex(regex_full, pattern[2]))
+    # print(parse_regex(regex_full, pattern[3]))
+    # print(parse_regex(regex_full, pattern[4]))
+    # print(parse_regex(regex_full, pattern[5]))
+    print(str(parse_regex(group, pattern[6])))
+    print(str(parse_regex(group, pattern[7])))
 
-
-def test():
-    from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
-    negative_lookahead = S.lex(B.lit("(?!"))
-    nl = r"(?!\1)"
-    ret = parse_regex(negative_lookahead, nl, raw=False)
-    assert not isinstance(ret, Error)
-
-
-
-literal = Syntax.lit
-
-def from_string(string: str) -> Token:
-    return Token(text=string)
-
-
-def _collect_tokens(lexer: Lexer[str], text: str) -> list[LexerResult[str]]:
-    tokens: list[LexerResult[str]] = []
-    for idx, ch in enumerate(text):
-        result = lexer.match(frozenset(),ch, idx)
-        assert not isinstance(result, Left), f"Lexing failed on {ch!r}: {result}"
-        if isinstance(result, Right) and result.value is not None:
-            tokens.append(result.value)
-    return tokens
-
-
-
-
-def test_skip_rules_should_suppress_tokens() -> None:
-    
-    rule_a: B[str] = B.lit("a").tagged("A")
-    rule_b: B[str] = B.lit("b").tagged("B")
-    whitespace: B[str] = B.lit(" ").tagged("WS").skipped()
-    lexer = Lexer.from_builders(rule_a, rule_b, whitespace)
-
-    tokens = _collect_tokens(lexer, "a b")
-    assert [tok.tag for tok in tokens] == ["A", "B"], f"Expected ['A', 'B'], got {[tok.tag for tok in tokens]}"
-
-
-
-
-def test_skip_rules_return_none_when_selected() -> None:
-    letter: B[str] = B.lit("a").tagged("A")
-    skip_ws: B[str] = B.lit(" ").tagged("WS").skipped()
-    lexer = Lexer.from_builders(letter, skip_ws)
-
-    results: list[LexerResult[str]] = []
-    for idx, ch in enumerate(" a a"):
-        out = lexer.match(frozenset(), ch, idx)
-        assert not isinstance(out, Left), f"Lexing produced error at {idx}: {out}"
-        if isinstance(out, Right) and out.value is not None:
-            results.append(out.value)
-
-    tags = [token.tag for token in results]
-    assert tags == ["A", "A"], f"Expected ['A', 'A'], got {tags}"
 
 
 if __name__ == "__main__":
@@ -156,6 +101,4 @@ if __name__ == "__main__":
     #     print(line)
     # test()
     # test1_simple_then()
-    # main()
-    test_skip_rules_return_none_when_selected()
-    test_skip_rules_should_suppress_tokens()
+    main()
