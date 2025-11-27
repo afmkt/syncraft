@@ -116,7 +116,7 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def gen(self, tag: Tag | None, rng: random.Random) -> Any: ...
 
-    def candidate(self) -> Either[LexerError, None | LexerResult[C]]: ...
+    def candidate(self) -> LexerError | LexerResult[C]: ...
     
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> Optional[LexerProtocol[C]]: ...
@@ -394,22 +394,21 @@ class Lexer(LexerBase[C]):
                     return True
         return False
 
-    def candidate(self) -> Either[LexerError, None | LexerResult[C]]:
+    def candidate(self) -> LexerError | LexerResult[C]:
         mode = self.current_mode
         if mode.start_index is None:
-            return Left.new(LexerError.message_only("Cannot get candidate when no input has been processed"))
+            return LexerError.message_only("Cannot get candidate when no input has been processed")
         
         candidate_ = mode.runner.candidates
         if not candidate_:
-            return Left.new(LexerError.message_only("No candidate available"))
+            return LexerError.message_only("No candidate available")
         latest = candidate_[-1]
-        return Right.new(
-            LexerResult(
+        return LexerResult(
                 tag=mode.select_tag(latest[1]),
                 start=mode.start_index,
                 end=latest[0] + 1
             )
-        )
+        
 
     def match(self, tags:frozenset[Tag|None], char: C, index: int) -> LexerError | None | LexerResult[C]:
         mode = self.current_mode
@@ -419,7 +418,7 @@ class Lexer(LexerBase[C]):
         if rr.error:
             expecting = mode.runner.resumable
             mode.runner = mode.runner.reset()
-            return LexerError.new(
+            return LexerError(
                 message="Lexing mismatch",
                 index=index,
                 offender=char,
@@ -428,7 +427,7 @@ class Lexer(LexerBase[C]):
 
         if rr.final and rr.accepted is None:
             mode.runner = mode.runner.reset()
-            return LexerError.new(
+            return LexerError(
                 message=f"Lexing reached final state at index {index} without acceptance",
                 index=index,
                 offender=char,
@@ -454,7 +453,7 @@ class Lexer(LexerBase[C]):
             start = mode.start_index if mode.start_index is not None else accepted_pos
             end = accepted_pos + 1
             mode.start_index = None
-            return LexerResult.new(
+            return LexerResult(
                     tag=tag,
                     start=start,
                     end=end
@@ -498,10 +497,10 @@ class ExtLexer(LexerBase[T]):
 
     
 
-    def candidate(self) -> Either[LexerError, None | LexerResult[T]]:
-        return Left.new(LexerError.message_only("External lexer cannot provide candidates"))
+    def candidate(self) -> LexerError | LexerResult[T]:
+        return LexerError.message_only("External lexer cannot provide candidates")
 
-    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> LexerError | None | LexerResult[C]:
+    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> LexerError | None | LexerResult[T]:
         for tag in tags:
             if tag in self.rules and self.rules[tag].predicate(item):
                 return LexerResult(tag=tag, start=index, end=index + 1, value=item)
