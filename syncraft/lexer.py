@@ -124,38 +124,7 @@ class LexerProtocol(Protocol, Generic[C]):
 
 class LexerBase(LexerProtocol[C]):
     @classmethod
-    def normalise_kwargs(cls, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        payload_kind = kwargs.pop("payload_kind", None)
-        syn = kwargs.pop("syntax", None)
-        if syn and not payload_kind:
-            fabuilder: None | Builder = None
-            for fspec in syn.lexspec:
-                for k,v in fspec.kwargs.items():
-                    if isinstance(v, Builder):
-                        fabuilder = v
-                        break  
-            if fabuilder is None:
-                payload_kind = 'token'
-            else:
-                payload_kind = 'text'
-
-        if payload_kind in ('text', 'bytes'):
-            return kwargs
-        elif payload_kind in ('token',):
-            tkspec: Optional[TokenSpec[Any]]  = TokenSpecBase.from_kwargs(**kwargs)
-            assert tkspec is not None, f"TokenSpec could not be infered from the given parameters {kwargs}."
-            return {**kwargs, 'tkspec': kwargs.pop('tkspec', tkspec)}
-        else:
-            raise SyncraftError(
-                "Lexer must be provided with 'payload_kind' or 'syntax' parameter",
-                offender=kwargs,
-                expect="'payload_kind' or 'syntax' parameter",
-            )
-
-
-    @classmethod
     def from_kwargs(cls, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]:
-        kwargs = cls.normalise_kwargs(kwargs)
         for sub in all_subclasses(cls):
             c = CallWith(sub.create, **kwargs)
             if not c.missing_args and not c.missing_kwargs:

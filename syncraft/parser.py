@@ -17,9 +17,8 @@ from syncraft.algebra import (
 
 from dataclasses import dataclass, field
 from functools import total_ordering
-from syncraft.utils import is_grammar
 from syncraft.syntax import Syntax, RunnerProtocol
-from syncraft.input import StreamCursor, PayloadKind
+from syncraft.input import StreamCursor
 
 from syncraft.ast import Token, AST, SyncraftError
 from syncraft.constraint import Binding, Bindable
@@ -174,16 +173,8 @@ class ParserState(Bindable, Generic[T]):
             return ret
 
 
-    @property
-    def payload_kind(self) -> Optional[PayloadKind]:
-        if isinstance(self.input, bytes):
-            return 'bytes'
-        elif isinstance(self.input, tuple):
-            return 'token'
-        elif isinstance(self.input, str):
-            return 'text'
-        else:
-            raise SyncraftError("Unknown input type for ParserState", offender=self.input, expect="str, bytes, or tuple")
+
+
 
     @property
     def cache_key(self) -> int:
@@ -539,10 +530,9 @@ class Parser(Algebra[T, ParserState[T]]):
 class Runner(RunnerProtocol[Any, ParserState[T]]):
     def algebra(self, 
                 syntax: Syntax[Any, ParserState[T]], 
-                alg_cls: Type[Algebra[Any, ParserState[T]]],
-                payload_kind: Optional[PayloadKind]=None) -> Algebra[Any, ParserState[T]]:
+                alg_cls: Type[Algebra[Any, ParserState[T]]]) -> Algebra[Any, ParserState[T]]:
 
-        return syntax(alg_cls, payload_kind=payload_kind)
+        return syntax(alg_cls)
     
     def resume(self, request: Optional[ParserState[T]], cursor: Optional[StreamCursor[T]]) -> ParserState[T]:
         assert cursor or request, "Either cursor or request must be provided to resume Parser"
@@ -560,9 +550,9 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
 
         
 
-def parser(syntax: Syntax[Any, Any], payload_kind: PayloadKind) -> Algebra[Any, Any]:
+def parser(syntax: Syntax[Any, Any]) -> Algebra[Any, Any]:
     runner: Runner[Any] = Runner()
-    return runner.algebra(syntax=syntax, alg_cls=Parser, payload_kind=payload_kind)
+    return runner.algebra(syntax=syntax, alg_cls=Parser)
 
 
 def parse(syntax: Syntax[Any, Any],

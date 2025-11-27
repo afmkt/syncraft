@@ -19,7 +19,7 @@ from syncraft.constraint import Bindable, Constraint
 
 from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice, AST
 
-from syncraft.input import StreamCursor, PayloadKind
+from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
 from functools import partial
@@ -1323,8 +1323,7 @@ class Syntax(Generic[A, S]):
 class RunnerProtocol(Protocol, Generic[A, S]):
     def algebra(self, 
                 syntax: Syntax[A, S],
-                alg_cls: Type[Algebra[A, S]],
-                payload_kind: Optional[PayloadKind]) -> Algebra[A, S]: ...
+                alg_cls: Type[Algebra[A, S]]) -> Algebra[A, S]: ...
 
     def resume(self, previous: Optional[S], cursor: Optional[StreamCursor[Any]]) -> S: ...
 
@@ -1377,7 +1376,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
                  cache: Optional[Cache[Any]],
                  once: bool
                  ) -> Generator[Tuple[Any, None | S], None, None]:
-        alg = self.algebra(syntax=syntax, alg_cls=alg_cls, payload_kind=cursor.payload_kind if cursor else None)  
+        alg = self.algebra(syntax=syntax, alg_cls=alg_cls)  
         yield from self.run(alg, state, cursor, cache, once=once)
 
     def once(self, 

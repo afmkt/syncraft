@@ -610,7 +610,7 @@ regex = branch.sep_by(or_).mark('branches').to(Regex).named('regex')
 
 regex_full = (regex // S.eof()).map(lambda r: r[0]).named('regex_full')
 
-regex_parser = parser(syntax=regex_full, payload_kind='text')
+regex_parser = parser(syntax=regex_full)
 
 
 @overload

@@ -11,7 +11,7 @@ from inspect import Signature
 import inspect
 from syncraft.ast import SyncraftError
 from syncraft.utils import FrozenDict
-from syncraft.input import PayloadKind
+
     
 @dataclass(frozen=True, slots=True)
 class Binding:
@@ -49,8 +49,6 @@ class Bindable(Protocol):
     
     @property
     def ended(self) -> bool: ...
-    @property
-    def payload_kind(self) -> Optional[PayloadKind]: ...
         
 
 class Quantifier(Enum):

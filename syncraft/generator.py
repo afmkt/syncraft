@@ -28,7 +28,7 @@ from syncraft.fa import Builder
 from syncraft.syntax import Syntax, RunnerProtocol
 
 from syncraft.constraint import Bindable, Binding
-from syncraft.input import StreamCursor, PayloadKind
+from syncraft.input import StreamCursor
 
 
 
@@ -104,11 +104,6 @@ class GenState(Bindable, Generic[T]):
             return ... if unwrapper else ()
         else:
             return ret
-
-
-    @property
-    def payload_kind(self) -> Optional[PayloadKind]:
-        return None
 
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
         return GenState.new(
@@ -548,8 +543,7 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     
     def algebra(self, 
                   syntax: Syntax[ParseResult[T], GenState[T]], 
-                  alg_cls: Type[Algebra[ParseResult[T], GenState[T]]],
-                  payload_kind: Optional[PayloadKind]=None
+                  alg_cls: Type[Algebra[ParseResult[T], GenState[T]]]
                   ) -> Algebra[ParseResult[T], GenState[T]]:
         
         return syntax(alg_cls, syntax = syntax, lexer_class=self.lexer_class)

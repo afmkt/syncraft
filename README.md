@@ -37,14 +37,18 @@ uv sync --group dev
 TODO
 - [ ]  Static analysis tool based on Syntax.graph, for grammar analysis
 
-- [ ]  Syntax.lex takes hybrid token/fabuilder, lexer type is totally determined by the argument type of Syntax.lex, for API ergonomic and enable hybrid token-text-bytes input stream
-
 - [ ]  regex.py convert Regex to Builder, for grammar authoring
 
 - [ ]  Tiered semantic layer, 1. Raw: Callable[..., bool] 2. Propositional: forall/exists 3. PyDatalog adapter. 
        Propositional: ready
        Raw: ready
        PyDatalog adapter ??
+
+- [ ]  A Grammar or Language module that package Syntax object and perform
+       a. auto name for terminal rules
+       b. separate map, to, mark, to a transform function
+       c. 
+
 
 
 

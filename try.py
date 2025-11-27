@@ -95,7 +95,7 @@ def test():
 
 
 
-literal = Syntax.literal
+literal = Syntax.lit
 
 def from_string(string: str) -> Token:
     return Token(text=string)
