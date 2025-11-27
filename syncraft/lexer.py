@@ -117,16 +117,16 @@ class LexerProtocol(Protocol, Generic[C]):
 
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]: ...
+    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]: ...
 
     @property
     def filepath(self) -> Optional[Path]: ...
 
 class LexerBase(LexerProtocol[C]):
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]:
+    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]:
         for sub in all_subclasses(cls):
-            c = CallWith(sub.create, **kwargs)
+            c = CallWith(sub.create, *args, **kwargs)
             if not c.missing_args and not c.missing_kwargs:
                 ret = c()
                 if ret is not None:
@@ -209,27 +209,24 @@ class Lexer(LexerBase[C]):
 
     @classmethod
     def create(cls, 
-               *, 
+               *args: Builder,
                default_mode:str|None=None,
                builtin: bool = False,
                cache_path: str | Path | None = None,
-               **kwargs: Any) -> Optional["Lexer[C]"]:
-        def fabuilder(**kwargs: Any) -> Tuple[Set[Builder[Any]], Path]:
+               ) -> Optional["Lexer[C]"]:
+        def fabuilder(*args: Any) -> Tuple[Set[Builder[Any]], Path]:
             if builtin:
                 path = builtin_cache_path()
             else:
                 path = user_cache_path(cache_path)
 
             acc: Set[Builder[Any]] = set()
-            for k, v in kwargs.items():
+            for v in args:
                 if isinstance(v, Builder):
-                    if v.tag is None:
-                        acc.add(v.tagged(k))
-                    else:
-                        acc.add(v)                    
+                    acc.add(v)                    
             return acc, path
-        
-        builders, dir = fabuilder(**kwargs)
+
+        builders, dir = fabuilder(*args)
         if not builders:
             return None
         lexer, path = cls.cache.load(builders=builders, 
@@ -431,7 +428,7 @@ class Lexer(LexerBase[C]):
                 offender=char,
                 expect=frozenset(),
             ))
-        # mode.runner = rr.runner
+
         if rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
             tag = mode.select_tag(accepted_tags)
@@ -478,18 +475,17 @@ class ExtLexer(LexerBase[T]):
         return frozenset(self.rules.keys())
 
     @classmethod
-    def create(cls, 
-               *, 
-               tkspec: TokenSpec[T], 
-               **kwargs: Any) -> Optional["ExtLexer[T]"]:
-        ret = cls()
-        for t in tkspec.tags():
-            existing = ret.rules.get(t)
-            if existing is None:
-                pred = tkspec.predicate()
-                gen = tkspec.generator() 
-                ret.rules[t] = ExtRule(pred, gen)
-        return ret
+    def create(cls, tkspec: TokenSpec[T]) -> Optional["ExtLexer[T]"]:
+        if isinstance(tkspec, TokenSpec):
+            ret = cls()
+            for t in tkspec.tags():
+                existing = ret.rules.get(t)
+                if existing is None:
+                    pred = tkspec.predicate()
+                    gen = tkspec.generator() 
+                    ret.rules[t] = ExtRule(pred, gen)
+            return ret
+        return None
     
     
     def clone(self) -> "ExtLexer[T]":

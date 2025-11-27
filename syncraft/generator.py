@@ -25,6 +25,7 @@ from syncraft.ast import (
 from syncraft.utils import FrozenDict
 
 from syncraft.fa import Builder
+from syncraft.token import TokenSpec
 from syncraft.syntax import Syntax, RunnerProtocol
 
 from syncraft.constraint import Bindable, Binding
@@ -482,11 +483,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
         
     @classmethod
-    def lex(cls,
-            **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
+    def lex(cls, args: Builder | TokenSpec, **kwargs) -> Algebra[ParseResult[T], GenState[T]]:
         lexer:LexerProtocol[Any] | None
-        lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
-        assert lexer, f"Lexer could not be created with the given parameters, {kwargs}"
+        lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
+        assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
         ntags = lexer.tags()
         name = ','.join(str(tag) for tag in ntags)
         def lex_run(input: GenState[T], 
@@ -502,7 +502,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 generated = lexer.gen(tag, input.rng())
                 if (
                     isinstance(lexer, Lexer)
-                    and any(isinstance(value, Builder) for value in kwargs.values())
+                    and isinstance(args, Builder)
                     and not isinstance(generated, Token)
                 ):
                     if isinstance(generated, (str, bytes, tuple)):

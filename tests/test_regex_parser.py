@@ -569,20 +569,20 @@ def test_regex_unicode_category_escape():
 
 
 def test_neg_lookahead():
-    negative_lookahead = S.seq(S.lex(gp_negative_lookahead=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
+    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
     nl = r"(?!\1)"
     ret = parse_regex(negative_lookahead, nl, raw=False)
     assert not isinstance(ret, Error)
 
 def test_noncap():    
-    noncapturing = S.seq(S.lex(_=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
+    noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
     noncap = r"(?:['\"])"
     ret = parse_regex(noncapturing, noncap, raw = False)
     assert not isinstance(ret, Error)
     
 
 def test_named():
-    named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
+    named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
     s = r"(?P<quote>['\"])"
     ret = parse_regex(named, s, raw = False)
     assert not isinstance(ret, Error)

@@ -14,7 +14,8 @@ from syncraft.utils import FrozenDict
 from syncraft.algebra import (
      Algebra, YieldChannelType, Error
 )
-
+from syncraft.fa import Builder
+from syncraft.token import TokenSpec
 from dataclasses import dataclass, field
 from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol
@@ -470,22 +471,19 @@ class ParserState(Bindable, Generic[T]):
 class Parser(Algebra[T, ParserState[T]]):
 
     @classmethod
-    def lex(cls, 
-            **kwargs: Any) -> Algebra[T, ParserState[T]]:
+    def lex(cls, args: Builder | TokenSpec, **kwargs) -> Algebra[T, ParserState[T]]:
         lexer:LexerProtocol[Any] | None
-        lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
-        assert lexer, f"Lexer could not be created with the given parameters, {kwargs}"
+        lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
+        assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
 
         ntags = lexer.tags()
-        # name = f"{','.join([str(tag) for tag in ntags])}"
+        
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T]]) -> Generator[
                               YieldChannelType, 
                               ParserState[T], 
                               Either[Any, Tuple[T, ParserState[T]]]]:
-            # if is_grammar(lex_run, name='(?!'):
-            #     print(lexer.filepath)
-            #     pass
+            
             lexer.reset()
             yield from ()
             while True:

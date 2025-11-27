@@ -34,7 +34,7 @@ def test_parse_bytes_input_without_config_infers_lexer() -> None:
 
 def test_parse_bytes_input_with_lexer_bind() -> None:
     syntax_cls = Syntax.config(alphabet=Alphabet(bytes))
-    byte_token = syntax_cls.lex(BYTE=Builder.lit(b"\x01").tagged("BYTE"))
+    byte_token = syntax_cls.lex(Builder.lit(b"\x01").tagged("BYTE"))
 
     value, state = parser_run(syntax=byte_token, data=StreamCursor.from_data(b"\x01"), cache=None)
 

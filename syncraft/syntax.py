@@ -1301,12 +1301,12 @@ class Syntax(Generic[A, S]):
         return cls.factory('eof')
 
     @classmethod
-    def token(cls, tkspec: TokenSpec[Any]) -> Syntax[Any, Any]:
-        return cls.factory('lex', tkspec=tkspec)
+    def token(cls, tkspec: TokenSpec) -> Syntax[Any, Any]:
+        return cls.factory('lex', tkspec)
 
     @classmethod
-    def lex(cls, **kwargs: Builder) -> Syntax[Any, Any]:
-        return cls.factory('lex', **kwargs)
+    def lex(cls, builder: Builder | TokenSpec) -> Syntax[Any, Any]:
+        return cls.factory('lex', builder)
     
     @classmethod
     def lit(cls, text: str | re.Pattern[str] | bytes, case_sensitive: bool = True) -> Syntax[Any, Any]:
