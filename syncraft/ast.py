@@ -132,6 +132,9 @@ class Bimap(Generic[A, B]):
 
 @dataclass(frozen=True, slots=True)    
 class AST:
+    @property
+    def custom_mapping(self) -> Optional[Bimap[Any, Any]]: ...
+
     _bimmapped_cache: Reversible[Any, Any] = field(default=MISSING, init=False, repr=False, compare=False, hash=False)
     @property
     def arity(self)->int:
@@ -146,7 +149,14 @@ class AST:
     @property
     def bimap(self) -> Reversible[Any, Any]:
         if self._bimmapped_cache is MISSING:
-            object.__setattr__(self, '_bimmapped_cache', self._bimap())
+            tmp = self._bimap()
+            if self.custom_mapping is not None:
+                value, invf = tmp
+                v, f = self.custom_mapping(value)
+                def composed_inv(c: Any) -> Any:
+                    return invf(f(c))
+                tmp = Reversible(v, composed_inv)
+            object.__setattr__(self, '_bimmapped_cache', tmp)
         return self._bimmapped_cache
     
     @property
@@ -171,7 +181,7 @@ class MetaNothing(type):
     def __bool__(cls)->bool:
         return False
 @dataclass(frozen=True, slots=True)
-class Nothing(AST, metaclass=MetaNothing):
+class Nothing(metaclass=MetaNothing):
     """Singleton sentinel representing the absence of a value in the AST."""
     def __call__(self)-> Nothing:
         return self
@@ -188,6 +198,7 @@ class Nothing(AST, metaclass=MetaNothing):
 class Lazy(AST, Generic[A]):
     value: A
     flatten: bool 
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
     @property
     def arity(self)->int:
         if self.flatten:
@@ -214,8 +225,11 @@ class Marked(AST, Generic[A]):
     Used to tag subtrees so they can be collected by name later (e.g., in
     collectors) without altering the structural shape.
     """
+    
     name: str
     value: A
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+
     def _bimap(self) -> Reversible[Marked[A], Marked[Any]]:
         """Transform the inner value while preserving the mark name.
 
@@ -224,9 +238,9 @@ class Marked(AST, Generic[A]):
         """
         tmp : Reversible[A, Any] = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
         def invf(m: Marked[Any]) -> Marked[A]:
-            return Marked(name = m.name, value = tmp.mapper(m.value))
-        return Reversible(Marked(name=self.name, value=tmp.value), invf)
-        
+            return Marked(name = m.name, value = tmp.mapper(m.value), custom_mapping=None)
+        return Reversible(Marked(name=self.name, value=tmp.value, custom_mapping=None), invf)
+
     
 class OrElseKind(Enum):
     LEFT = 'left'
@@ -241,8 +255,12 @@ class OrElse(AST, Generic[A, B]):
 
     ``kind`` indicates which branch was taken, or ``None`` when unknown.
     """
+    
     kind: Optional[OrElseKind]
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
     value: Optional[A | B] = None
+    
+
     @property
     def arity(self)->int:
         if isinstance(self.value, AST):
@@ -273,6 +291,8 @@ class OrElse(AST, Generic[A, B]):
 class Choice(AST, Generic[A]):
     index: Optional[int]
     value: Optional[A]
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+
     @property
     def arity(self)->int:
         if isinstance(self.value, AST):
@@ -302,6 +322,8 @@ class Choice(AST, Generic[A]):
 class Many(AST, Generic[A]):
     """A finite sequence of values within the AST."""
     value: Tuple[A, ...]
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+
     def _bimap(self) -> Reversible[Many[A], List[Any]]:
         """Map each element to a list and provide an inverse.
 
@@ -312,11 +334,11 @@ class Many(AST, Generic[A]):
         ret : List[Reversible[A, Any]] = [v.bimap if isinstance(v, AST) else Reversible(v) for v in self.value]
         def inv(bs: List[Any]) -> Many[A]:
             if len(bs) <= len(ret):
-                return Many(value = tuple(ret[i].mapper(bs[i]) for i in range(len(bs)))) 
+                return Many(value = tuple(ret[i].mapper(bs[i]) for i in range(len(bs))), custom_mapping=self.custom_mapping) 
             else:
                 half = [ret[i].mapper(bs[i]) for i in range(len(ret))]
                 tmp = [ret[-1].mapper(bs[i]) for i in range(len(ret), len(bs))]
-                return Many(value = tuple(half + tmp))
+                return Many(value = tuple(half + tmp), custom_mapping=self.custom_mapping)
         return Reversible([v.value for v in ret], inv)
 
 
@@ -325,6 +347,8 @@ class Many(AST, Generic[A]):
 @dataclass(frozen=True, slots=True)
 class Seq(AST):
     value: Tuple[Tuple[Any, bool], ...]
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+
     @property
     def arity(self)->int:
         count = 0
@@ -392,6 +416,8 @@ class Then(AST, Generic[A, B]):
     kind: ThenKind
     left: A
     right: B
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+
     @property
     def is_then(self)->bool:
         return True
@@ -507,6 +533,8 @@ Collector = Type[E] | Callable[..., E]
 class Collect(AST, Generic[A, E]):
     collector: Collector
     value: A
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+
     def _bimap(self) -> Reversible[Collect[A, E], E]:
         b, inner_f = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
         inner_then = isinstance(self.value, AST) and self.value.is_then
@@ -536,7 +564,7 @@ class Collect(AST, Generic[A, E]):
                 tmp = []
                 for x in index:
                     if isinstance(x, str):
-                        tmp.append(Marked(name=x, value=named_dict[x]))
+                        tmp.append(Marked(name=x, value=named_dict[x], custom_mapping=None))
                     else:
                         tmp.append(unnamed[x])
                 return tuple(tmp)
@@ -546,7 +574,7 @@ class Collect(AST, Generic[A, E]):
             ret1: E = self.collector(**named)
             def invf1(e: E) -> Marked:
                 named_dict = shallow_dict(e)     
-                return Marked(name=fields(e)[0].name, value=named_dict[fields(e)[0].name])
+                return Marked(name=fields(e)[0].name, value=named_dict[fields(e)[0].name], custom_mapping=None)
             return Reversible(ret1, lambda e: replace(self, value=inner_f(invf1(e)))) # type: ignore
         else:
             def build_inv(d:B):
@@ -576,16 +604,11 @@ class Collect(AST, Generic[A, E]):
 
 Char = TypeVar('Char', bound=Hashable)
 @dataclass(frozen=True, slots=True)
-class Token(Generic[Char]):
+class Token(AST, Generic[Char]):
     text: str | bytes | Tuple[Char, ...]
     token_type: Optional[Union[str, Enum]] = None
-    @classmethod
-    def new(cls, text: str | bytes | Tuple[Char, ...], token_type: Optional[Union[str, Enum]] = None) -> Token[Char]:
-        obj = cls.__new__(cls)
-        object.__setattr__(obj, 'text', text)
-        object.__setattr__(obj, 'token_type', token_type)
-        return obj
-    
+    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False, default=None)
+
     def __str__(self) -> str:
         if isinstance(self.text, str):
             if self.token_type is None:
@@ -617,6 +640,7 @@ ParseResult = Union[
     Collect['ParseResult[T]', Any],
     Marked['ParseResult[T]'],
     Nothing,
+    Token,
     T,
 ]
 

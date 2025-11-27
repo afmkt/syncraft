@@ -8,7 +8,7 @@ from syncraft.algebra import Error
 # 
 import timeit
 
-from syncraft.ast import Then, ThenKind, Many, OrElse, OrElseKind, Token, Marked, Nothing, Any
+from syncraft.ast import Reversible, Bimap, Then, ThenKind, Many, OrElse, OrElseKind, Token, Marked, Nothing, Any
 from syncraft.algebra import Error
 from syncraft.parser import  parse_word
 import syncraft.generator as gen
@@ -77,6 +77,7 @@ def main():
         r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
         r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}',
         r'(?p)\W^|r?u{2,6}',
+        r't{0,3}|(?f)\\xA4{1,}O',
     ]
     print(parse_regex(regex_full, pattern[0]))
     print(parse_regex(regex_full, pattern[1]))
@@ -84,6 +85,7 @@ def main():
     print(parse_regex(regex_full, pattern[3]))
     print(parse_regex(regex_full, pattern[4]))
     print(parse_regex(regex_full, pattern[5]))
+    print(parse_regex(regex_full, pattern[6]))
 
 
 def test():
@@ -101,7 +103,7 @@ def from_string(string: str) -> Token:
     return Token(text=string)
 
 def test1_simple_then() -> None:
-    A, B, C = literal("a"), literal("b"), literal("c")
+    A, B, C = literal("a").bimap(Bimap(lambda x: Reversible(x, lambda y: y))), literal("b"), literal("c")
     syntax = A // B // C
     sql = "a b c"
     ast, bound = parse_word(syntax, sql, cache=Cache())

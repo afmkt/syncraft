@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import random
-from typing import Any, Callable, Iterable, TypeVar, Hashable, Protocol, runtime_checkable, Dict, Tuple, Optional, Type, Set
+from typing import Any, Callable, TypeVar, Hashable, Protocol, runtime_checkable, Dict, Tuple, Optional, Type, Set
 import re
-from enum import Enum
+
 from syncraft.ast import Token
 from syncraft.utils import CallWith, FrozenDict
 from dataclasses import dataclass, field, fields, is_dataclass

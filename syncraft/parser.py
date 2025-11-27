@@ -12,7 +12,7 @@ from syncraft.lexer import (
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.utils import FrozenDict
 from syncraft.algebra import (
-     Algebra, YieldChannelType, S, Error
+     Algebra, YieldChannelType, Error
 )
 
 from dataclasses import dataclass, field
@@ -493,7 +493,7 @@ class Parser(Algebra[T, ParserState[T]]):
                     match lexer.candidate():
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
                             if lexeme is None:
-                                token = Token.new(text=state.slice(start, end), token_type=tag)
+                                token = Token(text=state.slice(start, end), token_type=tag, custom_mapping=None)
                             else:
                                 token = lexeme
                             return Right.new((token, state.advance())) # type: ignore
@@ -513,7 +513,7 @@ class Parser(Algebra[T, ParserState[T]]):
                             state = state.advance()
                         case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
                             if lexeme is None:
-                                token = Token.new(text=state.slice(start, end), token_type=tag)
+                                token = Token(text=state.slice(start, end), token_type=tag, custom_mapping=None)
                             else:
                                 token = lexeme
                             if end > state.index:
@@ -573,7 +573,7 @@ def parse_word(syntax: Syntax[Any, Any],
                *, 
                cache: None| Cache[Any]
                ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    tokens: List[Token]  = [Token.new(t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    tokens: List[Token]  = [Token(text=t, custom_mapping=None) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens, cache=cache)
 
     

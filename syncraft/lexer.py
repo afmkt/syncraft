@@ -3,13 +3,13 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import (
     Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, ClassVar,
-    runtime_checkable, Callable, Hashable, Type
+    runtime_checkable, Callable, Hashable
 )
 
 from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
-from syncraft.alphabet import AlphabetProtocol, Alphabet
-from syncraft.fa import DFA, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum
+from syncraft.alphabet import AlphabetProtocol
+from syncraft.fa import NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError, Token
 from syncraft.cache import Either, Left, Right
 from collections import deque, defaultdict
@@ -17,7 +17,7 @@ import random
 from pathlib import Path
 import hashlib
 import threading
-from syncraft.token import TokenSpec, TokenSpecBase, all_subclasses
+from syncraft.token import TokenSpec, all_subclasses
 
 import pickle
 

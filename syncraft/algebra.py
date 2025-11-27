@@ -5,12 +5,10 @@ from typing import (
 )
 from syncraft.ast import AST, Nothing
 from dataclasses import dataclass, replace, field
-from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
+from syncraft.ast import Bimap, ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
-import sys
-import traceback
 from syncraft.utils import callable_str
 
 if TYPE_CHECKING:
@@ -336,7 +334,7 @@ class Algebra(Generic[A, S]):
             result = (yield from alg.run(input, cache))
             match result:
                 case Right((value, state)):
-                    return Right.new((Lazy(value, flatten=flatten), state))
+                    return Right.new((Lazy(value=value, flatten=flatten, custom_mapping=None), state))
                 case _:
                     return result
         return cls(algebra_lazy_run)
@@ -467,6 +465,16 @@ class Algebra(Generic[A, S]):
         alg = replace(self, run_f=map_run) # type: ignore
         return cast(Algebra[B, S], alg)
     
+    def bimap(self, b: Bimap[A, B]) -> Algebra[A, S]:
+        def bimap_f(a: A):
+            assert isinstance(a, AST), f"bimap can only be applied to AST-mapped values, got {type(a)}"
+            mapping = a.custom_mapping
+            if mapping is not None:
+                mapping = mapping >> b
+            else:
+                mapping = b
+            return replace(a, custom_mapping=mapping)
+        return self.map(bimap_f, raw=True)
         
     def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
         return self.map(f, raw=True).map_state(lambda s: s.map(i))
@@ -520,14 +528,14 @@ class Algebra(Generic[A, S]):
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
-                    return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), state.leave()))
+                    return Right.new((OrElse(kind=OrElseKind.LEFT, value=value, custom_mapping=None), state.leave()))
                 case Left(err) as ERROR:
                     if isinstance(err, Error) and err.committed:
                         return ERROR
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
-                            return Right.new((OrElse(kind=OrElseKind.RIGHT, value=other_value), other_state.leave()))
+                            return Right.new((OrElse(kind=OrElseKind.RIGHT, value=other_value, custom_mapping=None), other_state.leave()))
                         case Left() as OTHER_ERROR:
                             return OTHER_ERROR
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
@@ -580,7 +588,7 @@ class Algebra(Generic[A, S]):
                 match result:
                     case Right((value, state)):
 
-                        return Right.new((Choice(value=value, index=i), state.leave()))
+                        return Right.new((Choice(value=value, index=i, custom_mapping=None), state.leave()))
                     case Left(err) as ERROR:
 
                         if isinstance(err, Error) and err.committed:
@@ -614,13 +622,13 @@ class Algebra(Generic[A, S]):
                         inp = state
                     case Left() as ERROR:
                         return ERROR
-            return Right.new((Seq(value=tuple(results)), inp))
+            return Right.new((Seq(value=tuple(results), custom_mapping=None), inp))
         return cls(run_f=seq_run) # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.BOTH)
+                return Then(left=a, right=b, kind=ThenKind.BOTH, custom_mapping=None)
             return other.map(combine, raw=True)        
         return self.flat_map(then_both_f)
         
@@ -628,7 +636,7 @@ class Algebra(Generic[A, S]):
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_left_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.LEFT)
+                return Then(left=a, right=b, kind=ThenKind.LEFT, custom_mapping=None)
             return other.map(combine, raw=True)
         return self.flat_map(then_left_f)
         
@@ -636,7 +644,7 @@ class Algebra(Generic[A, S]):
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.RIGHT)
+                return Then(left=a, right=b, kind=ThenKind.RIGHT, custom_mapping=None)
             return other.map(combine, raw=True)        
         return self.flat_map(then_right_f)
 
@@ -695,7 +703,7 @@ class Algebra(Generic[A, S]):
                             this=self,
                             state=current_input
                         )) 
-            return Right.new((Many(value=tuple(ret)), current_input))
+            return Right.new((Many(value=tuple(ret), custom_mapping=None), current_input))
         return replace(self, run_f=many_run) # type: ignore
     
 

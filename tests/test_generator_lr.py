@@ -42,7 +42,7 @@ def test_generate_direct_left_recursion_with_base_succeeds():
 def test_validate_direct_left_recursion_with_base_succeeds_single_token():
     A = S.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
     # Validate a simple token AST wrapped in OrElse RIGHT (matches base branch)
-    ast, bound = validate(A, Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token('a','a')), flatten=False))
+    ast, bound = validate(A, Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token('a','a'), custom_mapping=None), flatten=False, custom_mapping=None))
     assert not isinstance(ast, Error)
     assert bound is not None
 
@@ -63,11 +63,11 @@ def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
     #       Token('a')
     #     )
     #   )
-    inner_base = Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token('a', 'a')), flatten=False)
-    inner_then = Then(kind=ThenKind.BOTH, left=inner_base, right=Token('a', 'a'))
-    middle_choice = Lazy(value=OrElse(kind=OrElseKind.LEFT, value=inner_then), flatten=False)
-    outer_then = Then(kind=ThenKind.BOTH, left=middle_choice, right=Token('a', 'a'))
-    data = Lazy(value=OrElse(kind=OrElseKind.LEFT, value=outer_then), flatten=False)
+    inner_base = Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token('a', 'a'), custom_mapping=None), flatten=False, custom_mapping=None)
+    inner_then = Then(kind=ThenKind.BOTH, left=inner_base, right=Token('a', 'a'), custom_mapping=None)
+    middle_choice = Lazy(value=OrElse(kind=OrElseKind.LEFT, value=inner_then, custom_mapping=None), flatten=False, custom_mapping=None)
+    outer_then = Then(kind=ThenKind.BOTH, left=middle_choice, right=Token('a', 'a'), custom_mapping=None)
+    data = Lazy(value=OrElse(kind=OrElseKind.LEFT, value=outer_then, custom_mapping=None), flatten=False, custom_mapping=None)
     ast, bound = validate(A, data)
     assert not isinstance(ast, Error)
     assert bound is not None

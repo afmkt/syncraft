@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Generic, Tuple, ClassVar, Any, Iterable, Sequence, Hashable
+    TypeVar, Generic, Tuple, ClassVar, Sequence, Hashable
 )
 from syncraft.alphabet import AlphabetProtocol
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from syncraft.algebra import (
     SyncraftError
 )
 import random
-from functools import lru_cache
+
 
 class MixedUniverseError(SyncraftError):
     pass

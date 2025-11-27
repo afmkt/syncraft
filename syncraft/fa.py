@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 from typing import (
-    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Protocol, Any, Self, List,
+    TypeVar, Optional, Generic, Tuple, ClassVar, Set, Any, List,
     Callable, Dict, Sequence, Union, Iterator, Literal, Hashable
 )
 
 from dataclasses import dataclass, field, replace
-from syncraft.algebra import (
-    SyncraftError
-)
 
 from collections import deque
 from syncraft.utils import  FrozenDict
 
-from syncraft.charset import CharSet, MixedUniverseError, CharSetFactory
-from syncraft.alphabet import CodepointError, AlphabetProtocol, Alphabet
+from syncraft.charset import CharSet, CharSetFactory
+from syncraft.alphabet import AlphabetProtocol, Alphabet
 from enum import Enum
 from collections import defaultdict
 from functools import reduce

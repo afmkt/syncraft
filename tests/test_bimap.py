@@ -243,8 +243,8 @@ def test_then_associativity() -> None:
     assert ast == Then(kind=ThenKind.BOTH, 
                                    left=Then(kind=ThenKind.BOTH, 
                                                    left=from_string('a'), 
-                                                   right=from_string('b')), 
-                                    right=from_string('c'))
+                                                   right=from_string('b'), custom_mapping=None), 
+                                    right=from_string('c'), custom_mapping=None)
 
 
 def test_ambiguous() -> None:
@@ -254,7 +254,7 @@ def test_ambiguous() -> None:
     sql = "a"
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # Does it prefer A (shorter) or B (fails)? Depends on design.
-    assert ast == OrElse[Token, Token](value=from_string("a"), kind=OrElseKind.LEFT)
+    assert ast == OrElse[Token, Token](value=from_string("a"), kind=OrElseKind.LEFT, custom_mapping=None)
 
 
 def test_combo() -> None:
@@ -279,7 +279,7 @@ def test_optional():
     assert isinstance(v1, Nothing)
     ast2, bound = parse_word(syntax, "a", cache=Cache())
     v2, _ = ast2.bimap
-    assert v2 == Marked(name='a', value=from_string('a'))
+    assert v2 == Marked(name='a', value=from_string('a'), custom_mapping=None)
 
 def test_nothing():
     assert bool(Nothing) is False, "Nothing should evaluate to False in boolean context"
@@ -295,7 +295,7 @@ def test_many_optional():
     ast1, _ = parse_word(syntax, "a a b", cache=Cache())
     # print(ast1)
     ast2, inv = ast1.bimap
-    assert Many(value=(OrElse(kind=None, value=from_string('a')), OrElse(kind=None, value=from_string('a')))) == inv(ast2)
+    assert Many(value=(OrElse(kind=None, value=from_string('a'), custom_mapping=None), OrElse(kind=None, value=from_string('a'), custom_mapping=None)), custom_mapping=None) == inv(ast2)
 
 
 def test_grouping():

@@ -7,7 +7,7 @@ import types
 import collections.abc
 import threading
 from weakref import WeakKeyDictionary, WeakValueDictionary
-import os
+
 
 MISSING: Any = object()
 

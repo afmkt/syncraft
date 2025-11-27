@@ -17,13 +17,11 @@ from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, 
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint
 
-from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice, AST
+from syncraft.ast import Bimap, Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice, AST
 
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
-from functools import partial
-import hashlib
 
 
 
@@ -252,13 +250,13 @@ class CollectSpec(SyntaxSpec):
     collector: Collector = field(compare=False, hash=False)
     id: Hashable
     spec: SyntaxSpec 
-    kwargs: FrozenDict[str, Any] = field(compare=False, hash=False)
+    # kwargs: FrozenDict[str, Any] = field(compare=False, hash=False)
 
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
-        ret = inner.to(self.collector, id=self.id, **self.kwargs)
+        ret = inner.to(self.collector)
         ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
@@ -637,6 +635,17 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, raw=raw)) # type: ignore
 
+    def bimap(self, b: Bimap[A, B]) -> Syntax[A, S]:
+        """Bidirectionally map values with an inverse, keeping round-trip info.
+
+        Args:
+            b: Bimap for inverse functions.
+
+        Returns:
+            Syntax yielding A with transformation b attached.
+        """
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(b)) 
+
     def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
         return self.spec.walk(max_depth=max_depth)
 
@@ -862,7 +871,7 @@ class Syntax(Generic[A, S]):
                     left=left,
                     right=Many(value=bs),
                 ):
-                    return Many(value=(left,) + tuple(b.right for b in bs))
+                    return Many(value=(left,) + tuple(b.right for b in bs), custom_mapping=None)
                 case _:
                     raise SyncraftError(f"Bad data shape {a}", offender=a, expect="Then(BOTH) with OrElse on the right")
 
@@ -870,12 +879,13 @@ class Syntax(Generic[A, S]):
             if not isinstance(a, Many) or len(a.value) < 1:
                 raise SyncraftError(f"sep_by inverse expect Many with at least one element, got {a}", offender=a, expect="Many with at least one element")
             v: List[Then[B | None, A]] = [
-                Then(kind=ThenKind.RIGHT, right=x, left=None) for x in a.value[1:]
+                Then(kind=ThenKind.RIGHT, right=x, left=None, custom_mapping=None) for x in a.value[1:]
             ]
             return Then(
                 kind=ThenKind.BOTH,
                 left=a.value[0],
-                right=Many(value=tuple(v)),
+                right=Many(value=tuple(v), custom_mapping=None),
+                custom_mapping=None
             )
         return ret.iso(f, i)  # type: ignore
 
@@ -1127,7 +1137,7 @@ class Syntax(Generic[A, S]):
             return Right.new(result)
         return self.on_success(check_v)
 
-    def to(self, f: Collector[E], id: Hashable = None, **kwargs: Any) -> Syntax[Collect[A, E], S]:
+    def to(self, f: Collector[E]) -> Syntax[Collect[A, E], S]:
         """Attach a collector to the produced value.
         A collector can be a dataclass, and the Marked nodes will be 
         mapped to the fields of the dataclass.
@@ -1144,23 +1154,19 @@ class Syntax(Generic[A, S]):
         """
         if not callable(f):
             raise SyncraftError("Collector f must be callable", offender=f, expect="callable")
-        if kwargs:
-            f = partial(f, **kwargs)
-            if id is None:
-                id = hashlib.md5(repr(kwargs).encode('utf-8')).hexdigest()
+
         def to_f(v: A) -> Collect[A, E]:
             if isinstance(v, Collect):
                 return replace(v, collector=f)
             else:
-                return Collect(collector=f, value=v)
+                return Collect(collector=f, value=v, custom_mapping=None)
 
         def ito_f(c: Collect[A, E]) -> A:
             return c.value if isinstance(c, Collect) else c
 
         ret = self.iso(to_f, ito_f)
         return replace(ret, spec=CollectSpec(collector=f, 
-                                             id=id,
-                                             kwargs=FrozenDict(kwargs),
+                                             id=hash(f),
                                              spec=self.spec, 
                                              name=self.spec.name, 
                                              file=self.spec.file, 
@@ -1175,7 +1181,7 @@ class Syntax(Generic[A, S]):
             if isinstance(value, Marked):
                 return replace(value, name=name)
             else:
-                return Marked(name=name, value=value)
+                return Marked(name=name, value=value, custom_mapping=None)
 
         def imark_s(m: Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m

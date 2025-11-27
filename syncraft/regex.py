@@ -14,6 +14,8 @@ from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
 from syncraft.input import StreamCursor
 from syncraft.constraint import forall
+from functools import partial
+
 try:
     import regex as re
 except ImportError:
@@ -475,15 +477,15 @@ def _group_body() -> Syntax[Any, Any]:
 
 
     return S.choice(
-                plain.to(GroupAtom, kind=GroupKind.CAPTURE).named('plain'),
-                noncapturing.to(GroupAtom, kind=GroupKind.NON_CAPTURE).named('noncapturing'),
-                named.to(GroupAtom, kind=GroupKind.CAPTURE).named('named'),
-                lookahead.to(GroupAtom, kind=GroupKind.LOOKAHEAD).named('lookahead'),
-                negative_lookahead.to(GroupAtom, kind=GroupKind.NEG_LOOKAHEAD).named('negative_lookahead'),
-                lookbehind.to(GroupAtom, kind=GroupKind.LOOKBEHIND).named('lookbehind'),
-                negative_lookbehind.to(GroupAtom, kind=GroupKind.NEG_LOOKBEHIND).named('negative_lookbehind'),
-                inline_flag_only.to(GroupAtom, kind=GroupKind.FLAGS).named('inline_flag_only'),
-                inline_flag_with_colon.to(GroupAtom, kind=GroupKind.FLAGS_SCOPED).named('inline_flag_with_colon'),
+                plain.to(partial(GroupAtom, kind=GroupKind.CAPTURE)).named('plain'),
+                noncapturing.to(partial(GroupAtom, kind=GroupKind.NON_CAPTURE)).named('noncapturing'),
+                named.to(partial(GroupAtom, kind=GroupKind.CAPTURE)).named('named'),
+                lookahead.to(partial(GroupAtom, kind=GroupKind.LOOKAHEAD)).named('lookahead'),
+                negative_lookahead.to(partial(GroupAtom, kind=GroupKind.NEG_LOOKAHEAD)).named('negative_lookahead'),
+                lookbehind.to(partial(GroupAtom, kind=GroupKind.LOOKBEHIND)).named('lookbehind'),
+                negative_lookbehind.to(partial(GroupAtom, kind=GroupKind.NEG_LOOKBEHIND)).named('negative_lookbehind'),
+                inline_flag_only.to(partial(GroupAtom, kind=GroupKind.FLAGS)).named('inline_flag_only'),
+                inline_flag_with_colon.to(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED)).named('inline_flag_with_colon'),
                 lookaround_assertion_group.map(lambda _: UnsupportedFeature(feature="lookaround assertion group")).named('lookaround_assertion_group'),
                 group_existence_test.map(lambda _: UnsupportedFeature(feature="group existence test")).named('group_existence_test'),
                 recursive_group.map(lambda _: UnsupportedFeature(feature="recursive group")).named('recursive_group'),
