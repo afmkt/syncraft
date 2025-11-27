@@ -13,7 +13,7 @@ from syncraft.syntax import Syntax
 import pytest
 
 def test_parse_text_input_without_config_infers_lexer() -> None:
-    syntax = Syntax.literal("hi")
+    syntax = Syntax.lit("hi")
 
     value, state = parser_run(syntax=syntax, data=StreamCursor.from_data(["hi"]), cache=None)
 
@@ -23,7 +23,7 @@ def test_parse_text_input_without_config_infers_lexer() -> None:
 
 
 def test_parse_bytes_input_without_config_infers_lexer() -> None:
-    syntax = Syntax.token(text=b"\x01")
+    syntax = Syntax.lit(text=b"\x01")
 
     value, state = parser_run(syntax=syntax, data=StreamCursor.from_data([b"\x01"]), cache=None)
     

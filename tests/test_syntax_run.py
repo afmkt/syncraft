@@ -5,7 +5,7 @@ from syncraft.syntax import Syntax
 from syncraft.algebra import Error
 def test_syntax_run_returns_error_on_incomplete() -> None:
     # literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
-    literal = Syntax.literal
+    literal = Syntax.lit
     syntax = literal("if")
     from syncraft.cache import Cache
     value, next_state = parse_data(syntax=syntax, data=[], cache=Cache())

@@ -15,7 +15,7 @@ set_randomization(True)
 # lazy = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).lazy
 # success = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).success
 
-literal = Syntax.literal
+lit = Syntax.lit
 token = Syntax.token
 lazy = Syntax.lazy
 success = Syntax.success
@@ -26,7 +26,7 @@ success = Syntax.success
 
 
 def test_nullable_left_recursion_no_progress_error():
-    S = lazy(lambda: S | literal(""))
+    S = lazy(lambda: S | lit(""))
     try:
         parse_word(S, "", cache=Cache())
     except LeftRecursionError as e:
@@ -40,7 +40,7 @@ def test_nullable_left_recursion_no_progress_error():
 
 def test_deterministic_choice_prefers_first_branch():
     """PEG determinism: ( 'a' | 'a' 'b') on input 'a' must choose the first branch only."""
-    A = (literal('a') | (literal('a') >> literal('b')))
+    A = (lit('a') | (lit('a') >> lit('b')))
     v, s = parse_word(A, 'a', cache=Cache())
     ast, _ = v.bimap
     # Expect just single terminal 't.a' (following existing Then/terminal string forms from collapse tests)
@@ -48,8 +48,8 @@ def test_deterministic_choice_prefers_first_branch():
 
 
 def test_iteration_cap_metrics_single_head():
-    Term = literal('n')
-    Expr = lazy(lambda: (Expr + literal('+') + Term) | Term)
+    Term = lit('n')
+    Expr = lazy(lambda: (Expr + lit('+') + Term) | Term)
     cache = Cache()
     cache.max_growth_iterations = 1
     with pytest.raises(LeftRecursionError) as exc:
@@ -66,8 +66,8 @@ def test_mutual_recursion_productivity_consumption():
         B -> A 'y' | 'b'
     Input: 'a y b x'
     """
-    A = lazy(lambda: (B >> token(text='x')) | token(text='a'))
-    B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
+    A = lazy(lambda: (B >> lit(text='x')) | lit(text='a'))
+    B = lazy(lambda: (A >> lit(text='y')) | lit(text='b'))
     v, s = parse_word(A, 'a y b x', cache=Cache())
     ast, end_state = v.bimap
     # Ensure at least 'a' retained
@@ -81,9 +81,9 @@ def test_global_fixpoint_propagation_precedence_chain():
     """Precedence chain: Expr -> Expr '-' Term | Term; Term -> Term '*' Factor | Factor; Factor -> '(' Expr ')' | 'n'
     Ensures improvements in deeper nonterminals propagate so Expr consumes full input.
     """
-    Factor = lazy(lambda: (literal('(') >> Expr >> literal(')')) | literal('n'))  # type: ignore  # noqa: F821
-    Term = lazy(lambda: (Term + literal('*') + Factor) | Factor)
-    Expr = lazy(lambda: (Expr + literal('-') + Term) | Term)
+    Factor = lazy(lambda: (lit('(') >> Expr >> lit(')')) | lit('n'))  # type: ignore  # noqa: F821
+    Term = lazy(lambda: (Term + lit('*') + Factor) | Factor)
+    Expr = lazy(lambda: (Expr + lit('-') + Term) | Term)
     v, s = parse_word(Expr, 'n - n * n - n', cache=Cache())
     ast, end_state = v.bimap
     # Ensure multiple 'n' tokens included
@@ -100,8 +100,8 @@ def test_mutual_nullable_left_recursion_no_progress_error():
     Input: ''  (pure mutual recursion with no base case triggers no-progress)
     Expect: LeftRecursionError(reason='no-progress')
     """
-    A = lazy(lambda: B >> literal('x'))  # type: ignore  # noqa: F821
-    B = lazy(lambda: A >> literal('y'))  # type: ignore  # noqa: F821
+    A = lazy(lambda: B >> lit('x'))  # type: ignore  # noqa: F821
+    B = lazy(lambda: A >> lit('y'))  # type: ignore  # noqa: F821
     with pytest.raises(LeftRecursionError) as exc:
         parse_word(A, "", cache=Cache())
     err = exc.value

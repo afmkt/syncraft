@@ -17,7 +17,7 @@ set_randomization(True)
 
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
-literal = S.literal
+literal = S.lit
 token = S.token
 lazy = S.lazy
 
@@ -171,8 +171,8 @@ def test_left_recursion_variants()->None:
 
 def test_indirect_left_recursion()->None:
     NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text), raw=True)
-    PLUS = token(text='+')
-    STAR = token(text='*')
+    PLUS = literal(text='+')
+    STAR = literal(text='*')
     A = lazy(lambda: (B >> PLUS >> A) | B)
     B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
     # Now succeeds (partial parse); ensure at least first two numbers captured
@@ -209,10 +209,10 @@ def test_indirect_left_recursion_2()->None:
         1 * ( 2 + )
     """
     NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text), raw=True)
-    PLUS = token(text='+')
-    STAR = token(text='*')
-    LPAREN = token(text='(')
-    RPAREN = token(text=')')
+    PLUS = literal(text='+')
+    STAR = literal(text='*')
+    LPAREN = literal(text='(')
+    RPAREN = literal(text=')')
     Expr = lazy(lambda: (Expr + PLUS + Term) | Term)
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)
     Factor = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
@@ -264,8 +264,8 @@ def test_indirect_left_recursion_structured_plus()->None:
     Input: 1 + 2 * 3  should yield (1, '+', (2, '*', 3)) structure (with token objects).
     """
     NUMBER = literal(re.compile(r'\d+'))
-    PLUS = token(text='+')
-    STAR = token(text='*')
+    PLUS = literal(text='+')
+    STAR = literal(text='*')
     # Build lazily; references inside lambdas rely on late binding of the names.
     Expr = lazy(lambda: (Expr + PLUS + Term) | Term)  # type: ignore[name-defined]
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
@@ -481,10 +481,10 @@ def test_indirect_left_recursion_3()->None:
         a , b ,
         a , b ,
     """    
-    A = token(text='a')
-    B = token(text='b')
+    A = literal(text='a')
+    B = literal(text='b')
     Item = lazy(lambda: A | B)
-    List = lazy(lambda: (List >> token(text=',') >> Item) | Item)
+    List = lazy(lambda: (List >> literal(text=',') >> Item) | Item)
     # Now succeeds but current semantics retain only last item; ensure at least 'a' present
     v, s = parse_word(List, 'a , b , a', cache=Cache())
     generated, bound = gen.generate_with(List, v)
@@ -530,8 +530,8 @@ def test_indirect_left_recursion_4()->None:
         a y b x x
         a y b x x
     """
-    A = lazy(lambda: (B >> token(text='x')) | token(text='a'))
-    B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
+    A = lazy(lambda: (B >> literal(text='x')) | literal(text='a'))
+    B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
     # Now succeeds but collapses to first terminal; ensure 'a' present
     v, s = parse_word(A, 'a y b x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
@@ -572,8 +572,8 @@ def test_indirect_left_recursion_5()->None:
         a --> b
         123
     """
-    Name = token(text=re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*'))
-    Chain = lazy(lambda: (Chain >> token(text='->') >> Name) | Name)
+    Name = literal(text=re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*'))
+    Chain = lazy(lambda: (Chain >> literal(text='->') >> Name) | Name)
     # Now succeeds but retains last element only; ensure 'c' present
     v, s = parse_word(Chain, 'a -> b -> c', cache=Cache())
     generated, bound = gen.generate_with(Chain, v)
@@ -599,8 +599,8 @@ def test_multi_head_indirect_cycle_fixed_point()->None:
     Input crafted to exercise multiple improvements.
     We only assert that a parse succeeds and consumes at least first token.
     """
-    A = lazy(lambda: (B >> token(text='x')) | token(text='a'))
-    B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
+    A = lazy(lambda: (B >> literal(text='x')) | literal(text='a'))
+    B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
     v, s = parse_word(A, 'a y b x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
     assert v.mapped == generated.mapped
@@ -721,8 +721,8 @@ def test_indirect_multi_head_cycle_parses_successfully():
     With multi-head fixed-point implemented, mutual recursion A↔B should parse successfully.
     We assert the resulting AST string contains at least one of the starting terminals.
     """
-    A = lazy(lambda: (B >> token(text='x')) | token(text='a'))
-    B = lazy(lambda: (A >> token(text='y')) | token(text='b'))
+    A = lazy(lambda: (B >> literal(text='x')) | literal(text='a'))
+    B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
     v, s = parse_word(A, 'a y a y b x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
     assert v.mapped == generated.mapped
@@ -738,7 +738,7 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
 
     We assert successful parse for long input of T → T "+" "a" | "a" and single terminal result.
     """
-    T = lazy(lambda: (T >> token(text='+') >> token(text='a')) | token(text='a'))
+    T = lazy(lambda: (T >> literal(text='+') >> literal(text='a')) | literal(text='a'))
     input_text = 'a ' + ' + a' * 120
     # This test was flaky even before randomization - it needs higher iteration limit for deep recursion
     cache = Cache()

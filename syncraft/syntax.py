@@ -1295,9 +1295,7 @@ class Syntax(Generic[A, S]):
         return cls.factory('eof')
 
     @classmethod
-    def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
-        tkspec: TokenSpec[Any] | None = TokenSpecBase.from_kwargs(**kwargs)
-        assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
+    def token(cls, tkspec: TokenSpec[Any]) -> Syntax[Any, Any]:
         return cls.factory('lex', tkspec=tkspec)
 
     @classmethod
@@ -1305,8 +1303,10 @@ class Syntax(Generic[A, S]):
         return cls.factory('lex', **kwargs)
     
     @classmethod
-    def literal(cls, lit: str | re.Pattern[str]) -> Syntax[Any, Any]:
-        return cls.token(text=lit, case_sensitive=True)
+    def lit(cls, text: str | re.Pattern[str] | bytes, case_sensitive: bool = True) -> Syntax[Any, Any]:
+        tkspec: TokenSpec[Any] | None = TokenSpecBase.from_kwargs(text=text, case_sensitive=case_sensitive)
+        assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
+        return cls.token(tkspec=tkspec)
     
 
     @classmethod

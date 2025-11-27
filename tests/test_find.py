@@ -11,7 +11,7 @@ from syncraft.lexer import ExtLexer
 from syncraft.ast import Token
 from syncraft.token import Structured
 # literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
-literal = Syntax.literal
+literal = Syntax.lit
 
 # @pytest.mark.xfail(reason="Finder integration is pending")
 def test_find()->None:

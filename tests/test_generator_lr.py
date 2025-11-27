@@ -20,7 +20,7 @@ from syncraft.fa import Builder
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
 def tok(text: str):
-    return S.token(text=text, case_sensitive=True)
+    return S.lit(text=text, case_sensitive=True)
 
 
 def test_generate_with_direct_left_recursion_with_base_succeeds():
@@ -86,7 +86,7 @@ def test_generate_with_mutual_left_recursion_without_base_raises():
 
 
 def test_generate_with_infers_text_lexer_without_config() -> None:
-    syntax = Syntax.literal("hi")
+    syntax = Syntax.lit("hi")
     ast, bound = generate_with(syntax, seed=123)
     assert ast == Token("hi")
 

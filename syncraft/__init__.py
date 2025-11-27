@@ -67,7 +67,7 @@ from .input import (
 from .cache import Cache
 
 # Export commonly used class methods for convenience
-literal = Syntax.literal
+lit = Syntax.lit
 choice = Syntax.choice
 
 __all__ = [
@@ -95,6 +95,6 @@ __all__ = [
     # input
 	"StreamCursor",
     # convenience exports
-    "literal",
+    "lit",
     "choice",
 ]

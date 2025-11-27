@@ -9,7 +9,7 @@ from syncraft.cache import Cache
 
 
 
-literal = Syntax.literal
+literal = Syntax.lit
 
 def from_string(string: str) -> Token:
     return Token(text=string)

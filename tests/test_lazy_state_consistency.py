@@ -15,10 +15,10 @@ def test_lazy_state_hash_equality_contract():
     """Test that LazyState properly implements the hash/equality contract."""
     
     def thunk1():
-        return Syntax.literal("hello")
+        return Syntax.lit("hello")
     
     def thunk2():
-        return Syntax.literal("hello")
+        return Syntax.lit("hello")
     
     # Create two LazyState objects with same content but different thunk functions
     state1 = LazyState(flatten=False, thunk=thunk1)
@@ -40,7 +40,7 @@ def test_lazy_state_equality_with_same_thunk():
     """Test LazyState equality when using the same thunk function."""
     
     def shared_thunk():
-        return Syntax.literal("shared")
+        return Syntax.lit("shared")
     
     # Create two LazyState objects with the same thunk function reference
     state1 = LazyState(flatten=False, thunk=shared_thunk)
@@ -55,7 +55,7 @@ def test_lazy_state_flatten_affects_equality():
     """Test that the flatten parameter affects LazyState equality."""
     
     def thunk():
-        return Syntax.literal("test")
+        return Syntax.lit("test")
     
     state1 = LazyState(flatten=True, thunk=thunk)
     state2 = LazyState(flatten=False, thunk=thunk)
@@ -69,7 +69,7 @@ def test_lazy_state_type_checking():
     """Test LazyState equality with non-LazyState objects."""
     
     def thunk():
-        return Syntax.literal("test")
+        return Syntax.lit("test")
     
     state = LazyState(flatten=False, thunk=thunk)
     
@@ -97,7 +97,7 @@ def test_simple_lazy_graph_reconstruction():
     """Test graph reconstruction with simple lazy syntax."""
     
     def make_lazy_syntax():
-        return Syntax.literal("hello").named("greeting")
+        return Syntax.lit("hello").named("greeting")
     
     # Create syntax with lazy reference
     lazy_syntax = Syntax.lazy(make_lazy_syntax).named("lazy_greeting")
@@ -116,7 +116,7 @@ def test_recursive_lazy_graph_reconstruction():
     """Test graph reconstruction with recursive lazy patterns."""
     
     def make_atom():
-        return Syntax.literal("x")
+        return Syntax.lit("x")
     
     def make_piece():
         return atom | group
@@ -125,7 +125,7 @@ def test_recursive_lazy_graph_reconstruction():
         return piece.many().named('branch')
     
     def make_group_body():
-        return (Syntax.literal("(") >> branch // Syntax.literal(")")).named('group_body')
+        return (Syntax.lit("(") >> branch // Syntax.lit(")")).named('group_body')
     
     # Create the recursive definitions
     group = Syntax.lazy(make_group_body).named('group')
@@ -154,7 +154,7 @@ def test_lazy_state_cache_independence():
     """Test that LazyState cache fields don't affect equality."""
     
     def thunk():
-        return Syntax.literal("cached")
+        return Syntax.lit("cached")
     
     state1 = LazyState(flatten=False, thunk=thunk)
     state2 = LazyState(flatten=False, thunk=thunk)
@@ -173,7 +173,7 @@ def test_function_identity_vs_structural_equivalence():
     def create_same_function():
         """Create the same logical function twice"""
         def inner():
-            return Syntax.literal("hello")
+            return Syntax.lit("hello")
         return inner
     
     # Same function created twice - different objects
