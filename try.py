@@ -7,13 +7,10 @@ from syncraft.fa import Builder as B
 from syncraft.algebra import Error
 # 
 import timeit
-
-from syncraft.ast import Reversible, Bimap, Then, ThenKind, Many, OrElse, OrElseKind, Token, Marked, Nothing, Any
-from syncraft.algebra import Error
-from syncraft.parser import  parse_word
-import syncraft.generator as gen
+from syncraft.algebra import Left, Right
+from syncraft.ast import Token
+from syncraft.lexer import Lexer, LexerResult
 from syncraft.syntax import Syntax
-from syncraft.cache import Cache
 
 
 
@@ -90,7 +87,7 @@ def main():
 
 def test():
     from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
-    negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!"))
+    negative_lookahead = S.lex(B.lit("(?!"))
     nl = r"(?!\1)"
     ret = parse_regex(negative_lookahead, nl, raw=False)
     assert not isinstance(ret, Error)
@@ -102,22 +99,46 @@ literal = Syntax.lit
 def from_string(string: str) -> Token:
     return Token(text=string)
 
-def test1_simple_then() -> None:
-    A, B, C = literal("a").bimap(Bimap(lambda x: Reversible(x, lambda y: y))), literal("b"), literal("c")
-    syntax = A // B // C
-    sql = "a b c"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
-    # print("---" * 40)
-    print(ast)
-    generated, bound = gen.generate_with(syntax, ast)
-    # print("---" * 40)
-    print(generated)
-    assert ast == generated
-    value, bmap = generated.bimap
-    # print(value)
-    u, v = gen.generate_with(syntax, bmap(value))
-    assert u == generated
 
+def _collect_tokens(lexer: Lexer[str], text: str) -> list[LexerResult[str]]:
+    tokens: list[LexerResult[str]] = []
+    for idx, ch in enumerate(text):
+        result = lexer.match(frozenset(),ch, idx)
+        assert not isinstance(result, Left), f"Lexing failed on {ch!r}: {result}"
+        if isinstance(result, Right) and result.value is not None:
+            tokens.append(result.value)
+    return tokens
+
+
+
+
+def test_skip_rules_should_suppress_tokens() -> None:
+    
+    rule_a: B[str] = B.lit("a").tagged("A")
+    rule_b: B[str] = B.lit("b").tagged("B")
+    whitespace: B[str] = B.lit(" ").tagged("WS").skipped()
+    lexer = Lexer.from_builders(rule_a, rule_b, whitespace)
+
+    tokens = _collect_tokens(lexer, "a b")
+    assert [tok.tag for tok in tokens] == ["A", "B"], f"Expected ['A', 'B'], got {[tok.tag for tok in tokens]}"
+
+
+
+
+def test_skip_rules_return_none_when_selected() -> None:
+    letter: B[str] = B.lit("a").tagged("A")
+    skip_ws: B[str] = B.lit(" ").tagged("WS").skipped()
+    lexer = Lexer.from_builders(letter, skip_ws)
+
+    results: list[LexerResult[str]] = []
+    for idx, ch in enumerate(" a a"):
+        out = lexer.match(frozenset(), ch, idx)
+        assert not isinstance(out, Left), f"Lexing produced error at {idx}: {out}"
+        if isinstance(out, Right) and out.value is not None:
+            results.append(out.value)
+
+    tags = [token.tag for token in results]
+    assert tags == ["A", "A"], f"Expected ['A', 'A'], got {tags}"
 
 
 if __name__ == "__main__":
@@ -132,5 +153,7 @@ if __name__ == "__main__":
     # for line in r:
     #     print(line)
     # test()
-    test1_simple_then()
+    # test1_simple_then()
     # main()
+    test_skip_rules_return_none_when_selected()
+    test_skip_rules_should_suppress_tokens()

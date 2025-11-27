@@ -308,7 +308,7 @@ class Lexer(LexerBase[C]):
         )
 
     @classmethod
-    def from_builders(cls, *rules: Builder[C], default_mode: str | None = None) -> "Lexer[C]":
+    def from_builders(cls, *rules: Builder[C], default_mode: str | None = None) -> Lexer[C]:
         if len(rules) == 0:
             raise SyncraftError("Cannot build a Lexer with no rules", offender=rules, expect="at least one rule")
         modes: Dict[str | None, Set[Builder[C]]] = defaultdict(set)
@@ -432,7 +432,7 @@ class Lexer(LexerBase[C]):
         if rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
             tag = mode.select_tag(accepted_tags)
-            if tag is None:
+            if tag is None and mode.skip:
                 mode.reset()
                 return Right.new(None)
             act = self.actions.get(tag)

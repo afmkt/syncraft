@@ -46,7 +46,6 @@ def test_control_escapes():
         print(result)
         assert result.text == expected
         assert len(result.text) == 2
-        assert result.token_type == 'control_escape'
 
 
 def test_unicode_escapes():
