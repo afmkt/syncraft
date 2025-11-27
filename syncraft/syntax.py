@@ -1237,11 +1237,17 @@ class Syntax(Generic[A, S]):
         return cls(alg_f = parallel_f, spec=spec)
 
     @classmethod
-    def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
+    def choice(cls, *parsers: Syntax[Any, S], **kw_parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
+        if parsers and kw_parsers:
+            raise SyncraftError("Cannot mix positional and keyword parsers in choice", offender=(parsers, kw_parsers), expect="either positional or keyword parsers only")
+        if parsers:
+            all_parsers = parsers
+        else:
+            all_parsers = tuple(p.named(k) for k, p in kw_parsers.items())
         def choice_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
-            algs = [p(acls, **global_kwargs) for p in parsers]
+            algs = [p(acls, **global_kwargs) for p in all_parsers]
             return acls.choice(*algs).flag(is_orelse=True)
-        spec = ChoiceSpec(options=tuple(p.spec for p in parsers), name=None, file=None, line=None, func=None)
+        spec = ChoiceSpec(options=tuple(p.spec for p in all_parsers), name=None, file=None, line=None, func=None)
         return cls(alg_f=choice_f, spec=spec) # type: ignore
     
     @classmethod
