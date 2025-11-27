@@ -505,11 +505,11 @@ class Parser(Algebra[T, ParserState[T]]):
                     state = tmp
                 else:
                     match lexer.match(ntags, state.current, state.cache_key):
-                        case Left(LexerError(message=err_msg) as lexerError):
+                        case LexerError(message=err_msg) as lexerError:
                             return Left.new(Error.new(message=err_msg, this=lex_run, state=state, error=lexerError))
-                        case Right(None):
+                        case None:
                             state = state.advance()
-                        case Right(LexerResult(tag=tag, start=start, end=end, value=lexeme)):
+                        case LexerResult(tag=tag, start=start, end=end, value=lexeme):
                             if lexeme is None:
                                 token = Token(text=state.slice(start, end), token_type=tag, custom_mapping=None)
                             else:
@@ -517,8 +517,8 @@ class Parser(Algebra[T, ParserState[T]]):
                             if end > state.index:
                                 state = state.advance()
                             return Right.new((token, state)) # type: ignore
-                        case e:
-                            raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or None or LexerError")
+                        case x:
+                            raise SyncraftError("Unknown result from lexer", offender=x, expect="LexerResult or None or LexerError")
 
         return cls(lex_run)
 

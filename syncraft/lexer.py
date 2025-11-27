@@ -18,7 +18,7 @@ from pathlib import Path
 import hashlib
 import threading
 from syncraft.token import TokenSpec, all_subclasses
-
+from functools import cached_property
 import pickle
 
 
@@ -63,6 +63,12 @@ class Mode(Generic[C]):
     non_greedy: frozenset[Tag] = field(default_factory=frozenset)
     start_index: Optional[int] = None
 
+
+    @cached_property
+    def has_skip(self) -> bool:
+        return bool(self.skip)
+
+    
     def reset(self) -> None:
         self.runner = self.runner.reset()
         self.start_index = None
@@ -102,7 +108,7 @@ class LexerResult(Generic[C]):
 class LexerProtocol(Protocol, Generic[C]):
     def reset(self) -> None: ...
 
-    def match(self, tag: frozenset[Tag | None], char: C, index: int) -> Either[LexerError, None | LexerResult[C]]: ...
+    def match(self, tag: frozenset[Tag | None], char: C, index: int) -> LexerError | None | LexerResult[C]: ...
 
     def varify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
 
@@ -405,7 +411,7 @@ class Lexer(LexerBase[C]):
             )
         )
 
-    def match(self, tags:frozenset[Tag|None], char: C, index: int) -> Either[LexerError, None | LexerResult[C]]:
+    def match(self, tags:frozenset[Tag|None], char: C, index: int) -> LexerError | None | LexerResult[C]:
         mode = self.current_mode
         if mode.start_index is None:
             mode.start_index = index
@@ -413,28 +419,28 @@ class Lexer(LexerBase[C]):
         if rr.error:
             expecting = mode.runner.resumable
             mode.runner = mode.runner.reset()
-            return Left.new(LexerError.new(
+            return LexerError.new(
                 message="Lexing mismatch",
                 index=index,
                 offender=char,
                 expect=frozenset(str(e) for e in expecting) if expecting else tags,
-            ))
+            )
 
         if rr.final and rr.accepted is None:
             mode.runner = mode.runner.reset()
-            return Left.new(LexerError.new(
+            return LexerError.new(
                 message=f"Lexing reached final state at index {index} without acceptance",
                 index=index,
                 offender=char,
                 expect=frozenset(),
-            ))
+            )
 
         if rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
             tag = mode.select_tag(accepted_tags)
-            if tag is None and mode.skip:
+            if tag is None and mode.has_skip:
                 mode.reset()
-                return Right.new(None)
+                return None
             act = self.actions.get(tag)
             if act is not None:
                 match act:
@@ -448,14 +454,13 @@ class Lexer(LexerBase[C]):
             start = mode.start_index if mode.start_index is not None else accepted_pos
             end = accepted_pos + 1
             mode.start_index = None
-            return Right.new(
-                LexerResult(
+            return LexerResult.new(
                     tag=tag,
                     start=start,
                     end=end
                 )
-            )
-        return Right.new(None)
+            
+        return None
     
 
 
@@ -496,17 +501,17 @@ class ExtLexer(LexerBase[T]):
     def candidate(self) -> Either[LexerError, None | LexerResult[T]]:
         return Left.new(LexerError.message_only("External lexer cannot provide candidates"))
 
-    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> Either[LexerError, None | LexerResult[T]]:
+    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> LexerError | None | LexerResult[C]:
         for tag in tags:
             if tag in self.rules and self.rules[tag].predicate(item):
-                return Right.new(LexerResult(tag=tag, start=index, end=index + 1, value=item))   
+                return LexerResult(tag=tag, start=index, end=index + 1, value=item)
                 
-        return Left.new(LexerError.new(
+        return LexerError.new(
             message="External lexer token mismatch",
             index=index,
             offender=item,
             expect=frozenset(tags)
-        ))
+        )
         
 
     def varify(self, tag: frozenset[Tag | None], value: Any) -> bool:

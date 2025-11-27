@@ -75,6 +75,7 @@ def main():
         r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}',
         r'(?p)\W^|r?u{2,6}',
         r't{0,3}|(?f)\\xA4{1,}O',
+        r'$(?b)|C*|\xA5{0,3}[sX]?$',
     ]
     print(parse_regex(regex_full, pattern[0]))
     print(parse_regex(regex_full, pattern[1]))
@@ -83,6 +84,7 @@ def main():
     print(parse_regex(regex_full, pattern[4]))
     print(parse_regex(regex_full, pattern[5]))
     print(parse_regex(regex_full, pattern[6]))
+    print(parse_regex(regex_full, pattern[7]))
 
 
 def test():

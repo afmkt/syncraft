@@ -33,9 +33,12 @@ def _collect_tokens(lexer: Lexer[str], text: str) -> list[LexerResult[str]]:
     tokens: list[LexerResult[str]] = []
     for idx, ch in enumerate(text):
         result = lexer.match(frozenset(),ch, idx)
-        assert not isinstance(result, Left), f"Lexing failed on {ch!r}: {result}"
-        if isinstance(result, Right) and result.value is not None:
-            tokens.append(result.value)
+        if result is None:
+            continue
+        if isinstance(result, LexerResult):
+            tokens.append(result)
+        else:
+            assert False, f"Lexing failed on {ch!r}: {result}"
     return tokens
 
 
@@ -88,9 +91,12 @@ def test_skip_rules_return_none_when_selected() -> None:
     results: list[LexerResult[str]] = []
     for idx, ch in enumerate(" a a"):
         out = lexer.match(frozenset(), ch, idx)
-        assert not isinstance(out, Left), f"Lexing produced error at {idx}: {out}"
-        if isinstance(out, Right) and out.value is not None:
-            results.append(out.value)
+        if out is None:
+            continue
+        if isinstance(out, LexerResult):
+            results.append(out)
+        else:
+            assert False, f"Lexing failed on {ch!r}: {out}"
 
     tags = [token.tag for token in results]
     assert tags == ["A", "A"]
