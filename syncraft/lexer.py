@@ -239,7 +239,8 @@ class Lexer(LexerBase[C]):
         return frozenset(all_tags)
 
     @classmethod
-    def create(cls, *, 
+    def create(cls, 
+               *, 
                default_mode:str|None=None,
                builtin: bool = False,
                cache_path: str | Path | None = None,
@@ -499,7 +500,6 @@ class ExtRule(Generic[T]):
 
 @dataclass(slots=True)
 class ExtLexer(LexerBase[T]):
-    tkspec: TokenSpec[T]
     rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)
 
     def reset(self) -> None:
@@ -513,35 +513,20 @@ class ExtLexer(LexerBase[T]):
                *, 
                tkspec: TokenSpec[T], 
                **kwargs: Any) -> Optional["ExtLexer[T]"]:
-        ret = cls(tkspec = tkspec)
-        ret.register(**kwargs)
+        ret = cls()
+        for t in tkspec.tags():
+            existing = ret.rules.get(t)
+            if existing is None:
+                pred = tkspec.predicate()
+                gen = tkspec.generator() 
+                ret.rules[t] = ExtRule(pred, gen)
         return ret
     
     
     def clone(self) -> "ExtLexer[T]":
         return replace(self, rules=dict(self.rules))
 
-    def register(
-        self,
-        **kwargs: Any,
-    ) -> None:
-
-        def register_one(tag: Tag | None, spec: TokenSpec, **kwargs: Any) -> None:
-            existing = self.rules.get(tag)
-            if existing is None:
-                pred = spec.predicate(**kwargs) 
-                gen = spec.generator(**kwargs) 
-                self.rules[tag] = ExtRule(pred, gen)
-
-        specs = {k: v for k, v in kwargs.items() if isinstance(v, TokenSpec)}
-        non_specs = {k: v for k, v in kwargs.items() if not isinstance(v, TokenSpec)}
-        if specs:
-            for tag, v in specs.items():
-                register_one(tag, v, **non_specs)
-        elif non_specs:
-            for t in self.tkspec.tags(**non_specs):
-                register_one(t, self.tkspec, **non_specs)
-        
+    
 
     def candidate(self) -> Either[LexerError, None | LexerResult[T]]:
         return Left.new(LexerError.message_only("External lexer cannot provide candidates"))

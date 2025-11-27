@@ -5,7 +5,7 @@ from typing import Any, Callable, Iterable, TypeVar, Hashable, Protocol, runtime
 import re
 from enum import Enum
 from syncraft.ast import Token
-from syncraft.utils import CallWith
+from syncraft.utils import CallWith, FrozenDict
 from dataclasses import dataclass, field, fields, is_dataclass
 import rstr
 
@@ -28,9 +28,9 @@ def all_subclasses(cls: Type[Any])->Set[Type[Any]]:
 
 @runtime_checkable
 class TokenSpec(Protocol[T]):
-    def tags(self, **kwargs: Any) -> frozenset[Tag]: ...
-    def predicate(self, **kwargs: Any) -> Callable[[T], bool]: ...
-    def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]: ...
+    def tags(self) -> frozenset[Tag]: ...
+    def predicate(self) -> Callable[[T], bool]: ...
+    def generator(self) -> Callable[[Any, random.Random], T]: ...
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> TokenSpec[T]: ...
 
@@ -38,7 +38,7 @@ class TokenSpec(Protocol[T]):
 class TokenSpecBase(TokenSpec[T]):
     
     @classmethod
-    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional["TokenSpec[T]"]: 
+    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional[TokenSpec[T]]: 
         all = all_subclasses(cls)
         assert all, "No subclasses of TokenSpecBase found. Please import token modules to register TokenSpec subclasses."
         for sub in all_subclasses(cls):
@@ -87,104 +87,26 @@ class TokenSpecBase(TokenSpec[T]):
         config, params = self._extract_config_kwargs(kwargs)
         tags, params = self._resolve_tag_kwargs(params)
         return config, params, tags
-
-@dataclass(frozen=True, slots=True)
-class TokenMatcher(TokenSpecBase[T]):
-    pred: Callable[[T], bool]
-    gen: Callable[[Any, random.Random], T]
-    tag: None | Callable[..., frozenset[Tag]] = field(default=None)
-
-    @classmethod
-    def create(cls,
-               *,
-                pred: Callable[[T], bool],
-                gen: Callable[[Any, random.Random], T],
-                tag: None | Tag | Iterable[Tag] | Callable[..., frozenset[Tag]] = None)-> TokenMatcher[T]:
-        tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
-        return cls(pred=pred, gen=gen, tag=tag_callable)
-        
-               
-    def tags(self, **kwargs: Any) -> frozenset[Tag]:
-        _, _, tags = self.normalise_kwargs(dict(kwargs))
-        return tags
-
-    def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
-        self.normalise_kwargs(dict(kwargs))
-        return self.pred
-
-    def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]:
-        self.normalise_kwargs(dict(kwargs))
-        return self.gen
-
-@dataclass(frozen=True, slots=True)
-class Scalar(TokenSpecBase[T]):
-    constructor: Callable[..., T]
-    pattern: re.Pattern = field(default=re.compile(".*"), metadata={"is_config": True})
-
-    @classmethod
-    def create(cls,
-                *,
-                pattern: str | re.Pattern[str],
-                
-                constructor: Callable[..., T] = str, # type: ignore
-                flags: int | None = None) -> Scalar[T]:
-        compiled = re.compile(pattern, flags or 0) if isinstance(pattern, str) else pattern
-        return cls(constructor=constructor, pattern=compiled)
-        
-
-    def tags(self, **kwargs: Any) -> frozenset[Tag]:
-        config, params, tags = self.normalise_kwargs(dict(kwargs))
-        if tags:
-            return tags
-        pattern = params.get("pattern", config.get("pattern", self.pattern))
-        if isinstance(pattern, re.Pattern):
-            return frozenset([pattern.pattern])
-        return frozenset()
-
-    def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
-        config, params, _ = self.normalise_kwargs(dict(kwargs))
-        pattern = params.get("pattern", config.get("pattern", self.pattern))
-        assert isinstance(pattern, re.Pattern)
-        def pred(token: T) -> bool:
-            return re.fullmatch(pattern, str(token)) is not None
-        pred.__name__ = f"P(/{pattern.pattern}/)"
-        return pred
-
-    def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]:
-        config, params, _ = self.normalise_kwargs(dict(kwargs))
-        pattern = params.get("pattern", config.get("pattern", self.pattern))
-        assert isinstance(pattern, re.Pattern)
-        def gen(input: Any, rnd: random.Random) -> T:
-            return self.constructor(rstr.xeger(pattern))
-        gen.__name__ = f"G(/{pattern.pattern}/)"
-        return gen
-
+    
 
 @dataclass(frozen=True, slots=True)
 class Structured(TokenSpecBase[T]):
-    constructor: Callable[..., T]
+    constructor: Type[Any]
     case_sensitive: bool = field(default=True, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
-    tag: None | Callable[..., frozenset[Tag]] = field(default=None)
-    
+    kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     @classmethod
-    def create(cls, 
-               *,
-               constructor: Callable[..., T] = Token, # type: ignore
-               case_sensitive: bool = True,
-               strict: bool = False,
-               tag: Tag | Iterable[Tag] | None | Callable[..., frozenset[Tag]] = None) -> Structured[T]:
-        tag_callable = tag if callable(tag) else lambda **_: frozenset([tag]) if isinstance(tag, (str, Enum)) else frozenset(tag if tag is not None else [])
+    def create(cls, *, constructor: Type[Any] = Token, case_sensitive: bool = True, strict: bool = False, **kwargs: Any) -> Structured[T]:
         return cls(
             constructor=constructor,
             case_sensitive=case_sensitive,
             strict=strict,
-            tag=tag_callable,
+            kwargs=FrozenDict(kwargs)
         )
         
 
-    def tags(self, **kwargs: Any) -> frozenset[Tag]:
-        config, kwargs, tags = self.normalise_kwargs(dict(kwargs))
+    def tags(self) -> frozenset[Tag]:
+        config, kwargs, tags = self.normalise_kwargs(dict(self.kwargs))
         if tags:
             return tags
         if 'token_type' in kwargs:
@@ -205,8 +127,8 @@ class Structured(TokenSpecBase[T]):
             parts.append(str(x))
         return ", ".join(parts)
 
-    def predicate(self, **kwargs: Any) -> Callable[[T], bool]:
-        config, kwargs, _ = self.normalise_kwargs(dict(kwargs))
+    def predicate(self) -> Callable[[T], bool]:
+        config, kwargs, _ = self.normalise_kwargs(dict(self.kwargs))
         case_sensitive = config.get('case_sensitive', True)
         strict = config.get('strict', False)
         def pred(token: T) -> bool:
@@ -242,8 +164,8 @@ class Structured(TokenSpecBase[T]):
         pred.__name__ = f"P({self.describe(**kwargs)})"
         return pred
 
-    def generator(self, **kwargs: Any) -> Callable[[Any, random.Random], T]:
-        config, kwargs, _ = self.normalise_kwargs(dict(kwargs))
+    def generator(self) -> Callable[[Any, random.Random], T]:
+        config, kwargs, _ = self.normalise_kwargs(dict(self.kwargs))
         def gen(input: Any, rnd: random.Random) -> T:
             data = {}
             for k, v in kwargs.items():
@@ -257,39 +179,4 @@ class Structured(TokenSpecBase[T]):
             return CallWith(self.constructor, **data)()
         gen.__name__ = f"G({self.describe(**kwargs)})"
         return gen
-
-
-
-def matcher(
-    *,
-    pred: Callable[[TokenT], bool],
-    gen: Callable[[Any, random.Random], TokenT],
-    tag: None | Tag | Iterable[Tag] | Callable[..., frozenset[Tag]] = None,
-) -> TokenMatcher[TokenT]:
-    return TokenMatcher.create(pred=pred, gen=gen, tag=tag)
-
-
-def scalar(
-    pattern: str | re.Pattern[str],
-    *,
-    constructor: Callable[..., ScalarValueT] = str, # type: ignore
-    flags: int | None = None,
-) -> Scalar[ScalarValueT]:
-    return Scalar.create(pattern=pattern, constructor=constructor, flags=flags)
-
-
-def struct(
-    constructor: Callable[..., TokenT],
-    *,
-    case_sensitive: bool = True,
-    strict: bool = False,
-    tag: Tag | Iterable[Tag] | None | Callable[..., frozenset[Tag]] = None
-) -> Structured[TokenT]:
-    return Structured.create(
-        constructor=constructor,
-        case_sensitive=case_sensitive,
-        strict=strict,
-        tag=tag,
-    )
-
-
+    

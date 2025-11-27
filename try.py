@@ -5,8 +5,15 @@ from pyDatalog import pyDatalog as d
 from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
 from syncraft.algebra import Error
-from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
+# 
 import timeit
+
+from syncraft.ast import Then, ThenKind, Many, OrElse, OrElseKind, Token, Marked, Nothing, Any
+from syncraft.algebra import Error
+from syncraft.parser import  parse_word
+import syncraft.generator as gen
+from syncraft.syntax import Syntax
+from syncraft.cache import Cache
 
 
 
@@ -61,45 +68,8 @@ def z():
     print("tuple / callable", float(t2) / t1)
         
 
-plain = regex.mark('pattern').between(lparen, rparen)
-# group = "(?:" regex ")"
-noncapturing = S.seq(S.lex(gp_noncap=B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
-# group = "(?P<" name ">" regex ")"
-named = S.seq(S.lex(gp_named=B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
-# group = "(?=" regex ")"
-lookahead = S.seq(S.lex(gp_lh=B.lit("(?=")).named('"(?="'), +regex.mark('pattern'), rparen)
-# group = "(?!" regex ")"
-negative_lookahead = S.seq(S.lex(gp_neglh=B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
-# group = "(?<=" regex ")"
-lookbehind = S.seq(S.lex(gp_lb=B.lit("(?<=")).named('"(?<="'), +regex.mark('pattern'), rparen)
-# group = "(?<!" regex ")"
-negative_lookbehind = S.seq(S.lex(gp_neglb=B.lit("(?<!" )).named('"(?<!"'), +regex.mark('pattern'), rparen)
-# group = "(?" inline_flags ")"
-inline_flag_only = S.seq(S.lex(gp_inline_flags=B.lit("(?")).named('"(?"'), 
-                            +inline_flags, 
-                            rparen)
-# group = "(?" inline_flags ":" regex ")"
-inline_flag_with_colon = S.seq(S.lex(gp_inline_flags_colon=B.lit("(?")).named('"(?"'), 
-                                +inline_flags, 
-                                colon, 
-                                +regex.mark('pattern'), 
-                                rparen)
-
-
-grp_body= S.choice(
-            plain.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="plain").named('plain'),
-            noncapturing.to(lambda **t: GroupAtom(kind=GroupKind.NON_CAPTURE, **t), id="noncapturing").named('noncapturing'),
-            named.to(lambda **t: GroupAtom(kind=GroupKind.CAPTURE, **t), id="named").named('named'),
-            lookahead.to(lambda **t: GroupAtom(kind=GroupKind.LOOKAHEAD, **t), id="lookahead").named('lookahead'),
-            negative_lookahead.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKAHEAD, **t), id="negative_lookahead").named('negative_lookahead'),
-            lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.LOOKBEHIND, **t), id="lookbehind").named('lookbehind'),
-            negative_lookbehind.to(lambda **t: GroupAtom(kind=GroupKind.NEG_LOOKBEHIND, **t), id="negative_lookbehind").named('negative_lookbehind'),
-            inline_flag_only.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS, **t), id="inline_flag_only").named('inline_flag_only'),
-            inline_flag_with_colon.to(lambda **t: GroupAtom(kind=GroupKind.FLAGS_SCOPED, **t), id="inline_flag_with_colon").named('inline_flag_with_colon'),
-        ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
-
-
 def main():
+    from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
     pattern = [
         r'(?r)$|\W{4,}.+\U000FEAE1?u*',
         r'4{1}|e*\b(?0)[FyIn]{4,}',
@@ -117,10 +87,36 @@ def main():
 
 
 def test():
+    from syncraft.regex import Regex, parse_regex, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
     negative_lookahead = S.lex(gp_negative_lookahead=B.lit("(?!"))
     nl = r"(?!\1)"
     ret = parse_regex(negative_lookahead, nl, raw=False)
     assert not isinstance(ret, Error)
+
+
+
+literal = Syntax.literal
+
+def from_string(string: str) -> Token:
+    return Token(text=string)
+
+def test1_simple_then() -> None:
+    A, B, C = literal("a"), literal("b"), literal("c")
+    syntax = A // B // C
+    sql = "a b c"
+    ast, bound = parse_word(syntax, sql, cache=Cache())
+    # print("---" * 40)
+    print(ast)
+    generated, bound = gen.generate_with(syntax, ast)
+    # print("---" * 40)
+    print(generated)
+    assert ast == generated
+    value, bmap = generated.bimap
+    # print(value)
+    u, v = gen.generate_with(syntax, bmap(value))
+    assert u == generated
+
+
 
 if __name__ == "__main__":
     # test_noncap()
@@ -134,4 +130,5 @@ if __name__ == "__main__":
     # for line in r:
     #     print(line)
     # test()
-    main()
+    test1_simple_then()
+    # main()

@@ -21,6 +21,7 @@ from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect,
 
 from syncraft.input import StreamCursor, PayloadKind
 from syncraft.fa import Builder
+from syncraft.token import TokenSpec, TokenSpecBase
 from functools import partial
 import hashlib
 
@@ -1295,7 +1296,9 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def token(cls, **kwargs: Any) -> Syntax[Any, Any]:
-        return cls.factory('lex', **kwargs)
+        tkspec: TokenSpec[Any] | None = TokenSpecBase.from_kwargs(**kwargs)
+        assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
+        return cls.factory('lex', tkspec=tkspec)
 
     @classmethod
     def lex(cls, **kwargs: Builder) -> Syntax[Any, Any]:

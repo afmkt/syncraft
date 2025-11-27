@@ -488,14 +488,9 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         
     @classmethod
     def lex(cls,
-            *,
-            lexer_class: Type[LexerProtocol] | None = None,
             **kwargs: Any) -> Algebra[ParseResult[T], GenState[T]]:
         lexer:LexerProtocol[Any] | None
-        if lexer_class is None:
-            lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
-        else:
-            lexer, remaining_kwargs = lexer_class.from_kwargs(**kwargs)            
+        lexer, remaining_kwargs = LexerBase.from_kwargs(**kwargs)
         assert lexer, f"Lexer could not be created with the given parameters, {kwargs}"
         ntags = lexer.tags()
         name = ','.join(str(tag) for tag in ntags)

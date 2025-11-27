@@ -15,8 +15,8 @@ from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
 from syncraft.lexer import ExtLexer
 from syncraft.cache import Cache
+from syncraft.token import Structured
 from syncraft.fa import Builder
-from syncraft.token import Structured, matcher, TokenMatcher
 # S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
 def tok(text: str):
