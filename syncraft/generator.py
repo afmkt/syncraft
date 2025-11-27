@@ -116,7 +116,7 @@ class GenState(Bindable, Generic[T]):
     
     @property
     def cache_key(self) -> int:
-        return hash(self)
+        return id(self)
 
     def inject(self, a: Any) -> GenState[T]:
         return self.map(lambda _: a)

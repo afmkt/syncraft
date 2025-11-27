@@ -77,12 +77,12 @@ def main():
         r'(?f)',
         r'(?b)',
     ]
-    # print(parse_regex(regex_full, pattern[0]))
-    # print(parse_regex(regex_full, pattern[1]))
-    # print(parse_regex(regex_full, pattern[2]))
-    # print(parse_regex(regex_full, pattern[3]))
-    # print(parse_regex(regex_full, pattern[4]))
-    # print(parse_regex(regex_full, pattern[5]))
+    print(parse_regex(regex_full, pattern[0]))
+    print(parse_regex(regex_full, pattern[1]))
+    print(parse_regex(regex_full, pattern[2]))
+    print(parse_regex(regex_full, pattern[3]))
+    print(parse_regex(regex_full, pattern[4]))
+    print(parse_regex(regex_full, pattern[5]))
     print(str(parse_regex(group, pattern[6])))
     print(str(parse_regex(group, pattern[7])))
 
