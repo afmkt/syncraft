@@ -103,6 +103,8 @@ if __name__ == "__main__":
     # test1_simple_then()
     # main()
 
+
+    
     class G(Grammar, builtin=True):
         a = rule(Grammar.lit(text="a"))
         b = rule(Grammar.lit(text="b"), "B")
@@ -110,7 +112,7 @@ if __name__ == "__main__":
         def c(cls):
             return cls.f.optional
         f = rule(a >> b)
-
+    
 
     print(str(G.a), G.a.location)
     print(str(G.b), G.b.location)

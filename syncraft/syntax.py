@@ -197,9 +197,13 @@ class LazySpec(SyntaxSpec):
         return ret
 
     def __str__(self) -> str:
-        name = self.name or f"lazy({self.inner_spec})"
-        return self.format("{0}", name)
-        
+        try:
+            name = self.name or f"lazy({self.inner_spec})"
+            return self.format("{0}", name)
+        except RecursionError:
+            name = self.name or "lazy(unresolved)"
+            return self.format("{0}", name)
+
     @property    
     def complexity(self) -> float:
         return math.inf
@@ -548,6 +552,10 @@ class LazyState(Generic[A, S]):
         if not isinstance(other, LazyState):
             return False
         return self.flatten == other.flatten and self.thunk == other.thunk
+
+    @property
+    def is_resolved(self) -> bool:
+        return self._cached_syntax is not None
 
     @property
     def cached(self) -> Syntax[A, S]:
@@ -1248,13 +1256,8 @@ class Syntax(Generic[A, S]):
         return cls(alg_f = parallel_f, spec=spec)
 
     @classmethod
-    def choice(cls, *parsers: Syntax[Any, S], **kw_parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
-        if parsers and kw_parsers:
-            raise SyncraftError("Cannot mix positional and keyword parsers in choice", offender=(parsers, kw_parsers), expect="either positional or keyword parsers only")
-        if parsers:
-            all_parsers = parsers
-        else:
-            all_parsers = tuple(p.named(k) for k, p in kw_parsers.items())
+    def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
+        all_parsers = parsers
         def choice_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
             algs = [p(acls, **global_kwargs) for p in all_parsers]
             return acls.choice(*algs).flag(is_orelse=True)
@@ -1262,7 +1265,12 @@ class Syntax(Generic[A, S]):
         return cls(alg_f=choice_f, spec=spec) # type: ignore
     
     @classmethod
-    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool], default:bool = True) -> Syntax[Seq, S]:
+    def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
+        return cls.choice(*parsers)
+
+    @classmethod
+    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Seq, S]:
+        default:bool = True
         infered_default: Optional[bool] = None
         for X in steps:
             if isinstance(X, tuple):

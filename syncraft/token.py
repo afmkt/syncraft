@@ -164,7 +164,7 @@ class Structured(TokenSpecBase[T]):
                     elif pattern != data:
                         return False
             return True
-        pred.__name__ = f"P({self.describe(**kwargs)})"
+        pred.__name__ = f"P({self.describe()})"
         return pred
 
     def generator(self) -> Callable[[Any, random.Random], T]:
@@ -180,6 +180,6 @@ class Structured(TokenSpecBase[T]):
                 else:
                     data[k] = v
             return CallWith(self.constructor, **data)()
-        gen.__name__ = f"G({self.describe(**kwargs)})"
+        gen.__name__ = f"G({self.describe()})"
         return gen
     

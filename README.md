@@ -52,15 +52,9 @@ TODO
 
 Deficiency Planned Improvement
 
-Excessive .map(), .to(), .mark()	Make(T).seq(...) with automatic mark insertion
-Rule naming vs AST naming conflated	repo-based naming + Make-field mapping
-No mechanism to auto-name rules	walrus + repo → auto .named()
-
-Inline flag grammar verbose	higher-level constructors or Make-based mapping
-
-Dataclass mapping is syntactic-first	semantic-first Make/seq flow
-Inconsistent API patterns	global naming & positional rules
-
+1. separate map, to, mark, make
+2. parse, generate, validate
+3. parser, generator
 
 
 

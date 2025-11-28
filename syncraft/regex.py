@@ -477,19 +477,19 @@ def _group_body() -> Syntax[Any, Any]:
 
 
     return S.choice(
-                plain = plain.to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
-                noncapturing = noncapturing.to(partial(GroupAtom, kind=GroupKind.NON_CAPTURE)),
-                named = named.to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
-                lookahead = lookahead.to(partial(GroupAtom, kind=GroupKind.LOOKAHEAD)),
-                negative_lookahead = negative_lookahead.to(partial(GroupAtom, kind=GroupKind.NEG_LOOKAHEAD)),
-                lookbehind = lookbehind.to(partial(GroupAtom, kind=GroupKind.LOOKBEHIND)),
-                negative_lookbehind = negative_lookbehind.to(partial(GroupAtom, kind=GroupKind.NEG_LOOKBEHIND)),
-                inline_flag_only = inline_flag_only.to(partial(GroupAtom, kind=GroupKind.FLAGS)),
-                inline_flag_with_colon = inline_flag_with_colon.to(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED)),
-                lookaround_assertion_group=lookaround_assertion_group.map(lambda _: UnsupportedFeature(feature="lookaround assertion group")),
-                group_existence_test=group_existence_test.map(lambda _: UnsupportedFeature(feature="group existence test")),
-                recursive_group=recursive_group.map(lambda _: UnsupportedFeature(feature="recursive group")),
-                comment_group=comment_group.map(lambda _: UnsupportedFeature(feature="comment group")),
+                plain.to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
+                noncapturing.to(partial(GroupAtom, kind=GroupKind.NON_CAPTURE)),
+                named.to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
+                lookahead.to(partial(GroupAtom, kind=GroupKind.LOOKAHEAD)),
+                negative_lookahead.to(partial(GroupAtom, kind=GroupKind.NEG_LOOKAHEAD)),
+                lookbehind.to(partial(GroupAtom, kind=GroupKind.LOOKBEHIND)),
+                negative_lookbehind.to(partial(GroupAtom, kind=GroupKind.NEG_LOOKBEHIND)),
+                inline_flag_only.to(partial(GroupAtom, kind=GroupKind.FLAGS)),
+                inline_flag_with_colon.to(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED)),
+                lookaround_assertion_group.map(lambda _: UnsupportedFeature(feature="lookaround assertion group")),
+                group_existence_test.map(lambda _: UnsupportedFeature(feature="group existence test")),
+                recursive_group.map(lambda _: UnsupportedFeature(feature="recursive group")),
+                comment_group.map(lambda _: UnsupportedFeature(feature="comment group")),
             ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
 
 
@@ -555,8 +555,8 @@ class DotAtom:
 
 # **backreference     = "\\" number | "\\g<" name ">" ;**
 backreference = S.choice(
-    backreference_number=(backslash >> number).map(lambda n: n[0]),
-    backreference_name=(S.lex(B.lit("\\g<")) >> name // greater).map(lambda n: n[0])
+    (backslash >> number).map(lambda n: n[0]),
+    (S.lex(B.lit("\\g<")) >> name // greater).map(lambda n: n[0])
 ).named('backreference')
 
 # @forall

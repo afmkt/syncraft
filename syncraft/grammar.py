@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Callable, Any, overload, Literal
-from syncraft.syntax import Syntax
+from typing import Callable, Any, overload
+from syncraft.syntax import Syntax, Collector
 from syncraft.utils import file as get_file, line as get_line, func as get_func
 NO_NAME = ""
 AUTUO_NAME = "<auto_name>"
@@ -60,6 +60,8 @@ def rule(syntax: Syntax, name: str | None = AUTUO_NAME) -> Syntax:
     file, line, func = get_file(level), get_line(level), get_func(level)
     return syntax._named(name=name, file=file, line=line, func=func)
 
+
+
 class GrammarMeta(type):
     """Metaclass for grammars."""
 
@@ -98,4 +100,40 @@ class GrammarMeta(type):
 
 class Grammar(Syntax, metaclass=GrammarMeta):
     """Base class for grammars."""
-    pass
+    @classmethod
+    def seq2(cls, to: Collector|None=None, name: str | None = AUTUO_NAME, **kwargs: Syntax | tuple[Syntax, Any]) -> Syntax:
+        """Helper function to create a sequence syntax rule."""
+        level = 1
+        file, line, func = get_file(level), get_line(level), get_func(level)
+        parsers: list[Syntax | tuple[Syntax, Any]] = []
+        for k, v in kwargs.items():
+            if k.startswith("_"):
+                parsers.append(v)
+            elif isinstance(v, Syntax):
+                parsers.append(v.mark(k))
+            elif isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], Syntax):
+                parsers.append((v[0].mark(k), v[1]))
+            else:
+                pass
+        rule: Syntax = cls.seq(*parsers)
+        if to is not None:
+            rule = rule.to(to)
+        return rule._named(name=name, file=file, line=line, func=func)
+    
+    @classmethod
+    def alt2(cls, to: Collector|None=None, name: str | None = AUTUO_NAME, **kwargs: Syntax) -> Syntax:
+        """Helper function to create an alternative syntax rule."""
+        level = 1
+        file, line, func = get_file(level), get_line(level), get_func(level)
+        parsers: list[Syntax] = []
+        for k, v in kwargs.items():
+            if k.startswith("_"):
+                parsers.append(v)
+            elif isinstance(v, Syntax):
+                parsers.append(v.mark(k))
+            else:
+                pass
+        rule: Syntax = cls.alt(*parsers)
+        if to is not None:
+            rule = rule.to(to)
+        return rule._named(name=name, file=file, line=line, func=func)
