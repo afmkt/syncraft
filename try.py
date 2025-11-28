@@ -109,7 +109,7 @@ if __name__ == "__main__":
         @lazy
         def c(cls):
             return cls.f.optional
-        f = rule((a >> b))
+        f = rule(a >> b)
 
 
     print(str(G.a), G.a.location)
