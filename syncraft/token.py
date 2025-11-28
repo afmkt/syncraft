@@ -95,6 +95,8 @@ class Structured(TokenSpecBase[T]):
     case_sensitive: bool = field(default=True, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
+    def __str__(self) -> str:
+        return f"{self.constructor.__name__}({self.describe()})"
     @classmethod
     def create(cls, *, constructor: Type[Any] = Token, case_sensitive: bool = True, strict: bool = False, **kwargs: Any) -> Structured[T]:
         return cls(
@@ -115,8 +117,8 @@ class Structured(TokenSpecBase[T]):
             return frozenset([kwargs['text']])
         return frozenset()
     
-    def describe(self, **kwargs: Any) -> str:
-        c = CallWith(self.constructor, **kwargs)
+    def describe(self) -> str:
+        c = CallWith(self.constructor, **self.kwargs)
         parts = []
         for k, v in c.kwargs.items():
             if isinstance(v, re.Pattern):
@@ -124,7 +126,8 @@ class Structured(TokenSpecBase[T]):
             else:
                 parts.append(f"{k}={v}")
         for x in c.args:
-            parts.append(str(x))
+            if x is not None:
+                parts.append(str(x))
         return ", ".join(parts)
 
     def predicate(self) -> Callable[[T], bool]:

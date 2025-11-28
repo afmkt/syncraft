@@ -101,6 +101,7 @@ class Graph(Generic[N]):
         
 @dataclass(frozen=True, slots=True)
 class SyntaxSpec:
+    MAX_NAME_LENGTH: ClassVar[int] = 30
     name: Optional[str] = field(compare=False, hash=False)
     file: Optional[str] = field(compare=False, hash=False) 
     line: Optional[int] = field(compare=False, hash=False)
@@ -196,7 +197,7 @@ class LazySpec(SyntaxSpec):
         return ret
 
     def __str__(self) -> str:
-        name = self.name or "lazy(...)"
+        name = self.name or f"lazy({self.inner_spec})"
         return self.format("{0}", name)
         
     @property    
@@ -503,16 +504,16 @@ class LexSpec(SyntaxSpec):
             parts = []
             for a in self.args:
                 s = str(a)
-                if len(s) > 20:
-                    s = s[:17] + "..."
+                if len(s) > self.MAX_NAME_LENGTH:
+                    s = s[:self.MAX_NAME_LENGTH-3] + "..."
                 parts.append(s)
             args = ','.join(parts)
             kwparts = []
             for k, v in self.kwargs.items():
                 if v is not None:
                     s = str(v)
-                    if len(s) > 20:
-                        s = s[:17] + "..."
+                    if len(s) > self.MAX_NAME_LENGTH:
+                        s = s[:self.MAX_NAME_LENGTH-3] + "..."
                     kwparts.append(f"{k}={s}")
             kwargs = ', '.join(kwparts)
             if args and kwargs:
@@ -606,6 +607,16 @@ class Syntax(Generic[A, S]):
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     
+    @property
+    def has_name(self) -> bool:
+        return self.spec.name is not None
+    @property
+    def location(self) -> Optional[str]:
+        return self.spec.location
+    
+    def __str__(self) -> str:
+        return str(self.spec)
+
     def vis(self, depth: int = 3) -> Optional[SVGVisualization]:
         from syncraft.vis import syntax2svg
         return syntax2svg(self.spec, max_depth=depth)
@@ -627,7 +638,7 @@ class Syntax(Generic[A, S]):
     def _named(self, *, name: None | str, file: None | str, line: None | int, func: None | str) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
 
-    def named(self, name: str, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
+    def named(self, name: str | None, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
 
     ######################################################## value transformation ########################################################
@@ -925,7 +936,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax producing OrElse of value or Nothing.
         """
-        return (self | self.success(Nothing)).named(f"({str(self.spec)})?", _location=False)
+        return (self | self.success(Nothing)).named(f"{str(self.spec)}?", _location=False)
         
     @property
     def cut(self) -> Syntax[A, S]:

@@ -11,8 +11,8 @@ from syncraft.algebra import Left, Right
 from syncraft.ast import Token
 from syncraft.lexer import Lexer, LexerResult
 from syncraft.syntax import Syntax
-
-
+from syncraft.regex import benchmark_fair
+from syncraft.grammar import Grammar, lazy, rule, AUTUO_NAME
 
 
 def x():
@@ -101,4 +101,19 @@ if __name__ == "__main__":
     #     print(line)
     # test()
     # test1_simple_then()
-    main()
+    # main()
+
+    class G(Grammar, builtin=True):
+        a = rule(Grammar.lit(text="a"))
+        b = rule(Grammar.lit(text="b"), "B")
+        @lazy
+        def c(cls):
+            return cls.f.optional
+        f = rule((a >> b))
+
+
+    print(str(G.a), G.a.location)
+    print(str(G.b), G.b.location)
+    print(str(G.c), G.c.location)
+    print(str(G.f), G.f.location)
+
