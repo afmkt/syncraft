@@ -658,6 +658,13 @@ class Syntax(Generic[A, S]):
         return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
 
     def set_name(self, name: str | None) -> None:
+        """
+        Set the name of this syntax in place. Use with caution.
+        ️⚠️ Mutates the internal state of a frozen dataclass! ⚠️
+        ONLY used in Grammar to flag auto-named syntaxes.
+        Args:
+            name: New name to set.
+        """
         object.__setattr__(self.spec, 'name', name)
 
     def named(self, name: str | None, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
