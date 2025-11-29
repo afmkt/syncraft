@@ -5,16 +5,13 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-from syncraft.ast import AST, Token, Nothing, SyncraftError
+from syncraft.ast import AST, Token, Nothing
 from syncraft.algebra import Error
-
+from syncraft.syntax import Syntax
 from syncraft.fa import Builder
 from syncraft.cache import Cache
 from syncraft.grammar import Grammar, lazy, rule, root
-from syncraft.algebra import Algebra
-from syncraft.parser import parse_string, parser
-from syncraft.input import StreamCursor
-from syncraft.constraint import forall
+
 from functools import partial
 
 try:
@@ -106,14 +103,21 @@ class GroupKind(Enum):
     COMMENT= auto()
     RECURSION= auto()
 
+@dataclass(frozen=True, slots=True)
+class InlineFlags:
+    enabled: Tuple[str, ...]
+    disabled: Optional[Tuple[str, ...]] = None
+
 
 @dataclass(frozen=True, slots=True)
 class GroupAtom:
     kind: GroupKind
     pattern: Optional[Regex] = None
     name: Optional[str] = None
-    inline_flags: Optional[Tuple[str, ...]] = None
-    disabled_flags: Optional[Tuple[str, ...]] = None
+    inline_flags: Optional[InlineFlags] = None
+    
+
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,10 +159,10 @@ class Regex:
 
 B = Builder[str]
 
-class R(Grammar, builtin=True):
+class RE(Grammar, builtin=True):
     dollar = rule(Grammar.lex(B.lit("$")))
     number = rule(Grammar.lex(B.oneof("0123456789").many(at_least=1)).map(lambda m: int(m.text)))
-    dot = rule(Grammar.lex(B.lit(".")))
+    dot = rule(Grammar.lex(B.lit(".")).to(DotAtom))
     or_ = rule(Grammar.lex(B.lit("|")))
     whitespace = rule(Grammar.lex(B.oneof(" \t\n\r\f\v")))
     question = rule(Grammar.lex(B.lit("?")))
@@ -201,22 +205,24 @@ class R(Grammar, builtin=True):
     hex_pair = rule(Grammar.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text))
     meta_char = rule(Grammar.lex(B.oneof("\"\\.[](){}|+*?^$")))
     control_escape = rule(Grammar.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"])))
-    shorthand = rule(Grammar.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text)))
+    shorthand = rule(Grammar.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text)).to(ShorthandAtom))
     category_name = rule(unicode_category.many().map(lambda ts: tuple(t.text for t in ts)))
-    unicode_category_escape = rule(Grammar.choice((escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace),
-                                    (escaped_P.map(lambda _: True).mark('negated') + category_name.mark('categories') // rbrace)))
-    unicode_name = rule((unicode_letter + Grammar.choice(unicode_letter, underscore, space, hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])))
+    unicode_category_escape = rule(Grammar.alt(
+        Grammar.seq2(UnicodeCategoryAtom, negated=+escaped_p.map(lambda _: False), categories=+category_name, _=rbrace),
+        Grammar.seq2(UnicodeCategoryAtom, negated=+escaped_P.map(lambda _: True), categories=+category_name, _=rbrace))
+        )
+    unicode_name = rule((unicode_letter + Grammar.alt(unicode_letter, underscore, space, hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])))
     name_continue = rule(unicode_letter | underscore)
     name_start = rule(unicode_letter | underscore)
     name = rule((name_start + name_continue.many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])))
-    unicode_escape = rule(Grammar.choice((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16))), 
+    unicode_escape = rule(Grammar.alt((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16))), 
                     (escaped_u >> hex_quad).map(lambda t: chr(int(t[0], 16))),
                     (escaped_U >> hex_octa).map(lambda t: chr(int(t[0], 16))), 
                     ((escaped_N >> unicode_name) // rbrace).map(lambda t: unicodedata.lookup(t[0]))))
     escaped_metachar = rule((backslash >> meta_char).map(lambda t: t[0]))
     escaped_0 = rule(Grammar.lex(B.lit("\\0")))
     octal_digit = rule(Grammar.lex(B.range("0", "7")))
-    octal_escape = rule(Grammar.choice(
+    octal_escape = rule(Grammar.alt(
         (escaped_0 >> octal_digit + octal_digit).map(lambda t: chr(int(t[0].text + t[1].text, 8))),
         (backslash >> octal_digit.many(at_least=1)).map(lambda t: chr(int(''.join([tt.text for tt in t[0]]), 8)))
     ))
@@ -226,23 +232,23 @@ class R(Grammar, builtin=True):
     escaped_class_meta= rule((backslash >> class_meta_char).map(lambda t: t[0]))
     class_atom = rule(Grammar.choice(
                         class_literal,
-                        shorthand.to(ShorthandAtom),
+                        shorthand,
                         escaped_metachar,
                         control_escape,
                         unicode_escape,
-                        unicode_category_escape.to(UnicodeCategoryAtom),
+                        unicode_category_escape,
                         escaped_class_meta,
                         ).map(lambda t: t.text if isinstance(t, Token) else t))
 
     irange = rule(Grammar.seq2(CharRange, start=class_atom, _=-minus, end=class_atom))
     class_item = rule(irange | class_atom)
     class_class_items = rule((~(rsquare | minus) + class_item.many()).map(lambda t: (t[1] + [t[0].text]) if t[0] else t[1]))
-    char_class = rule(Grammar.seq2(_=-lsquare, negated=(~caret).map(bool), items=class_class_items, __=-rsquare))
+    char_class = rule(Grammar.seq2(_=-lsquare, negated=(~caret).map(bool), items=class_class_items, __=-rsquare).to(CharClassAtom))
 
-    flag = Grammar.lex(B.oneof("iLmsuaxw"))
-    flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts))
-    inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda t: t[0] if t is not Nothing else None).mark('disabled_flags')
-    comment = Grammar.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1)).map(lambda tok: tok.text)
+    flag = rule(Grammar.lex(B.oneof("iLmsuaxw")))
+    flag_seq = rule(flag.many().map(lambda ts: tuple(t.text for t in ts)))
+    inline_flags = rule(Grammar.seq2(InlineFlags, enabled=+flag_seq, disabled=+(~(minus >> flag_seq)).map(lambda t: t[0] if t is not Nothing else None)))
+    comment = rule(Grammar.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1)).map(lambda tok: tok.text))
 
     
 
@@ -281,11 +287,11 @@ class R(Grammar, builtin=True):
                                  __=cls.rparen),
                     Grammar.seq2(partial(GroupAtom, kind=GroupKind.FLAGS), 
                                  _=Grammar.lex(B.lit("(?")), 
-                                 _1=+cls.inline_flags, 
+                                 inline_flags=+cls.inline_flags, 
                                  _2=cls.rparen),
                     Grammar.seq2(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED), 
                                  _=Grammar.lex(B.lit("(?")), 
-                                 _1=+cls.inline_flags, 
+                                 inline_flags=+cls.inline_flags, 
                                  _2=cls.colon, 
                                  pattern=+cls.regex, 
                                  _3=cls.rparen),
@@ -316,17 +322,17 @@ class R(Grammar, builtin=True):
 
 
 
-    anchor = Grammar.alt(caret, 
+    anchor = rule(Grammar.alt(caret, 
                     dollar,
-                    boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind').named('anchor')
+                    boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).to(AnchorAtom))
 
 
-    braced_quantifier = Grammar.alt(
+    braced_quantifier = rule(Grammar.alt(
         Grammar.seq(lbrace, +number, rbrace).map(lambda n: Quantifier(minimum=n[0], maximum=n[0])),
         Grammar.seq(lbrace, +number, comma, rbrace).map(lambda t: Quantifier(minimum=t[0], maximum=None)),
         Grammar.seq(lbrace, comma, +number, rbrace).map(lambda t: Quantifier(minimum=0, maximum=t[0])),
         Grammar.seq(lbrace, +number.mark('minimum'), comma, +number.mark('maximum'), rbrace).to(Quantifier)
-    )
+    ))
 
 
     quantifier = rule((Grammar.alt(
@@ -345,11 +351,11 @@ class R(Grammar, builtin=True):
     atom = Grammar.alt(        
             backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and len(group_counter) >= v)),
             Grammar.seq2(LiteralAtom, text=literal),
-            char_class.to(CharClassAtom),
-            anchor.to(AnchorAtom),
-            dot.to(DotAtom),
-            shorthand.to(ShorthandAtom),
-            unicode_category_escape.to(UnicodeCategoryAtom),
+            char_class,
+            anchor,
+            dot,
+            shorthand,
+            unicode_category_escape,
             group,
             ).named('atom')
 
@@ -358,49 +364,29 @@ class R(Grammar, builtin=True):
     branch = rule(Grammar.seq2(Branch, pieces=piece.many()))
 
     regex = rule(Grammar.seq2(Regex, branches=branch.sep_by(or_)))
-    
+
     regex_full = root((regex // Grammar.eof()).map(lambda r: r[0]))
 
-    @property
-    def parser(self) -> Algebra[Any, Any]:
-        return parser(syntax=regex_full)
+
 
 
 
 
 
 @overload
-def parse(data: str, *, raw: Literal[True], cache: Optional[Cache[Any]] = None) -> AST: ...
+def parse(data: str, *, raw: Literal[True]) -> AST: ...
 @overload
-def parse(data: str, *, raw: Literal[False], cache: Optional[Cache[Any]] = None) -> Regex | Error: ...
+def parse(data: str, *, raw: Literal[False]) -> Regex | Error: ...
 
-def parse(data: str, *, raw:bool=False, cache: Optional[Cache[Any]] = None) -> Regex | Error | AST:
-    from syncraft.parser import Runner
-    runner: Runner[Any] = Runner()
-    cursor = StreamCursor.from_data(data)
-    for result, s in runner.run(regex_parser, state=None, cursor=cursor, once=True, cache=cache):
-        if s:
-            if isinstance(result, AST):
-                return result if raw else result.mapped 
-            else:
-                return result
-        else:
-            return result
-    raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
+def parse(data: str, *, raw:bool=False) -> Regex | Error | AST:
+    return RE.parse(data, raw=raw)
+
 
 def parse_regex(syntax: Syntax[Any, Any], 
                 pattern: str, 
                 *, 
                 raw:bool=False) -> Any:
-    result, s = parse_string(syntax, pattern, cache=None)
-    if s:
-        if isinstance(result, AST):
-            return result if raw else result.mapped 
-        else:
-            return result
-    else:
-        return result
-
+    return RE.parse(pattern, syntax=syntax, raw=raw)
 
 @dataclass
 class VerifyResult:
@@ -423,7 +409,7 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
     if profile:
         cache = cache.with_profiler()
     
-    parsed = parse(pattern, raw=False, cache=cache)
+    parsed = parse(pattern, raw=False)
     if cache.profiler is not None:
         cache.profiler.report()
         
@@ -457,7 +443,7 @@ def benchmark_fair():
         try:
             p = next(pat_iter)
             # You are already correctly passing a new cache here
-            parse(p, raw=False, cache=Cache()) 
+            parse(p, raw=False) 
         except StopIteration:
             pass
 

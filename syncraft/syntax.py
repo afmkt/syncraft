@@ -1448,7 +1448,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
              cursor: Optional[StreamCursor[Any]],
              cache: Optional[Cache[Any]]
              ) -> Tuple[Any, None | S]:
-        gen = self.__call__(syntax, alg_cls, state, cursor, cache, once=True)
+        gen = self(syntax, alg_cls, state, cursor, cache, once=True)
         return next(gen)
         
 

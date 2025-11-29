@@ -186,10 +186,6 @@ class GenState(Bindable, Generic[T]):
             seed=seed
         )
         
-    
-
-
-
 
 @dataclass(frozen=True, slots=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):      
@@ -538,7 +534,6 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
     ast : ParseResult[T] | None = None
     seed: int = field(default_factory=lambda: random.randint(0, 2**32 - 1))
     restore_pruned: bool = False
-    lexer_class: Type[LexerProtocol] | None = None
 
     
     def algebra(self, 
@@ -546,26 +541,32 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
                   alg_cls: Type[Algebra[ParseResult[T], GenState[T]]]
                   ) -> Algebra[ParseResult[T], GenState[T]]:
         
-        return syntax(alg_cls, syntax = syntax, lexer_class=self.lexer_class)
+        return syntax(alg_cls, syntax = syntax)
     
     def resume(self, request: Optional[GenState[T]], cursor: Optional[StreamCursor[Any]]) -> GenState[T]:
         if request is None:
             return GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
         raise SyncraftError("Generator does not support resuming from Incomplete states.", offender=request, expect="Not Incomplete")
 
+
+
+
+def generator(syntax: Syntax[Any, Any]) -> Algebra[Any, Any]:
+    runner: Runner[Any] = Runner()
+    return runner.algebra(syntax=syntax, alg_cls=Generator)
+
+    
     
 def generate_with(
     syntax: Syntax[Any, Any], 
     data: Optional[ParseResult[Any]] = None, 
     seed: Optional[int] = None,
-    restore_pruned: bool = False,
-    lexer_class: Type[LexerProtocol] | None = None,
+    restore_pruned: bool = False
 ) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     
     runner = Runner(ast=data, 
                     seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
-                    restore_pruned=restore_pruned, 
-                    lexer_class=lexer_class)
+                    restore_pruned=restore_pruned)
 
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:

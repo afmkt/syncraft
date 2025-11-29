@@ -1,6 +1,12 @@
 from __future__ import annotations
-from typing import Callable, Any, overload, Dict, Set, Literal
+from typing import Callable, Any, overload, Dict, Set, Literal, Optional
+from syncraft.ast import AST, SyncraftError
 from syncraft.syntax import Syntax, Collector
+from syncraft.algebra import Algebra
+from syncraft.parser import parser
+from syncraft.generator import generator
+from syncraft.cache import Cache
+from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
 
 AUTUO_NAME = "<auto_name>"
@@ -157,6 +163,8 @@ class GrammarMeta(type):
 class Grammar(Syntax, metaclass=GrammarMeta):
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
+    _parser: Dict[Syntax, Algebra[Any, Any]] = {}
+    _generator: Dict[Syntax, Algebra[Any, Any]] = {}
     @classmethod
     def seq2(cls, to: Collector|None=None, _name: str | None = AUTUO_NAME, **kwargs: Syntax | tuple[Syntax, Any]) -> Syntax:
         """Helper function to create a sequence syntax rule."""
@@ -199,3 +207,94 @@ class Grammar(Syntax, metaclass=GrammarMeta):
         if to is not None:
             rule = rule.to(to)
         return rule._named(name=_name, file=file, line=line, func=func)
+
+    @classmethod
+    def parser(cls, syntax: Syntax | None = None) -> Algebra[Any, Any]:
+        """Create a parser for the grammar."""
+        if syntax is None:
+            if cls._root_rule is None:
+                raise ValueError("No root rule defined for the grammar")
+            syntax = cls._root_rule
+        if syntax in cls._parser:
+            return cls._parser[syntax]
+        ret = parser(syntax=syntax)
+        cls._parser[syntax] = ret
+        return ret
+    
+    @classmethod
+    def generator(cls, syntax: Syntax | None = None) -> Algebra[Any, Any]:
+        """Create a generator for the grammar."""
+        if syntax is None:
+            if cls._root_rule is None:
+                raise ValueError("No root rule defined for the grammar")
+            syntax = cls._root_rule
+        if syntax in cls._generator:
+            return cls._generator[syntax]
+        ret = generator(syntax=syntax)
+        cls._generator[syntax] = ret
+        return ret
+    
+    @classmethod
+    def validator(cls, syntax: Syntax | None = None) -> Algebra[Any, Any]:
+        """Create a validator for the grammar."""
+        return cls.generator(syntax=syntax)
+
+    @classmethod
+    def parse(cls, data: str, syntax: Syntax | None = None, raw: bool = False) -> Any:
+        """Parse text using the grammar."""
+        from syncraft.parser import Runner
+        parser = cls.parser(syntax=syntax)
+        runner: Runner[Any] = Runner()
+        cursor = StreamCursor.from_data(data)
+        cache: Cache[Any] = Cache()
+        for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=cache):
+            if s:
+                if isinstance(result, AST):
+                    return result if raw else result.mapped 
+                else:
+                    return result
+            else:
+                return result
+        raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
+
+    @classmethod
+    def stream_parse(cls, data: StreamCursor[Any], syntax: Syntax | None = None, raw: bool = False) -> Any:
+        """Parse text using the grammar."""
+        from syncraft.parser import Runner
+        parser = cls.parser(syntax=syntax)
+        runner: Runner[Any] = Runner()
+        cache: Cache[Any] = Cache()
+        
+        for result, s in runner.run(parser, state=None, cursor=data, once=False, cache=cache):
+            if s:
+                if isinstance(result, AST):
+                    yield result if raw else result.mapped
+                else:
+                    yield result
+            else:
+                yield result
+                
+    @classmethod
+    def generate(cls, data: Any, syntax: Syntax | None = None, seed: int | None = None) -> Any:
+        """Generate text using the grammar."""
+        from syncraft.generator import Runner
+        import random
+        generator = cls.generator(syntax=syntax)        
+        runner = Runner(ast=data,
+                        seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
+                        restore_pruned=False)
+        for result, s in runner.run(generator, state=None, cursor=None, once=True, cache=None):
+            return result
+        
+    @classmethod
+    def validate(cls, data: Any, syntax: Syntax | None = None, seed: int | None = None) -> Any:
+        """Validate text using the grammar."""
+        from syncraft.generator import Runner
+        import random
+        generator = cls.generator(syntax=syntax)        
+        runner = Runner(ast=data, 
+                        seed=seed if seed is not None else random.randint(0, 2**32 - 1),
+                        restore_pruned=True)
+        for result, _ in runner.run(generator, state=None, cursor=None, once=True, cache=None):
+            return result
+        
