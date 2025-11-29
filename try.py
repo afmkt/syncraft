@@ -12,7 +12,7 @@ from syncraft.ast import Token
 from syncraft.lexer import Lexer, LexerResult
 from syncraft.syntax import Syntax
 from syncraft.regex import benchmark_fair
-from syncraft.grammar import Grammar, lazy, rule, AUTUO_NAME
+from syncraft.grammar import Grammar, rule, lazy
 
 
 def x():

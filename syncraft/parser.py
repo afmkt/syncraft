@@ -517,8 +517,8 @@ class Parser(Algebra[T, ParserState[T]]):
                             if end > state.index:
                                 state = state.advance()
                             return Right.new((token, state)) # type: ignore
-                        case e:
-                            raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or None or LexerError")
+                        case x:
+                            raise SyncraftError("Unknown result from lexer", offender=x, expect="LexerResult or None or LexerError")
 
         return cls(lex_run)
 

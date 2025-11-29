@@ -142,18 +142,17 @@ class GrammarMeta(type):
             new_namespace[name] = value
 
         for n in lazy_rules.keys():
-            namespace.pop(n, None)
-            
+            new_namespace.pop(n, None)
         cls = type.__new__(mcs, name, (S,), dict(new_namespace))
         all_rules: Dict[str, Syntax] = {}
         for name, value in lazy_rules.items():
-            rule = value.rule(cls, MAX_NAME_LENGTH, name)
-            all_rules[name] = rule
-            if rule.is_root:
+            r = value.rule(cls, MAX_NAME_LENGTH, name)
+            all_rules[name] = r
+            if r.is_root:
                 if root_rule:
                     raise ValueError(f"Multiple root rules defined: {root_rule} and {name}")
-                root_rule.add(rule)
-            setattr(cls, name, rule)
+                root_rule.add(r)
+            setattr(cls, name, r)
         all_rules.update(normal_rules)
         setattr(cls, '_rules', all_rules)
         setattr(cls, '_root_rule', next(iter(root_rule)) if root_rule else None)
