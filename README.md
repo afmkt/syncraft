@@ -39,21 +39,7 @@ TODO
 
 - [ ]  regex.py convert Regex to Builder, for grammar authoring
 
-- [ ]  Tiered semantic layer, 1. Raw: Callable[..., bool] 2. Propositional: forall/exists 3. PyDatalog adapter. 
-       Propositional: ready
-       Raw: ready
-       PyDatalog adapter ??
-
-- [ ]  A Grammar or Language module that package Syntax object and perform
-       a. auto name for terminal rules
-       b. separate map, to, mark, to a transform function
-       c. 
-
-
-Deficiency Planned Improvement
-
-2. parse, generate, validate
-3. parser, generator
-
+- [ ]  PyDatalog adapter, with example
+       
 
 
