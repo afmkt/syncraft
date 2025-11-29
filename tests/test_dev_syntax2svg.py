@@ -14,15 +14,13 @@ from syncraft.vis import syntax2svg
 from syncraft.syntax import (
     LexSpec,
     ThenSpec,
-    OrElseSpec,
-    LazySpec,
 )
 from syncraft.ast import ThenKind
 from syncraft.utils import FrozenDict
 from syncraft.vis import SVGVisualization
 
 def token_spec(label: str) -> LexSpec:
-    return LexSpec(fname="token", kwargs=FrozenDict({"text": label}), name=None, file=None, line=None, func=None)
+    return LexSpec(fname="token", kwargs=FrozenDict({"text": label}), name=None, file=None, line=None, func=None, MAX_NAME_LENGTH=30)
 
 
 def test_syntax2svg_simple_sequence():

@@ -101,7 +101,7 @@ class Graph(Generic[N]):
         
 @dataclass(frozen=True, slots=True)
 class SyntaxSpec:
-    MAX_NAME_LENGTH: ClassVar[int] = 30
+
     name: Optional[str] = field(compare=False, hash=False)
     file: Optional[str] = field(compare=False, hash=False) 
     line: Optional[int] = field(compare=False, hash=False)
@@ -122,6 +122,7 @@ class SyntaxSpec:
             return replace(self, name=name, file=file, line=line, func=func)
         else:
             return replace(self, name=name)
+        
 
     def format(self, tmplt: str, *args: Any, **kwargs: Any) -> str:
         tmp = {}
@@ -201,7 +202,7 @@ class LazySpec(SyntaxSpec):
             name = self.name or f"lazy({self.inner_spec})"
             return self.format("{0}", name)
         except RecursionError:
-            name = self.name or "lazy(unresolved)"
+            name = self.name or "lazy(UNSOLVED)"
             return self.format("{0}", name)
 
     @property    
@@ -491,8 +492,10 @@ class ManySpec(SyntaxSpec, Generic[A]):
 @dataclass(frozen=True, slots=True)
 class LexSpec(SyntaxSpec):
     fname: str
+    MAX_NAME_LENGTH: Optional[int] = field(compare=False, hash=False, repr=False)
     args: Tuple[Any, ...] = field(default_factory=tuple)
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
+    
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
         if self in cache:
             return cache[self]
@@ -508,7 +511,7 @@ class LexSpec(SyntaxSpec):
             parts = []
             for a in self.args:
                 s = str(a)
-                if len(s) > self.MAX_NAME_LENGTH:
+                if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
                     s = s[:self.MAX_NAME_LENGTH-3] + "..."
                 parts.append(s)
             args = ','.join(parts)
@@ -516,7 +519,7 @@ class LexSpec(SyntaxSpec):
             for k, v in self.kwargs.items():
                 if v is not None:
                     s = str(v)
-                    if len(s) > self.MAX_NAME_LENGTH:
+                    if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
                         s = s[:self.MAX_NAME_LENGTH-3] + "..."
                     kwparts.append(f"{k}={s}")
             kwargs = ', '.join(kwparts)
@@ -616,6 +619,10 @@ class Syntax(Generic[A, S]):
     _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     
     @property
+    def is_orelse(self) -> bool:
+        return isinstance(self.spec, OrElseSpec) or isinstance(self.spec, ChoiceSpec) or isinstance(self.spec, ParallelSpec)
+
+    @property
     def has_name(self) -> bool:
         return self.spec.name is not None
     @property
@@ -635,9 +642,13 @@ class Syntax(Generic[A, S]):
         return cast(typ, self)  # type: ignore
     
     @classmethod
-    def config(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
+    def set(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
         return type(cls.__name__, (cls,), {SYNCRAFT_CONFIG_KEY: attrs})
 
+    @classmethod
+    def get(cls, key: str) -> Any:
+        cfg = getattr(cls, SYNCRAFT_CONFIG_KEY, {})
+        return cfg.get(key, None)
 
     def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
         cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
@@ -645,6 +656,9 @@ class Syntax(Generic[A, S]):
 
     def _named(self, *, name: None | str, file: None | str, line: None | int, func: None | str) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
+
+    def set_name(self, name: str | None) -> None:
+        object.__setattr__(self.spec, 'name', name)
 
     def named(self, name: str | None, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
@@ -1225,7 +1239,7 @@ class Syntax(Generic[A, S]):
                                             func=spec.func))
     
     @property
-    def lexspec(self) -> frozenset[LexSpec]:
+    def terminals(self) -> frozenset[LexSpec]:
         if self._lexspec_cache is MISSING:            
             result: Set[LexSpec] = set()
             for _, node in self.spec.walk():
@@ -1324,6 +1338,7 @@ class Syntax(Generic[A, S]):
         return cls(factory_run, spec=LexSpec(fname=name, 
                                              args=args,
                                              kwargs=FrozenDict(kwargs), 
+                                             MAX_NAME_LENGTH=cls.get('MAX_NAME_LENGTH'),
                                              name=None, 
                                              file=None, 
                                              line=None, 
@@ -1344,7 +1359,7 @@ class Syntax(Generic[A, S]):
     def lit(cls, text: str | re.Pattern[str] | bytes, case_sensitive: bool = True) -> Syntax[Any, Any]:
         tkspec: TokenSpec[Any] | None = TokenSpecBase.from_kwargs(text=text, case_sensitive=case_sensitive)
         assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
-        return cls.token(tkspec=tkspec)
+        return cls.token(tkspec)
     
 
     @classmethod

@@ -8,16 +8,11 @@ from syncraft.generator import (
     generate_with,
     generate,
     validate,
-    Generator,
-    Runner as GeneratorRunner,
 )
 from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
-from syncraft.lexer import ExtLexer
-from syncraft.cache import Cache
 from syncraft.token import Structured
 from syncraft.fa import Builder
-# S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
 def tok(text: str):
     return S.lit(text=text, case_sensitive=True)
@@ -73,7 +68,7 @@ def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
     assert bound is not None
 
 
-SS = Syntax.config(tkspec=Structured(Token))
+SS = Syntax.set(tkspec=Structured(Token))
 # SS = S
 def test_generate_with_mutual_left_recursion_without_base_raises():
     # Mutual recursion with no productive base: A := B ; B := A

@@ -105,10 +105,10 @@ if __name__ == "__main__":
 
 
     
-    class G(Grammar, builtin=True):
+    class G(Grammar, builtin=True, max_name_length=10):
         a = rule(Grammar.lit(text="a"))
         b = rule(Grammar.lit(text="b"), "B")
-        @lazy
+        @lazy(False)
         def c(cls):
             return cls.f.optional
         f = rule(a >> b)

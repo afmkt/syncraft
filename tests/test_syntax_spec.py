@@ -85,7 +85,7 @@ def _flatten_token_text(node: object) -> List[str]:
 
 
 def test_spec_can_drive_left_recursion_elimination() -> None:
-    TestSyntax = Syntax.config(tkspec=Structured(Token))
+    TestSyntax = Syntax.set(tkspec=Structured(Token))
     literal = TestSyntax.lit
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]
@@ -122,7 +122,7 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
 
 
 def test_walk_handles_recursive_grammar() -> None:
-    TestSyntax = Syntax.config(tkspec=Structured(Token))
+    TestSyntax = Syntax.set(tkspec=Structured(Token))
     literal = TestSyntax.lit
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]

@@ -4,7 +4,6 @@ from syncraft.parser import parse_word
 from syncraft.generator import validate, generate_with
 from syncraft.algebra import Error
 from syncraft.cache import Cache
-# S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
 def tok(text: str):
     return S.lit(text=text, case_sensitive=True)

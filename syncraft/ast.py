@@ -136,6 +136,10 @@ class AST:
     @property
     def custom_mapping(self) -> Optional[Bimap[Any, Any]]: ...
 
+    
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return self
+
     _bimmapped_cache: Reversible[Any, Any] = field(default=MISSING, init=False, repr=False, compare=False, hash=False)
     @property
     def arity(self)->int:
@@ -200,6 +204,11 @@ class Lazy(AST, Generic[A]):
     value: A
     flatten: bool 
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
+        
+
     @property
     def arity(self)->int:
         if self.flatten:
@@ -230,6 +239,8 @@ class Marked(AST, Generic[A]):
     name: str
     value: A
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     def _bimap(self) -> Reversible[Marked[A], Marked[Any]]:
         """Transform the inner value while preserving the mark name.
@@ -261,6 +272,8 @@ class OrElse(AST, Generic[A, B]):
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
     value: Optional[A | B] = None
     
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     @property
     def arity(self)->int:
@@ -293,6 +306,8 @@ class Choice(AST, Generic[A]):
     index: Optional[int]
     value: Optional[A]
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     @property
     def arity(self)->int:
@@ -324,6 +339,8 @@ class Many(AST, Generic[A]):
     """A finite sequence of values within the AST."""
     value: Tuple[A, ...]
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     def _bimap(self) -> Reversible[Many[A], List[Any]]:
         """Map each element to a list and provide an inverse.
@@ -349,6 +366,8 @@ class Many(AST, Generic[A]):
 class Seq(AST):
     value: Tuple[Tuple[Any, bool], ...]
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     @property
     def arity(self)->int:
@@ -418,6 +437,8 @@ class Then(AST, Generic[A, B]):
     left: A
     right: B
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     @property
     def is_then(self)->bool:
@@ -535,6 +556,8 @@ class Collect(AST, Generic[A, E]):
     collector: Collector
     value: A
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     def _bimap(self) -> Reversible[Collect[A, E], E]:
         b, inner_f = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
@@ -609,6 +632,8 @@ class Token(AST, Generic[Char]):
     text: str | bytes | Tuple[Char, ...]
     token_type: Optional[Union[str, Enum]] = None
     custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False, default=None)
+    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+        return replace(self, custom_mapping=f) 
 
     def __str__(self) -> str:
         if isinstance(self.text, str):

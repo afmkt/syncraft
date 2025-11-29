@@ -6,7 +6,7 @@ from syncraft.ast import Token
 
 from syncraft.lexer import ExtLexer
 from syncraft.token import Structured
-# literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
+
 literal = Syntax.lit
 
 

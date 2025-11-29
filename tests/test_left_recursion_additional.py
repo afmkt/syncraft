@@ -10,10 +10,6 @@ from syncraft.cache import Cache, set_randomization
 # This is also handled by conftest.py but we make it explicit here
 set_randomization(True)
 # Reuse the pattern from existing tests: specialize Syntax with a Structured
-# literal = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).literal
-# token = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).token
-# lazy = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).lazy
-# success = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token))).success
 
 lit = Syntax.lit
 token = Syntax.token

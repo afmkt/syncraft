@@ -15,7 +15,6 @@ from .test_utils import token_multiset
 # Ensure randomization is enabled for these tests
 set_randomization(True)
 
-# S = Syntax.config(lexer_class=ExtLexer.bind(tkspec=Structured(Token)))
 S = Syntax
 literal = S.lit
 token = S.token

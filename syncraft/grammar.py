@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Callable, Any, overload
 from syncraft.syntax import Syntax, Collector
 from syncraft.utils import file as get_file, line as get_line, func as get_func
-NO_NAME = ""
+
 AUTUO_NAME = "<auto_name>"
 class LazyHolder:
     def __init__(self, thunk: Callable[[Any], Syntax], name: str | None, need_name: bool, file: str | None, line: int | None, func: str | None):
@@ -40,14 +40,14 @@ def lazy(thunk: str | Callable[[Any], Syntax] | bool) -> Any | Callable[[Any], A
     level = 1
     file, line, func = get_file(level), get_line(level), get_func(level)
     if callable(thunk):
-        return LazyHolder(thunk, None, need_name=True, file=file, line=line, func=func)
+        return LazyHolder(thunk, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func)
     elif isinstance(thunk, str):
         def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, name=thunk, need_name=thunk != NO_NAME, file=file, line=line, func=func)
+            return LazyHolder(f, name=thunk, need_name=True, file=file, line=line, func=func)
         return wrapper
     elif isinstance(thunk, bool):
         def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, name=None if thunk else NO_NAME, need_name=thunk, file=file, line=line, func=func)
+            return LazyHolder(f, name=None if not thunk else AUTUO_NAME, need_name=thunk, file=file, line=line, func=func)
         return wrapper
     else:
         raise TypeError("Invalid argument to lazy decorator")
@@ -66,7 +66,8 @@ class GrammarMeta(type):
     """Metaclass for grammars."""
 
     def __new__(mcs, name, bases, namespace, **config):
-        S = Syntax.config(**config)
+        MAX_NAME_LENGTH = config.pop("max_name_length", 0)
+        S = Syntax.set(**config)
         lazy_rules = {}
         for name, value in namespace.items():
             if isinstance(value, LazyHolder):
@@ -80,7 +81,10 @@ class GrammarMeta(type):
             if isinstance(v, Syntax):
                 if v.has_name:
                     if v.spec.name == AUTUO_NAME:
-                        v = v.named(name=k, _location=False)
+                        v.set_name(None)
+                        n = str(v)
+                        if len(n) > MAX_NAME_LENGTH:
+                            v = v.named(k)
             new_namespace[k] = v
 
 
@@ -89,8 +93,11 @@ class GrammarMeta(type):
         for name, value in lazy_rules.items():
             rule = S.lazy(lambda: value.thunk(cls))
             if value.need_name:            
-                if value.name is None:
-                    value.name = name
+                rule_name = str(rule)
+                if value.name == AUTUO_NAME:
+                    value.name = None
+                    if (len(rule_name) > MAX_NAME_LENGTH or 'UNSOLVED' in rule_name):
+                        value.name = name                        
                 rule = rule._named(name=value.name, file=value.file, line=value.line, func=value.func)
             else:
                 rule = rule._named(name=None, file=value.file, line=value.line, func=value.func)

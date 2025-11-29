@@ -52,7 +52,6 @@ TODO
 
 Deficiency Planned Improvement
 
-1. separate map, to, mark, make
 2. parse, generate, validate
 3. parser, generator
 

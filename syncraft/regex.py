@@ -186,7 +186,7 @@ class UnsupportedFeature:
 
 
 B = Builder[str]
-S = Syntax.config( builtin=True)
+S = Syntax.set( builtin=True)
 
 
 dollar = S.lex(B.lit("$"))

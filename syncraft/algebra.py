@@ -9,7 +9,7 @@ from syncraft.ast import Bimap, ThenKind, Lazy, Then, OrElse, Many, OrElseKind, 
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
-from syncraft.utils import callable_str
+from syncraft.utils import callable_str, is_orelse
 
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax, SyntaxSpec, Graph
@@ -142,13 +142,15 @@ class Error:
     def fmt_stack(stack: List[Tuple[Any, int]], indent: str="") -> List[str]:
         def str_rule(rule: Callable[..., Any]) -> str:
             syn = Error.get_syntax(rule)
+            orelse = syn.is_orelse if syn else is_orelse(rule)
+            mark = "\u22d4" if orelse else ""
             spec = syn.spec if syn else None
             if spec and hasattr(spec, 'location'):
                 if spec.location is not None:
-                    return f"{str(spec)} ({spec.location})"
+                    return f"{mark}{str(spec)} ({spec.location})"
             if spec is None:
-                return callable_str(rule)
-            return f"{str(spec)}"
+                return f"{mark}{callable_str(rule)}"
+            return f"{mark}{str(spec)}"
 
         lines = []
         if len(stack) > 0:
@@ -173,16 +175,6 @@ class Error:
         
     @property
     def trace(self) -> str:
-        def str_rule(rule: Callable[..., Any]) -> str:
-            syn = Error.get_syntax(rule)
-            spec = syn.spec if syn else None
-            if spec and hasattr(spec, 'location'):
-                if spec.location is not None:
-                    return f"{str(spec)} ({spec.location})"
-            if spec is None:
-                return callable_str(rule)
-            return f"{str(spec)}"
-
         lines = []
         # Show parsing context with duplicate counts (no limit on stack frames)
         stack = self.stack
@@ -251,7 +243,9 @@ class Algebra(Generic[A, S]):
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
     syntax: Syntax | None = None
 
-
+    @property
+    def is_orelse(self)->bool:
+        return is_orelse(self.run_f)
 
     @staticmethod
     def _flag(func: Callable[..., Any], **kwargs: Hashable) -> Callable[..., Any]:
@@ -264,7 +258,7 @@ class Algebra(Generic[A, S]):
         return self
         
 
-    def config(self) -> dict[str, Any]:
+    def get(self) -> dict[str, Any]:
         cfg = getattr(self, SYNCRAFT_CONFIG_KEY, {})
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
@@ -466,14 +460,14 @@ class Algebra(Generic[A, S]):
         return cast(Algebra[B, S], alg)
     
     def bimap(self, b: Bimap[A, B]) -> Algebra[A, S]:
-        def bimap_f(a: A):
+        def bimap_f(a: A)->Any:
             assert isinstance(a, AST), f"bimap can only be applied to AST-mapped values, got {type(a)}"
             mapping = a.custom_mapping
             if mapping is not None:
                 mapping = mapping >> b
             else:
                 mapping = b
-            return replace(a, custom_mapping=mapping)
+            return a.mapping(mapping)
         return self.map(bimap_f, raw=True)
         
     def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
