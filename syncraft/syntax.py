@@ -604,8 +604,6 @@ class LazyState(Generic[A, S]):
         return algebra
         
 
-
-
 @dataclass(frozen=True, slots=True, weakref_slot=True)
 class Syntax(Generic[A, S]):
     """
@@ -614,6 +612,7 @@ class Syntax(Generic[A, S]):
     
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
+    is_root: bool = field(default=False, compare=False, hash=False, repr=False)
     _lexspec_cache: frozenset[LexSpec] = field(default = MISSING, init=False, repr=False, compare=False, hash=False)
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
     _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
@@ -656,6 +655,9 @@ class Syntax(Generic[A, S]):
 
     def _named(self, *, name: None | str, file: None | str, line: None | int, func: None | str) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
+
+    def marked_as_root(self) -> Syntax[A, S]:
+        return replace(self, is_root=True)
 
     def set_name(self, name: str | None) -> None:
         """
