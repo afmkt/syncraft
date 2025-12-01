@@ -193,7 +193,7 @@ dollar = S.lex(B.lit("$"))
 
 
 # number            = digit { digit } ;
-number = S.lex(B.oneof("0123456789").many(at_least=1)).map(lambda m: int(m.text)).named('number')
+number = S.lex(B.oneof("0123456789").many(at_least=1)).map(int).named('number')
 
 # dot               = "." ;
 dot = S.lex(B.lit("."))
@@ -245,14 +245,14 @@ unicode_digit = S.lex(B.unicode_category(["Nd"])).named('unicode_digit')
 class_literal = S.lex(B.range("\u0000", "\U0010FFFF") - B.oneof("\\]")).named('class_literal')
 # literal_char      = unicode_scalar - {"\\", ".", "[", "(", ")", "{", "}", "|", "+", "*", "?", "^", "$"} ;
 # literal_char should include ']', because literal_char is used outside of char_set, class_literal has excluded ']', so we need to include ']' in literal_char
-literal_char = S.lex(B.range("\u0000", "\U0010FFFF") - B.oneof("\\.[(){}|+*?^$")).map(lambda x: x.text).named('literal_char')
+literal_char = S.lex(B.range("\u0000", "\U0010FFFF") - B.oneof("\\.[(){}|+*?^$")).named('literal_char')
 
 # hex_octa          = hex_quad hex_quad ;
-hex_octa = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).map(lambda tok: tok.text).named('hex_octa')
+hex_octa = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)).named('hex_octa')
 # hex_quad          = hex_digit hex_digit hex_digit hex_digit ;
-hex_quad = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)).map(lambda tok: tok.text).named('hex_quad')
+hex_quad = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)).named('hex_quad')
 # hex_pair          = hex_digit hex_digit ;
-hex_pair = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).map(lambda tok: tok.text).named('hex_pair')
+hex_pair = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)).named('hex_pair')
 
 
 # meta_char         = "\\" | "." | "[" | "]" | "(" | ")" | "{" | "}" | "|" | "+" | "*" | "?" | "^" | "$" ;
@@ -284,22 +284,22 @@ class ShorthandAtom:
     kind: ShorthandKind
 
 # shorthand         = "\\d" | "\\D" | "\\s" | "\\S" | "\\w" | "\\W" ;
-shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(lambda t: ShorthandKind.from_literal(t.text)).named('shorthand')
+shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(ShorthandKind.from_literal).named('shorthand')
 
 # category_name     = unicode_letter { unicode_letter } ;
-category_name = unicode_category.many().map(lambda ts: tuple(t.text for t in ts)).named('category_name')
+category_name = unicode_category.many().map(tuple).named('category_name')
 # unicode_category_escape   = "\p{" category_name "}" | "\P{" category_name "}" ;
 unicode_category_escape = S.choice((escaped_p.map(lambda _: False).mark('negated') + category_name.mark('categories') // rbrace),
                                    (escaped_P.map(lambda _: True).mark('negated') + category_name.mark('categories') // rbrace)).named('unicode_category_escape')
 
 # unicode_name      = unicode_letter { unicode_letter | unicode_digit | "_" | " " | "-" } ;
-unicode_name = (unicode_letter + S.choice(unicode_letter, underscore, space, hyphen).many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])).named('unicode_name')
+unicode_name = (unicode_letter + S.choice(unicode_letter, underscore, space, hyphen).many()).map(lambda t: ''.join([t[0]] + t[1])).named('unicode_name')
 # name_continue     = unicode_letter | unicode_digit | "_" ;
 name_continue = unicode_letter | underscore
 # name_start        = unicode_letter | "_" ;
 name_start = unicode_letter | underscore
 # name              = name_start { name_continue } ;
-name = (name_start + name_continue.many()).map(lambda t: ''.join([t[0].text] + [c.text for c in t[1]])).named('name')
+name = (name_start + name_continue.many()).map(lambda t: ''.join([t[0]] + t[1])).named('name')
 # unicode_escape    = "\\x" hex_pair | "\\u" hex_quad | "\\U" hex_octa | "\\N{" unicode_name "}" ;
 unicode_escape = S.choice((escaped_x >> hex_pair).map(lambda t: chr(int(t[0], 16))), 
                   (escaped_u >> hex_quad).map(lambda t: chr(int(t[0], 16))),
@@ -313,8 +313,8 @@ escaped_metachar = (backslash >> meta_char).map(lambda t: t[0]).named('escaped_m
 escaped_0 = S.lex(B.lit("\\0"))
 octal_digit = S.lex(B.range("0", "7")).named('octal_digit')
 octal_escape = S.choice(
-    (escaped_0 >> octal_digit + octal_digit).map(lambda t: chr(int(t[0].text + t[1].text, 8))),
-    (backslash >> octal_digit.many(at_least=1)).map(lambda t: chr(int(''.join([tt.text for tt in t[0]]), 8)))
+    (escaped_0 >> octal_digit + octal_digit).map(lambda t: chr(int(t[0] + t[1], 8))),
+    (backslash >> octal_digit.many(at_least=1)).map(lambda t: chr(int(''.join(t[0]), 8)))
 ).named('octal_escape')
 
 # escaped_literal   = control_escape | **octal_escape** | unicode_escape | escaped_metachar ;
@@ -342,7 +342,7 @@ class_atom = S.choice(
                     unicode_escape,
                     unicode_category_escape.to(UnicodeCategoryAtom),
                     escaped_class_meta,
-                    ).map(lambda t: t.text if isinstance(t, Token) else t).named('class_atom')
+                    ).named('class_atom')
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,7 +365,7 @@ class_item = irange | class_atom
 # ']' or '-' at the beginning indicates that the first character in the class is a literal ']' or '-'
 # if ~(rsquare | minus) is absent, t[0] is Nothing bool(Nothing) → False, we just take the class_item.many() == t[1]
 # if ~(rsquare | minus) is present, t[0] is the Token object, bool(Token) → True, we should include Token.text in the class_item
-class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda t: (t[1] + [t[0].text]) if t[0] else t[1]).named('class_class_items')
+class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda t: (t[1] + [t[0]]) if t[0] else t[1]).named('class_class_items')
 # char_class        = "[" [ "^" ] class_class_items "]" ;
 char_class = S.seq(-lsquare, (~caret).map(bool).mark('negated'), class_class_items.mark('items'), -rsquare).named('char_class')
 
@@ -396,13 +396,13 @@ class GroupAtom:
 # flag              = "a" | "i" | "L" | "m" | "s" | "u" | "x" ;
 flag = S.lex(B.oneof("iLmsuaxw")).named('flag')
 # flag_seq          = flag { flag } ;
-flag_seq = flag.many().map(lambda ts: tuple(t.text for t in ts)).named('flag_seq')
+flag_seq = flag.many().map(tuple).named('flag_seq')
 # inline_flags      = flag_seq [ "-" flag_seq ] ;
 inline_flags = flag_seq.mark('inline_flags') + (~(minus >> flag_seq)).map(lambda t: t[0] if t is not Nothing else None).mark('disabled_flags').named('inline_flags')
 
 
 # comment           = character { character } ;  (* Or, be more restrictive: any characters EXCEPT ')' *)
-comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1)).map(lambda tok: tok.text).named('comment')
+comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1)).named('comment')
 
 
 
@@ -504,7 +504,7 @@ group = S.lazy(_group_body).named('group')
 # - \B → NOT_WORD_BOUNDARY
 anchor = S.choice(caret, 
                   dollar,
-                  boundary_escape).map(lambda t: AnchorKind.from_literal(t.text)).mark('kind').named('anchor')
+                  boundary_escape).map(AnchorKind.from_literal).mark('kind').named('anchor')
 
 @dataclass(frozen=True, slots=True)
 class Quantifier:

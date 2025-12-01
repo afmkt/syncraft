@@ -44,8 +44,8 @@ def test_control_escapes():
     for pattern, expected in test_cases:
         result = parse_regex(literal, pattern)
         print(result)
-        assert result.text == expected
-        assert len(result.text) == 2
+        assert result == expected
+        assert len(result) == 2
 
 
 def test_unicode_escapes():
@@ -70,7 +70,7 @@ def test_escaped_metacharacters():
     expected_chars = r"\.[](){}|+*?^$"
     for i, expected in enumerate(expected_chars):
         p = result[i]
-        assert p.text == expected
+        assert p == expected
 
 
 def test_anchors():

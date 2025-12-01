@@ -480,7 +480,6 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
         
     @classmethod
     def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, **kwargs) -> Algebra[ParseResult[T], GenState[T]]:
-        
         terminal_cls = terminal_cls or cls.default_terminal_cls
         lexer:LexerProtocol[Any] | None
         lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
@@ -498,6 +497,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 tag = input.rng("lex_tag").choice(tuple(ntags))
                 input = input.fork(tag=tag)
                 generated = lexer.gen(tag, input.rng())
+                generated = terminal_cls(text=generated, token_type=tag, custom_mapping=None)
+
                 return Right.new((cast(ParseResult[T], generated), input))
             else:
                 current = input.ast

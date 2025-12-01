@@ -87,8 +87,10 @@ def test_generate_with_infers_text_lexer_without_config() -> None:
 
 
 def test_generate_with_infers_from_fabuilder_literal() -> None:
-    lex_syntax = Syntax.factory("lex", Builder.lit("go").tagged("WORD"))
+    S = Syntax.set(terminal_cls=Token)
+    lex_syntax = S.factory("lex", Builder.lit("go").tagged("WORD"))
     ast, bound = generate_with(lex_syntax, seed=321)
+    print(ast)
     assert isinstance(ast, Token)
     assert ast.token_type == "WORD"
     assert ast.text == "go"
