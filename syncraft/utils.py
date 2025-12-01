@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional, MutableMapping
+from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional, MutableMapping, Type
 from dataclasses import dataclass
 import inspect
 import functools
@@ -366,7 +366,36 @@ class ThreadLocalDict(threading.local, Generic[K, V]):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.store})"
 
+class Record:
+    def __init__(self, *unnamed: Any, **named: Any)->None:
+        self._named = named
+        self._unnamed = unnamed
 
+    @property
+    def unnamed(self):
+        return self._unnamed
+
+    def __repr__(self) -> str:
+        parts = []
+        if self._unnamed:
+            parts.append(", ".join(repr(v) for v in self._unnamed))
+        if self._named:
+            parts.append(", ".join(f"{k}={v!r}" for k, v in self._named.items()))
+        return f"{self.__class__.__name__}({', '.join(parts)})"
+
+    def __getattr__(self, key: Any) -> Any:
+        try:
+            return self._named[key]
+        except KeyError as e:
+            raise AttributeError(f"'DotDict' object has no attribute '{key}'") from e
+        
+    @classmethod
+    def create_cls(cls, name: str) -> Type[Record]:
+        return type(name, (cls,), {})
+        
+
+
+        
 class FrozenDict(collections.abc.Mapping, Generic[K, V]):
     """An immutable, hashable mapping.
 

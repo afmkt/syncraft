@@ -461,13 +461,15 @@ class Algebra(Generic[A, S]):
     
     def bimap(self, b: Bimap[A, B]) -> Algebra[A, S]:
         def bimap_f(a: A)->Any:
-            assert isinstance(a, AST), f"bimap can only be applied to AST-mapped values, got {type(a)}"
-            mapping = a.custom_mapping
-            if mapping is not None:
-                mapping = mapping >> b
+            if isinstance(a, AST):            
+                mapping = a.custom_mapping
+                if mapping is not None:
+                    mapping = mapping >> b
+                else:
+                    mapping = b
+                return a.mapping(mapping)
             else:
-                mapping = b
-            return a.mapping(mapping)
+                return a
         return self.map(bimap_f, raw=True)
         
     def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
@@ -700,7 +702,14 @@ class Algebra(Generic[A, S]):
             return Right.new((Many(value=tuple(ret), custom_mapping=None), current_input))
         return replace(self, run_f=many_run) # type: ignore
     
-
+    @classmethod
+    def default_terminal_cls(cls, *args, **kwargs) -> Any:
+        if args:
+            return args[0]
+        elif kwargs:
+            return next(iter(kwargs.values()))
+        else:
+            raise SyncraftError("No arguments provided to default_terminal_cls", offender=None)
     
 
 

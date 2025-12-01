@@ -8,7 +8,7 @@ from typing import (
 )
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-
+from syncraft.utils import Record
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
 from syncraft.utils import CallWith, MISSING
@@ -28,11 +28,7 @@ class SyncraftError(Exception):
         if self.data:
             details += ", " + ", ".join(f"{k}={v!r}" for k, v in self.data.items())
         return f"{base} ({details})"
-
-def shallow_dict(a: Any)->Dict[str, Any]:
-    assert is_dataclass(a), f"Expect dataclass, got {a}"
-    return {f.name: getattr(a, f.name) for f in fields(a)}
-
+    
 
 
 
@@ -550,7 +546,7 @@ class DataclassInstance(Protocol):
 
 E = TypeVar("E", bound=DataclassInstance)
 
-Collector = Type[E] | Callable[..., E]
+Collector = Type[Any] | Callable[..., Any]
 @dataclass(frozen=True, slots=True)
 class Collect(AST, Generic[A, E]):
     collector: Collector
@@ -580,11 +576,17 @@ class Collect(AST, Generic[A, E]):
                                      expect="callable with matching signature")
             ret: E = c()
             def invf(e: E) -> Tuple[Any, ...]:
-                named_dict = shallow_dict(e)     
-                unnamed = []           
-                for f in fields(e):
-                    if f.name not in named:
-                        unnamed.append(named_dict[f.name])
+                if is_dataclass(e):
+                    named_dict = {f.name: getattr(e, f.name) for f in fields(e)}
+                    unnamed = []
+                    for f in fields(e):
+                        if f.name not in named:
+                            unnamed.append(named_dict[f.name])
+                elif isinstance(e, Record):
+                    named_dict = e._named
+                    unnamed = e._unnamed
+                else:
+                    raise SyncraftError("Collector returned unsupported type", offender=e, expect="dataclass or Record")
                 tmp = []
                 for x in index:
                     if isinstance(x, str):
@@ -597,20 +599,25 @@ class Collect(AST, Generic[A, E]):
             named = {b.name: b.value}
             ret1: E = self.collector(**named)
             def invf1(e: E) -> Marked:
-                named_dict = shallow_dict(e)     
-                return Marked(name=fields(e)[0].name, value=named_dict[fields(e)[0].name], custom_mapping=None)
+                if is_dataclass(e):
+                    named_dict = {f.name: getattr(e, f.name) for f in fields(e)}
+                    for k, v in named_dict.items():
+                        return Marked(name=k, value=v, custom_mapping=None)
+                elif isinstance(e, Record):
+                    for n, v in e._named.items():
+                        return Marked(name=n, value=v, custom_mapping=None)
+                raise SyncraftError("Collector returned unsupported type", offender=e, expect="dataclass or Record")   
+                
             return Reversible(ret1, lambda e: replace(self, value=inner_f(invf1(e)))) # type: ignore
         else:
-            def build_inv(d:B):
+            def build_inv(d: B) -> Callable[[E], B]:
                 def inv_one_positional(e: E) -> B:
-                    assert is_dataclass(e), f"Expect dataclass, got {e}"
-                    if len(fields(e)) == 1:
-                        return d
-                    else:
-                        named_dict = shallow_dict(e)
-                        return named_dict[fields(e)[0].name]
+                    if is_dataclass(e):
+                        return getattr(e, fields(e)[0].name)
+                    elif isinstance(e, Record):
+                        return e._unnamed[0]
+                    raise SyncraftError("Collector returned unsupported type", offender=e, expect="dataclass or Record")
                 return inv_one_positional
-            
             c = CallWith(self.collector, b)
             if c.missing_args or c.missing_kwargs:
                 raise SyncraftError("Collector cannot be called with provided arguments", 

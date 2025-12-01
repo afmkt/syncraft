@@ -479,7 +479,9 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
         
     @classmethod
-    def lex(cls, args: Builder | TokenSpec, **kwargs) -> Algebra[ParseResult[T], GenState[T]]:
+    def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, **kwargs) -> Algebra[ParseResult[T], GenState[T]]:
+        
+        terminal_cls = terminal_cls or cls.default_terminal_cls
         lexer:LexerProtocol[Any] | None
         lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
         assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
@@ -496,21 +498,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 tag = input.rng("lex_tag").choice(tuple(ntags))
                 input = input.fork(tag=tag)
                 generated = lexer.gen(tag, input.rng())
-                if (
-                    isinstance(lexer, Lexer)
-                    and isinstance(args, Builder)
-                    and not isinstance(generated, Token)
-                ):
-                    if isinstance(generated, (str, bytes, tuple)):
-                        generated = Token(text=generated, token_type=tag, custom_mapping=None)
-                    else:
-                        raise SyncraftError(
-                            "Lexer produced unsupported payload for lex()",
-                            offender=generated,
-                            expect="str, bytes, or tuple",
-                        )
-                parsed_value = cast(ParseResult[T], generated)
-                return Right.new((parsed_value, input))
+                return Right.new((cast(ParseResult[T], generated), input))
             else:
                 current = input.ast
                 if not lexer.varify(ntags, current):

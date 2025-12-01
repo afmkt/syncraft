@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Any, overload, Dict, Set, Literal, Optional
+from typing import Callable, Any, overload, Dict, Set, Literal
 from syncraft.ast import AST, SyncraftError
 from syncraft.syntax import Syntax, Collector
 from syncraft.algebra import Algebra
@@ -8,7 +8,7 @@ from syncraft.generator import generator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
-
+from dataclasses import is_dataclass
 AUTUO_NAME = "<auto_name>"
 class LazyHolder:
     def __init__(self, 
@@ -113,6 +113,185 @@ def root(syntax: Syntax, name: str | None = AUTUO_NAME) -> Syntax:
         raise TypeError("Argument to rule must be a Syntax instance")
     return rule(syntax.marked_as_root(), name=name, level=2)
 
+
+
+class Mapper:
+    @staticmethod
+    def eval(func: Any, value: Any) -> Any:
+        if isinstance(func, Mapper):
+            return func(value)
+        else:
+            return func
+    def __init__(self, func: Callable[[Any], Any]):
+        self.func = func
+
+    def __call__(self, value: Any) -> Any:
+        return self.func(value)
+    
+    def __add__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) + Mapper.eval(other, t))
+    
+    def __radd__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) + self.func(t))
+    
+    def __mul__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) * Mapper.eval(other, t))
+    
+    def __rmul__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) * self.func(t))
+    
+    def __div__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) / Mapper.eval(other, t))
+    
+    def __rdiv__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) / self.func(t))
+    
+    def __floordiv__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) // Mapper.eval(other, t))
+    
+    def __rfloordiv__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) // self.func(t))
+    
+    def __sub__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) - Mapper.eval(other, t))
+    
+    def __rsub__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) - self.func(t))
+    
+    def __neg__(self) -> Mapper:
+        return Mapper(lambda t: -self.func(t))
+    
+    def __pos__(self) -> Mapper:
+        return Mapper(lambda t: +self.func(t))  
+    
+    def __abs__(self) -> Mapper:
+        return Mapper(lambda t: abs(self.func(t)))
+    
+    def __getitem__(self, index: Any ) -> Mapper:
+        return Mapper(lambda t: self.func(t)[Mapper.eval(index, t)])
+    
+    def __or__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) | Mapper.eval(other, t))
+    
+    def __ror__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) | self.func(t))
+    
+    def __and__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) & Mapper.eval(other, t))
+    
+    def __rand__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) & self.func(t))
+    
+    def __invert__(self) -> Mapper:
+        return Mapper(lambda t: ~self.func(t))  
+    
+    def __xor__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) ^ Mapper.eval(other, t))
+    
+    def __rxor__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(other, t) ^ self.func(t))
+    
+    def bool(self) -> Mapper:
+        return Mapper(lambda t: bool(self.func(t)))
+    
+    def __not__(self) -> Mapper:
+        return Mapper(lambda t: not self.func(t))
+    
+    def __int__(self) -> Mapper:
+        return Mapper(lambda t: int(self.func(t)))
+    
+    def __float__(self) -> Mapper:
+        return Mapper(lambda t: float(self.func(t)))
+        
+    def __length_hint__(self) -> Mapper:
+        return Mapper(lambda t: len(self.func(t)))
+    
+    def __len__(self) -> Mapper:
+        return Mapper(lambda t: len(self.func(t)))  
+    
+    def __contains__(self, item: Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(item, t) in self.func(t))
+    
+    def __iter__(self) -> Mapper:
+        return Mapper(lambda t: iter(self.func(t)))
+    
+    def __reversed__(self) -> Mapper:
+        return Mapper(lambda t: reversed(self.func(t)))
+    
+    def __eq__(self, other: Any):
+        return Mapper(lambda t: self.func(t) == Mapper.eval(other, t))
+    
+    def __ne__(self, other: Any):
+        return Mapper(lambda t: self.func(t) != Mapper.eval(other, t))
+    
+    def __lt__(self, other: Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) < Mapper.eval(other, t))
+    
+    def __le__(self, other: Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) <= Mapper.eval(other, t))
+    
+    def __gt__(self, other: Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) > Mapper.eval(other, t))
+    
+    def __ge__(self, other: Any) -> Mapper:
+        return Mapper(lambda t: self.func(t) >= Mapper.eval(other, t))
+    
+    def apply(self, func: Callable[[Any], Any]) -> Mapper:
+        return Mapper(lambda t: func(self.func(t)))
+    
+    def if_then_else(self, then_mapper: Mapper | Any, else_mapper: Mapper | Any) -> Mapper:
+        return Mapper(lambda t: Mapper.eval(then_mapper, t) if self.func(t) else Mapper.eval(else_mapper, t))
+    
+    @property
+    def list(self) -> Mapper:
+        def to_list(t: Any) -> list:
+            return [self.func(t)]
+        return Mapper(to_list)
+    
+    @property
+    def tuple(self) -> Mapper:
+        def to_tuple(t: Any) -> tuple:
+            return (self.func(t),)
+        return Mapper(to_tuple)
+
+def at(index: int | None = None) -> Mapper:
+    if index is None:
+        return Mapper(lambda t: t)
+    else:
+        return Mapper(lambda t: t[index])
+
+def const(value: Any) -> Mapper:
+    return Mapper(lambda t: value)
+
+_0 = at(0)
+_1 = at(1)
+_2 = at(2)
+_3 = at(3)
+_4 = at(4)
+_5 = at(5)
+_6 = at(6)
+_7 = at(7)
+_8 = at(8)
+_9 = at(9)
+
+def call(c: Collector, *args: Any, **kwargs: Any) -> Mapper:
+    def bound(t: list|tuple) -> Any:
+        unnamed_args = []
+        named_args = {}
+        for v in args:
+            if isinstance(v, Mapper):
+                unnamed_args.append(v(t))
+            else:
+                unnamed_args.append(v)
+        for k, v in kwargs.items():
+            if isinstance(v, Mapper):
+                named_args[k] = v(t)
+            else:
+                named_args[k] = v
+        return c(*unnamed_args, **named_args)
+    return Mapper(bound)
+    
+
 class GrammarMeta(type):
     """Metaclass for grammars."""
 
@@ -164,48 +343,6 @@ class Grammar(Syntax, metaclass=GrammarMeta):
     _root_rule: Syntax | None
     _parser: Dict[Syntax, Algebra[Any, Any]] = {}
     _generator: Dict[Syntax, Algebra[Any, Any]] = {}
-    @classmethod
-    def seq2(cls, to: Collector|None=None, _name: str | None = AUTUO_NAME, **kwargs: Syntax | tuple[Syntax, Any]) -> Syntax:
-        """Helper function to create a sequence syntax rule."""
-        level = 1
-        file, line, func = get_file(level), get_line(level), get_func(level)
-        parsers: list[Syntax | tuple[Syntax, Any]] = []
-        for k, v in kwargs.items():
-            if k.startswith("_"):
-                parsers.append(v)
-            elif isinstance(v, Syntax):
-                parsers.append(v.mark(k))
-            elif isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], Syntax):
-                parsers.append((v[0].mark(k), v[1]))
-            else:
-                pass
-        if len(parsers) == 0:
-            raise ValueError("No parsers provided for seq2")
-        if len(parsers) > 1:
-            rule: Syntax = cls.seq(*parsers)
-        else:
-            rule = parsers[0] if isinstance(parsers[0], Syntax) else parsers[0][0]
-        if to is not None:
-            rule = rule.to(to)
-        return rule._named(name=_name, file=file, line=line, func=func)
-    
-    @classmethod
-    def alt2(cls, to: Collector|None=None, _name: str | None = AUTUO_NAME, **kwargs: Syntax) -> Syntax:
-        """Helper function to create an alternative syntax rule."""
-        level = 1
-        file, line, func = get_file(level), get_line(level), get_func(level)
-        parsers: list[Syntax] = []
-        for k, v in kwargs.items():
-            if k.startswith("_"):
-                parsers.append(v)
-            elif isinstance(v, Syntax):
-                parsers.append(v.mark(k))
-            else:
-                pass
-        rule: Syntax = cls.alt(*parsers)
-        if to is not None:
-            rule = rule.to(to)
-        return rule._named(name=_name, file=file, line=line, func=func)
 
     @classmethod
     def parser(cls, syntax: Syntax | None = None) -> Algebra[Any, Any]:

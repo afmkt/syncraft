@@ -8,16 +8,16 @@ from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING
 )
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, is_dataclass, fields
 
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING
+from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING, Record
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint
 
-from syncraft.ast import Bimap, Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, E, Collector, SyncraftError, Seq, Choice, AST
+from syncraft.ast import Bimap, Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, Collector, SyncraftError, Seq, Choice, AST
 
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
@@ -262,7 +262,7 @@ class CollectSpec(SyntaxSpec):
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
-        ret = inner.to(self.collector)
+        ret: Syntax = inner.to(self.collector)
         ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
         cache[self] = ret
         return ret
@@ -624,6 +624,8 @@ class Syntax(Generic[A, S]):
     @property
     def has_name(self) -> bool:
         return self.spec.name is not None
+
+
     @property
     def location(self) -> Optional[str]:
         return self.spec.location
@@ -1186,7 +1188,7 @@ class Syntax(Generic[A, S]):
             return Right.new(result)
         return self.on_success(check_v)
 
-    def to(self, f: Collector[E]) -> Syntax[Collect[A, E], S]:
+    def to(self, f: Collector) -> Syntax[Collect[A, Any], S]:
         """Attach a collector to the produced value.
         A collector can be a dataclass, and the Marked nodes will be 
         mapped to the fields of the dataclass.
@@ -1204,13 +1206,13 @@ class Syntax(Generic[A, S]):
         if not callable(f):
             raise SyncraftError("Collector f must be callable", offender=f, expect="callable")
 
-        def to_f(v: A) -> Collect[A, E]:
+        def to_f(v: A) -> Collect[A, Any]:
             if isinstance(v, Collect):
                 return replace(v, collector=f)
             else:
                 return Collect(collector=f, value=v, custom_mapping=None)
 
-        def ito_f(c: Collect[A, E]) -> A:
+        def ito_f(c: Collect[A, Any]) -> A:
             return c.value if isinstance(c, Collect) else c
 
         ret = self.iso(to_f, ito_f)
@@ -1315,6 +1317,60 @@ class Syntax(Generic[A, S]):
             return acls.seq(*algs)
         spec = SeqSpec(steps=tuple((step.spec, keep) for step, keep in syntaxes), name=None, file=None, line=None, func=None)
         return cls(alg_f=seq_f, spec=spec) # type: ignore
+
+
+    @classmethod
+    def seq2(cls, 
+             to: Collector, 
+             *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool], 
+             **named_steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Any, S]:
+        _steps: List[Tuple[Syntax[Any, S], bool | None, str | None]]
+        _steps = [(s[0], s[1], None) if isinstance(s, tuple) else (s, None, None) for s in list(steps)]
+        for _name, s in named_steps.items():
+            if isinstance(s, tuple):
+                _steps.append((s[0], s[1], _name))
+            else:
+                _steps.append((s, None, _name))
+
+        field_names: Set[str] = set(f.name for f in fields(to)) if is_dataclass(to) else set()
+        used_name: Set[str] = set()
+        conflict_names: Set[str] = set()
+        args: List[Syntax[Any, S] | Tuple[Syntax[Any, S], bool]] = []
+        for step, keep, name in _steps:
+            name = name if name is not None else step.spec.name
+            if name is not None:
+                # Named step
+                if field_names and name in field_names:
+                    # Match dataclass field
+                    args.append((step.mark(name), True))
+                    if name in  used_name:
+                        conflict_names.add(name)
+                    else:
+                        used_name.add(name)
+                else:
+                    # Name the field when the collector is Record
+                    if issubclass(cast(type, to), Record):
+                        if name in used_name:
+                            conflict_names.add(name)
+                        else:
+                            used_name.add(name)
+                        step = step.mark(name) 
+                    if keep is not None:
+                        args.append((step, keep))
+                    else:
+                        args.append(step)
+            else:
+                # Unnamed step
+                if keep is not None:
+                    args.append((step, keep))
+                else:
+                    args.append(step)
+        if conflict_names:
+            # Collect.bimap will fold the conflicts into one and the last one wins
+            # so we just warn here
+            pass
+        
+        return cls.seq(*args).to(to) # type: ignore
 
 
     @classmethod
