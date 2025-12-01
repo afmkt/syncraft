@@ -1349,7 +1349,7 @@ class Syntax(Generic[A, S]):
                         used_name.add(name)
                 else:
                     # Name the field when the collector is Record
-                    if issubclass(cast(type, to), Record):
+                    if isinstance(to, type) and issubclass(cast(type, to), Record):
                         if name in used_name:
                             conflict_names.add(name)
                         else:

@@ -27,6 +27,8 @@ class LazyHolder:
         self.line = line
         self.func = func
 
+    def __str__(self) -> str:
+        return f"LazyHolder({self.name}, {self.thunk})"
     def rule(self, S: Any, MAX_NAME_LENGTH: int, key_name: str) -> Syntax:
 
         rule = S.lazy(lambda: self.thunk(S))
@@ -44,26 +46,26 @@ class LazyHolder:
 
 
 @overload
-def lazy(thunk: str, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
+def lazy(thunk: str, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
 @overload
-def lazy(thunk: str, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
+def lazy(thunk: str, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
 
 @overload
-def lazy(thunk: bool, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
+def lazy(thunk: bool, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
 @overload
-def lazy(thunk: bool, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
+def lazy(thunk: bool, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
 
 @overload
-def lazy(thunk: None=None, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
+def lazy(thunk: None=None, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
 @overload
-def lazy(thunk: None=None, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
+def lazy(thunk: None=None, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
 
 @overload
-def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[False]=False) -> Any: ...
+def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[False]=False) -> Syntax: ...
 @overload
-def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[True]=True) -> Any: ...
+def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[True]=True) -> Syntax: ...
 
-def lazy(thunk: str | Callable[[Any], Syntax] | bool | None = None, *, root:bool=False) -> Any | Callable[[Any], Any]:
+def lazy(thunk: str | Callable[[Any], Syntax] | bool | None = None, *, root:bool=False) -> Syntax | Callable[[Any], Syntax]:
     """
     Decorator for lazy grammar rules.
     @lazy
@@ -84,18 +86,18 @@ def lazy(thunk: str | Callable[[Any], Syntax] | bool | None = None, *, root:bool
     level = 1
     file, line, func = get_file(level), get_line(level), get_func(level)
     if callable(thunk):
-        return LazyHolder(thunk, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func)
+        return LazyHolder(thunk, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func).rule(None, 0, "")
     elif isinstance(thunk, str):
-        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, root=root, name=thunk, need_name=True, file=file, line=line, func=func)
+        def wrapper(f: Callable[[Any], Syntax]):
+            return LazyHolder(f, root=root, name=thunk, need_name=True, file=file, line=line, func=func).rule(None, 0, "")
         return wrapper
     elif isinstance(thunk, bool):
-        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, root=root, name=None if not thunk else AUTUO_NAME, need_name=thunk, file=file, line=line, func=func)
+        def wrapper(f: Callable[[Any], Syntax]):
+            return LazyHolder(f, root=root, name=None if not thunk else AUTUO_NAME, need_name=thunk, file=file, line=line, func=func).rule(None, 0, "")
         return wrapper
     elif thunk is None:
-        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func)
+        def wrapper(f: Callable[[Any], Syntax]):
+            return LazyHolder(f, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func).rule(None, 0, "")
         return wrapper
     else:
         raise TypeError("Invalid argument to lazy decorator")
@@ -185,6 +187,10 @@ class Mapper:
     def __invert__(self) -> Mapper:
         return Mapper(lambda t: ~self.func(t))  
     
+    @property
+    def not_(self) -> Mapper:
+        return Mapper(lambda t: not self.func(t))
+    
     def __xor__(self, other: Mapper | Any) -> Mapper:
         return Mapper(lambda t: self.func(t) ^ Mapper.eval(other, t))
     
@@ -253,6 +259,12 @@ class Mapper:
         def to_tuple(t: Any) -> tuple:
             return (self.func(t),)
         return Mapper(to_tuple)
+    
+    def dict(self, d: Dict[Any, Any]) -> Mapper:
+        def as_index_f(t: Any) -> Any:
+            y = Mapper.eval(d, t)
+            return y[self.func(t)]
+        return Mapper(as_index_f)
 
 def at(index: int | None = None) -> Mapper:
     if index is None:
@@ -305,7 +317,7 @@ class GrammarMeta(type):
         root_rule: Set[Syntax] = set()
         for name, value in namespace.items():
             if isinstance(value, LazyHolder):
-                lazy_rules[name] = value
+                raise TypeError(f"LazyHolder instances {value} should be processed before __new__")
             elif isinstance(value, Syntax):
                 if value.is_root:
                     if root_rule:

@@ -322,7 +322,7 @@ class RE(G, builtin=True):
             question.to(partial(Quantifier,minimum=0, maximum=1)),
             star.to(partial(Quantifier,minimum=0, maximum=None)),
             plus.to(partial(Quantifier,minimum=1, maximum=None)),
-        ) + ~question).map(call(replace, _0, greedy=not _1)))
+        ) + ~question).map(call(replace, _0, greedy=_1.not_)))
 
 
     backreference = rule(G.alt(
@@ -330,7 +330,7 @@ class RE(G, builtin=True):
         (G.lex(B.lit("\\g<")) >> name // greater).map(_0)
     ))
 
-    atom = G.alt(        
+    atom = rule(G.alt(        
             backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and len(group_counter) >= v)),
             G.seq2(LiteralAtom, text=literal),
             char_class,
@@ -339,7 +339,7 @@ class RE(G, builtin=True):
             shorthand,
             unicode_category_escape,
             group,
-            ).named('atom')
+            ))
 
     piece = rule(G.seq2(Piece, +atom, quantifier=+(~quantifier)))
 

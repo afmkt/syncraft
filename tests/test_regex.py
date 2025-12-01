@@ -1,15 +1,8 @@
 from __future__ import annotations
 import pytest
-from syncraft.regex import (
-    parse, verify,
-    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex,
-    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
-)
-from syncraft.algebra import Error
+from syncraft.regex2 import verify
 import random
 import string
-import re
 
 
 
