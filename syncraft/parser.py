@@ -549,16 +549,16 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
 
         
 
-def parser(syntax: Syntax[Any, Any]) -> Algebra[Any, Any]:
+def parser(syntax: Syntax) -> Algebra:
     runner: Runner[Any] = Runner()
     return runner.algebra(syntax=syntax, alg_cls=Parser)
 
 
-def parse(syntax: Syntax[Any, Any],
+def parse(syntax: Syntax,
           data: StreamCursor[Any] | ParserState[Any],
           *,
           cache: None | Cache[ParserState[T]]
-          ) -> Tuple[Any, Any]:
+          ) -> Tuple:
     runner: Runner[T] = Runner()
     if isinstance(data, ParserState):
         return runner.once(syntax=syntax, alg_cls=Parser, state=data, cursor=None, cache=cache)
@@ -567,7 +567,7 @@ def parse(syntax: Syntax[Any, Any],
 
 
 
-def parse_word(syntax: Syntax[Any, Any], 
+def parse_word(syntax: Syntax, 
                data: str, 
                *, 
                cache: None| Cache[Any]
@@ -576,7 +576,7 @@ def parse_word(syntax: Syntax[Any, Any],
     return parse_data(syntax, tokens, cache=cache)
 
     
-def parse_data(syntax: Syntax[Any, Any], 
+def parse_data(syntax: Syntax, 
           data: List[T],
           *,
           cache: None | Cache[ParserState[T]]
@@ -589,7 +589,7 @@ def parse_data(syntax: Syntax[Any, Any],
         return v, None
 
 
-def parse_string(syntax: Syntax[Any, Any],
+def parse_string(syntax: Syntax,
                  data: str,
                  *,
                  cache: None | Cache[ParserState[str]]
@@ -597,7 +597,7 @@ def parse_string(syntax: Syntax[Any, Any],
     input : StreamCursor[str] = StreamCursor.from_data(data)
     return parse(syntax, input, cache=cache)
 
-def parse_bytes(syntax: Syntax[Any, Any],
+def parse_bytes(syntax: Syntax,
                 data: bytes,
                 *,
                 cache: None | Cache[ParserState[bytes]]
@@ -605,7 +605,7 @@ def parse_bytes(syntax: Syntax[Any, Any],
     input : StreamCursor[bytes] = StreamCursor.from_data(data)
     return parse(syntax, input, cache=cache)
 
-def parse_file(syntax: Syntax[Any, Any],
+def parse_file(syntax: Syntax,
                filepath: str | Path,
                *,
                mode: Literal['text', 'binary'] = 'text', 
@@ -614,7 +614,7 @@ def parse_file(syntax: Syntax[Any, Any],
     input : StreamCursor[Any] = StreamCursor.from_path(filepath, mode=mode)
     return parse(syntax, input, cache=cache)
 
-def parse_stream(syntax: Syntax[Any, Any],
+def parse_stream(syntax: Syntax,
                  stream: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
                  *,
                  mode: Literal['text', 'binary'] = 'text', 

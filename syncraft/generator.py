@@ -540,14 +540,14 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
 
 
 
-def generator(syntax: Syntax[Any, Any]) -> Algebra[Any, Any]:
+def generator(syntax: Syntax) -> Algebra:
     runner: Runner[Any] = Runner()
     return runner.algebra(syntax=syntax, alg_cls=Generator)
 
     
     
 def generate_with(
-    syntax: Syntax[Any, Any], 
+    syntax: Syntax, 
     data: Optional[ParseResult[Any]] = None, 
     seed: Optional[int] = None,
     restore_pruned: bool = False
@@ -564,7 +564,7 @@ def generate_with(
         return v, None    
 
 
-def validate(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
+def validate(syntax: Syntax, data: ParseResult[Any]) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
     
     runner = Runner(ast=data, seed=0, restore_pruned=True)
     

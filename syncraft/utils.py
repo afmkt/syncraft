@@ -390,8 +390,8 @@ class Record:
             raise AttributeError(f"'DotDict' object has no attribute '{key}'") from e
         
     @classmethod
-    def create_cls(cls, name: str) -> Type[Record]:
-        return type(name, (cls,), {})
+    def create_cls(cls, name: str, base: type | None = None) -> Type[Record]:
+        return type(name, (base, cls), {}) if base is not None else type(name, (cls,), {})
         
 
 

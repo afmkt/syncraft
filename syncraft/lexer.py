@@ -25,7 +25,7 @@ import pickle
 
 C = TypeVar('C', bound=Hashable)
 A = TypeVar('A')
-Ret = TypeVar('Ret', bound=Either[Any, Tuple[Any, Any]])
+Ret = TypeVar('Ret', bound=Either[Any, Tuple])
 T = TypeVar('T', bound=Hashable)
 
 

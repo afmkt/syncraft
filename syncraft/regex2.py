@@ -364,7 +364,7 @@ def parse(data: str, *, raw:bool=False) -> Regex | Error | AST:
     return RE.parse(data, raw=raw)
 
 
-def parse_regex(syntax: Syntax[Any, Any], 
+def parse_regex(syntax: Syntax, 
                 pattern: str, 
                 *, 
                 raw:bool=False) -> Any:

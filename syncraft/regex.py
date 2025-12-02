@@ -409,7 +409,7 @@ comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1)).n
 
 
 # (?:(?P<quote>['\"])(?:(?!\1).)*\1)
-def _group_body() -> Syntax[Any, Any]:
+def _group_body() -> Syntax:
     # Forward reference to regex since groups can contain full regex patterns with alternation
     # group = "(" regex ")"
     plain = regex.mark('pattern').between(lparen, rparen)
@@ -634,7 +634,7 @@ def parse(data: str, *, raw:bool=False, cache: Optional[Cache[Any]] = None) -> R
             return result
     raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
 
-def parse_regex(syntax: Syntax[Any, Any], 
+def parse_regex(syntax: Syntax, 
                 pattern: str, 
                 *, 
                 raw:bool=False) -> Any:

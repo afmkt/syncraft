@@ -50,11 +50,11 @@ class Finder(Generator[T], Generic[T]):
 #: consuming or modifying state.
 
 
-def anything(syntax: Syntax[Any, Any]) -> Syntax[Any, Any]:
+def anything(syntax: Syntax) -> Syntax:
     return syntax.factory('anything')
         
 
-def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any])-> bool:
+def _matches(s: Syntax, data: ParseResult[Any], cache: Cache[Any])-> bool:
     from syncraft.generator import Runner
     runner = Runner(ast = data, seed=0, restore_pruned=True)
     ast, _ = runner.once(syntax=s, alg_cls=Finder, state=None, cursor=None, cache=None)
@@ -65,7 +65,7 @@ def _matches(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any])-> b
             return True
 
 
-def _find(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any]) -> PyGenerator[ParseResult[Any], None, None]:
+def _find(s: Syntax, data: ParseResult[Any], cache: Cache[Any]) -> PyGenerator[ParseResult[Any], None, None]:
     if _matches(s, data, cache):
         yield data
     match data:
@@ -96,14 +96,14 @@ def _find(s: Syntax[Any, Any], data: ParseResult[Any], cache: Cache[Any]) -> PyG
 
 
 
-def matches(syntax: Syntax[Any, Any], data: ParseResult[Any])-> bool:
+def matches(syntax: Syntax, data: ParseResult[Any])-> bool:
     if isinstance(data, (Marked, Collect)):
         return _matches(syntax, data.value, Cache())
     else:
         return _matches(syntax, data, Cache())
 
 
-def find(syntax: Syntax[Any, Any], data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
+def find(syntax: Syntax, data: ParseResult[Any]) -> PyGenerator[ParseResult[Any], None, None]:
     yield from _find(syntax, data, Cache())
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import pytest
-from syncraft.regex2 import verify
+from syncraft.regex import verify
 import random
 import string
 

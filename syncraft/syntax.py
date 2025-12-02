@@ -112,7 +112,7 @@ class SyntaxSpec:
             return f"{self.file}:{self.line or '?'}"
         return None
     
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         raise NotImplementedError
@@ -188,9 +188,9 @@ class SyntaxSpec:
 
 @dataclass(frozen=True, slots=True)
 class LazySpec(SyntaxSpec):
-    lazy_state: LazyState[Any, Any]
+    lazy_state: LazyState
 
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         ret = cls.lazy(self.lazy_state.thunk, flatten=self.lazy_state.flatten)._named(name=self.name, file=self.file, line=self.line, func=self.func)
@@ -228,7 +228,7 @@ class LazySpec(SyntaxSpec):
 class MarkedSpec(SyntaxSpec):
     mname: str
     spec: SyntaxSpec
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
@@ -258,7 +258,7 @@ class CollectSpec(SyntaxSpec):
     spec: SyntaxSpec 
     # kwargs: FrozenDict[str, Any] = field(compare=False, hash=False)
 
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
@@ -283,7 +283,7 @@ class CollectSpec(SyntaxSpec):
 @dataclass(frozen=True, slots=True)
 class SeqSpec(SyntaxSpec):
     steps: Tuple[Tuple[SyntaxSpec, bool], ...]
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         steps = [(step.syntax(cls, cache=cache), keep) for step, keep in self.steps]
@@ -312,7 +312,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
 
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         left = self.left.syntax(cls, cache=cache)
@@ -359,8 +359,8 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
 @dataclass(frozen=True, slots=True)
 class ParallelSpec(SyntaxSpec):
     options: Tuple[SyntaxSpec, ...]
-    reducer: Callable[[Any, List[Tuple[Any, Any]]], Either[Any, Tuple[Any, Any]]]
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax[Any, Any]:
+    reducer: Callable[[Any, List[Tuple]], Either[Any, Tuple]]
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax:
         if self in cache:
             return cache[self]
         opts = [opt.syntax(cls, cache=cache) for opt in self.options]
@@ -388,7 +388,7 @@ class ParallelSpec(SyntaxSpec):
 @dataclass(frozen=True, slots=True)
 class ChoiceSpec(SyntaxSpec):
     options: Tuple[SyntaxSpec, ...]
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax:
         if self in cache:
             return cache[self]
         opts = [opt.syntax(cls, cache=cache) for opt in self.options]
@@ -417,7 +417,7 @@ class OrElseSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
 
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         left = self.left.syntax(cls, cache=cache)
@@ -462,7 +462,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
     at_least: int
     at_most: Optional[int]
 
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
@@ -496,7 +496,7 @@ class LexSpec(SyntaxSpec):
     args: Tuple[Any, ...] = field(default_factory=tuple)
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax[Any, Any]:
+    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
         ret = cls.factory(self.fname, *self.args, **self.kwargs)
@@ -544,8 +544,8 @@ class LazyState(Generic[A, S]):
     # cached resolved Syntax; excluded from comparisons
     _cached_syntax: Optional[Syntax[A, S]] = field(default=None, init=False, repr=False, compare=False)
     # cache algebras per (alg, kwargs_key). excluded from comparisons
-    _inner_algebras_cache: Dict[Tuple[Type[Algebra[Any, Any]], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
-    _algebras_cache: Dict[Tuple[Type[Algebra[Any, Any]], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _inner_algebras_cache: Dict[Tuple[Type[Algebra], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _algebras_cache: Dict[Tuple[Type[Algebra], Tuple[Tuple[str, Any], ...]], Algebra[A, S]] = field(default_factory=dict, init=False, repr=False, compare=False)
 
 
     def __hash__(self) -> int:
@@ -574,7 +574,7 @@ class LazyState(Generic[A, S]):
                     
         return self._cached_syntax  # type: ignore
 
-    def __call__(self, alg_cls: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
+    def __call__(self, alg_cls: Type[Algebra], **global_kwargs) -> Algebra[A, S]:
         # Create a deterministic, hashable representation of global_kwargs.
         # NOTE: this requires that keys are strings (they are) and values are hashable.
         if global_kwargs:
@@ -614,8 +614,8 @@ class Syntax(Generic[A, S]):
     spec: SyntaxSpec = field(repr=False)
     is_root: bool = field(default=False, compare=False, hash=False, repr=False)
     _lexspec_cache: frozenset[LexSpec] = field(default = MISSING, init=False, repr=False, compare=False, hash=False)
-    _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
-    _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax[Any, Any]]] = ThreadLocalWeakValueDict()
+    _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax]] = ThreadLocalWeakValueDict()
+    _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax]] = ThreadLocalWeakValueDict()
     
     @property
     def is_orelse(self) -> bool:
@@ -637,13 +637,20 @@ class Syntax(Generic[A, S]):
         from syncraft.vis import syntax2svg
         return syntax2svg(self.spec, max_depth=depth)
         
-    
-       
+    def rebase(self, syn: Type[Syntax]) -> Syntax[A, S]:
+        if syn is self.__class__:
+            return self
+        elif not isinstance(syn, type) or not issubclass(syn, Syntax):
+            raise TypeError(f"Cannot rebase to {syn}, not a Syntax subclass")
+        else:
+            return syn.from_spec(self.spec)
+        
+
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
     
     @classmethod
-    def set(cls, **attrs: Any) -> Type['Syntax[Any, Any]']:
+    def set(cls, **attrs: Any) -> Type[Syntax]:
         return type(cls.__name__, (cls,), {SYNCRAFT_CONFIG_KEY: attrs})
 
     @classmethod
@@ -651,7 +658,7 @@ class Syntax(Generic[A, S]):
         cfg = getattr(cls, SYNCRAFT_CONFIG_KEY, {})
         return cfg.get(key, None)
 
-    def __call__(self, alg: Type[Algebra[Any, Any]], **global_kwargs) -> Algebra[A, S]:
+    def __call__(self, alg: Type[Algebra], **global_kwargs) -> Algebra[A, S]:
         cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
         return self.alg_f(alg, **(cfg | global_kwargs)).with_syntax(self)
 
@@ -1274,7 +1281,7 @@ class Syntax(Generic[A, S]):
                  *parsers: Syntax[Any, S], 
                  reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]],
                  share_cache:bool=True) -> Syntax[Any, S]:
-        def parallel_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any)->Algebra[Any, Any]:
+        def parallel_f(acls: Type[Algebra], **global_kwargs: Any)->Algebra:
             algs = [p(acls, **global_kwargs) for p in parsers]
             return acls.parallel(*algs, reducer=reducer, share_cache=share_cache)
         spec = ParallelSpec(options=tuple(p.spec for p in parsers), reducer=reducer, name=None, file=None, line=None, func=None)
@@ -1283,7 +1290,7 @@ class Syntax(Generic[A, S]):
     @classmethod
     def choice(cls, *parsers: Syntax[Any, S]) -> Syntax[Choice[Any], S]:
         all_parsers = parsers
-        def choice_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
+        def choice_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [p(acls, **global_kwargs) for p in all_parsers]
             return acls.choice(*algs).flag(is_orelse=True)
         spec = ChoiceSpec(options=tuple(p.spec for p in all_parsers), name=None, file=None, line=None, func=None)
@@ -1312,7 +1319,7 @@ class Syntax(Generic[A, S]):
         for X in steps:
             step, keep = X if isinstance(X, tuple) else (X, default)
             syntaxes.append((step, bool(keep)))
-        def seq_f(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
+        def seq_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [(step(acls, **global_kwargs), keep) for step, keep in syntaxes]
             return acls.seq(*algs)
         spec = SeqSpec(steps=tuple((step.spec, keep) for step, keep in syntaxes), name=None, file=None, line=None, func=None)
@@ -1393,13 +1400,13 @@ class Syntax(Generic[A, S]):
     
 
     @classmethod
-    def factory(cls, name: str, *args:Any, **kwargs: Any) -> Syntax[Any, Any]:
-        def factory_run(acls: Type[Algebra[Any, Any]], **global_kwargs: Any) -> Algebra[Any, Any]:
+    def factory(cls, name: str, *args:Any, **kwargs: Any) -> Syntax:
+        def factory_run(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             method = getattr(acls, name, None)
             if method is None or not callable(method):
                 raise SyncraftError(f"Method {name} is not defined in {acls.__name__}", offender=method, expect='callable')
             result = CallWith(method, *args, **(global_kwargs | kwargs))()
-            return cast(Algebra[Any, Any], result)
+            return cast(Algebra, result)
         return cls(factory_run, spec=LexSpec(fname=name, 
                                              args=args,
                                              kwargs=FrozenDict(kwargs), 
@@ -1409,32 +1416,33 @@ class Syntax(Generic[A, S]):
                                              line=None, 
                                              func=None))
     @classmethod
-    def eof(cls) -> Syntax[Any, Any]:
+    def eof(cls) -> Syntax:
         return cls.factory('eof')
 
     @classmethod
-    def token(cls, tkspec: TokenSpec) -> Syntax[Any, Any]:
+    def token(cls, tkspec: TokenSpec) -> Syntax:
         return cls.factory('lex', tkspec)
 
     @classmethod
-    def lex(cls, builder: Builder | TokenSpec) -> Syntax[Any, Any]:
+    def lex(cls, builder: Builder | TokenSpec) -> Syntax:
         return cls.factory('lex', builder)
     
     @classmethod
-    def lit(cls, text: str | re.Pattern[str] | bytes, case_sensitive: bool = True) -> Syntax[Any, Any]:
+    def lit(cls, text: str | re.Pattern[str] | bytes, case_sensitive: bool = True) -> Syntax:
         tkspec: TokenSpec[Any] | None = TokenSpecBase.from_kwargs(text=text, case_sensitive=case_sensitive)
         assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
         return cls.token(tkspec)
     
 
     @classmethod
-    def from_spec(cls, spec: SyntaxSpec)->Syntax[Any, Any]:
+    def from_spec(cls, spec: SyntaxSpec)->Syntax:
         c: Dict[SyntaxSpec, Syntax] = {}
         return spec.syntax(cls, cache=c)
 
 
+
     @classmethod
-    def from_graph(cls, graph: Graph[SyntaxSpec]) -> Syntax[Any, Any]:
+    def from_graph(cls, graph: Graph[SyntaxSpec]) -> Syntax:
         c: Dict[SyntaxSpec, Syntax] = {}
         return graph.root.syntax(cls, cache=c)
     

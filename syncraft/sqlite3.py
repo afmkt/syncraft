@@ -7,7 +7,7 @@ from typing import Any
 from syncraft.syntax import Syntax
 from sqlglot import TokenType
 
-def lift(token_type: TokenType | str) -> Syntax[Any, Any]:
+def lift(token_type: TokenType | str) -> Syntax:
     if isinstance(token_type, str):
         return Syntax.token(text=token_type)
     else:
@@ -332,16 +332,16 @@ update_stmt_limited = (
     )
 
 
-def table_or_subquery()->Syntax[Any, Any]:
+def table_or_subquery()->Syntax:
     t1 = ~schema_name >> table_as_alias >> ~((INDEXED >> BY >> index_name)|(NOT >> INDEXED))
     t2 = ~schema_name >> table_function_name >> expr.parens(COMMA, L_PAREN, R_PAREN) >> ~(~AS >> var)
     t3 = select_stmt.between(L_PAREN, R_PAREN) >> ~(~AS >> var)
     t4 = table_subquery.parens(COMMA, L_PAREN, R_PAREN)
     t5 = join_clause.between(L_PAREN, R_PAREN) 
-    return (t1 | t2 | t3 | t4 | t5).as_(Syntax[Any, Any])
+    return (t1 | t2 | t3 | t4 | t5).as_(Syntax)
 
 
-def expression() -> Syntax[Any, Any]:
+def expression() -> Syntax:
     return choice(
         literal_value,
         bind_parameter,
@@ -364,9 +364,9 @@ def expression() -> Syntax[Any, Any]:
         expr >> ~NOT >> IN >> ~schema_name >> (table_name | (function_name >> expr.parens(COMMA, L_PAREN, R_PAREN))),
         ~NOT >> ~EXISTS >> select_stmt.between(L_PAREN, R_PAREN),
         CASE >> ~expr >> (WHEN >> expr >> THEN >> expr).many() >> ~(ELSE >> expr) // END,
-    ).as_(Syntax[Any, Any])
+    ).as_(Syntax)
 
-def select_statement() -> Syntax[Any, Any]:
+def select_statement() -> Syntax:
     select_clause = SELECT >> ~(DISTINCT | ALL) >> result_columns.sep_by(COMMA)
     from_clause = FROM >> (table_subquery.sep_by(COMMA) | join_clause)
     where_clause = WHERE >> expr
@@ -382,7 +382,7 @@ def select_statement() -> Syntax[Any, Any]:
          >> select_core.sep_by(compound_operator)
          >> ~(ordering_clause >> ~limit_clause)
          >> ~SEMICOLON
-    ).as_(Syntax[Any, Any])
+    ).as_(Syntax)
 
 column_constraint = ~(CONSTRAINT >> constraint_name) >> (
     (PRIMARY >> KEY >> ~(ASC | DESC) >> ~conflict_clause >> AUTO_INCREMENT)

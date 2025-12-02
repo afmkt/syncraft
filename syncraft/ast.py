@@ -130,13 +130,13 @@ class Bimap(Generic[A, B]):
 @dataclass(frozen=True, slots=True)    
 class AST:
     @property
-    def custom_mapping(self) -> Optional[Bimap[Any, Any]]: ...
+    def custom_mapping(self) -> Optional[Bimap]: ...
 
     
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return self
 
-    _bimmapped_cache: Reversible[Any, Any] = field(default=MISSING, init=False, repr=False, compare=False, hash=False)
+    _bimmapped_cache: Reversible = field(default=MISSING, init=False, repr=False, compare=False, hash=False)
     @property
     def arity(self)->int:
         return 1
@@ -144,11 +144,11 @@ class AST:
     def is_then(self)->bool:
         return False
     
-    def _bimap(self) -> Reversible[Any, Any]:
+    def _bimap(self) -> Reversible:
         return Reversible(self)
     
     @property
-    def bimap(self) -> Reversible[Any, Any]:
+    def bimap(self) -> Reversible:
         if self._bimmapped_cache is MISSING:
             tmp = self._bimap()
             if self.custom_mapping is not None:
@@ -199,9 +199,9 @@ class Nothing(metaclass=MetaNothing):
 class Lazy(AST, Generic[A]):
     value: A
     flatten: bool 
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
 
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
         
 
@@ -234,8 +234,8 @@ class Marked(AST, Generic[A]):
     
     name: str
     value: A
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     def _bimap(self) -> Reversible[Marked[A], Marked[Any]]:
@@ -265,10 +265,10 @@ class OrElse(AST, Generic[A, B]):
     """
     
     kind: Optional[OrElseKind]
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
     value: Optional[A | B] = None
     
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     @property
@@ -301,8 +301,8 @@ class OrElse(AST, Generic[A, B]):
 class Choice(AST, Generic[A]):
     index: Optional[int]
     value: Optional[A]
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     @property
@@ -334,8 +334,8 @@ class Choice(AST, Generic[A]):
 class Many(AST, Generic[A]):
     """A finite sequence of values within the AST."""
     value: Tuple[A, ...]
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     def _bimap(self) -> Reversible[Many[A], List[Any]]:
@@ -361,8 +361,8 @@ class Many(AST, Generic[A]):
 @dataclass(frozen=True, slots=True)
 class Seq(AST):
     value: Tuple[Tuple[Any, bool], ...]
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     @property
@@ -432,8 +432,8 @@ class Then(AST, Generic[A, B]):
     kind: ThenKind
     left: A
     right: B
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     @property
@@ -551,8 +551,8 @@ Collector = Type[Any] | Callable[..., Any]
 class Collect(AST, Generic[A, E]):
     collector: Collector
     value: A
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False)
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     def _bimap(self) -> Reversible[Collect[A, E], E]:
@@ -638,8 +638,8 @@ Char = TypeVar('Char', bound=Hashable)
 class Token(AST, Generic[Char]):
     text: str | bytes | Tuple[Char, ...]
     token_type: Optional[Union[str, Enum]] = None
-    custom_mapping: Optional[Bimap[Any, Any]] = field(compare=False, hash=False, repr=False, default=None)
-    def mapping(self, f: Optional[Bimap[Any, Any]]) -> AST:
+    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False, default=None)
+    def mapping(self, f: Optional[Bimap]) -> AST:
         return replace(self, custom_mapping=f) 
 
     def __str__(self) -> str:

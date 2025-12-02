@@ -8,8 +8,16 @@ from syncraft.generator import generator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
-from dataclasses import is_dataclass
+
+
+
+
 AUTUO_NAME = "<auto_name>"
+
+
+
+
+
 class LazyHolder:
     def __init__(self, 
                  thunk: Callable[[Any], Syntax], 
@@ -29,6 +37,7 @@ class LazyHolder:
 
     def __str__(self) -> str:
         return f"LazyHolder({self.name}, {self.thunk})"
+    
     def rule(self, S: Any, MAX_NAME_LENGTH: int, key_name: str) -> Syntax:
 
         rule = S.lazy(lambda: self.thunk(S))
@@ -46,26 +55,26 @@ class LazyHolder:
 
 
 @overload
-def lazy(thunk: str, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
+def lazy(thunk: str, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
 @overload
-def lazy(thunk: str, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
+def lazy(thunk: str, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
 
 @overload
-def lazy(thunk: bool, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
+def lazy(thunk: bool, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
 @overload
-def lazy(thunk: bool, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
+def lazy(thunk: bool, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
 
 @overload
-def lazy(thunk: None=None, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
+def lazy(thunk: None=None, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
 @overload
-def lazy(thunk: None=None, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Syntax]: ...
+def lazy(thunk: None=None, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
 
 @overload
-def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[False]=False) -> Syntax: ...
+def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[False]=False) -> Any: ...
 @overload
-def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[True]=True) -> Syntax: ...
+def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[True]=True) -> Any: ...
 
-def lazy(thunk: str | Callable[[Any], Syntax] | bool | None = None, *, root:bool=False) -> Syntax | Callable[[Any], Syntax]:
+def lazy(thunk: str | Callable[[Any], Syntax] | bool | None = None, *, root:bool=False) -> Any | Callable[[Any], Any]:
     """
     Decorator for lazy grammar rules.
     @lazy
@@ -86,18 +95,18 @@ def lazy(thunk: str | Callable[[Any], Syntax] | bool | None = None, *, root:bool
     level = 1
     file, line, func = get_file(level), get_line(level), get_func(level)
     if callable(thunk):
-        return LazyHolder(thunk, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func).rule(None, 0, "")
+        return LazyHolder(thunk, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func)
     elif isinstance(thunk, str):
-        def wrapper(f: Callable[[Any], Syntax]):
-            return LazyHolder(f, root=root, name=thunk, need_name=True, file=file, line=line, func=func).rule(None, 0, "")
+        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
+            return LazyHolder(f, root=root, name=thunk, need_name=True, file=file, line=line, func=func)
         return wrapper
     elif isinstance(thunk, bool):
-        def wrapper(f: Callable[[Any], Syntax]):
-            return LazyHolder(f, root=root, name=None if not thunk else AUTUO_NAME, need_name=thunk, file=file, line=line, func=func).rule(None, 0, "")
+        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
+            return LazyHolder(f, root=root, name=None if not thunk else AUTUO_NAME, need_name=thunk, file=file, line=line, func=func)
         return wrapper
     elif thunk is None:
-        def wrapper(f: Callable[[Any], Syntax]):
-            return LazyHolder(f, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func).rule(None, 0, "")
+        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
+            return LazyHolder(f, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func)
         return wrapper
     else:
         raise TypeError("Invalid argument to lazy decorator")
@@ -260,7 +269,7 @@ class Mapper:
             return (self.func(t),)
         return Mapper(to_tuple)
     
-    def dict(self, d: Dict[Any, Any]) -> Mapper:
+    def dict(self, d: Dict) -> Mapper:
         def as_index_f(t: Any) -> Any:
             y = Mapper.eval(d, t)
             return y[self.func(t)]
@@ -317,7 +326,7 @@ class GrammarMeta(type):
         root_rule: Set[Syntax] = set()
         for name, value in namespace.items():
             if isinstance(value, LazyHolder):
-                raise TypeError(f"LazyHolder instances {value} should be processed before __new__")
+                lazy_rules[name] = value
             elif isinstance(value, Syntax):
                 if value.is_root:
                     if root_rule:
@@ -353,11 +362,11 @@ class GrammarMeta(type):
 class Grammar(Syntax, metaclass=GrammarMeta):
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
-    _parser: Dict[Syntax, Algebra[Any, Any]] = {}
-    _generator: Dict[Syntax, Algebra[Any, Any]] = {}
+    _parser: Dict[Syntax, Algebra] = {}
+    _generator: Dict[Syntax, Algebra] = {}
 
     @classmethod
-    def parser(cls, syntax: Syntax | None = None) -> Algebra[Any, Any]:
+    def parser(cls, syntax: Syntax | None = None) -> Algebra:
         """Create a parser for the grammar."""
         if syntax is None:
             if cls._root_rule is None:
@@ -370,7 +379,7 @@ class Grammar(Syntax, metaclass=GrammarMeta):
         return ret
     
     @classmethod
-    def generator(cls, syntax: Syntax | None = None) -> Algebra[Any, Any]:
+    def generator(cls, syntax: Syntax | None = None) -> Algebra:
         """Create a generator for the grammar."""
         if syntax is None:
             if cls._root_rule is None:
@@ -383,7 +392,7 @@ class Grammar(Syntax, metaclass=GrammarMeta):
         return ret
     
     @classmethod
-    def validator(cls, syntax: Syntax | None = None) -> Algebra[Any, Any]:
+    def validator(cls, syntax: Syntax | None = None) -> Algebra:
         """Create a validator for the grammar."""
         return cls.generator(syntax=syntax)
 
