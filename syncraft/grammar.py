@@ -106,13 +106,17 @@ class Grammar:
         return cls.generator(syntax=syntax)
 
     @classmethod
-    def parse(cls, data: str, syntax: Syntax | None = None, raw: bool = False) -> Any:
+    def parse(cls, 
+              data: str, 
+              syntax: Syntax | None = None, 
+              raw: bool = False, 
+              cache: Cache[Any] | None = None) -> Any:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
         runner: Runner[Any] = Runner()
         cursor = StreamCursor.from_data(data)
-        cache: Cache[Any] = Cache()
+        cache = cache or Cache()
         for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=cache):
             if s:
                 if isinstance(result, AST):
@@ -124,12 +128,16 @@ class Grammar:
         raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
 
     @classmethod
-    def stream_parse(cls, data: StreamCursor[Any], syntax: Syntax | None = None, raw: bool = False) -> Any:
+    def stream_parse(cls, 
+                     data: StreamCursor[Any], 
+                     syntax: Syntax | None = None, 
+                     raw: bool = False,
+                     cache: Cache[Any] | None = None) -> Any:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
         runner: Runner[Any] = Runner()
-        cache: Cache[Any] = Cache()
+        cache = cache or Cache()
         
         for result, s in runner.run(parser, state=None, cursor=data, once=False, cache=cache):
             if s:

@@ -354,12 +354,12 @@ class RE(G):
 
 
 @overload
-def parse(data: str, *, raw: Literal[True]) -> AST: ...
+def parse(data: str, *, raw: Literal[True], cache: Optional[Cache[Any]] = None) -> AST: ...
 @overload
-def parse(data: str, *, raw: Literal[False]) -> Regex | Error: ...
+def parse(data: str, *, raw: Literal[False], cache: Optional[Cache[Any]] = None) -> Regex | Error: ...
 
-def parse(data: str, *, raw:bool=False) -> Regex | Error | AST:
-    return RE.parse(data, raw=raw)
+def parse(data: str, *, raw:bool=False, cache: Optional[Cache[Any]] = None) -> Regex | Error | AST:
+    return RE.parse(data, raw=raw, cache=cache)
 
 
 def parse_regex(syntax: Syntax, 
@@ -389,7 +389,7 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
     if profile:
         cache = cache.with_profiler()
     
-    parsed = parse(pattern, raw=False)
+    parsed = parse(pattern, raw=False, cache=cache)
     if cache.profiler is not None:
         cache.profiler.report()
         
