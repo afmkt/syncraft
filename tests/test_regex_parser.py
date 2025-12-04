@@ -410,6 +410,7 @@ def test_groups_flags_only():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS
+    assert result.inline_flags
     assert result.inline_flags.enabled == ("i",)
     assert result.inline_flags.disabled is None
     assert result.pattern is None
@@ -425,6 +426,7 @@ def test_groups_flags_with_disable():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS
+    assert result.inline_flags
     assert result.inline_flags.enabled == ("i", "m")
     assert result.inline_flags.disabled == ("s",)
     assert result.pattern is None
@@ -439,6 +441,7 @@ def test_groups_flags_scoped():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS_SCOPED
+    assert result.inline_flags
     assert result.inline_flags.enabled == ("i",)
     assert result.inline_flags.disabled is None
     assert isinstance(result.pattern, Regex)
@@ -458,6 +461,7 @@ def test_groups_flags_scoped_with_disable():
     result = tmp.branches[0].pieces[0].atom
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS_SCOPED
+    assert result.inline_flags
     assert result.inline_flags.enabled == ("i", "m")
     assert result.inline_flags.disabled == ("s",)
     assert isinstance(result.pattern, Regex)

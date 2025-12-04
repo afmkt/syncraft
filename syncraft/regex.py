@@ -266,20 +266,6 @@ class RE(G):
     def group(): # type: ignore
         def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
             return S.seq2(partial(GroupAtom, kind=kind), _=prefix, pattern=+pettern, __=postfix)
-        
-        def search_group(stack: List[Syntax]):
-            print('*', repr(RE.group), repr(RE.group.spec))
-            print()
-            for i, s in enumerate(stack):
-                if s is RE.group:
-                    print("found")
-                    return
-                if i == 0:
-                    print(repr(s), repr(s.spec))
-                else:
-                    print(repr(s), s.spec)
-                print()
-            print('NOT FOUND', repr(RE.group))
 
 
         return S.alt(

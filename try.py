@@ -131,6 +131,7 @@ def test_groups_flags_with_disable():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS
+    assert result.inline_flags
     assert result.inline_flags.enabled == ("i", "m")
     assert result.inline_flags.disabled == ("s",)
     assert result.pattern is None
@@ -147,6 +148,7 @@ def test_groups_flags_only():
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS
     print(result)
+    assert result.inline_flags
     assert result.inline_flags.enabled == ("i",)
     assert result.inline_flags.disabled is None
     assert result.pattern is None
