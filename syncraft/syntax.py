@@ -12,7 +12,8 @@ from dataclasses import dataclass, field, replace, is_dataclass, fields
 
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING, Record, DbgPrint
+from syncraft.mapper import Record
+from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint

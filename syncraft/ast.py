@@ -8,7 +8,7 @@ from typing import (
 )
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from syncraft.utils import Record
+from syncraft.mapper import Record
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
 from syncraft.utils import CallWith, MISSING

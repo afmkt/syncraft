@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Type
 
 class Mapper:
     @staticmethod
@@ -186,3 +186,40 @@ def call(c: Callable[..., Any], *args: Any, **kwargs: Any) -> Mapper:
                 named_args[k] = v
         return c(*unnamed_args, **named_args)
     return Mapper(bound)
+
+class Record:
+    def __init__(self, *unnamed: Any, **named: Any)->None:
+        self._named = named
+        self._unnamed = unnamed
+
+    @property
+    def unnamed(self):
+        return self._unnamed
+
+    def __repr__(self) -> str:
+        parts = []
+        if self._unnamed:
+            parts.append(", ".join(repr(v) for v in self._unnamed))
+        if self._named:
+            parts.append(", ".join(f"{k}={v!r}" for k, v in self._named.items()))
+        return f"{self.__class__.__name__}({', '.join(parts)})"
+
+    def __getattr__(self, key: Any) -> Any:
+        try:
+            return self._named[key]
+        except KeyError as e:
+            raise AttributeError(f"'DotDict' object has no attribute '{key}'") from e
+        
+    def __getitem__(self, index: int | str | Mapper) -> Any:
+        if isinstance(index, int):
+            return self._unnamed[index]
+        elif isinstance(index, str):
+            return self._named[index]
+        elif isinstance(index, Mapper):
+            return index.dict(self._named)
+        else:
+            raise TypeError("Index must be an integer or string")
+
+    @classmethod
+    def create_cls(cls, name: str, base: type | None = None) -> Type[Record]:
+        return type(name, (base, cls), {}) if base is not None else type(name, (cls,), {})
