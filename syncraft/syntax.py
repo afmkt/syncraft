@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace, is_dataclass, fields
 
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING, Record
+from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING, Record, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint
@@ -106,6 +106,7 @@ class SyntaxSpec:
     file: Optional[str] = field(compare=False, hash=False) 
     line: Optional[int] = field(compare=False, hash=False)
     func: Optional[str] = field(compare=False, hash=False)
+
     @property
     def location(self) -> Optional[str]:
         if self.file:
@@ -189,6 +190,13 @@ class SyntaxSpec:
 @dataclass(frozen=True, slots=True)
 class LazySpec(SyntaxSpec):
     lazy_state: LazyState
+    creation_site: str = field(compare=False, hash=False, init=False)
+
+    def __post_init__(self):
+        level = 5
+        file = get_file(level)
+        line = get_line(level)
+        object.__setattr__(self, 'creation_site', f" {file}:{line} ")
 
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -271,7 +279,7 @@ class CollectSpec(SyntaxSpec):
         if self.name:
             return self.format("{0}", self.name)
         else:
-            return self.format("{spec}.to{collector}", spec=str(self.spec), collector=str(self.collector))
+            return self.format("{spec}.to({collector})", spec=str(self.spec), collector=str(self.collector))
         
     @property
     def complexity(self) -> float:
@@ -614,12 +622,17 @@ class Syntax(Generic[A, S]):
     spec: SyntaxSpec = field(repr=False)
     is_root: bool = field(default=False, compare=False, hash=False, repr=False)
     _lexspec_cache: frozenset[LexSpec] = field(default = MISSING, init=False, repr=False, compare=False, hash=False)
+    print: ClassVar[DbgPrint] = DbgPrint.create()
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax]] = ThreadLocalWeakValueDict()
     _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax]] = ThreadLocalWeakValueDict()
     
     @property
     def is_orelse(self) -> bool:
         return isinstance(self.spec, OrElseSpec) or isinstance(self.spec, ChoiceSpec) or isinstance(self.spec, ParallelSpec)
+
+    @property
+    def is_lazy(self) -> bool:
+        return isinstance(self.spec, LazySpec)
 
     @property
     def has_name(self) -> bool:
@@ -636,7 +649,15 @@ class Syntax(Generic[A, S]):
     def vis(self, depth: int = 3) -> Optional[SVGVisualization]:
         from syncraft.vis import syntax2svg
         return syntax2svg(self.spec, max_depth=depth)
-                
+
+    @classmethod
+    def cdbg(cls, e: bool)->Any:
+        cls.print.enable(e)
+        return cls
+
+    def idbg(self, e: bool) -> Syntax[A, S]:
+        self.print.enable(e)
+        return self
 
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore
@@ -836,6 +857,7 @@ class Syntax(Generic[A, S]):
               show_stack: bool = True,
               only_fail: bool = False,
               only_success: bool = False,
+              misc: Callable[..., Any] | None = None,
               level:int = 0) -> Syntax[A, S]:
         if disable:
             return self
@@ -882,6 +904,12 @@ class Syntax(Generic[A, S]):
                 print( "   Call Stack:")
                 lns = Error.fmt_stack(stack, indent=" " * 13)
                 print('\n'.join(lns))
+            if callable(misc):
+                print("-" * 50, "Misc", "-" * 50)
+                print()
+                misc(list(s for s, _ in stack))
+                print()
+
 
         xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = dbg if callable(dbg) else default_dbg
         return replace(self, alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg))
@@ -1323,13 +1351,25 @@ class Syntax(Generic[A, S]):
              to: Collector, 
              *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool], 
              **named_steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Any, S]:
+
+        if cls.print.enabled:
+            pass
+
+        def mark_name(syn: Syntax[Any, S], name: str) -> Syntax[Any, S]:
+            if not name.startswith('_'):
+                return syn.mark(name)
+            else:
+                return syn
+
         _steps: List[Tuple[Syntax[Any, S], bool | None, str | None]]
         _steps = [(s[0], s[1], None) if isinstance(s, tuple) else (s, None, None) for s in list(steps)]
         for _name, s in named_steps.items():
             if isinstance(s, tuple):
-                _steps.append((s[0], s[1], _name))
+                x = mark_name(s[0], _name)
+                _steps.append((x, s[1], _name))
             else:
-                _steps.append((s, None, _name))
+                _steps.append((mark_name(s, _name), None, _name))
+
 
         field_names: Set[str] = set(f.name for f in fields(to)) if is_dataclass(to) else set()
         used_name: Set[str] = set()
@@ -1339,8 +1379,9 @@ class Syntax(Generic[A, S]):
             name = name if name is not None else step.spec.name
             if name is not None:
                 # Named step
-                if field_names and name in field_names:
+                if field_names and name in field_names :
                     # Match dataclass field
+                    # cls.print(f"  Naming step {step} as field {name} in {to}")
                     args.append((step.mark(name), True))
                     if name in  used_name:
                         conflict_names.add(name)
@@ -1353,6 +1394,7 @@ class Syntax(Generic[A, S]):
                             conflict_names.add(name)
                         else:
                             used_name.add(name)
+                        # cls.print(f"  Naming step {step} as field {name} in Record {to}")
                         step = step.mark(name) 
                     if keep is not None:
                         args.append((step, keep))

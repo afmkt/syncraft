@@ -1,7 +1,6 @@
 from __future__ import annotations
 from syncraft.regex import (
-    parse_regex, parse, greater, rparen, name, lparen, colon, inline_flags,
-    literal, anchor, shorthand,atom, dot, quantifier, char_class, group, piece, branch, regex, 
+    parse_regex, parse, RE,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
@@ -14,20 +13,20 @@ from syncraft.fa import Builder as B
 def test_literal_characters():
     """Test parsing of literal characters."""
     # Single literal character
-    result = parse_regex(literal, "a")
+    result = parse_regex(RE.literal, "a")
     assert result == "a"
 
 
 def test_literal_digits():
     """Test parsing of literal digits."""
-    result = parse_regex(literal, "1")
+    result = parse_regex(RE.literal, "1")
     assert result == "1"
 
 
 def test_literal_special_chars():
     """Test parsing of literal special characters that are not metacharacters."""
     # Characters that are allowed as literals (not in the excluded set)
-    result = parse_regex(literal, "@")
+    result = parse_regex(RE.literal, "@")
     assert result == "@"
 
 
@@ -42,7 +41,7 @@ def test_control_escapes():
     ]
 
     for pattern, expected in test_cases:
-        result = parse_regex(literal, pattern)
+        result = parse_regex(RE.literal, pattern)
         print(result)
         assert result == expected
         assert len(result) == 2
@@ -58,14 +57,14 @@ def test_unicode_escapes():
     ]
 
     for pattern, expected in test_cases:
-        result = parse_regex(literal, pattern)
+        result = parse_regex(RE.literal, pattern)
         assert result == expected
 
 
 def test_escaped_metacharacters():
     """Test parsing of escaped metacharacters."""
     metachars = r"\\\.\[\]\(\)\{\}\|\+\*\?\^\$"
-    result = parse_regex(literal.many(), metachars)
+    result = parse_regex(RE.literal.many(), metachars)
     assert len(result) == len(metachars) // 2  # Each escape sequence becomes one piece
     expected_chars = r"\.[](){}|+*?^$"
     for i, expected in enumerate(expected_chars):
@@ -85,8 +84,8 @@ def test_anchors():
     ]
 
     for pattern, expected_kind in test_cases:
-        result = parse_regex(anchor, pattern)
-        assert result.value == expected_kind
+        result = parse_regex(RE.anchor, pattern)
+        assert result.kind == expected_kind
 
 
 def test_shorthands():
@@ -137,7 +136,7 @@ def test_quantifiers():
     ]
 
     for pattern, expected_quantifier in test_cases:
-        result = parse_regex(piece, pattern)
+        result = parse_regex(RE.piece, pattern)
         tmp = parse(pattern, raw=False)
         assert isinstance(tmp, Regex)
         result = tmp.branches[0].pieces[0]
@@ -411,8 +410,8 @@ def test_groups_flags_only():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS
-    assert result.inline_flags == ("i",)
-    assert result.disabled_flags is None
+    assert result.inline_flags.enabled == ("i",)
+    assert result.inline_flags.disabled is None
     assert result.pattern is None
 
 
@@ -426,8 +425,8 @@ def test_groups_flags_with_disable():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS
-    assert result.inline_flags == ("i", "m")
-    assert result.disabled_flags == ("s",)
+    assert result.inline_flags.enabled == ("i", "m")
+    assert result.inline_flags.disabled == ("s",)
     assert result.pattern is None
 
 
@@ -440,8 +439,8 @@ def test_groups_flags_scoped():
 
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS_SCOPED
-    assert result.inline_flags == ("i",)
-    assert result.disabled_flags is None
+    assert result.inline_flags.enabled == ("i",)
+    assert result.inline_flags.disabled is None
     assert isinstance(result.pattern, Regex)
     assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
@@ -459,8 +458,8 @@ def test_groups_flags_scoped_with_disable():
     result = tmp.branches[0].pieces[0].atom
     assert isinstance(result, GroupAtom)
     assert result.kind == GroupKind.FLAGS_SCOPED
-    assert result.inline_flags == ("i", "m")
-    assert result.disabled_flags == ("s",)
+    assert result.inline_flags.enabled == ("i", "m")
+    assert result.inline_flags.disabled == ("s",)
     assert isinstance(result.pattern, Regex)
     assert len(result.pattern.branches[0].pieces) == 3
     for i, char in enumerate("abc"):
@@ -568,20 +567,20 @@ def test_regex_unicode_category_escape():
 
 
 def test_neg_lookahead():
-    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +regex.mark('pattern'), rparen)
+    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +RE.regex.mark('pattern'), RE.rparen)
     nl = r"(?!\1)"
     ret = parse_regex(negative_lookahead, nl, raw=False)
     assert not isinstance(ret, Error)
 
 def test_noncap():    
-    noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +regex.mark('pattern'), rparen)
+    noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +RE.regex.mark('pattern'), RE.rparen)
     noncap = r"(?:['\"])"
     ret = parse_regex(noncapturing, noncap, raw = False)
     assert not isinstance(ret, Error)
     
 
 def test_named():
-    named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +name.mark('name'), greater, +regex.mark('pattern'), rparen)
+    named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +RE.name.mark('name'), RE.greater, +RE.regex.mark('pattern'), RE.rparen)
     s = r"(?P<quote>['\"])"
     ret = parse_regex(named, s, raw = False)
     assert not isinstance(ret, Error)
@@ -589,13 +588,13 @@ def test_named():
 
 def test_complex():
     pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
-    ret = parse_regex(regex, pattern, raw = False)
+    ret = parse_regex(RE.regex, pattern, raw = False)
     assert not isinstance(ret, Error)
     
 
 
 def test_complex1():
     pattern = r'l*[^UUf\w]?|\w{5}\W{0,5}\w*(?w)|J*\B'
-    ret= parse_regex(regex, pattern, raw = False)
+    ret= parse_regex(RE.regex, pattern, raw = False)
     assert not isinstance(ret, Error)
     

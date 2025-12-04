@@ -8,7 +8,7 @@ that was causing graph reconstruction to create inconsistent edge counts.
 
 import pytest
 from syncraft.syntax import LazyState, Syntax
-from syncraft.regex import regex
+from syncraft.regex import RE
 
 
 def test_lazy_state_hash_equality_contract():
@@ -84,7 +84,7 @@ def test_graph_edge_count_consistency():
     """Test that graph reconstruction maintains consistent edge counts."""
     
     # This is the main regression test for the original bug
-    g = regex.graph()
+    g = RE.regex.graph()
     syntax2 = Syntax.from_graph(g)
     g1 = syntax2.graph()
     

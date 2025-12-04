@@ -36,9 +36,9 @@ def lazy(S: type[Syntax], name: str | None | Callable[..., Syntax] = None, *, is
     elif isinstance(name, str) or name is None:
         def wrapper(f: Callable[..., Syntax]) -> Syntax:
             if is_root:
-                return S.lazy(f).as_root()._named(name=name, file=file, line=line, func=func)
+                return S.lazy(f).as_root()._named(name=name if name is not None else f.__name__, file=file, line=line, func=func)
             else:
-                return S.lazy(f)._named(name=name, file=file, line=line, func=func)
+                return S.lazy(f)._named(name=name if name is not None else f.__name__, file=file, line=line, func=func)
         return wrapper
     else: 
         raise TypeError(f"Argument to lazy must be a callable or a string or a boolean, got {type(name)}")

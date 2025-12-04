@@ -180,10 +180,10 @@ def test9_recursive_lazy_pattern() -> None:
 
 def test10_regex_syntax_edge_count() -> None:
     """Test that the actual regex syntax maintains edge count consistency."""
-    from syncraft.regex import regex
+    from syncraft.regex import RE
     
     # Get the original graph
-    g = regex.graph()
+    g = RE.regex.graph()
     
     # Reconstruct syntax from graph
     syntax2 = Syntax.from_graph(g)

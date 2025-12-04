@@ -2,17 +2,15 @@ from __future__ import annotations
 
 # from rich import print
 from pyDatalog import pyDatalog as d
-from syncraft.syntax import Syntax as S
-from syncraft.fa import Builder as B
-from syncraft.algebra import Error
+from syncraft.regex import (
+    parse_regex, parse, RE, parse_regex,
+    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
+)
+from rich import print
+
 # 
 import timeit
-from syncraft.algebra import Left, Right
-from syncraft.ast import Token
-from syncraft.lexer import Lexer, LexerResult
-from syncraft.syntax import Syntax
-from syncraft.grammar import Grammar, rule, grammar, lazy
-
 # from syncraft.regex2 import verify
 
 def x():
@@ -65,9 +63,17 @@ def z():
     print("tuple / callable", float(t2) / t1)
         
 
-def main():
-    from syncraft.regex import Regex, parse_regex, group, regex, rparen, lparen, name, greater, regex_full, inline_flags, colon, GroupAtom, GroupKind, benchmark_fair
-    pattern = [
+
+
+def benchmark_fair():
+    # ITERATOR to feed unique patterns
+    from syncraft.regex import parse as parse3
+    from syncraft.regex import parse 
+    import timeit
+    count = 500
+    result = []
+    base_patterns = [
+        r"(?P<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})",
         r'(?r)$|\W{4,}.+\U000FEAE1?u*',
         r'4{1}|e*\b(?0)[FyIn]{4,}',
         r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)',
@@ -76,39 +82,81 @@ def main():
         r'(?p)\W^|r?u{2,6}',
         r'(?f)',
         r'(?b)',
-    ]
-    print(parse_regex(regex_full, pattern[0]))
-    print(parse_regex(regex_full, pattern[1]))
-    print(parse_regex(regex_full, pattern[2]))
-    print(parse_regex(regex_full, pattern[3]))
-    print(parse_regex(regex_full, pattern[4]))
-    print(parse_regex(regex_full, pattern[5]))
-    print(str(parse_regex(group, pattern[6])))
-    print(str(parse_regex(group, pattern[7])))
-
-def test_advanced():
-    # from syncraft.regex import parse_regex as pp, star as sss
-    from syncraft.regex2 import verify, parse, RE, parse_regex
-    pattern = [
         r'(?r)$|\W{4,}.+\U000FEAE1?u*',
         r'4{1}|e*\b(?0)[FyIn]{4,}',
         r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)',
         r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
-        r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}'
+        r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}',
+
     ]
-    vr = verify(pattern[0])
-    assert vr.ok, f"Pattern failed to parse: {pattern[0]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-    # vr = verify(pattern[1])
-    # assert vr.ok, f"Pattern failed to parse: {pattern[1]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-    # vr = verify(pattern[2])
-    # assert vr.ok, f"Pattern failed to parse: {pattern[2]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-    # vr = verify(pattern[3])     
-    # assert vr.ok, f"Pattern failed to parse: {pattern[3]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
-    # vr = verify(pattern[4])
-    # assert vr.ok, f"Pattern failed to parse: {pattern[4]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    t = 0
+    t3 = 0
+    for base_pattern in base_patterns:
+        def run3():
+            try:
+                parse3(base_pattern, raw=False) 
+            except StopIteration:
+                pass
+
+
+        def run():
+            try:
+                parse(base_pattern, raw=False) 
+            except StopIteration:
+                pass
+
+
+        t += timeit.timeit(run3, number=count)
+        t3 += timeit.timeit(run, number=count)
+
+    result.append("--- FAIR COMPARISON (Cold Start) ---")
+    
+    result.append(f"Regex: {t/count:.5f} s/parse")
+    result.append(f"Regex3:    {t3/count:.5f} s/parse")
+    
+    ratio = (t) / (t3)
+    result.append(f"Multiplier: Syncraft is {ratio:.5f}x slower than C-compiled Regex")
+    return result
+
+
+
+
+
+def test_groups_flags_with_disable():
+    """Test parsing of flag groups with disabled flags."""
+    # result = parse_regex(group, "(?im-s)")
+    tmp = parse("(?im-s)", raw=False)
+    assert isinstance(tmp, Regex)
+    result = tmp.branches[0].pieces[0].atom
+
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.FLAGS
+    assert result.inline_flags.enabled == ("i", "m")
+    assert result.inline_flags.disabled == ("s",)
+    assert result.pattern is None
+
+
+
+def test_groups_flags_only():
+    """Test parsing of flag-only groups."""
+    # result = parse_regex(group, "(?i)")
+    tmp = parse("(?i)", raw=False)
+    assert isinstance(tmp, Regex)
+    result = tmp.branches[0].pieces[0].atom
+
+    assert isinstance(result, GroupAtom)
+    assert result.kind == GroupKind.FLAGS
+    print(result)
+    assert result.inline_flags.enabled == ("i",)
+    assert result.inline_flags.disabled is None
+    assert result.pattern is None
+
+
+
+
 
 if __name__ == "__main__":
-    test_advanced()
+    test_groups_flags_only()
     # test_noncap()
     # test_named()
     # test_neg_lookahead()

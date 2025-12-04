@@ -1,12 +1,14 @@
 from __future__ import annotations
-from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional, MutableMapping, Type
-from dataclasses import dataclass
+from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional, MutableMapping, Type, Tuple
+from dataclasses import dataclass, replace, field
 import inspect
 import functools
 import types
 import collections.abc
 import threading
 from weakref import WeakKeyDictionary, WeakValueDictionary
+
+
 
 
 MISSING: Any = object()
@@ -412,13 +414,13 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
     def __bool__(self)->bool:
         return bool(self._data)
 
-    def __or__(self, other: collections.abc.Mapping) -> "FrozenDict[K, V]":
+    def __or__(self, other: collections.abc.Mapping) -> FrozenDict[K, V]:
         """Return a new FrozenDict with merged keys (other overrides self)."""
         merged = dict(self._data)
         merged.update(other)
         return FrozenDict(merged)
 
-    def __ror__(self, other: collections.abc.Mapping) -> "FrozenDict[K, V]":
+    def __ror__(self, other: collections.abc.Mapping) -> FrozenDict[K, V]:
         """Support other | self."""
         merged = dict(other)
         merged.update(self._data)
@@ -446,12 +448,29 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
     def __repr__(self):
         return f"{self.__class__.__name__}({self._data})"
     
-    def set(self, key, value) -> "FrozenDict[K, V]":
+    def set(self, key, value) -> FrozenDict[K, V]:
         new_data = dict(self._data)
         new_data[key] = value
         return FrozenDict(new_data)
     
 
+@dataclass(slots=True)
+class DbgPrint:
+    enabled: bool = field(default=False)
+    print_func: Callable[..., Any] = field(default=print)
+    
+    @classmethod
+    def create(cls, enabled: bool = False, print_func: Callable[..., Any] = print) -> DbgPrint:
+        return cls(enabled=enabled, print_func=print_func)
+    
+    def __call__(self, *args: Any, **kwargs: Any) -> None:
+        if self.enabled:
+            self.print_func(*args, **kwargs)
+
+    def enable(self, e: bool) -> DbgPrint:
+        self.enabled = e
+        return self
+    
 
 
 

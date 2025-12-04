@@ -9,7 +9,7 @@ from syncraft.ast import Bimap, ThenKind, Lazy, Then, OrElse, Many, OrElseKind, 
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
-from syncraft.utils import callable_str, is_orelse
+from syncraft.utils import callable_str, is_orelse, is_lazy
 
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax, SyntaxSpec, Graph
@@ -143,14 +143,17 @@ class Error:
         def str_rule(rule: Callable[..., Any]) -> str:
             syn = Error.get_syntax(rule)
             orelse = syn.is_orelse if syn else is_orelse(rule)
-            mark = "\u22d4" if orelse else ""
+            lazy = syn.is_lazy if syn else is_lazy(rule)
             spec = syn.spec if syn else None
+            orelse_mark = "\u220B " if orelse else ""
+            lazy_mark = ("\u29D6 " if lazy else "")
+
             if spec and hasattr(spec, 'location'):
                 if spec.location is not None:
-                    return f"{mark}{str(spec)} ({spec.location})"
+                    return f"{lazy_mark}{orelse_mark}{str(spec)} ({spec.location})"
             if spec is None:
-                return f"{mark}{callable_str(rule)}"
-            return f"{mark}{str(spec)}"
+                return f"{lazy_mark}{orelse_mark}{callable_str(rule)}"
+            return f"{lazy_mark}{orelse_mark}{str(spec)}"
 
         lines = []
         if len(stack) > 0:

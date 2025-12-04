@@ -1,7 +1,5 @@
 from __future__ import annotations
-import pytest
 from syncraft.syntax import Syntax
-from syncraft.regex2 import verify as v
 from syncraft.regex import verify
 import random
 import string
@@ -92,7 +90,7 @@ def generate_random_regex_tests(n=100, seed=42) -> list[tuple[str, str, bool]]:
 
 
 def test_graph():
-    from syncraft.regex2 import RE
+    from syncraft.regex import RE
     g1 = RE.regex_full.graph()
     g2 = Syntax.from_graph(g1).graph()
     assert str(g2) == str(g1), "Reconstructed syntax should match original from graph"

@@ -571,7 +571,12 @@ class Collect(AST, Generic[A, E]):
             unnamed = [v for v in b if not isinstance(v, Marked)]
             c = CallWith(self.collector, *unnamed, **named)
             if c.missing_args or c.missing_kwargs:
-                raise SyncraftError("Collector cannot be called with provided arguments", 
+                parts = []
+                if c.missing_args:
+                    parts.append(f"args: {c.missing_args}")
+                if c.missing_kwargs:
+                    parts.append(f"kwargs: {c.missing_kwargs}")
+                raise SyncraftError(f"Collector cannot be called, missing {', '.join(parts)}", 
                                      offender=self.collector, 
                                      expect="callable with matching signature")
             ret: E = c()
