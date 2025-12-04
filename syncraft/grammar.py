@@ -25,92 +25,44 @@ def rule(syntax: Syntax, *, name: str | None = None, is_root: bool = False) -> S
 
 
 
-class LazyDescriptor:
-    def __init__(self, 
-                 f: Callable[..., Syntax] | classmethod, 
-                 syntax_cls: type[Syntax] | None = None,
-                 name: str | None = None,
-                 file: str | None = None,
-                 line: int | None = None,
-                 func: str | None = None,
-                 is_root: bool = False
-                 ):
-        self.f = f
-        self.name = f.__name__ if name is None else name
-        self.cls = syntax_cls
-        self.file = file
-        self.line = line
-        self.func = func
-        self.is_root = is_root
-        self.resolved: Syntax | None = None
-
-    def _set_cls(self, cls: type[Syntax]) -> None:
-        self.cls = cls
-        if self.resolved is not None:
-            self.resolved = self.resolved.rebase(cls)            
-    
-    def __get__(self, instance: Any, owner: type) -> Syntax:
-        if self.resolved is not None:
-            return self.resolved
-        if isinstance(self.f, classmethod):
-            fn = self.f.__func__
-        else:
-            fn = self.f
-        assert self.cls is not None, "LazyDescriptor syntax class not set"
-        ret = self.cls.lazy(lambda: fn(owner))._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        if self.is_root:
-            ret = ret.as_root()
-        self.resolved = ret
-        return ret
-
-    def __str__(self) -> str:
-        return f"<LazyDescriptor {self.name} at {self.file}:{self.line} in {self.func}>"
-
-
-
-def lazy(name: str | None | Callable[..., Syntax] = None, *, is_root: bool = False) -> Any:
+def lazy(S: type[Syntax], name: str | None | Callable[..., Syntax] = None, *, is_root: bool = False) -> Any:
     level = 1
     file, line, func = get_file(level), get_line(level), get_func(level)
-    if callable(name) or isinstance(name, classmethod):
-        return LazyDescriptor(name, None, None, file, line, func, is_root=is_root)
-    elif isinstance(name, str):
-        def wrapper(f: Callable[..., Syntax]) -> LazyDescriptor:
-            return LazyDescriptor(f, None, name, file, line, func, is_root=is_root)
+    if callable(name):
+        if is_root:
+            return S.lazy(name).as_root()._named(name=None, file=file, line=line, func=func)
+        else:
+            return S.lazy(name)._named(name=None, file=file, line=line, func=func)
+    elif isinstance(name, str) or name is None:
+        def wrapper(f: Callable[..., Syntax]) -> Syntax:
+            if is_root:
+                return S.lazy(f).as_root()._named(name=name, file=file, line=line, func=func)
+            else:
+                return S.lazy(f)._named(name=name, file=file, line=line, func=func)
         return wrapper
     else: 
-        raise TypeError("Argument to lazy must be a callable or a string or a boolean")
+        raise TypeError(f"Argument to lazy must be a callable or a string or a boolean, got {type(name)}")
     
 
 
-    
-    
-
-def grammar(**config: Any) -> Callable[[Any], Any]:
-    S = Syntax.set(**config)
-    def wrapper(cls: type) -> type:
-        rules = {}
-        root = None
-        for name, value in list(cls.__dict__.items()):
-            # if isinstance(value, LazyDescriptor):
-            #     print(value)
-            #     value._set_cls(S)
-            #     value = value.__get__(None, cls)
-            if isinstance(value, Syntax):
-                value = value.rebase(S)
-                if value.spec.name is None:
-                    value = value.named(name=name, _location=False)
-                elif value.spec.name == NO_NAME:
-                    value = value.named(name=None, _location=False)
-                rules[name] = value
-                if value.is_root:
-                    if root is not None:
-                        raise ValueError("Multiple root rules defined for grammar")
-                    root = value
-                setattr(cls, name, value)
-        setattr(cls, '_rules', rules)
-        setattr(cls, '_root_rule', root)
-        return cls
-    return wrapper
+def grammar(cls: type) -> type:    
+    rules = {}
+    root = None
+    for name, value in list(cls.__dict__.items()):
+        if isinstance(value, Syntax):
+            if value.spec.name is None:
+                value = value.named(name=name, _location=False)
+            elif value.spec.name == NO_NAME:
+                value = value.named(name=None, _location=False)
+            rules[name] = value
+            if value.is_root:
+                if root is not None:
+                    raise ValueError("Multiple root rules defined for grammar")
+                root = value
+            setattr(cls, name, value)
+    setattr(cls, '_rules', rules)
+    setattr(cls, '_root_rule', root)
+    return cls
 
         
 

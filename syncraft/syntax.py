@@ -636,16 +636,7 @@ class Syntax(Generic[A, S]):
     def vis(self, depth: int = 3) -> Optional[SVGVisualization]:
         from syncraft.vis import syntax2svg
         return syntax2svg(self.spec, max_depth=depth)
-        
-    def rebase(self, syn: Type[Syntax]) -> Syntax[A, S]:
-        if syn is self.__class__:
-            return self
-        elif not isinstance(syn, type) or not issubclass(syn, Syntax):
-            raise TypeError(f"Cannot rebase to {syn}, not a Syntax subclass")
-        else:
-            ret = syn.from_spec(self.spec)
-            return ret if not self.is_root else ret.as_root()
-        
+                
 
     def as_(self, typ: Type[B]) -> B:
         return cast(typ, self)  # type: ignore

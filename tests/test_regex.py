@@ -1,7 +1,7 @@
 from __future__ import annotations
 import pytest
 from syncraft.syntax import Syntax
-from syncraft.regex import verify
+from syncraft.regex2 import verify
 import random
 import string
 

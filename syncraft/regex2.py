@@ -157,8 +157,8 @@ class Regex:
     branches: Tuple[Branch, ...]
 
 B = Builder[str]
-S = Syntax
-@grammar(builtin=True)
+S = Syntax.set(builtin=True)
+@grammar
 class RE(G):
     dollar = S.lex(B.lit("$"))
     number = S.lex(B.oneof("0123456789").many(at_least=1)).map(int)
@@ -251,62 +251,8 @@ class RE(G):
     inline_flags = S.seq2(InlineFlags, enabled=+flag_seq, disabled=+(~(minus >> flag_seq)).map(at().if_then_else(_0, None)))
     comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
-    
-
-    # @lazy
-    # def group(cls):
-    #     def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
-    #         return S.seq2(partial(GroupAtom, kind=kind), _=prefix, pattern=+pettern, __=postfix)
-
-    #     return S.alt(
-    #         alternative(GroupKind.CAPTURE, cls.lparen, cls.regex, cls.rparen),
-    #         alternative(GroupKind.NON_CAPTURE, S.lex(B.lit("(?:")), cls.regex, cls.rparen),
-    #                 S.seq2(partial(GroupAtom, kind=GroupKind.CAPTURE), 
-    #                              S.lex(B.lit("(?P<")), 
-    #                              +cls.name, 
-    #                              cls.greater, 
-    #                              +cls.regex.mark('pattern'), 
-    #                              cls.rparen),
-    #         alternative(GroupKind.LOOKAHEAD, S.lex(B.lit("(?=")), cls.regex, cls.rparen),
-    #         alternative(GroupKind.NEG_LOOKAHEAD, S.lex(B.lit("(?!")), cls.regex, cls.rparen),
-    #         alternative(GroupKind.LOOKBEHIND, S.lex(B.lit("(?<=")), cls.regex, cls.rparen),
-    #         alternative(GroupKind.NEG_LOOKBEHIND, S.lex(B.lit("(?<!" )), cls.regex, cls.rparen),
-    #         alternative(GroupKind.FLAGS, S.lex(B.lit("(?")), cls.inline_flags, cls.rparen),
-            
-    #                 S.seq2(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED), 
-    #                              S.lex(B.lit("(?")), 
-    #                              +cls.inline_flags, 
-    #                              cls.colon, 
-    #                              +cls.regex.mark('pattern'), 
-    #                              cls.rparen),
-                    
-    #                 S.seq(S.lex(B.lit("(?")), 
-    #                                         S.alt(
-    #                                             S.seq(S.lex(B.lit("(?=")), +cls.regex, cls.rparen),
-    #                                             S.seq(S.lex(B.lit("(?!")), +cls.regex, cls.rparen),
-    #                                             S.seq(S.lex(B.lit("(?<=")), +cls.regex, cls.rparen),
-    #                                             S.seq(S.lex(B.lit("(?<!" )), +cls.regex, cls.rparen),
-    #                                         ),
-    #                                         +cls.regex, 
-    #                                         cls.rparen).to(partial(UnsupportedFeature, feature="lookaround assertion group")),
-    #                 S.seq(S.lex(B.lit("(?(")), 
-    #                             cls.number | cls.name, 
-    #                             +cls.regex, 
-    #                             cls.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
-    #                 S.alt(S.seq(S.lex(B.lit("(?&")), +cls.name, cls.rparen),
-    #                             S.seq(S.lex(B.lit("(?")), +cls.number, cls.rparen),
-    #                             S.seq(S.lex(B.lit("(?R")), cls.rparen),
-    #                             S.seq(S.lex(B.lit("(?r")), cls.rparen),
-    #                             S.seq(S.lex(B.lit("(?P")), cls.rparen),            
-    #                             S.seq(S.lex(B.lit("(?p")), cls.rparen),
-    #                             S.seq(S.lex(B.lit("(?0")), cls.rparen),   
-    #                         ).to(partial(UnsupportedFeature, feature="recursive group")),
-    #                 S.seq2(partial(UnsupportedFeature, feature="comment group"), S.lex(B.lit("(?#")), +cls.comment, cls.rparen),
-    #             ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
-
-
-    @staticmethod
-    def _group():
+    @lazy(S)
+    def group():
         def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
             return S.seq2(partial(GroupAtom, kind=kind), _=prefix, pattern=+pettern, __=postfix)
 
@@ -356,7 +302,6 @@ class RE(G):
                     S.seq2(partial(UnsupportedFeature, feature="comment group"), S.lex(B.lit("(?#")), +RE.comment, RE.rparen),
                 ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
 
-    group = S.lazy(_group)
 
     anchor = S.alt(caret, 
                     dollar,
@@ -400,7 +345,7 @@ class RE(G):
     branch = S.seq2(Branch, piece.many())
 
     regex = S.seq2(Regex, branch.sep_by(or_))
-    regex_full = rule((regex // S.eof()).debug().map(_0), is_root=True)
+    regex_full = rule((regex // S.eof()).map(_0), is_root=True)
 
 
 
