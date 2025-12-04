@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Callable, Any, overload, Dict, Set, Literal
 from syncraft.ast import AST, SyncraftError
-from syncraft.syntax import Syntax, Collector
+from syncraft.syntax import Syntax
 from syncraft.algebra import Algebra
 from syncraft.parser import parser
 from syncraft.generator import generator
@@ -10,356 +10,113 @@ from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
 
 
+NO_NAME = "<no_name>"
+
+def rule(syntax: Syntax, *, name: str | None = None, is_root: bool = False) -> Syntax:
+    level:int = 1
+    file, line, func = get_file(level), get_line(level), get_func(level)
+    if not isinstance(syntax, Syntax):
+        raise TypeError("Argument to rule must be a Syntax instance")
+    if is_root:
+        syntax = syntax.as_root()
+    ret = syntax._named(name=name, file=file, line=line, func=func)
+    assert ret.is_root == is_root, "Rule root status does not match is_root argument"
+    return ret
 
 
-AUTUO_NAME = "<auto_name>"
 
-
-
-
-
-class LazyHolder:
+class LazyDescriptor:
     def __init__(self, 
-                 thunk: Callable[[Any], Syntax], 
-                 root: bool,
-                 name: str | None, 
-                 need_name: bool, 
-                 file: str | None, 
-                 line: int | None, 
-                 func: str | None):
-        self.root = root
-        self.thunk = thunk
-        self.name = name
-        self.need_name = need_name
+                 f: Callable[..., Syntax] | classmethod, 
+                 syntax_cls: type[Syntax] | None = None,
+                 name: str | None = None,
+                 file: str | None = None,
+                 line: int | None = None,
+                 func: str | None = None,
+                 is_root: bool = False
+                 ):
+        self.f = f
+        self.name = f.__name__ if name is None else name
+        self.cls = syntax_cls
         self.file = file
         self.line = line
         self.func = func
+        self.is_root = is_root
+        self.resolved: Syntax | None = None
+
+    def _set_cls(self, cls: type[Syntax]) -> None:
+        self.cls = cls
+        if self.resolved is not None:
+            self.resolved = self.resolved.rebase(cls)            
+    
+    def __get__(self, instance: Any, owner: type) -> Syntax:
+        if self.resolved is not None:
+            return self.resolved
+        if isinstance(self.f, classmethod):
+            fn = self.f.__func__
+        else:
+            fn = self.f
+        assert self.cls is not None, "LazyDescriptor syntax class not set"
+        ret = self.cls.lazy(lambda: fn(owner))._named(name=self.name, file=self.file, line=self.line, func=self.func)
+        if self.is_root:
+            ret = ret.as_root()
+        self.resolved = ret
+        return ret
 
     def __str__(self) -> str:
-        return f"LazyHolder({self.name}, {self.thunk})"
-    
-    def rule(self, S: Any, MAX_NAME_LENGTH: int, key_name: str) -> Syntax:
-
-        rule = S.lazy(lambda: self.thunk(S))
-        if self.need_name:            
-            rule_name = str(rule)
-            if self.name == AUTUO_NAME:
-                self.name = None
-                if (len(rule_name) > MAX_NAME_LENGTH or 'UNSOLVED' in rule_name):
-                    self.name = key_name                        
-            rule = rule._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        else:
-            rule = rule._named(name=None, file=self.file, line=self.line, func=self.func)
-
-        return rule.marked_as_root() if self.root else rule
+        return f"<LazyDescriptor {self.name} at {self.file}:{self.line} in {self.func}>"
 
 
-@overload
-def lazy(thunk: str, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
-@overload
-def lazy(thunk: str, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
 
-@overload
-def lazy(thunk: bool, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
-@overload
-def lazy(thunk: bool, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
-
-@overload
-def lazy(thunk: None=None, *, root:Literal[False]=False) -> Callable[[Callable[[Any], Syntax]], Any]: ...
-@overload
-def lazy(thunk: None=None, *, root:Literal[True]=True) -> Callable[[Callable[[Any], Syntax]], Any]: ...
-
-@overload
-def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[False]=False) -> Any: ...
-@overload
-def lazy(thunk: Callable[[Any], Syntax], *, root:Literal[True]=True) -> Any: ...
-
-def lazy(thunk: str | Callable[[Any], Syntax] | bool | None = None, *, root:bool=False) -> Any | Callable[[Any], Any]:
-    """
-    Decorator for lazy grammar rules.
-    @lazy
-    def rule(cls):...    rule is named 'rule'
-
-    @lazy("name")
-    def rule(cls):...    rule is named 'name'
-
-    @lazy(NO_NAME)
-    def rule(cls):...    rule is unnamed
-
-    @lazy(True)
-    def rule(cls):...    rule is named 'rule'
-
-    @lazy(False)
-    def rule(cls):...    rule is unnamed
-    """
+def lazy(name: str | None | Callable[..., Syntax] = None, *, is_root: bool = False) -> Any:
     level = 1
     file, line, func = get_file(level), get_line(level), get_func(level)
-    if callable(thunk):
-        return LazyHolder(thunk, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func)
-    elif isinstance(thunk, str):
-        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, root=root, name=thunk, need_name=True, file=file, line=line, func=func)
+    if callable(name) or isinstance(name, classmethod):
+        return LazyDescriptor(name, None, None, file, line, func, is_root=is_root)
+    elif isinstance(name, str):
+        def wrapper(f: Callable[..., Syntax]) -> LazyDescriptor:
+            return LazyDescriptor(f, None, name, file, line, func, is_root=is_root)
         return wrapper
-    elif isinstance(thunk, bool):
-        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, root=root, name=None if not thunk else AUTUO_NAME, need_name=thunk, file=file, line=line, func=func)
-        return wrapper
-    elif thunk is None:
-        def wrapper(f: Callable[[Any], Syntax]) -> LazyHolder:
-            return LazyHolder(f, root=root, name=AUTUO_NAME, need_name=True, file=file, line=line, func=func)
-        return wrapper
-    else:
-        raise TypeError("Invalid argument to lazy decorator")
-
-
-
-def rule(syntax: Syntax, name: str | None = AUTUO_NAME, level: int = 1) -> Syntax:
-    if not isinstance(syntax, Syntax):
-        raise TypeError("Argument to rule must be a Syntax instance")
-    file, line, func = get_file(level), get_line(level), get_func(level)
-    return syntax._named(name=name, file=file, line=line, func=func)
-
-def root(syntax: Syntax, name: str | None = AUTUO_NAME) -> Syntax:
-    if not isinstance(syntax, Syntax):
-        raise TypeError("Argument to rule must be a Syntax instance")
-    return rule(syntax.marked_as_root(), name=name, level=2)
-
-
-
-class Mapper:
-    @staticmethod
-    def eval(func: Any, value: Any) -> Any:
-        if isinstance(func, Mapper):
-            return func(value)
-        else:
-            return func
-    def __init__(self, func: Callable[[Any], Any]):
-        self.func = func
-
-    def __call__(self, value: Any) -> Any:
-        return self.func(value)
-    
-    def __add__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) + Mapper.eval(other, t))
-    
-    def __radd__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) + self.func(t))
-    
-    def __mul__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) * Mapper.eval(other, t))
-    
-    def __rmul__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) * self.func(t))
-    
-    def __div__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) / Mapper.eval(other, t))
-    
-    def __rdiv__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) / self.func(t))
-    
-    def __floordiv__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) // Mapper.eval(other, t))
-    
-    def __rfloordiv__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) // self.func(t))
-    
-    def __sub__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) - Mapper.eval(other, t))
-    
-    def __rsub__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) - self.func(t))
-    
-    def __neg__(self) -> Mapper:
-        return Mapper(lambda t: -self.func(t))
-    
-    def __pos__(self) -> Mapper:
-        return Mapper(lambda t: +self.func(t))  
-    
-    def __abs__(self) -> Mapper:
-        return Mapper(lambda t: abs(self.func(t)))
-    
-    def __getitem__(self, index: Any ) -> Mapper:
-        return Mapper(lambda t: self.func(t)[Mapper.eval(index, t)])
-    
-    def __or__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) | Mapper.eval(other, t))
-    
-    def __ror__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) | self.func(t))
-    
-    def __and__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) & Mapper.eval(other, t))
-    
-    def __rand__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) & self.func(t))
-    
-    def __invert__(self) -> Mapper:
-        return Mapper(lambda t: ~self.func(t))  
-    
-    @property
-    def not_(self) -> Mapper:
-        return Mapper(lambda t: not self.func(t))
-    
-    def __xor__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) ^ Mapper.eval(other, t))
-    
-    def __rxor__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(other, t) ^ self.func(t))
-    
-    def bool(self) -> Mapper:
-        return Mapper(lambda t: bool(self.func(t)))
-    
-    def __not__(self) -> Mapper:
-        return Mapper(lambda t: not self.func(t))
-    
-    def __int__(self) -> Mapper:
-        return Mapper(lambda t: int(self.func(t)))
-    
-    def __float__(self) -> Mapper:
-        return Mapper(lambda t: float(self.func(t)))
-        
-    def __length_hint__(self) -> Mapper:
-        return Mapper(lambda t: len(self.func(t)))
-    
-    def __len__(self) -> Mapper:
-        return Mapper(lambda t: len(self.func(t)))  
-    
-    def __contains__(self, item: Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(item, t) in self.func(t))
-    
-    def __iter__(self) -> Mapper:
-        return Mapper(lambda t: iter(self.func(t)))
-    
-    def __reversed__(self) -> Mapper:
-        return Mapper(lambda t: reversed(self.func(t)))
-    
-    def __eq__(self, other: Any):
-        return Mapper(lambda t: self.func(t) == Mapper.eval(other, t))
-    
-    def __ne__(self, other: Any):
-        return Mapper(lambda t: self.func(t) != Mapper.eval(other, t))
-    
-    def __lt__(self, other: Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) < Mapper.eval(other, t))
-    
-    def __le__(self, other: Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) <= Mapper.eval(other, t))
-    
-    def __gt__(self, other: Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) > Mapper.eval(other, t))
-    
-    def __ge__(self, other: Any) -> Mapper:
-        return Mapper(lambda t: self.func(t) >= Mapper.eval(other, t))
-    
-    def apply(self, func: Callable[[Any], Any]) -> Mapper:
-        return Mapper(lambda t: func(self.func(t)))
-    
-    def if_then_else(self, then_mapper: Mapper | Any, else_mapper: Mapper | Any) -> Mapper:
-        return Mapper(lambda t: Mapper.eval(then_mapper, t) if self.func(t) else Mapper.eval(else_mapper, t))
-    
-    @property
-    def list(self) -> Mapper:
-        def to_list(t: Any) -> list:
-            return [self.func(t)]
-        return Mapper(to_list)
-    
-    @property
-    def tuple(self) -> Mapper:
-        def to_tuple(t: Any) -> tuple:
-            return (self.func(t),)
-        return Mapper(to_tuple)
-    
-    def dict(self, d: Dict) -> Mapper:
-        def as_index_f(t: Any) -> Any:
-            y = Mapper.eval(d, t)
-            return y[self.func(t)]
-        return Mapper(as_index_f)
-
-def at(index: int | None = None) -> Mapper:
-    if index is None:
-        return Mapper(lambda t: t)
-    else:
-        return Mapper(lambda t: t[index])
-
-def const(value: Any) -> Mapper:
-    return Mapper(lambda t: value)
-
-_0 = at(0)
-_1 = at(1)
-_2 = at(2)
-_3 = at(3)
-_4 = at(4)
-_5 = at(5)
-_6 = at(6)
-_7 = at(7)
-_8 = at(8)
-_9 = at(9)
-
-def call(c: Collector, *args: Any, **kwargs: Any) -> Mapper:
-    def bound(t: list|tuple) -> Any:
-        unnamed_args = []
-        named_args = {}
-        for v in args:
-            if isinstance(v, Mapper):
-                unnamed_args.append(v(t))
-            else:
-                unnamed_args.append(v)
-        for k, v in kwargs.items():
-            if isinstance(v, Mapper):
-                named_args[k] = v(t)
-            else:
-                named_args[k] = v
-        return c(*unnamed_args, **named_args)
-    return Mapper(bound)
+    else: 
+        raise TypeError("Argument to lazy must be a callable or a string or a boolean")
     
 
-class GrammarMeta(type):
-    """Metaclass for grammars."""
 
-    def __new__(mcs, name, bases, namespace, **config) -> Any:
-        MAX_NAME_LENGTH = config.pop("max_name_length", 0)
-        S = Syntax.set(**config)
-        new_namespace: Dict[str, Any] = dict()
-        lazy_rules: Dict[str, LazyHolder] = {}
-        normal_rules: Dict[str, Syntax] = {}
-        
-        root_rule: Set[Syntax] = set()
-        for name, value in namespace.items():
-            if isinstance(value, LazyHolder):
-                lazy_rules[name] = value
-            elif isinstance(value, Syntax):
+    
+    
+
+def grammar(**config: Any) -> Callable[[Any], Any]:
+    S = Syntax.set(**config)
+    def wrapper(cls: type) -> type:
+        rules = {}
+        root = None
+        for name, value in list(cls.__dict__.items()):
+            # if isinstance(value, LazyDescriptor):
+            #     print(value)
+            #     value._set_cls(S)
+            #     value = value.__get__(None, cls)
+            if isinstance(value, Syntax):
+                value = value.rebase(S)
+                if value.spec.name is None:
+                    value = value.named(name=name, _location=False)
+                elif value.spec.name == NO_NAME:
+                    value = value.named(name=None, _location=False)
+                rules[name] = value
                 if value.is_root:
-                    if root_rule:
-                        raise ValueError(f"Multiple root rules defined: {root_rule} and {name}")
-                    root_rule.add(value)
-                if value.has_name:
-                    if value.spec.name == AUTUO_NAME:
-                        value.set_name(None)
-                        n = str(value)
-                        if len(n) > MAX_NAME_LENGTH:
-                            value = value.named(name=name, _location=False)
-                normal_rules[name] = value
-            new_namespace[name] = value
-
-        for n in lazy_rules.keys():
-            new_namespace.pop(n, None)
-        cls = type.__new__(mcs, name, (S,), dict(new_namespace))
-        all_rules: Dict[str, Syntax] = {}
-        for name, value in lazy_rules.items():
-            r = value.rule(cls, MAX_NAME_LENGTH, name)
-            all_rules[name] = r
-            if r.is_root:
-                if root_rule:
-                    raise ValueError(f"Multiple root rules defined: {root_rule} and {name}")
-                root_rule.add(r)
-            setattr(cls, name, r)
-        all_rules.update(normal_rules)
-        setattr(cls, '_rules', all_rules)
-        setattr(cls, '_root_rule', next(iter(root_rule)) if root_rule else None)
+                    if root is not None:
+                        raise ValueError("Multiple root rules defined for grammar")
+                    root = value
+                setattr(cls, name, value)
+        setattr(cls, '_rules', rules)
+        setattr(cls, '_root_rule', root)
         return cls
+    return wrapper
+
+        
+
     
 
-class Grammar(Syntax, metaclass=GrammarMeta):
+class Grammar:
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
     _parser: Dict[Syntax, Algebra] = {}

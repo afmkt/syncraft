@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-from syncraft.ast import AST, Token, Nothing, SyncraftError
+from syncraft.ast import AST, Nothing, SyncraftError
 from syncraft.algebra import Error
 
 from syncraft.fa import Builder
@@ -14,6 +14,7 @@ from syncraft.syntax import Syntax
 from syncraft.parser import parse_string, parser
 from syncraft.input import StreamCursor
 from syncraft.constraint import forall
+from syncraft.mapper import _0
 from functools import partial
 
 try:
@@ -324,7 +325,7 @@ literal = escaped_literal | literal_char
 # class_meta_char   = "-" | "]" | "\\" ;
 class_meta_char = minus | rsquare | backslash 
 # escaped_class_meta= "\\" class_meta_char ;
-escaped_class_meta= (backslash >> class_meta_char).map(lambda t: t[0])
+escaped_class_meta= (backslash >> class_meta_char).map(_0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -555,8 +556,8 @@ class DotAtom:
 
 # **backreference     = "\\" number | "\\g<" name ">" ;**
 backreference = S.choice(
-    (backslash >> number).map(lambda n: n[0]),
-    (S.lex(B.lit("\\g<")) >> name // greater).map(lambda n: n[0])
+    (backslash >> number).map(_0),
+    (S.lex(B.lit("\\g<")) >> name // greater).map(_0)
 ).named('backreference')
 
 # @forall
@@ -610,7 +611,7 @@ class Regex:
 # regex             = branch { "|" branch } ;
 regex = branch.sep_by(or_).mark('branches').to(Regex).named('regex')
 
-regex_full = (regex // S.eof()).map(lambda r: r[0]).named('regex_full')
+regex_full = (regex // S.eof()).map(_0).named('regex_full')
 
 regex_parser = parser(syntax=regex_full)
 

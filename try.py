@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rich import print
+# from rich import print
 from pyDatalog import pyDatalog as d
 from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
@@ -11,8 +11,7 @@ from syncraft.algebra import Left, Right
 from syncraft.ast import Token
 from syncraft.lexer import Lexer, LexerResult
 from syncraft.syntax import Syntax
-from syncraft.regex import benchmark_fair
-from syncraft.grammar import Grammar, rule, lazy, at
+from syncraft.grammar import Grammar, rule, grammar, lazy
 
 # from syncraft.regex2 import verify
 
@@ -87,9 +86,28 @@ def main():
     print(str(parse_regex(group, pattern[6])))
     print(str(parse_regex(group, pattern[7])))
 
-
+def test_advanced():
+    from syncraft.regex2 import verify
+    pattern = [
+        r'(?r)$|\W{4,}.+\U000FEAE1?u*',
+        r'4{1}|e*\b(?0)[FyIn]{4,}',
+        r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)',
+        r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
+        r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}'
+    ]
+    vr = verify(pattern[0])
+    assert vr.ok, f"Pattern failed to parse: {pattern[0]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[1])
+    assert vr.ok, f"Pattern failed to parse: {pattern[1]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[2])
+    assert vr.ok, f"Pattern failed to parse: {pattern[2]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[3])     
+    assert vr.ok, f"Pattern failed to parse: {pattern[3]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+    vr = verify(pattern[4])
+    assert vr.ok, f"Pattern failed to parse: {pattern[4]}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 if __name__ == "__main__":
+    test_advanced()
     # test_noncap()
     # test_named()
     # test_neg_lookahead()
@@ -104,20 +122,8 @@ if __name__ == "__main__":
     # test1_simple_then()
     # main()
 
-    
-    class G(Grammar, builtin=True):
-        a = rule(Grammar.lit(text="a"))
-        b = rule(Grammar.lit(text="b"), "B")
-        @lazy(root=True)
-        def c(cls):
-            return cls.f.optional
-        f = rule(a >> b)
-        g = rule(c >> Grammar.eof())
+    # test_graph()
     
 
-    print(str(G.a), G.a.location)
-    print(str(G.b), G.b.location)
-    print(str(G.c), G.c.location)
-    print(str(G.f), G.f.location)
-    print(str(G.g), G.g.location)
+    
 

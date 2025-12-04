@@ -89,12 +89,12 @@ class Graph(Generic[N]):
             output_lines.append(f"{prefix}{connector}{node_display}")
             new_prefix = prefix + ("    " if is_last_sibling else "│   ")
             neighbors = sorted(list(self.edges.get(node, frozenset())), key=lambda x: str(x))
-            # neighbors = list(self.edges.get(node, frozenset()))
             for i, neighbor in enumerate(neighbors):
                 neighbor_is_last = (i == len(neighbors) - 1)
                 _format_node(neighbor, new_prefix, neighbor_is_last)
         _format_node(root, "", True)
         return "\n".join(output_lines).strip()
+    
     
     def __str__(self) -> str:
         return self.str_tree(self.root)
@@ -166,7 +166,7 @@ class SyntaxSpec:
         self,
         *,
         max_depth: Optional[int] = None,
-    ) -> Graph["SyntaxSpec"]:
+    ) -> Graph[SyntaxSpec]:
         """
         Build a list of edges representing the syntax graph.
         Each edge is a tuple (parent, child).
@@ -643,7 +643,8 @@ class Syntax(Generic[A, S]):
         elif not isinstance(syn, type) or not issubclass(syn, Syntax):
             raise TypeError(f"Cannot rebase to {syn}, not a Syntax subclass")
         else:
-            return syn.from_spec(self.spec)
+            ret = syn.from_spec(self.spec)
+            return ret if not self.is_root else ret.as_root()
         
 
     def as_(self, typ: Type[B]) -> B:
@@ -665,7 +666,7 @@ class Syntax(Generic[A, S]):
     def _named(self, *, name: None | str, file: None | str, line: None | int, func: None | str) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
 
-    def marked_as_root(self) -> Syntax[A, S]:
+    def as_root(self) -> Syntax[A, S]:
         return replace(self, is_root=True)
 
     def set_name(self, name: str | None) -> None:
@@ -1432,15 +1433,12 @@ class Syntax(Generic[A, S]):
         tkspec: TokenSpec[Any] | None = TokenSpecBase.from_kwargs(text=text, case_sensitive=case_sensitive)
         assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
         return cls.token(tkspec)
-    
 
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax:
         c: Dict[SyntaxSpec, Syntax] = {}
         return spec.syntax(cls, cache=c)
-
-
-
+    
     @classmethod
     def from_graph(cls, graph: Graph[SyntaxSpec]) -> Syntax:
         c: Dict[SyntaxSpec, Syntax] = {}

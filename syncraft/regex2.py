@@ -10,7 +10,8 @@ from syncraft.algebra import Error
 from syncraft.syntax import Syntax
 from syncraft.fa import Builder
 from syncraft.cache import Cache
-from syncraft.grammar import Grammar as G, lazy, rule, root, call, _0, _1, const, at
+from syncraft.grammar import Grammar as G, lazy, rule, grammar
+from syncraft.mapper import call, _0, _1, const, at
 from functools import partial
 try:
     import regex as re
@@ -156,79 +157,81 @@ class Regex:
     branches: Tuple[Branch, ...]
 
 B = Builder[str]
+S = Syntax
+@grammar(builtin=True)
+class RE(G):
+    dollar = S.lex(B.lit("$"))
+    number = S.lex(B.oneof("0123456789").many(at_least=1)).map(int)
+    dot = S.lex(B.lit(".")).to(DotAtom)
+    or_ = S.lex(B.lit("|"))
+    whitespace = S.lex(B.oneof(" \t\n\r\f\v"))
+    question = S.lex(B.lit("?"))
+    star = S.lex(B.lit("*"))
+    plus = S.lex(B.lit("+"))
+    lbrace = S.lex(B.lit("{"))
+    rbrace = S.lex(B.lit("}"))
+    comma = S.lex(B.lit(","))
+    lparen = S.lex(B.lit("("))
+    rparen = S.lex(B.lit(")"))
+    lsquare = S.lex(B.lit("["))
+    rsquare = S.lex(B.lit("]"))
+    colon = S.lex(B.lit(":"))
+    less = S.lex(B.lit("<"))
+    greater = S.lex(B.lit(">"))
+    equal = S.lex(B.lit("="))
+    bang = S.lex(B.lit("!"))
+    caret = S.lex(B.lit("^"))
+    backslash = S.lex(B.lit("\\"))
+    minus = S.lex(B.lit("-"))
+    boundary_escape = S.lex(B.oneof(["\\A", "\\Z", "\\b", "\\B"]))
+    escaped_x = S.lex(B.lit("\\x"))
+    escaped_u = S.lex(B.lit("\\u"))
+    escaped_U = S.lex(B.lit("\\U"))
+    escaped_N = S.lex(B.lit("\\N{"))
+    escaped_p = S.lex(B.lit("\\p{"))
+    escaped_P = S.lex(B.lit("\\P{"))
+    underscore = S.lex(B.lit("_"))
+    space = S.lex(B.lit(" "))
+    hyphen = S.lex(B.lit("-"))
+    unicode_scalar = S.lex(B.range("\u0000", "\U0010FFFF"))
+    unicode_category = S.lex(B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"]))
+    unicode_letter = S.lex(B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]))
+    unicode_digit = S.lex(B.unicode_category(["Nd"]))
+    class_literal = S.lex(B.range("\u0000", "\U0010FFFF") - B.oneof("\\]"))
+    literal_char = S.lex(B.range("\u0000", "\U0010FFFF") - B.oneof("\\.[(){}|+*?^$"))
 
-class RE(G, builtin=True):
-    dollar = rule(G.lex(B.lit("$")))
-    number = rule(G.lex(B.oneof("0123456789").many(at_least=1)).map(int))
-    dot = rule(G.lex(B.lit(".")).to(DotAtom))
-    or_ = rule(G.lex(B.lit("|")))
-    whitespace = rule(G.lex(B.oneof(" \t\n\r\f\v")))
-    question = rule(G.lex(B.lit("?")))
-    star = rule(G.lex(B.lit("*")))
-    plus = rule(G.lex(B.lit("+")))
-    lbrace = rule(G.lex(B.lit("{")))
-    rbrace = rule(G.lex(B.lit("}")))
-    comma = rule(G.lex(B.lit(",")))
-    lparen = rule(G.lex(B.lit("(")))
-    rparen = rule(G.lex(B.lit(")")))
-    lsquare = rule(G.lex(B.lit("[")))
-    rsquare = rule(G.lex(B.lit("]")))
-    colon = rule(G.lex(B.lit(":")))
-    less = rule(G.lex(B.lit("<")))
-    greater = rule(G.lex(B.lit(">")))
-    equal = rule(G.lex(B.lit("=")))
-    bang = rule(G.lex(B.lit("!")))
-    caret = rule(G.lex(B.lit("^")))
-    backslash = rule(G.lex(B.lit("\\")))
-    minus = rule(G.lex(B.lit("-")))
-    boundary_escape = rule(G.lex(B.oneof(["\\A", "\\Z", "\\b", "\\B"])))
-    escaped_x = rule(G.lex(B.lit("\\x")))
-    escaped_u = rule(G.lex(B.lit("\\u")))
-    escaped_U = rule(G.lex(B.lit("\\U")))
-    escaped_N = rule(G.lex(B.lit("\\N{")))
-    escaped_p = rule(G.lex(B.lit("\\p{")))
-    escaped_P = rule(G.lex(B.lit("\\P{")))
-    underscore = rule(G.lex(B.lit("_")))
-    space = rule(G.lex(B.lit(" ")))
-    hyphen = rule(G.lex(B.lit("-")))
-    unicode_scalar = rule(G.lex(B.range("\u0000", "\U0010FFFF")))
-    unicode_category = rule(G.lex(B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"])))
-    unicode_letter = rule(G.lex(B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"])))
-    unicode_digit = rule(G.lex(B.unicode_category(["Nd"])))
-    class_literal = rule(G.lex(B.range("\u0000", "\U0010FFFF") - B.oneof("\\]")))
-    literal_char = rule(G.lex(B.range("\u0000", "\U0010FFFF") - B.oneof("\\.[(){}|+*?^$")))
-
-    hex_octa = rule(G.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8)))
-    hex_quad = rule(G.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4)))
-    hex_pair = rule(G.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2)))
-    meta_char = rule(G.lex(B.oneof("\"\\.[](){}|+*?^$")))
-    control_escape = rule(G.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"])))
-    shorthand = rule(G.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(ShorthandKind.from_literal).to(ShorthandAtom))
-    category_name = rule(unicode_category.many().map(tuple))
-    unicode_category_escape = rule(G.alt(
-        G.seq2(UnicodeCategoryAtom, negated=+escaped_p.map(const(False)), categories=+category_name, _=rbrace),
-        G.seq2(UnicodeCategoryAtom, negated=+escaped_P.map(const(True)), categories=+category_name, _=rbrace))
+    hex_octa = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=8, at_most=8))
+    hex_quad = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=4, at_most=4))
+    hex_pair = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2))
+    meta_char = S.lex(B.oneof("\"\\.[](){}|+*?^$"))
+    control_escape = S.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"]))
+    shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(ShorthandKind.from_literal).to(ShorthandAtom)
+    category_name = unicode_category.many().map(tuple)
+    unicode_category_escape = S.alt(
+        S.seq2(UnicodeCategoryAtom, negated=+escaped_p.map(const(False)), categories=+category_name, _=rbrace),
+        S.seq2(UnicodeCategoryAtom, negated=+escaped_P.map(const(True)), categories=+category_name, _=rbrace)
         )
-    unicode_name = rule((unicode_letter + G.alt(unicode_letter, underscore, space, hyphen).many()).map((_0.list + _1).apply(''.join)))
-    name_continue = rule(unicode_letter | underscore)
-    name_start = rule(unicode_letter | underscore)
-    name = rule((name_start + name_continue.many()).map((_0.list + _1).apply(''.join)))
-    unicode_escape = rule(G.alt((escaped_x >> hex_pair).map(call(int, _0, 16).apply(chr)), 
+        
+    unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).map((_0.list + _1).apply(''.join))
+    name_continue = unicode_letter | underscore
+    name_start = unicode_letter | underscore
+    name = (name_start + name_continue.many()).map((_0.list + _1).apply(''.join))
+    unicode_escape = S.alt((escaped_x >> hex_pair).map(call(int, _0, 16).apply(chr)), 
                     (escaped_u >> hex_quad).map(call(int, _0, 16).apply(chr)),
                     (escaped_U >> hex_octa).map(call(int, _0, 16).apply(chr)), 
-                    ((escaped_N >> unicode_name) // rbrace).map(_0.apply(unicodedata.lookup))))
-    escaped_metachar = rule((backslash >> meta_char).map(_0))
-    escaped_0 = rule(G.lex(B.lit("\\0")))
-    octal_digit = rule(G.lex(B.range("0", "7")))
-    octal_escape = rule(G.alt(
+                    ((escaped_N >> unicode_name) // rbrace).map(_0.apply(unicodedata.lookup)))
+    escaped_metachar = (backslash >> meta_char).map(_0)
+    escaped_0 = S.lex(B.lit("\\0"))
+    octal_digit = S.lex(B.range("0", "7"))
+    octal_escape = S.alt(
         (escaped_0 >> octal_digit + octal_digit).map(call(int, _0 + _1, 8).apply(chr)),
         (backslash >> octal_digit.many(at_least=1)).map(call(int, _0.apply(''.join), 8).apply(chr))
-    ))
-    escaped_literal = rule(octal_escape | control_escape | unicode_escape | escaped_metachar)
-    literal = rule(escaped_literal | literal_char)
-    class_meta_char = rule(minus | rsquare | backslash)
-    escaped_class_meta= rule((backslash >> class_meta_char).map(_0))
-    class_atom = rule(G.alt(
+    )
+    escaped_literal = octal_escape | control_escape | unicode_escape | escaped_metachar
+    literal = escaped_literal | literal_char
+    class_meta_char = minus | rsquare | backslash
+    escaped_class_meta= (backslash >> class_meta_char).map(_0)
+    class_atom = S.alt(
                         class_literal,
                         shorthand,
                         escaped_metachar,
@@ -236,118 +239,168 @@ class RE(G, builtin=True):
                         unicode_escape,
                         unicode_category_escape,
                         escaped_class_meta,
-                        ))
+                        )
 
-    irange = rule(G.seq2(CharRange, start=class_atom, _=-minus, end=class_atom))
-    class_item = rule(irange | class_atom)
-    class_class_items = rule((~(rsquare | minus) + class_item.many()).map(_0.if_then_else(_1 + _0.list, _1)))
-    char_class = rule(G.seq2(CharClassAtom, _=-lsquare, negated=(~caret).map(bool), items=class_class_items, __=-rsquare))
+    irange = S.seq2(CharRange, start=class_atom, _=-minus, end=class_atom)
+    class_item = irange | class_atom
+    class_class_items = (~(rsquare | minus) + class_item.many()).map(_0.if_then_else(_1 + _0.list, _1))
+    char_class = S.seq2(CharClassAtom, _=-lsquare, negated=(~caret).map(bool), items=class_class_items, __=-rsquare)
 
-    flag = rule(G.lex(B.oneof("iLmsuaxw")))
-    flag_seq = rule(flag.many().map(tuple))
-    inline_flags = rule(G.seq2(InlineFlags, enabled=+flag_seq, disabled=+(~(minus >> flag_seq)).map(at().if_then_else(_0, None))))
-    comment = rule(G.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1)))
+    flag = S.lex(B.oneof("iLmsuaxw"))
+    flag_seq = flag.many().map(tuple)
+    inline_flags = S.seq2(InlineFlags, enabled=+flag_seq, disabled=+(~(minus >> flag_seq)).map(at().if_then_else(_0, None)))
+    comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
     
 
-    @lazy
-    def group(cls):
-        def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
-            return G.seq2(partial(GroupAtom, kind=kind), _=prefix, pattern=+pettern, __=postfix)
+    # @lazy
+    # def group(cls):
+    #     def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
+    #         return S.seq2(partial(GroupAtom, kind=kind), _=prefix, pattern=+pettern, __=postfix)
 
-        return G.alt(
-            alternative(GroupKind.CAPTURE, cls.lparen, cls.regex, cls.rparen),
-            alternative(GroupKind.NON_CAPTURE, G.lex(B.lit("(?:")), cls.regex, cls.rparen),
-
-                    G.seq2(partial(GroupAtom, kind=GroupKind.CAPTURE), 
-                                 G.lex(B.lit("(?P<")), 
-                                 +cls.name, 
-                                 cls.greater, 
-                                 +cls.regex.mark('pattern'), 
-                                 cls.rparen),
-            alternative(GroupKind.LOOKAHEAD, G.lex(B.lit("(?=")), cls.regex, cls.rparen),
-            alternative(GroupKind.NEG_LOOKAHEAD, G.lex(B.lit("(?!")), cls.regex, cls.rparen),
-            alternative(GroupKind.LOOKBEHIND, G.lex(B.lit("(?<=")), cls.regex, cls.rparen),
-            alternative(GroupKind.NEG_LOOKBEHIND, G.lex(B.lit("(?<!" )), cls.regex, cls.rparen),
-            alternative(GroupKind.FLAGS, G.lex(B.lit("(?")), cls.inline_flags, cls.rparen),
+    #     return S.alt(
+    #         alternative(GroupKind.CAPTURE, cls.lparen, cls.regex, cls.rparen),
+    #         alternative(GroupKind.NON_CAPTURE, S.lex(B.lit("(?:")), cls.regex, cls.rparen),
+    #                 S.seq2(partial(GroupAtom, kind=GroupKind.CAPTURE), 
+    #                              S.lex(B.lit("(?P<")), 
+    #                              +cls.name, 
+    #                              cls.greater, 
+    #                              +cls.regex.mark('pattern'), 
+    #                              cls.rparen),
+    #         alternative(GroupKind.LOOKAHEAD, S.lex(B.lit("(?=")), cls.regex, cls.rparen),
+    #         alternative(GroupKind.NEG_LOOKAHEAD, S.lex(B.lit("(?!")), cls.regex, cls.rparen),
+    #         alternative(GroupKind.LOOKBEHIND, S.lex(B.lit("(?<=")), cls.regex, cls.rparen),
+    #         alternative(GroupKind.NEG_LOOKBEHIND, S.lex(B.lit("(?<!" )), cls.regex, cls.rparen),
+    #         alternative(GroupKind.FLAGS, S.lex(B.lit("(?")), cls.inline_flags, cls.rparen),
             
-                    G.seq2(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED), 
-                                 G.lex(B.lit("(?")), 
-                                 +cls.inline_flags, 
-                                 cls.colon, 
-                                 +cls.regex.mark('pattern'), 
-                                 cls.rparen),
+    #                 S.seq2(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED), 
+    #                              S.lex(B.lit("(?")), 
+    #                              +cls.inline_flags, 
+    #                              cls.colon, 
+    #                              +cls.regex.mark('pattern'), 
+    #                              cls.rparen),
                     
-                    G.seq(G.lex(B.lit("(?")), 
-                                            G.alt(
-                                                G.seq(G.lex(B.lit("(?=")), +cls.regex, cls.rparen),
-                                                G.seq(G.lex(B.lit("(?!")), +cls.regex, cls.rparen),
-                                                G.seq(G.lex(B.lit("(?<=")), +cls.regex, cls.rparen),
-                                                G.seq(G.lex(B.lit("(?<!" )), +cls.regex, cls.rparen),
+    #                 S.seq(S.lex(B.lit("(?")), 
+    #                                         S.alt(
+    #                                             S.seq(S.lex(B.lit("(?=")), +cls.regex, cls.rparen),
+    #                                             S.seq(S.lex(B.lit("(?!")), +cls.regex, cls.rparen),
+    #                                             S.seq(S.lex(B.lit("(?<=")), +cls.regex, cls.rparen),
+    #                                             S.seq(S.lex(B.lit("(?<!" )), +cls.regex, cls.rparen),
+    #                                         ),
+    #                                         +cls.regex, 
+    #                                         cls.rparen).to(partial(UnsupportedFeature, feature="lookaround assertion group")),
+    #                 S.seq(S.lex(B.lit("(?(")), 
+    #                             cls.number | cls.name, 
+    #                             +cls.regex, 
+    #                             cls.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
+    #                 S.alt(S.seq(S.lex(B.lit("(?&")), +cls.name, cls.rparen),
+    #                             S.seq(S.lex(B.lit("(?")), +cls.number, cls.rparen),
+    #                             S.seq(S.lex(B.lit("(?R")), cls.rparen),
+    #                             S.seq(S.lex(B.lit("(?r")), cls.rparen),
+    #                             S.seq(S.lex(B.lit("(?P")), cls.rparen),            
+    #                             S.seq(S.lex(B.lit("(?p")), cls.rparen),
+    #                             S.seq(S.lex(B.lit("(?0")), cls.rparen),   
+    #                         ).to(partial(UnsupportedFeature, feature="recursive group")),
+    #                 S.seq2(partial(UnsupportedFeature, feature="comment group"), S.lex(B.lit("(?#")), +cls.comment, cls.rparen),
+    #             ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
+
+
+    @staticmethod
+    def _group():
+        def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
+            return S.seq2(partial(GroupAtom, kind=kind), _=prefix, pattern=+pettern, __=postfix)
+
+        return S.alt(
+            alternative(GroupKind.CAPTURE, RE.lparen, RE.regex, RE.rparen),
+            alternative(GroupKind.NON_CAPTURE, S.lex(B.lit("(?:")), RE.regex, RE.rparen),
+                    S.seq2(partial(GroupAtom, kind=GroupKind.CAPTURE), 
+                                 S.lex(B.lit("(?P<")), 
+                                 +RE.name, 
+                                 RE.greater, 
+                                 +RE.regex.mark('pattern'), 
+                                 RE.rparen),
+            alternative(GroupKind.LOOKAHEAD, S.lex(B.lit("(?=")), RE.regex, RE.rparen),
+            alternative(GroupKind.NEG_LOOKAHEAD, S.lex(B.lit("(?!")), RE.regex, RE.rparen),
+            alternative(GroupKind.LOOKBEHIND, S.lex(B.lit("(?<=")), RE.regex, RE.rparen),
+            alternative(GroupKind.NEG_LOOKBEHIND, S.lex(B.lit("(?<!" )), RE.regex, RE.rparen),
+            alternative(GroupKind.FLAGS, S.lex(B.lit("(?")), RE.inline_flags, RE.rparen),
+            
+                    S.seq2(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED), 
+                                 S.lex(B.lit("(?")), 
+                                 +RE.inline_flags, 
+                                 RE.colon, 
+                                 +RE.regex.mark('pattern'), 
+                                 RE.rparen),
+                    
+                    S.seq(S.lex(B.lit("(?")), 
+                                            S.alt(
+                                                S.seq(S.lex(B.lit("(?=")), +RE.regex, RE.rparen),
+                                                S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen),
+                                                S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen),
+                                                S.seq(S.lex(B.lit("(?<!" )), +RE.regex, RE.rparen),
                                             ),
-                                            +cls.regex, 
-                                            cls.rparen).to(partial(UnsupportedFeature, feature="lookaround assertion group")),
-                    G.seq(G.lex(B.lit("(?(")), 
-                                cls.number | cls.name, 
-                                +cls.regex, 
-                                cls.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
-                    G.alt(G.seq(G.lex(B.lit("(?&")), +cls.name, cls.rparen),
-                                G.seq(G.lex(B.lit("(?")), +cls.number, cls.rparen),
-                                G.seq(G.lex(B.lit("(?R")), cls.rparen),
-                                G.seq(G.lex(B.lit("(?r")), cls.rparen),
-                                G.seq(G.lex(B.lit("(?P")), cls.rparen),            
-                                G.seq(G.lex(B.lit("(?p")), cls.rparen),
-                                G.seq(G.lex(B.lit("(?0")), cls.rparen),   
+                                            +RE.regex, 
+                                            RE.rparen).to(partial(UnsupportedFeature, feature="lookaround assertion group")),
+                    S.seq(S.lex(B.lit("(?(")), 
+                                RE.number | RE.name, 
+                                +RE.regex, 
+                                RE.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
+                    S.alt(S.seq(S.lex(B.lit("(?&")), +RE.name, RE.rparen),
+                                S.seq(S.lex(B.lit("(?")), +RE.number, RE.rparen),
+                                S.seq(S.lex(B.lit("(?R")), RE.rparen),
+                                S.seq(S.lex(B.lit("(?r")), RE.rparen),
+                                S.seq(S.lex(B.lit("(?P")), RE.rparen),            
+                                S.seq(S.lex(B.lit("(?p")), RE.rparen),
+                                S.seq(S.lex(B.lit("(?0")), RE.rparen),   
                             ).to(partial(UnsupportedFeature, feature="recursive group")),
-                    G.seq2(partial(UnsupportedFeature, feature="comment group"), G.lex(B.lit("(?#")), +cls.comment, cls.rparen),
+                    S.seq2(partial(UnsupportedFeature, feature="comment group"), S.lex(B.lit("(?#")), +RE.comment, RE.rparen),
                 ).update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
 
+    group = S.lazy(_group)
 
-
-    anchor = rule(G.alt(caret, 
+    anchor = S.alt(caret, 
                     dollar,
-                    boundary_escape).map(AnchorKind.from_literal).to(AnchorAtom))
+                    boundary_escape).map(AnchorKind.from_literal).to(AnchorAtom)
 
 
-    braced_quantifier = rule(G.alt(
-        G.seq(lbrace, +number, rbrace).map(call(Quantifier, minimum=_0, maximum=_0)),
-        G.seq2(partial(Quantifier, maximum=None), lbrace, +number, comma, rbrace),
-        G.seq(lbrace, comma, +number, rbrace).map(call(Quantifier, minimum=0, maximum=_0)),
-        G.seq2(Quantifier, lbrace, +number.mark('minimum'), comma, +number.mark('maximum'), rbrace)
-    ))
+    braced_quantifier = S.alt(
+        S.seq(lbrace, +number, rbrace).map(call(Quantifier, minimum=_0, maximum=_0)),
+        S.seq2(partial(Quantifier, maximum=None), lbrace, +number, comma, rbrace),
+        S.seq(lbrace, comma, +number, rbrace).map(call(Quantifier, minimum=0, maximum=_0)),
+        S.seq2(Quantifier, lbrace, +number.mark('minimum'), comma, +number.mark('maximum'), rbrace)
+    )
 
 
-    quantifier = rule((G.alt(
+    quantifier = (S.alt(
             braced_quantifier,
             question.to(partial(Quantifier,minimum=0, maximum=1)),
             star.to(partial(Quantifier,minimum=0, maximum=None)),
             plus.to(partial(Quantifier,minimum=1, maximum=None)),
-        ) + ~question).map(call(replace, _0, greedy=_1.not_)))
+        ) + ~question).map(call(replace, _0, greedy=_1.not_))
 
 
-    backreference = rule(G.alt(
+    backreference = S.alt(
         (backslash >> number).map(_0),
-        (G.lex(B.lit("\\g<")) >> name // greater).map(_0)
-    ))
+        (S.lex(B.lit("\\g<")) >> name // greater).map(_0)
+    )
 
-    atom = rule(G.alt(        
+    atom = S.alt(        
             backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and len(group_counter) >= v)),
-            G.seq2(LiteralAtom, text=literal),
+            S.seq2(LiteralAtom, text=literal),
             char_class,
             anchor,
             dot,
             shorthand,
             unicode_category_escape,
             group,
-            ))
+            )
 
-    piece = rule(G.seq2(Piece, +atom, quantifier=+(~quantifier)))
+    piece = S.seq2(Piece, +atom, quantifier=+(~quantifier))
 
-    branch = rule(G.seq2(Branch, piece.many()))
+    branch = S.seq2(Branch, piece.many())
 
-    regex = rule(G.seq2(Regex, branch.sep_by(or_)))
-
-    regex_full = root((regex // G.eof()).map(_0))
+    regex = S.seq2(Regex, branch.sep_by(or_))
+    regex_full = rule((regex // S.eof()).debug().map(_0), is_root=True)
 
 
 
