@@ -41,7 +41,7 @@ TODO
 
 - [ ]  PyDatalog adapter, with example
 
-- [ ]  Lift S.lex, B.lit to module level function, so that subclass of Grammar can use lex(lit(...)) to define grammar rule directly.
+
 
 
 
