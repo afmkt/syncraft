@@ -475,8 +475,8 @@ class Algebra(Generic[A, S]):
                 return a
         return self.map(bimap_f, raw=True)
         
-    def iso(self, f: Callable[[A], B], i: Callable[[B], A], raw:bool=False) -> Algebra[B, S]:
-        return self.map(f, raw=raw).map_state(lambda s: s.map(i))
+    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
+        return self.map(f, raw=True).map_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, 

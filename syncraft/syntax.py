@@ -728,7 +728,7 @@ class Syntax(Generic[A, S]):
     ) -> Graph[SyntaxSpec]:
         return self.spec.graph(max_depth=max_depth)
 
-    def iso(self, f: Callable[[A], B], i: Callable[[B], A], raw: bool = False) -> Syntax[B, S]:
+    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
 
         Applies f to the value and adjusts internal state via inverse i so
@@ -741,7 +741,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(f, i, raw=raw)) # type: ignore
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(f, i)) # type: ignore
 
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
@@ -966,7 +966,7 @@ class Syntax(Generic[A, S]):
                 right=Many(value=tuple(v), custom_mapping=None),
                 custom_mapping=None
             )
-        return ret.iso(f, i, raw=True)  # type: ignore
+        return ret.iso(f, i)  # type: ignore
 
     def parens(
         self,
@@ -1243,7 +1243,7 @@ class Syntax(Generic[A, S]):
         def ito_f(c: Collect[A, Any]) -> A:
             return c.value if isinstance(c, Collect) else c
 
-        ret = self.iso(to_f, ito_f, raw=True)
+        ret = self.iso(to_f, ito_f)
         return replace(ret, spec=CollectSpec(collector=f, 
                                              id=hash(f),
                                              spec=self.spec, 
@@ -1266,7 +1266,7 @@ class Syntax(Generic[A, S]):
             return m.value if isinstance(m, Marked) else m
 
 
-        ret = self.iso(mark_s, imark_s, raw=True)
+        ret = self.iso(mark_s, imark_s)
         spec = self.spec
         if isinstance(spec, MarkedSpec):
             spec = replace(spec, mname=name)
