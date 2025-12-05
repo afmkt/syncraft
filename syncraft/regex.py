@@ -52,22 +52,22 @@ class UnsupportedFeature:
 
 
 class ShorthandKind(Enum):
-    DIGIT = auto()
-    NOT_DIGIT = auto()
-    WORD = auto()
-    NOT_WORD = auto()
-    SPACE = auto()
-    NOT_SPACE = auto()
+    DIGIT = r'\d'
+    NOT_DIGIT = r'\D'
+    WORD = r'\w'
+    NOT_WORD = r'\W'
+    SPACE = r'\s'
+    NOT_SPACE = r'\S'
     @classmethod
     def from_literal(cls, literal: str) -> ShorthandKind:        
-        return {
-            r"\d": cls.DIGIT,
-            r"\D": cls.NOT_DIGIT,
-            r"\w": cls.WORD,
-            r"\W": cls.NOT_WORD,
-            r"\s": cls.SPACE,
-            r"\S": cls.NOT_SPACE,
-        }[literal]
+        for kind in cls:
+            if kind.value == literal:
+                return kind
+        raise ValueError(f"Unknown shorthand literal: {literal}")
+
+    @classmethod
+    def to_literal(cls, kind: ShorthandKind) -> str:
+        return kind.value    
 
 @dataclass(frozen=True, slots=True)
 class ShorthandAtom:
@@ -172,7 +172,7 @@ S = Syntax.set(builtin=True)
 @grammar
 class RE(G):
     dollar = S.lex(B.lit("$"))
-    number = S.lex(B.oneof("0123456789").many(at_least=1)).map(int)
+    number = S.lex(B.oneof("0123456789").many(at_least=1)).iso(int, str)
     dot = S.lex(B.lit(".")).to(DotAtom)
     or_ = S.lex(B.lit("|"))
     whitespace = S.lex(B.oneof(" \t\n\r\f\v"))
@@ -216,7 +216,7 @@ class RE(G):
     hex_pair = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2))
     meta_char = S.lex(B.oneof("\"\\.[](){}|+*?^$"))
     control_escape = S.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"]))
-    shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).map(ShorthandKind.from_literal).to(ShorthandAtom)
+    shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).iso(ShorthandKind.from_literal, ShorthandKind.to_literal).to(ShorthandAtom)
     category_name = unicode_category.many().map(tuple)
     unicode_category_escape = S.alt(
         S.seq2(UnicodeCategoryAtom, negated=+escaped_p.map(const(False)), categories=+category_name, _=rbrace),
@@ -231,7 +231,7 @@ class RE(G):
                     (escaped_u >> hex_quad).map(call(int, _0, 16).apply(chr)),
                     (escaped_U >> hex_octa).map(call(int, _0, 16).apply(chr)), 
                     ((escaped_N >> unicode_name) // rbrace).map(_0.apply(unicodedata.lookup)))
-    escaped_metachar = (backslash >> meta_char).map(_0)
+    escaped_metachar = (backslash >> meta_char).iso(_0, at().list.apply(tuple))
     escaped_0 = S.lex(B.lit("\\0"))
     octal_digit = S.lex(B.range("0", "7"))
     octal_escape = S.alt(
@@ -241,7 +241,7 @@ class RE(G):
     escaped_literal = octal_escape | control_escape | unicode_escape | escaped_metachar
     literal = escaped_literal | literal_char
     class_meta_char = minus | rsquare | backslash
-    escaped_class_meta= (backslash >> class_meta_char).map(_0)
+    escaped_class_meta= (backslash >> class_meta_char).iso(_0, at().list.apply(tuple))
     class_atom = S.alt(
                         class_literal,
                         shorthand,
@@ -341,8 +341,8 @@ class RE(G):
 
 
     backreference = S.alt(
-        (backslash >> number).map(_0),
-        (S.lex(B.lit("\\g<")) >> name // greater).map(_0)
+        (backslash >> number).iso(_0, at().list.apply(tuple)),
+        (S.lex(B.lit("\\g<")) >> name // greater).iso(_0, at().list.apply(tuple))
     )
 
     atom = S.alt(        
@@ -361,7 +361,7 @@ class RE(G):
     branch = S.seq2(Branch, pieces=piece.many())
 
     regex = S.seq2(Regex, branches=branch.sep_by(or_))
-    regex_full = rule((regex // S.eof()).map(_0), is_root=True)
+    regex_full = rule((regex // S.eof()).iso(_0, at().list.apply(tuple)), is_root=True)
 
 
 
