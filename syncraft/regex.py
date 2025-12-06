@@ -264,23 +264,17 @@ class RE(G):
 
     @lazy(S)
     def group(): # type: ignore
-        def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
-            return S.seq(prefix, pettern.fld('pattern'), postfix).to(partial(GroupAtom, kind=kind))
-
-
         return S.alt(
-            alternative(GroupKind.CAPTURE, RE.lparen, RE.regex, RE.rparen),
-            alternative(GroupKind.NON_CAPTURE, S.lex(B.lit("(?:")), RE.regex, RE.rparen),
-            alternative(GroupKind.LOOKAHEAD, S.lex(B.lit("(?=")), RE.regex, RE.rparen),
-            alternative(GroupKind.NEG_LOOKAHEAD, S.lex(B.lit("(?!")), RE.regex, RE.rparen),
-            alternative(GroupKind.LOOKBEHIND, S.lex(B.lit("(?<=")), RE.regex, RE.rparen),
-            alternative(GroupKind.NEG_LOOKBEHIND, S.lex(B.lit("(?<!" )), RE.regex, RE.rparen),
+            S.seq(RE.lparen, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
+            S.seq(RE.lparen, RE.question, RE.colon, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NON_CAPTURE)),
+            S.seq(S.lex(B.lit("(?=")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.LOOKAHEAD)),
+            S.seq(S.lex(B.lit("(?!")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NEG_LOOKAHEAD)),
+            S.seq(S.lex(B.lit("(?<=")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.LOOKBEHIND)),
+            S.seq(S.lex(B.lit("(?<!")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NEG_LOOKBEHIND)),
             S.seq(S.lex(B.lit("(?")), RE.inline_flags.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.FLAGS)),
-
             S.seq(S.lex(B.lit("(?P<")), RE.name.fld(), RE.greater, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
-
             S.seq( S.lex(B.lit("(?")), RE.inline_flags.fld(), RE.colon, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED)),
-            
+
             S.seq(S.lex(B.lit("(?")), 
                         S.alt(
                             S.seq(S.lex(B.lit("(?=")), +RE.regex, RE.rparen),
