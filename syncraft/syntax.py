@@ -1114,6 +1114,15 @@ class Syntax(Generic[A, S]):
 
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, False)
+    
+    def fld(self, name: str | None = None) -> Tuple[Syntax[A, S], bool | str]:
+        name = name if name is not None else self.spec.name
+        if name is None:
+            return (self, True)
+        else:
+            return (self, name)
+        
+        
 
     def __invert__(self) -> Syntax[OrElse[A, type[Nothing]], S]:
         """Syntactic sugar for optional() (tilde operator)."""
