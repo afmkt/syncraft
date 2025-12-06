@@ -219,8 +219,8 @@ class RE(G):
     shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).iso(ShorthandKind.from_literal, ShorthandKind.to_literal).to(ShorthandAtom)
     category_name = unicode_category.many().map(tuple)
     unicode_category_escape = S.alt(
-        S.seq2(UnicodeCategoryAtom, negated=+escaped_p.map(const(False)), categories=+category_name, _=rbrace),
-        S.seq2(UnicodeCategoryAtom, negated=+escaped_P.map(const(True)), categories=+category_name, _=rbrace)
+        S.seq((escaped_p.map(const(False)), 'negated'), (category_name, 'categories'), rbrace).to(UnicodeCategoryAtom),
+        S.seq((escaped_P.map(const(True)), 'negated'), (category_name, 'categories'), rbrace).to(UnicodeCategoryAtom)
         )
         
     unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).map((_0.list + _1).apply(''.join))
@@ -252,20 +252,20 @@ class RE(G):
                         escaped_class_meta,
                         )
 
-    irange = S.seq2(CharRange, start=class_atom, _=-minus, end=class_atom)
+    irange = S.seq((class_atom, 'start'), minus, (class_atom, 'end')).to(CharRange)
     class_item = irange | class_atom
     class_class_items = (~(rsquare | minus) + class_item.many()).map(_0.if_then_else(_1 + _0.list, _1))
-    char_class = S.seq2(CharClassAtom, _=-lsquare, negated=(~caret).map(bool), items=class_class_items, __=-rsquare)
+    char_class = S.seq(lsquare, ((~caret).map(bool), 'negated'), (class_class_items, 'items'), rsquare).to(CharClassAtom)
 
     flag = S.lex(B.oneof("iLmsuaxw"))
     flag_seq = flag.many().map(tuple)
-    inline_flags = S.seq2(InlineFlags, enabled=+flag_seq, disabled=+(~(minus >> flag_seq)).map(at().if_then_else(_0, None)))
+    inline_flags = S.seq((flag_seq, 'enabled'), ((~(minus >> flag_seq)).map(at().if_then_else(_0, None)), 'disabled')).to(InlineFlags)
     comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
     @lazy(S)
     def group(): # type: ignore
         def alternative(kind: GroupKind, prefix: Syntax, pettern: Syntax, postfix: Syntax) -> Syntax:
-            return S.seq2(partial(GroupAtom, kind=kind), _=prefix, pattern=+pettern, __=postfix)
+            return S.seq(prefix, (pettern, 'pattern'), postfix).to(partial(GroupAtom, kind=kind))
 
 
         return S.alt(
@@ -275,21 +275,11 @@ class RE(G):
             alternative(GroupKind.NEG_LOOKAHEAD, S.lex(B.lit("(?!")), RE.regex, RE.rparen),
             alternative(GroupKind.LOOKBEHIND, S.lex(B.lit("(?<=")), RE.regex, RE.rparen),
             alternative(GroupKind.NEG_LOOKBEHIND, S.lex(B.lit("(?<!" )), RE.regex, RE.rparen),
-            S.seq2(partial(GroupAtom, kind=GroupKind.FLAGS), S.lex(B.lit("(?")), inline_flags=+RE.inline_flags, _=RE.rparen),
+            S.seq(S.lex(B.lit("(?")), (RE.inline_flags, 'inline_flags'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.FLAGS)),
 
-            S.seq2(partial(GroupAtom, kind=GroupKind.CAPTURE), 
-                            S.lex(B.lit("(?P<")), 
-                            name=+RE.name, 
-                            _=RE.greater, 
-                            pattern=+RE.regex, 
-                            __=RE.rparen),
+            S.seq(S.lex(B.lit("(?P<")), (RE.name, 'name'), RE.greater, (RE.regex, 'pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
 
-            S.seq2(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED), 
-                            S.lex(B.lit("(?")), 
-                            inline_flags=+RE.inline_flags,
-                            _=RE.colon, 
-                            pattern=+RE.regex, 
-                            __=RE.rparen),
+            S.seq( S.lex(B.lit("(?")), (RE.inline_flags, 'inline_flags'), RE.colon, (RE.regex, 'pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED)),
             
             S.seq(S.lex(B.lit("(?")), 
                         S.alt(
@@ -297,38 +287,34 @@ class RE(G):
                             S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen),
                             S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen),
                             S.seq(S.lex(B.lit("(?<!" )), +RE.regex, RE.rparen),
-                        ),
-                        +RE.regex, 
+                        ), +RE.regex, 
                         RE.rparen).to(partial(UnsupportedFeature, feature="lookaround assertion group")),
-            S.seq(S.lex(B.lit("(?(")), 
-                        RE.number | RE.name, 
-                        +RE.regex, 
-                        RE.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
-            S.alt(S.seq(S.lex(B.lit("(?&")), +RE.name, RE.rparen),
-                        S.seq(S.lex(B.lit("(?")), +RE.number, RE.rparen),
+
+            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
+
+            S.alt(S.seq(S.lex(B.lit("(?&")), (RE.name, 'name'), RE.rparen),
+                        S.seq(S.lex(B.lit("(?")), (RE.number, 'number'), RE.rparen),
                         S.seq(S.lex(B.lit("(?R")), RE.rparen),
                         S.seq(S.lex(B.lit("(?r")), RE.rparen),
                         S.seq(S.lex(B.lit("(?P")), RE.rparen),            
                         S.seq(S.lex(B.lit("(?p")), RE.rparen),
                         S.seq(S.lex(B.lit("(?0")), RE.rparen),   
                     ).to(partial(UnsupportedFeature, feature="recursive group")),
-            S.seq2(partial(UnsupportedFeature, feature="comment group"), 
-                   S.lex(B.lit("(?#")), 
-                   comment=+RE.comment,
-                   _=RE.rparen),
+
+            S.seq(S.lex(B.lit("(?#")), 
+                  (RE.comment, 'comment'),
+                  RE.rparen).to(partial(UnsupportedFeature, feature="comment group")),
                 ).named("group_alternatives").update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
 
 
-    anchor = S.alt(caret, 
-                    dollar,
-                    boundary_escape).map(AnchorKind.from_literal).to(AnchorAtom)
+    anchor = S.alt(caret, dollar, boundary_escape).map(AnchorKind.from_literal).to(AnchorAtom)
 
 
     braced_quantifier = S.alt(
         S.seq(lbrace, +number, rbrace).map(call(Quantifier, minimum=_0, maximum=_0)),
         S.seq(lbrace, +number, comma, rbrace).map(call(Quantifier, minimum=_0, maximum=None)),
         S.seq(lbrace, comma, +number, rbrace).map(call(Quantifier, minimum=0, maximum=_0)),
-        S.seq2(Quantifier, lbrace, +number.mark('minimum'), comma, +number.mark('maximum'), rbrace)
+        S.seq(lbrace, (number, 'minimum'), comma, (number, 'maximum'), rbrace).to(Quantifier)
     )
 
 
@@ -347,7 +333,7 @@ class RE(G):
 
     atom = S.alt(        
             backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and len(group_counter) >= v)),
-            S.seq2(LiteralAtom, text=literal),
+            S.seq((literal, 'text')).to(LiteralAtom),
             char_class,
             anchor,
             dot,
@@ -356,11 +342,11 @@ class RE(G):
             group,
             )
 
-    piece = S.seq2(Piece, +atom, quantifier=+(~quantifier))
+    piece = S.seq((atom, "atom"), (~quantifier, 'quantifier')).to(Piece)
 
-    branch = S.seq2(Branch, pieces=piece.many())
+    branch = S.seq((piece.many(), 'pieces')).to(Branch)
 
-    regex = S.seq2(Regex, branches=branch.sep_by(or_))
+    regex = S.seq((branch.sep_by(or_), 'branches')).to(Regex)
     regex_full = rule((regex // S.eof()).map(_0), is_root=True)
 
 

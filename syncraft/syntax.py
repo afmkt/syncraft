@@ -1322,98 +1322,37 @@ class Syntax(Generic[A, S]):
         return cls.choice(*parsers)
 
     @classmethod
-    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Seq, S]:
-        default:bool = True
-        infered_default: Optional[bool] = None
-        for X in steps:
-            if isinstance(X, tuple):
-                if len(X) != 2:
-                    raise SyncraftError("Invalid tuple in seq steps", offender=X, expect="Tuple of (Syntax, bool)")
-                elif infered_default is None:
-                    infered_default = not bool(X[1])
-                elif infered_default == bool(X[1]):
-                    infered_default = None
-                    break
-        if infered_default is not None:
-            default = infered_default
+    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str]) -> Syntax[Seq, S]:
+        def infer_default_keep(steps: Tuple[Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str], ...]) -> bool:
+            infered_default: Optional[bool] = None
+            for X in steps:
+                if isinstance(X, tuple):
+                    if len(X) != 2:
+                        raise SyncraftError("Invalid tuple in seq steps", offender=X, expect="Tuple of (Syntax, bool)")
+                    elif infered_default is None:
+                        infered_default = not bool(X[1])
+                    elif infered_default == bool(X[1]):
+                        infered_default = None
+                        break
+            if infered_default is not None:
+                return infered_default
+            else:
+                return True
+            
+        default:bool = infer_default_keep(steps)
         syntaxes = []
         for X in steps:
             step, keep = X if isinstance(X, tuple) else (X, default)
-            syntaxes.append((step, bool(keep)))
+            if isinstance(keep, str):
+                step = step.mark(keep)
+                syntaxes.append((step, True))
+            else:
+                syntaxes.append((step, keep))
         def seq_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [(step(acls, **global_kwargs), keep) for step, keep in syntaxes]
             return acls.seq(*algs)
         spec = SeqSpec(steps=tuple((step.spec, keep) for step, keep in syntaxes), name=None, file=None, line=None, func=None)
         return cls(alg_f=seq_f, spec=spec) # type: ignore
-
-
-    @classmethod
-    def seq2(cls, 
-             to: Collector, 
-             *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool], 
-             **named_steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Any, S]:
-
-        if cls.print.enabled:
-            pass
-
-        def mark_name(syn: Syntax[Any, S], name: str) -> Syntax[Any, S]:
-            if not name.startswith('_'):
-                return syn.mark(name)
-            else:
-                return syn
-
-        _steps: List[Tuple[Syntax[Any, S], bool | None, str | None]]
-        _steps = [(s[0], s[1], None) if isinstance(s, tuple) else (s, None, None) for s in list(steps)]
-        for _name, s in named_steps.items():
-            if isinstance(s, tuple):
-                x = mark_name(s[0], _name)
-                _steps.append((x, s[1], _name))
-            else:
-                _steps.append((mark_name(s, _name), None, _name))
-
-
-        field_names: Set[str] = set(f.name for f in fields(to)) if is_dataclass(to) else set()
-        used_name: Set[str] = set()
-        conflict_names: Set[str] = set()
-        args: List[Syntax[Any, S] | Tuple[Syntax[Any, S], bool]] = []
-        for step, keep, name in _steps:
-            name = name if name is not None else step.spec.name
-            if name is not None:
-                # Named step
-                if field_names and name in field_names :
-                    # Match dataclass field
-                    # cls.print(f"  Naming step {step} as field {name} in {to}")
-                    args.append((step.mark(name), True))
-                    if name in  used_name:
-                        conflict_names.add(name)
-                    else:
-                        used_name.add(name)
-                else:
-                    # Name the field when the collector is Record
-                    if isinstance(to, type) and issubclass(cast(type, to), Record):
-                        if name in used_name:
-                            conflict_names.add(name)
-                        else:
-                            used_name.add(name)
-                        # cls.print(f"  Naming step {step} as field {name} in Record {to}")
-                        step = step.mark(name) 
-                    if keep is not None:
-                        args.append((step, keep))
-                    else:
-                        args.append(step)
-            else:
-                # Unnamed step
-                if keep is not None:
-                    args.append((step, keep))
-                else:
-                    args.append(step)
-        if conflict_names:
-            # Collect.bimap will fold the conflicts into one and the last one wins
-            # so we just warn here
-            pass
-        
-        return cls.seq(*args).to(to) # type: ignore
-
 
     @classmethod
     def lazy(cls, thunk: Callable[[], Syntax[A, S]], flatten: bool = False) -> Syntax[A, S]:
