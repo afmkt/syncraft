@@ -134,13 +134,13 @@ class InlineFlags:
 @dataclass(frozen=True, slots=True)
 class GroupAtom:
     kind: GroupKind
-    pattern: Optional[Regex] = None
+    regex: Optional[Regex] = None
     name: Optional[str] = None
     inline_flags: Optional[InlineFlags] = None
     def builder(self) -> Builder[str]:
         if self.kind in (GroupKind.CAPTURE, GroupKind.NON_CAPTURE):
-            if self.pattern is not None:
-                inner = self.pattern.builder()
+            if self.regex is not None:
+                inner = self.regex.builder()
                 if self.name is not None:
                     return inner.tagged(self.name)
                 else:
@@ -286,10 +286,10 @@ class RE(G):
         S.seq(escaped_P.bimap(lambda x: Reversible(True, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace).to(UnicodeCategoryAtom)
         )
         
-    unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).map((_0.list + _1).apply(''.join))
+    unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).iso((_0.list + _1).apply(''.join), lambda s: (s[0], list(s[1:])))
     name_continue = unicode_letter | underscore
     name_start = unicode_letter | underscore
-    name = (name_start + name_continue.many()).iso((_0.list + _1).apply(''.join), lambda s: [s[0]] + list(s[1:]))
+    name = (name_start + name_continue.many()).iso((_0.list + _1).apply(''.join), lambda s: (s[0], list(s[1:])))
     unicode_escape = S.alt((escaped_x >> hex_pair).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '02x')), 
                     (escaped_u >> hex_quad).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '04x')),
                     (escaped_U >> hex_octa).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '08x')), 
@@ -328,27 +328,27 @@ class RE(G):
     @lazy(S)
     def group(): # type: ignore
         return S.alt(
-            S.seq(RE.lparen, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
-            S.seq(RE.lparen, RE.question, RE.colon, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NON_CAPTURE)),
-            S.seq(S.lex(B.lit("(?=")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.LOOKAHEAD)),
-            S.seq(S.lex(B.lit("(?!")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NEG_LOOKAHEAD)),
-            S.seq(S.lex(B.lit("(?<=")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.LOOKBEHIND)),
-            S.seq(S.lex(B.lit("(?<!")), RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NEG_LOOKBEHIND)),
+            S.seq(RE.lparen, RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
+            S.seq(RE.lparen, RE.question, RE.colon, RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NON_CAPTURE)),
+            S.seq(S.lex(B.lit("(?=")), RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.LOOKAHEAD)),
+            S.seq(S.lex(B.lit("(?!")), RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NEG_LOOKAHEAD)),
+            S.seq(S.lex(B.lit("(?<=")), RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.LOOKBEHIND)),
+            S.seq(S.lex(B.lit("(?<!")), RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.NEG_LOOKBEHIND)),
             S.seq(S.lex(B.lit("(?")), RE.inline_flags.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.FLAGS)),
-            S.seq(S.lex(B.lit("(?P<")), RE.name.fld(), RE.greater, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
-            S.seq( S.lex(B.lit("(?")), RE.inline_flags.fld(), RE.colon, RE.regex.fld('pattern'), RE.rparen).to(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED)),
+            S.seq(S.lex(B.lit("(?P<")), RE.name.fld(), RE.greater, RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.CAPTURE)),
+            S.seq( S.lex(B.lit("(?")), RE.inline_flags.fld(), RE.colon, RE.regex.fld(), RE.rparen).to(partial(GroupAtom, kind=GroupKind.FLAGS_SCOPED)),
 
             S.seq(S.lex(B.lit("(?")), 
                         S.alt(
-                            S.seq(S.lex(B.lit("(?=")), +RE.regex, RE.rparen),
-                            S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen),
-                            S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen),
-                            S.seq(S.lex(B.lit("(?<!" )), +RE.regex, RE.rparen),
+                            S.seq(S.lex(B.lit("(?=")), RE.regex.fld(), RE.rparen),
+                            S.seq(S.lex(B.lit("(?!")), RE.regex.fld(), RE.rparen),
+                            S.seq(S.lex(B.lit("(?<=")), RE.regex.fld(), RE.rparen),
+                            S.seq(S.lex(B.lit("(?<!" )), RE.regex.fld(), RE.rparen),
                         ), 
-                        +RE.regex, 
+                        RE.regex.fld(), 
                         RE.rparen).to(partial(UnsupportedFeature, feature="lookaround assertion group")),
 
-            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
+            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, RE.regex.fld(), RE.rparen).to(partial(UnsupportedFeature, feature="group existence test")),
 
             S.alt(S.seq(S.lex(B.lit("(?&")), RE.name.fld(), RE.rparen),
                         S.seq(S.lex(B.lit("(?")), RE.number.fld(), RE.rparen),
@@ -444,8 +444,7 @@ class VerifyResult:
 
 
 def verify(pattern: str, profile: bool = False) -> VerifyResult:
-    import timeit
-    timeit.timeit(lambda: None, number=1)  # Warm up timer
+
     myerr = None
     err = None
     cache: Cache[Any] = Cache()
