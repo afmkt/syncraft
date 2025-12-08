@@ -728,7 +728,10 @@ class Syntax(Generic[A, S]):
     ) -> Graph[SyntaxSpec]:
         return self.spec.graph(max_depth=max_depth)
 
-    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
+    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[A, S]:
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(f, i))
+
+    def raw_iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
 
         Applies f to the value and adjusts internal state via inverse i so
@@ -741,7 +744,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(f, i)) # type: ignore
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).raw_iso(f, i)) # type: ignore
 
 
     def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
@@ -931,7 +934,7 @@ class Syntax(Generic[A, S]):
             
         Returns:
             Syntax producing Then(first_element, Many(separator_element_pairs)).
-            The result is automatically transformed via iso() to produce Many[A]
+            The result is automatically transformed via raw_iso() to produce Many[A]
             containing all parsed elements without the separators.
             
         Example:
@@ -950,7 +953,7 @@ class Syntax(Generic[A, S]):
                     left=left,
                     right=Many(value=bs),
                 ):
-                    return Many(value=(left,) + tuple(b.right for b in bs), custom_mapping=None)
+                    return Many(value=(left,) + tuple(b.right for b in bs))
                 case _:
                     raise SyncraftError(f"Bad data shape {a}", offender=a, expect="Then(BOTH) with OrElse on the right")
 
@@ -958,15 +961,14 @@ class Syntax(Generic[A, S]):
             if not isinstance(a, Many) or len(a.value) < 1:
                 raise SyncraftError(f"sep_by inverse expect Many with at least one element, got {a}", offender=a, expect="Many with at least one element")
             v: List[Then[B | None, A]] = [
-                Then(kind=ThenKind.RIGHT, right=x, left=None, custom_mapping=None) for x in a.value[1:]
+                Then(kind=ThenKind.RIGHT, right=x, left=None) for x in a.value[1:]
             ]
             return Then(
                 kind=ThenKind.BOTH,
                 left=a.value[0],
-                right=Many(value=tuple(v), custom_mapping=None),
-                custom_mapping=None
+                right=Many(value=tuple(v)),
             )
-        return ret.iso(f, i)  # type: ignore
+        return ret.raw_iso(f, i)  # type: ignore
 
     def parens(
         self,
@@ -1247,12 +1249,12 @@ class Syntax(Generic[A, S]):
             if isinstance(v, Collect):
                 return replace(v, collector=f)
             else:
-                return Collect(collector=f, value=v, custom_mapping=None)
+                return Collect(collector=f, value=v)
 
         def ito_f(c: Collect[A, Any]) -> A:
             return c.value if isinstance(c, Collect) else c
 
-        ret = self.iso(to_f, ito_f)
+        ret = self.raw_iso(to_f, ito_f)
         return replace(ret, spec=CollectSpec(collector=f, 
                                              id=hash(f),
                                              spec=self.spec, 
@@ -1269,13 +1271,13 @@ class Syntax(Generic[A, S]):
             if isinstance(value, Marked):
                 return replace(value, name=name)
             else:
-                return Marked(name=name, value=value, custom_mapping=None)
+                return Marked(name=name, value=value)
 
         def imark_s(m: Marked[A]) -> A:
             return m.value if isinstance(m, Marked) else m
 
 
-        ret = self.iso(mark_s, imark_s)
+        ret = self.raw_iso(mark_s, imark_s)
         spec = self.spec
         if isinstance(spec, MarkedSpec):
             spec = replace(spec, mname=name)

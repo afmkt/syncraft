@@ -8,7 +8,7 @@ from syncraft.lexer import ExtLexer
 from syncraft.token import Structured
 
 
-literal = Syntax.set(terminal_cls=lambda *args, **kwargs: Token(*args, **{**kwargs, 'custom_mapping': None})).lit
+literal = Syntax.set(terminal_cls=Token).lit
 
 
 
@@ -42,7 +42,7 @@ def test_sep_by()->None:
     assert u == ast
 
 def test_many_or()->None:
-    literal = Syntax.set(terminal_cls=lambda *args, **kwargs: Token(*args, **{**kwargs, 'custom_mapping': None})).lit
+    literal = Syntax.set(terminal_cls=Token).lit
     IF = literal("if")
     THEN = literal("then")
     END = literal("end")

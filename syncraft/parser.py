@@ -492,10 +492,10 @@ class Parser(Algebra[T, ParserState[T]]):
                     match lexer.candidate():
                         case LexerResult(tag=tag, start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_cls(text=state.slice(start, end), token_type=tag, custom_mapping=None)
+                                token = terminal_cls(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
-                            return Right.new((token, state.advance())) # type: ignore
+                            return Right.new((token, state)) # type: ignore
                         case LexerError(message=err_msg) as lexerError:
                             return Left.new(Error.new(message="Cannot match token at end of input", this=lex_run, state=state, error=lexerError))
                         case e:
@@ -512,7 +512,7 @@ class Parser(Algebra[T, ParserState[T]]):
                             state = state.advance()
                         case LexerResult(tag=tag, start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_cls(text=state.slice(start, end), token_type=tag, custom_mapping=None)
+                                token = terminal_cls(text=state.slice(start, end), token_type=tag)
                             else:
                                 token = lexeme
                             if end > state.index:
@@ -572,7 +572,7 @@ def parse_word(syntax: Syntax,
                *, 
                cache: None| Cache[Any]
                ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
-    tokens: List[Token]  = [Token(text=t, custom_mapping=None) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens, cache=cache)
 
     

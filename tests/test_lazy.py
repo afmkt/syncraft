@@ -21,7 +21,7 @@ token = S.token
 lazy = S.lazy
 
 def from_string(string: str) -> Token:
-    return Token(text=string, custom_mapping=None)
+    return Token(text=string)
 
 
 
@@ -323,7 +323,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     assert str(right_term[2]) == 't.3'
 
     # Mapped variant
-    NUMBER_M = NUMBER.iso(lambda t: int(t.text), lambda n: Token(text=str(n), custom_mapping=None))  # type: ignore[name-defined]
+    NUMBER_M = NUMBER.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  # type: ignore[name-defined]
     ExprM = lazy(lambda: (ExprM + PLUS + TermM) | TermM)  # type: ignore[name-defined]
     TermM = lazy(lambda: (TermM + STAR + FactorM) | FactorM)  # type: ignore[name-defined]
     FactorM = lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
@@ -431,11 +431,11 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         assert isinstance(raw, tuple) and len(raw) == 3
         assert isinstance(raw[0], tuple) and len(raw[0]) == 3  # left nested
         
-        assert raw[1] == Token(text='+', custom_mapping=None)
-        assert raw[2] == Token(text='3', custom_mapping=None)
+        assert raw[1] == Token(text='+')
+        assert raw[2] == Token(text='3')
 
         # Mapped version
-        NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n), custom_mapping=None))  
+        NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  
         ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
         v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=Cache())
         generated, bound = gen.generate_with(ExprM, v2)
@@ -644,7 +644,7 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap
-    assert ast == ((((Token(text='a', custom_mapping=None),),),),)
+    assert ast == ((((Token(text='a'),),),),)
 
 def test_direct_left_recursion_unproductive_now_productive_flatten()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -656,7 +656,7 @@ def test_direct_left_recursion_unproductive_now_productive_flatten()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap
-    assert ast == (Token(text='a', custom_mapping=None),)
+    assert ast == (Token(text='a'),)
 
 def test_direct_left_recursion_unproductive_now_productive1()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -668,7 +668,7 @@ def test_direct_left_recursion_unproductive_now_productive1()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap
-    assert ast == (Token(text='a', custom_mapping=None),)
+    assert ast == (Token(text='a'),)
 
 def test_direct_left_recursion_unproductive_now_productive1_flatten()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -680,7 +680,7 @@ def test_direct_left_recursion_unproductive_now_productive1_flatten()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap
-    assert ast == (Token(text='a', custom_mapping=None),)
+    assert ast == (Token(text='a'),)
 
 
 def test_direct_left_recursion_unproductive_now_productive2()->None:
@@ -693,7 +693,7 @@ def test_direct_left_recursion_unproductive_now_productive2()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap
-    assert ast == ((((Token(text='a', custom_mapping=None), Token(text='a', custom_mapping=None)), Token(text='a', custom_mapping=None)), Token(text='a', custom_mapping=None)), Token(text='a', custom_mapping=None))
+    assert ast == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
 
 def test_direct_left_recursion_unproductive_now_productive2_flatten()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
@@ -705,7 +705,7 @@ def test_direct_left_recursion_unproductive_now_productive2_flatten()->None:
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap
-    assert ast == (Token(text='a', custom_mapping=None), Token(text='a', custom_mapping=None), Token(text='a', custom_mapping=None), Token(text='a', custom_mapping=None), Token(text='a', custom_mapping=None))
+    assert ast == (Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a'))
 
 
 def test_direct_left_recursion_collapse()->None:
@@ -713,7 +713,7 @@ def test_direct_left_recursion_collapse()->None:
     S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a', cache=Cache())
     ast, _ = v.bimap
-    assert ast == Token(text='a', custom_mapping=None)
+    assert ast == Token(text='a')
 
 def test_indirect_multi_head_cycle_parses_successfully():
     """
@@ -749,17 +749,17 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
     assert ast == back(ast).mapped
 
     ast, _ = v.bimap
-    assert ast == (Token(text='a', custom_mapping=None),)
+    assert ast == (Token(text='a'),)
 
 
 
 def test_multi_recursion()->None:
-    a = literal('a').iso(lambda x: x.text, lambda t: Token(text=t, custom_mapping=None)).named('a')
-    b = literal('b').iso(lambda x: x.text, lambda t: Token(text=t, custom_mapping=None)).named('b')
-    c = literal('c').iso(lambda x: x.text, lambda t: Token(text=t, custom_mapping=None)).named('c')
-    x = literal('x').iso(lambda x: x.text, lambda t: Token(text=t, custom_mapping=None)).named('x')
-    y = literal('y').iso(lambda x: x.text, lambda t: Token(text=t, custom_mapping=None)).named('y')
-    z = literal('z').iso(lambda x: x.text, lambda t: Token(text=t, custom_mapping=None)).named('z')
+    a = literal('a').iso(lambda x: x.text, lambda t: Token(text=t)).named('a')
+    b = literal('b').iso(lambda x: x.text, lambda t: Token(text=t)).named('b')
+    c = literal('c').iso(lambda x: x.text, lambda t: Token(text=t)).named('c')
+    x = literal('x').iso(lambda x: x.text, lambda t: Token(text=t)).named('x')
+    y = literal('y').iso(lambda x: x.text, lambda t: Token(text=t)).named('y')
+    z = literal('z').iso(lambda x: x.text, lambda t: Token(text=t)).named('z')
     A = lazy(lambda: (B + x) | a).named('A')
     B = lazy(lambda: (C + y) | b).named('B')
     C = lazy(lambda: (A + z) | c).named('C')

@@ -9,17 +9,12 @@ from syncraft.regex import (
 )
 from rich import print
 
-# 
 import timeit
-# from syncraft.regex2 import verify
 
 
 
 def benchmark_fair():
-    # ITERATOR to feed unique patterns
     from syncraft.regex import parse as parse3
-    from syncraft.regex import parse 
-    import timeit
     count = 500
     result = []
     base_patterns = [
@@ -69,34 +64,133 @@ def benchmark_fair():
     return result
 
 
+def test_direct_left_recursive_map_preserves_shape()->None:
+        from syncraft.ast import Token
+        import syncraft.generator as gen
+        from syncraft.parser import parse_word
+        from syncraft.syntax import Syntax
+        """Direct left recursion: Expr -> Expr "+" NUM | NUM
 
-def test_many_or()->None:
+        We compare:
+            1. Raw token version (NUM un-mapped) parsing '1 + 2 + 3'.
+            2. Mapped NUM to int version.
+
+        Structural expectation (raw): ((t.1, t.+, t.2), t.+, t.3)
+        Mapped: ((1, '+', 2), '+', 3)
+        The nested triple shape must be preserved; only leaves (tokens -> ints) differ.
+        """
+        import re
+        literal = Syntax.lit
+        lazy = Syntax.lazy
+
+        NUM = literal(re.compile(r'\d+'))
+        PLUS = literal('+')
+        Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
+        v,_ = parse_word(Expr, '1 + 2 + 3', cache=None)
+        generated, bound = gen.generate_with(Expr, v)
+        assert v.mapped == generated.mapped
+        ast, back = v.bimap
+        assert ast == back(ast).mapped
+
+        raw,_ = v.bimap
+        # Raw structure assertions
+        assert isinstance(raw, tuple) and len(raw) == 3
+        assert isinstance(raw[0], tuple) and len(raw[0]) == 3  # left nested
+        
+        assert raw[1] == Token(text='+')
+        assert raw[2] == Token(text='3')
+
+        # Mapped version
+        NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  
+        ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
+        v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=None)
+        generated, bound = gen.generate_with(ExprM, v2)
+
+
+        assert v2.mapped == generated.mapped
+        ast, back = v2.bimap
+        assert ast == back(ast).mapped
+
+        mapped,_ = v2.bimap
+        assert isinstance(mapped, tuple) and len(mapped) == 3
+        left_nested, mid_op, right_leaf = mapped
+        assert isinstance(left_nested, tuple) and len(left_nested) == 3
+        assert mid_op.text == '+'
+        assert right_leaf == 3
+        # Check leaves inside nested left part transformed properly
+        assert left_nested[0] == 1
+        assert left_nested[1].text == '+'
+        assert left_nested[2] == 2
+
+
+
+def test_multi_recursion()->None:
+    from syncraft.ast import Token, Lazy
     import syncraft.generator as gen
-    from syncraft.syntax import Syntax
     from syncraft.parser import parse_word
-    from syncraft.ast import Token
-    literal = Syntax.set(terminal_cls=lambda *args, **kwargs: Token(*args, **{**kwargs, 'custom_mapping': None})).lit
-    IF = literal("if")
-    THEN = literal("then")
-    END = literal("end")
-    syntax = (IF.many() + THEN.many()).many() // END
-    sql = "if if then end"
-    
-    ast, bound = parse_word(syntax, sql, cache=None)
-    generated, bound = gen.generate_with(syntax, ast)
-    print(ast)
-    print(generated)
-    
-    assert ast == generated, "Parsed and generated results do not match."
+    from syncraft.syntax import Syntax
+    literal = Syntax.lit
+    lazy = Syntax.lazy
 
-    x, f = generated.bimap
-    u, v = gen.generate_with(syntax, f(x))
-    assert u == ast
+    a = literal('a').iso(lambda x: x.text, lambda t: Token(text=t)).named('a')
+    b = literal('b').iso(lambda x: x.text, lambda t: Token(text=t)).named('b')
+    c = literal('c').iso(lambda x: x.text, lambda t: Token(text=t)).named('c')
+    x = literal('x').iso(lambda x: x.text, lambda t: Token(text=t)).named('x')
+    y = literal('y').iso(lambda x: x.text, lambda t: Token(text=t)).named('y')
+    z = literal('z').iso(lambda x: x.text, lambda t: Token(text=t)).named('z')
+    A = lazy(lambda: (B + x) | a).named('A')
+    B = lazy(lambda: (C + y) | b).named('B')
+    C = lazy(lambda: (A + z) | c).named('C')
+
+    v, s = parse_word(A, 'a z y x', cache=None)
+    generated, bound = gen.generate_with(A, v)
+    assert v.mapped == generated.mapped
+    ast, back = v.bimap
+    assert ast == back(ast).mapped
+
+    print(v)
+    # We care about the raw AST shape (pre-bimap). Extract leaves manually.
+    from syncraft.ast import Then, ThenKind
+    from syncraft.algebra import OrElse, OrElseKind  # type: ignore
+
+    def leaves(node):
+        if isinstance(node, Lazy):
+            return leaves(node.value)
+        if isinstance(node, Then) and node.kind == ThenKind.BOTH:
+            return leaves(node.left) + leaves(node.right)
+        if isinstance(node, OrElse):
+            # For this grammar OrElse.RIGHT wraps literal terminal; LEFT wraps a Then chain.
+            if node.kind == OrElseKind.RIGHT:
+                return (node.value,)
+            else:
+                return leaves(node.value)
+        if isinstance(node, str):
+            return (node,)
+        return ()
+
+    assert leaves(v) == ('a','z','y','x')
+
+
+
+def test():
+    from syncraft.ast import Token
+    import syncraft.generator as gen
+    from syncraft.parser import parse_word
+    from syncraft.syntax import Syntax
+    import re
+    literal = Syntax.lit
+    lazy = Syntax.lazy
+
+    NUM = literal(re.compile(r'\d+'))
+    NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  
+
+    v2 , _ = parse_word(NUM_M, '123', cache=None)
+    print(v2)
+    generated, bound = gen.generate_with(NUM_M, v2)
+
 
 
 if __name__ == "__main__":
-    test_many_or()
-    
-
+    test_direct_left_recursive_map_preserves_shape()
     
 

@@ -126,20 +126,18 @@ class Bimap(Generic[A, B]):
         """The identity bimap where forward and inverse are no-ops."""
         return Bimap(lambda a: Reversible(a, lambda b: b))
     
+    @staticmethod
+    def iso(f: Callable[[A], B], i: Callable[[B], A]) -> Bimap[A, B]:
+        """Create a bimap from a pair of inverse functions."""
+        def iso_f(a: A) -> Reversible[A, B]:
+            return Reversible(f(a), i)
+        return Bimap(iso_f)
 
 @dataclass(frozen=True, slots=True)    
-class AST:
-    
+class AST:    
 
     _bimmapped_cache: Reversible = field(default=MISSING, init=False, repr=False, compare=False, hash=False)
-    custom_mapping: Optional[Bimap] = field(compare=False, hash=False, repr=False)
 
-    def mapping(self, f: Optional[Bimap], concat:bool = True) -> AST:
-        if not f:
-            return self
-        if self.custom_mapping is not None and concat:
-            f = self.custom_mapping >> f
-        return replace(self, custom_mapping=f)
 
     @property
     def arity(self)->int:
@@ -155,12 +153,7 @@ class AST:
     def bimap(self) -> Reversible:
         if self._bimmapped_cache is MISSING:
             tmp = self._bimap()
-            if self.custom_mapping is not None:
-                value, invf = tmp
-                v, f = self.custom_mapping(value)
-                def composed_inv(c: Any) -> Any:
-                    return invf(f(c))
-                tmp = Reversible(v, composed_inv)
+
             object.__setattr__(self, '_bimmapped_cache', tmp)
         return self._bimmapped_cache
     
@@ -243,8 +236,8 @@ class Marked(AST, Generic[A]):
         """
         tmp : Reversible[A, Any] = self.value.bimap if isinstance(self.value, AST) else Reversible(self.value)
         def invf(m: Marked[Any]) -> Marked[A]:
-            return Marked(name = m.name, value = tmp.mapper(m.value), custom_mapping=None)
-        return Reversible(Marked(name=self.name, value=tmp.value, custom_mapping=None), invf)
+            return Marked(name = m.name, value = tmp.mapper(m.value))
+        return Reversible(Marked(name=self.name, value=tmp.value), invf)
 
     
 class OrElseKind(Enum):
@@ -339,11 +332,11 @@ class Many(AST, Generic[A]):
         ret : List[Reversible[A, Any]] = [v.bimap if isinstance(v, AST) else Reversible(v) for v in self.value]
         def inv(bs: List[Any]) -> Many[A]:
             if len(bs) <= len(ret):
-                return Many(value = tuple(ret[i].mapper(bs[i]) for i in range(len(bs))), custom_mapping=self.custom_mapping) 
+                return Many(value = tuple(ret[i].mapper(bs[i]) for i in range(len(bs)))) 
             else:
                 half = [ret[i].mapper(bs[i]) for i in range(len(ret))]
                 tmp = [ret[-1].mapper(bs[i]) for i in range(len(ret), len(bs))]
-                return Many(value = tuple(half + tmp), custom_mapping=self.custom_mapping)
+                return Many(value = tuple(half + tmp))
         return Reversible([v.value for v in ret], inv)
 
 
@@ -580,7 +573,7 @@ class Collect(AST, Generic[A, E]):
                 tmp = []
                 for x in index:
                     if isinstance(x, str):
-                        tmp.append(Marked(name=x, value=named_dict[x], custom_mapping=None))
+                        tmp.append(Marked(name=x, value=named_dict[x]))
                     else:
                         tmp.append(unnamed[x])
                 return tuple(tmp)
@@ -592,10 +585,10 @@ class Collect(AST, Generic[A, E]):
                 if is_dataclass(e):
                     named_dict = {f.name: getattr(e, f.name) for f in fields(e)}
                     for k, v in named_dict.items():
-                        return Marked(name=k, value=v, custom_mapping=None)
+                        return Marked(name=k, value=v)
                 elif isinstance(e, Record):
                     for n, v in e._named.items():
-                        return Marked(name=n, value=v, custom_mapping=None)
+                        return Marked(name=n, value=v)
                 raise SyncraftError("Collector returned unsupported type", offender=e, expect="dataclass or Record")   
                 
             return Reversible(ret1, lambda e: replace(self, value=inner_f(invf1(e)))) # type: ignore
@@ -627,8 +620,7 @@ Char = TypeVar('Char', bound=Hashable)
 @dataclass(frozen=True, slots=True)
 class Token(AST, Generic[Char]):
     text: str | bytes | Tuple[Char, ...]
-    token_type: Optional[Union[str, Enum]] = None
-
+    token_type: Optional[Union[str, Enum]] = None    
 
     def __str__(self) -> str:
         if isinstance(self.text, str):

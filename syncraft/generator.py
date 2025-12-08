@@ -210,7 +210,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Right((value, next_input)):
                             input = next_input
                             result.append((value, keep))
-                return Right.new((Seq(value=tuple(result), custom_mapping=None), input))
+                return Right.new((Seq(value=tuple(result)), input))
             else:
                 result = []
                 ast_seq = cast(Seq, input.ast)
@@ -230,7 +230,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Right((value, next_input)):
                             inp = next_input
                             result.append((value, keep))    
-                return Right.new((Seq(value=tuple(result), custom_mapping=None), inp))
+                return Right.new((Seq(value=tuple(result)), inp))
         return cls(run_f=seq_run) # type: ignore
     
 
@@ -302,7 +302,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         if (at_most is None or len(ret) < at_most):
                             if not forked_input.rng("many_continue").choice((True, False)):
                                 break
-                return Right.new((Many(value=tuple(ret), custom_mapping=None), input))
+                return Right.new((Many(value=tuple(ret)), input))
             else:
                 if not isinstance(input.ast, Many) or input.ast is Nothing:
                     return Left.new(Error.new(this=self, 
@@ -329,7 +329,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         this=self,
                         state=input.inject(x)
                     )) 
-                return Right.new((Many(value=tuple(ret), custom_mapping=None), input))
+                return Right.new((Many(value=tuple(ret)), input))
         return replace(self, run_f=many_run)  # type: ignore
     
  
@@ -346,7 +346,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 result = yield from selected.run(forked_input, cache)
                 match result:
                     case Right((value, next_input)):
-                        return Right.new((Choice(index=idx, value=value, custom_mapping=None), next_input))
+                        return Right.new((Choice(index=idx, value=value), next_input))
                     case Left() as ERROR:
                         return ERROR
             else:
@@ -360,7 +360,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         result = yield from option.run(input.inject(ast_choice.value), cache)
                         match result:
                             case Right((value, next_input)):
-                                return Right.new((Choice(index=i, value=value, custom_mapping=None), next_input))
+                                return Right.new((Choice(index=i, value=value), next_input))
                             case Left(err) as ERROR:
                                 if isinstance(err, Error) and err.committed:
                                     return ERROR
@@ -372,7 +372,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     result = yield from selected.run(input.inject(ast_choice.value), cache)
                     match result:
                         case Right((value, next_input)):
-                            return Right.new((Choice(index=ast_choice.index, value=value, custom_mapping=None), next_input))
+                            return Right.new((Choice(index=ast_choice.index, value=value), next_input))
                         case Left() as ERROR:
                             return ERROR
             raise SyncraftError("choice should always return a value or an error.", offender=result, expect=(Left, Right))
@@ -396,14 +396,14 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         self_result = yield from self.run(left, cache)
                         match self_result:
                             case Right((value, next_input)):
-                                return Right.new((OrElse(kind=OrElseKind.LEFT, value=value, custom_mapping=None), next_input))
+                                return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), next_input))
                             case Left() as ERROR:
                                 return ERROR
                     case OrElseKind.RIGHT:
                         other_result = yield from other.run(right, cache)
                         match other_result:
                             case Right((value, next_input)):
-                                return Right.new((OrElse(kind=OrElseKind.RIGHT, value=value, custom_mapping=None), next_input))
+                                return Right.new((OrElse(kind=OrElseKind.RIGHT, value=value), next_input))
                             case Left() as ERROR:
                                 return ERROR
                     case None:
@@ -411,14 +411,14 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         self_result = yield from self.run(left, cache)
                         match self_result:
                             case Right((value, next_input)):
-                                return Right.new((OrElse(kind=OrElseKind.LEFT, value=value, custom_mapping=None), next_input))
+                                return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), next_input))
                             case Left(error) as ERROR:
                                 if isinstance(error, Error) and error.committed:
                                     return ERROR
                                 other_result = yield from other.run(right, cache)
                                 match other_result:
                                     case Right((value, next_input)):
-                                        return Right.new((OrElse(kind=OrElseKind.RIGHT, value=value, custom_mapping=None), next_input))
+                                        return Right.new((OrElse(kind=OrElseKind.RIGHT, value=value), next_input))
                                     case Left() as ERROR:
                                         return ERROR
                 raise SyncraftError(f"Invalid OrElseKind: {kind}", offender=kind, expect=(OrElseKind.LEFT, OrElseKind.RIGHT, None))
@@ -457,7 +457,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     case Left() as ERROR:
                         return ERROR
                     case Right((value, state)):
-                        return Right.new((Lazy(value=value, flatten=flatten, custom_mapping=None), state))
+                        return Right.new((Lazy(value=value, flatten=flatten), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
             else:
@@ -471,7 +471,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     case Left() as ERROR:
                         return ERROR
                     case Right((value, state)):
-                        return Right.new((Lazy(value=value, flatten=flatten, custom_mapping=None), state))
+                        return Right.new((Lazy(value=value, flatten=flatten), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
         return cls(algebra_lazy_run)
@@ -511,7 +511,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         )
                 parsed_value = cast(ParseResult[T], current)
                 if isinstance(parsed_value, AST):
-                    parsed_value = replace(parsed_value, custom_mapping=None) # type: ignore
+                    parsed_value = replace(parsed_value) # type: ignore
                 
                 return Right.new((parsed_value, input))
 

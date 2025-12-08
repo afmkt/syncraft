@@ -1,9 +1,10 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Type, Generator, Hashable, TYPE_CHECKING, Dict
+    Type, Generator, Hashable, TYPE_CHECKING, Dict, ClassVar
 )
-from syncraft.ast import AST, Nothing
+from weakref import WeakKeyDictionary
+from syncraft.ast import AST, Nothing, identity
 from dataclasses import dataclass, replace, field
 from syncraft.ast import Bimap, ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
@@ -245,6 +246,7 @@ class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
     syntax: Syntax | None = None
+    inverse_f: ClassVar[WeakKeyDictionary[Syntax, Callable[..., Any]]] = WeakKeyDictionary()
 
     @property
     def is_orelse(self)->bool:
@@ -304,19 +306,7 @@ class Algebra(Generic[A, S]):
             else:
                 e = e.push(f"{self.name}")
             raise e
-        # except Exception:
-        #     exc_type, exc_value, exc_traceback = sys.exc_info()
-        #     traceback_details = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        #     err = Error.new(
-        #         message="Unexpected error during parsing",
-        #         error=traceback_details,
-        #         this=self,
-        #         state=input,
-        #         committed=True,
-        #         stack=cache.stack if cache is not None else []
-        #     )
-        #     return Left.new(err)
-        
+
 
     def as_(self, typ: Type[B])->B:
         return cast(typ, self) # type: ignore
@@ -331,7 +321,7 @@ class Algebra(Generic[A, S]):
             result = (yield from alg.run(input, cache))
             match result:
                 case Right((value, state)):
-                    return Right.new((Lazy(value=value, flatten=flatten, custom_mapping=None), state))
+                    return Right.new((Lazy(value=value, flatten=flatten), state))
                 case _:
                     return result
         return cls(algebra_lazy_run)
@@ -462,20 +452,32 @@ class Algebra(Generic[A, S]):
         alg = replace(self, run_f=map_run) # type: ignore
         return cast(Algebra[B, S], alg)
     
-    def bimap(self, b: Bimap[A, B]) -> Algebra[A, S]:
-        def bimap_f(a: A)->Any:
-            if isinstance(a, AST):            
-                mapping = a.custom_mapping
-                if mapping is not None:
-                    mapping = mapping >> b
+    def bimap(self, b: Bimap[A, B], raw:bool) -> Algebra[B, S]:
+        def inverse_f(b_data: B) -> A:
+            assert self.syntax is not None, "Bimap requires associated Syntax to store inverse mapping"
+            inv_f = Algebra.inverse_f.get(self.syntax, identity)
+            return inv_f(b_data)
+        def bimap_run(input: S, cache: Cache[S])->Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
+            parsed = yield from self.run(input, cache)
+            if isinstance(parsed, Right):
+                a, s = parsed.value
+                if not raw and isinstance(a, AST):
+                    data:Any = a.mapped
                 else:
-                    mapping = b
-                return a.mapping(mapping)
+                    data = a
+                reversible = b(data)
+                assert self.syntax is not None, "Bimap requires associated Syntax to store inverse mapping"
+                Algebra.inverse_f[self.syntax] = reversible.mapper
+                return Right.new((reversible.value, s))
             else:
-                return a
-        return self.map(bimap_f, raw=True)
-        
+                return cast(Either[Any, Tuple[B, S]], parsed)
+        ret: Algebra[B, S] = replace(self, run_f=bimap_run) # type: ignore
+        return ret.map_state(lambda s: s.map(inverse_f))
+
     def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
+        return self.bimap(Bimap.iso(f, i), raw=False)
+    
+    def raw_iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
         return self.map(f, raw=True).map_state(lambda s: s.map(i))
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
@@ -527,14 +529,14 @@ class Algebra(Generic[A, S]):
             left = yield from self.run(inp, cache)
             match left:
                 case Right((value, state)):
-                    return Right.new((OrElse(kind=OrElseKind.LEFT, value=value, custom_mapping=None), state.leave()))
+                    return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), state.leave()))
                 case Left(err) as ERROR:
                     if isinstance(err, Error) and err.committed:
                         return ERROR
                     other_result = yield from other.run(inp, cache)
                     match other_result:
                         case Right((other_value, other_state)):
-                            return Right.new((OrElse(kind=OrElseKind.RIGHT, value=other_value, custom_mapping=None), other_state.leave()))
+                            return Right.new((OrElse(kind=OrElseKind.RIGHT, value=other_value), other_state.leave()))
                         case Left() as OTHER_ERROR:
                             return OTHER_ERROR
                     raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
@@ -587,7 +589,7 @@ class Algebra(Generic[A, S]):
                 match result:
                     case Right((value, state)):
 
-                        return Right.new((Choice(value=value, index=i, custom_mapping=None), state.leave()))
+                        return Right.new((Choice(value=value, index=i), state.leave()))
                     case Left(err) as ERROR:
 
                         if isinstance(err, Error) and err.committed:
@@ -621,13 +623,13 @@ class Algebra(Generic[A, S]):
                         inp = state
                     case Left() as ERROR:
                         return ERROR
-            return Right.new((Seq(value=tuple(results), custom_mapping=None), inp))
+            return Right.new((Seq(value=tuple(results)), inp))
         return cls(run_f=seq_run) # type: ignore
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.BOTH, custom_mapping=None)
+                return Then(left=a, right=b, kind=ThenKind.BOTH)
             return other.map(combine, raw=True)        
         return self.flat_map(then_both_f)
         
@@ -635,7 +637,7 @@ class Algebra(Generic[A, S]):
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_left_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.LEFT, custom_mapping=None)
+                return Then(left=a, right=b, kind=ThenKind.LEFT)
             return other.map(combine, raw=True)
         return self.flat_map(then_left_f)
         
@@ -643,7 +645,7 @@ class Algebra(Generic[A, S]):
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
             def combine(b: B) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.RIGHT, custom_mapping=None)
+                return Then(left=a, right=b, kind=ThenKind.RIGHT)
             return other.map(combine, raw=True)        
         return self.flat_map(then_right_f)
 
@@ -702,7 +704,7 @@ class Algebra(Generic[A, S]):
                             this=self,
                             state=current_input
                         )) 
-            return Right.new((Many(value=tuple(ret), custom_mapping=None), current_input))
+            return Right.new((Many(value=tuple(ret)), current_input))
         return replace(self, run_f=many_run) # type: ignore
     
     @classmethod
