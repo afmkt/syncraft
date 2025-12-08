@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-from syncraft.ast import AST
+from syncraft.ast import AST, Reversible
 from syncraft.algebra import Error
 from syncraft.syntax import Syntax
 from syncraft.fa import Builder
@@ -280,31 +280,31 @@ class RE(G):
     meta_char = S.lex(B.oneof("\"\\.[](){}|+*?^$"))
     control_escape = S.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"]))
     shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).iso(ShorthandKind.from_literal, ShorthandKind.to_literal).to(ShorthandAtom)
-    category_name = unicode_category.many().map(tuple)
+    category_name = unicode_category.many().iso(tuple, list)
     unicode_category_escape = S.alt(
-        S.seq(escaped_p.map(const(False)).fld('negated'), category_name.fld('categories'), rbrace).to(UnicodeCategoryAtom),
-        S.seq(escaped_P.map(const(True)).fld('negated'), category_name.fld('categories'), rbrace).to(UnicodeCategoryAtom)
+        S.seq(escaped_p.bimap(lambda x: Reversible(False, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace).to(UnicodeCategoryAtom),
+        S.seq(escaped_P.bimap(lambda x: Reversible(True, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace).to(UnicodeCategoryAtom)
         )
         
     unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).map((_0.list + _1).apply(''.join))
     name_continue = unicode_letter | underscore
     name_start = unicode_letter | underscore
-    name = (name_start + name_continue.many()).map((_0.list + _1).apply(''.join))
-    unicode_escape = S.alt((escaped_x >> hex_pair).map(call(int, _0, 16).apply(chr)), 
-                    (escaped_u >> hex_quad).map(call(int, _0, 16).apply(chr)),
-                    (escaped_U >> hex_octa).map(call(int, _0, 16).apply(chr)), 
+    name = (name_start + name_continue.many()).iso((_0.list + _1).apply(''.join), lambda s: [s[0]] + list(s[1:]))
+    unicode_escape = S.alt((escaped_x >> hex_pair).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '02x')), 
+                    (escaped_u >> hex_quad).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '04x')),
+                    (escaped_U >> hex_octa).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '08x')), 
                     ((escaped_N >> unicode_name) // rbrace).map(_0.apply(unicodedata.lookup)))
-    escaped_metachar = (backslash >> meta_char).map(_0)
+    escaped_metachar = (backslash >> meta_char).iso(_0, lambda x: (x,))
     escaped_0 = S.lex(B.lit("\\0"))
     octal_digit = S.lex(B.range("0", "7"))
     octal_escape = S.alt(
-        (escaped_0 >> octal_digit + octal_digit).map(call(int, _0 + _1, 8).apply(chr)),
-        (backslash >> octal_digit.many(at_least=1)).map(call(int, _0.apply(''.join), 8).apply(chr))
+        (escaped_0 >> octal_digit + octal_digit).iso(call(int, _0 + _1, 8).apply(chr), lambda x: format(ord(x), '03o')),
+        (backslash >> octal_digit.many(at_least=1)).iso(call(int, _0.apply(''.join), 8).apply(chr), lambda x: format(ord(x), 'o'))
     )
     escaped_literal = octal_escape | control_escape | unicode_escape | escaped_metachar
     literal = escaped_literal | literal_char
     class_meta_char = minus | rsquare | backslash
-    escaped_class_meta= (backslash >> class_meta_char).map(_0)
+    escaped_class_meta= (backslash >> class_meta_char).iso(_0, lambda x: (x,))
     class_atom = S.alt(
                         class_literal,
                         shorthand,
@@ -318,10 +318,10 @@ class RE(G):
     irange = S.seq(class_atom.fld('start'), minus, class_atom.fld('end')).to(CharRange)
     class_item = irange | class_atom
     class_class_items = (~(rsquare | minus) + class_item.many()).map(_0.if_then_else(_1 + _0.list, _1))
-    char_class = S.seq(lsquare, (~caret).map(bool).fld('negated'), class_class_items.fld('items'), rsquare).to(CharClassAtom)
+    char_class = S.seq(lsquare, (~caret).bimap(lambda x: Reversible(bool(x), lambda _: x)).fld('negated'), class_class_items.fld('items'), rsquare).to(CharClassAtom)
 
     flag = S.lex(B.oneof("iLmsuaxw"))
-    flag_seq = flag.many().map(tuple)
+    flag_seq = flag.many().iso(tuple, list)
     inline_flags = S.seq(flag_seq.fld('enabled'), (~(minus >> flag_seq)).map(at().if_then_else(_0, None)).fld('disabled')).to(InlineFlags)
     comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
@@ -369,9 +369,9 @@ class RE(G):
 
 
     braced_quantifier = S.alt(
-        S.seq(lbrace, +number, rbrace).map(call(Quantifier, minimum=_0, maximum=_0)),
-        S.seq(lbrace, +number, comma, rbrace).map(call(Quantifier, minimum=_0, maximum=None)),
-        S.seq(lbrace, comma, +number, rbrace).map(call(Quantifier, minimum=0, maximum=_0)),
+        S.seq(lbrace, +number, rbrace).iso(call(Quantifier, minimum=_0, maximum=_0), lambda q: (q.minimum,)),
+        S.seq(lbrace, +number, comma, rbrace).iso(call(Quantifier, minimum=_0, maximum=None), lambda q: (q.minimum,)),
+        S.seq(lbrace, comma, +number, rbrace).iso(call(Quantifier, minimum=0, maximum=_0), lambda q: (q.maximum,)),
         S.seq(lbrace, number.fld('minimum'), comma, number.fld('maximum'), rbrace).to(Quantifier)
     )
 
@@ -385,8 +385,8 @@ class RE(G):
 
 
     backreference = S.alt(
-        (backslash >> number).map(_0),
-        (S.lex(B.lit("\\g<")) >> name // greater).map(_0)
+        (backslash >> number).iso(_0, lambda x: (x,)),
+        (S.lex(B.lit("\\g<")) >> name // greater).iso(_0, lambda x: (x,))
     )
 
     atom = S.alt(        
@@ -405,7 +405,7 @@ class RE(G):
     branch = S.seq((piece.many().fld('pieces'))).to(Branch)
 
     regex = S.seq(branch.sep_by(or_).fld('branches')).to(Regex)
-    regex_full = rule((regex // S.eof()).map(_0), is_root=True)
+    regex_full = rule((regex // S.eof()).iso(_0, lambda x: (x,)), is_root=True)
 
 
 

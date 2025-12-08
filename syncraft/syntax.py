@@ -18,7 +18,7 @@ from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, 
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint
 
-from syncraft.ast import Bimap, Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, Collector, SyncraftError, Seq, Choice, AST
+from syncraft.ast import Reversible, Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, Collector, SyncraftError, Seq, Choice, AST
 
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
@@ -696,7 +696,7 @@ class Syntax(Generic[A, S]):
         return replace(self, spec=self.spec.named(name=name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
 
     ######################################################## value transformation ########################################################
-    def map(self, f: Callable[[Any], B],*, raw:bool = False) -> Syntax[B, S]:
+    def map(self, f: Callable[[Any], B], *, raw:bool = False) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
 
         Args:
@@ -707,7 +707,7 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, raw=raw)) # type: ignore
 
-    def bimap(self, b: Bimap[A, B]) -> Syntax[A, S]:
+    def bimap(self, b: Callable[[Any], Reversible[Any, B]], *, raw: bool = False) -> Syntax[Any, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
 
         Args:
@@ -716,7 +716,11 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding A with transformation b attached.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(b)) 
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(b, raw=raw)) 
+
+    def iso(self, f: Callable[[Any], B], i: Callable[[B], Any], *, raw: bool = False) -> Syntax[Any, S]:
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(f, i, raw=raw))
+
 
     def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
         return self.spec.walk(max_depth=max_depth)
@@ -728,8 +732,6 @@ class Syntax(Generic[A, S]):
     ) -> Graph[SyntaxSpec]:
         return self.spec.graph(max_depth=max_depth)
 
-    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[A, S]:
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(f, i))
 
     def raw_iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.

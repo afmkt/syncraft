@@ -4,7 +4,7 @@ from typing import (
     Type, Generator, Hashable, TYPE_CHECKING, Dict, ClassVar
 )
 from weakref import WeakKeyDictionary
-from syncraft.ast import AST, Nothing, identity
+from syncraft.ast import AST, Nothing, identity, Reversible
 from dataclasses import dataclass, replace, field
 from syncraft.ast import Bimap, ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
@@ -452,7 +452,7 @@ class Algebra(Generic[A, S]):
         alg = replace(self, run_f=map_run) # type: ignore
         return cast(Algebra[B, S], alg)
     
-    def bimap(self, b: Bimap[A, B], raw:bool) -> Algebra[B, S]:
+    def bimap(self, b: Callable[[A], Reversible[A, B]], *, raw:bool) -> Algebra[B, S]:
         def inverse_f(b_data: B) -> A:
             assert self.syntax is not None, "Bimap requires associated Syntax to store inverse mapping"
             inv_f = Algebra.inverse_f.get(self.syntax, identity)
@@ -474,8 +474,8 @@ class Algebra(Generic[A, S]):
         ret: Algebra[B, S] = replace(self, run_f=bimap_run) # type: ignore
         return ret.map_state(lambda s: s.map(inverse_f))
 
-    def iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
-        return self.bimap(Bimap.iso(f, i), raw=False)
+    def iso(self, f: Callable[[A], B], i: Callable[[B], A], *, raw:bool) -> Algebra[B, S]:
+        return self.bimap(Bimap.iso(f, i), raw=raw)
     
     def raw_iso(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
         return self.map(f, raw=True).map_state(lambda s: s.map(i))

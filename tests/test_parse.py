@@ -4,9 +4,6 @@ from syncraft.syntax import Syntax
 import syncraft.generator as gen
 from syncraft.ast import Token
 
-from syncraft.lexer import ExtLexer
-from syncraft.token import Structured
-
 
 literal = Syntax.set(terminal_cls=Token).lit
 
