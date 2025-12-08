@@ -30,7 +30,7 @@ def all_subclasses(cls: Type[Any])->Set[Type[Any]]:
 class TokenSpec(Protocol[T]):
     def tags(self) -> frozenset[Tag]: ...
     def predicate(self) -> Callable[[T], bool]: ...
-    def generator(self) -> Callable[[Any, random.Random], T]: ...
+    def generator(self) -> Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]: ...
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> TokenSpec[T]: ...
 
@@ -91,16 +91,20 @@ class TokenSpecBase(TokenSpec[T]):
 
 @dataclass(frozen=True, slots=True)
 class Structured(TokenSpecBase[T]):
-    constructor: Type[Any]
+
     case_sensitive: bool = field(default=True, metadata={"is_config": True})
     strict: bool = field(default=False, metadata={"is_config": True})
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     def __str__(self) -> str:
-        return f"{self.constructor.__name__}({self.describe()})"
+        return f"{self.describe()}"
     @classmethod
-    def create(cls, *, constructor: Type[Any] = Token, case_sensitive: bool = True, strict: bool = False, **kwargs: Any) -> Structured[T]:
+    def create(cls, 
+               *, 
+               case_sensitive: bool = True, 
+               strict: bool = False, 
+               **kwargs: Any) -> Structured[T]:
         return cls(
-            constructor=constructor,
+
             case_sensitive=case_sensitive,
             strict=strict,
             kwargs=FrozenDict(kwargs)
@@ -118,16 +122,14 @@ class Structured(TokenSpecBase[T]):
         return frozenset()
     
     def describe(self) -> str:
-        c = CallWith(self.constructor, **self.kwargs)
+
         parts = []
-        for k, v in c.kwargs.items():
+        for k, v in self.kwargs.items():
             if isinstance(v, re.Pattern):
                 parts.append(f"{k}=/{v.pattern}/")
             else:
                 parts.append(f"{k}={v}")
-        for x in c.args:
-            if x is not None:
-                parts.append(str(x))
+
         return ", ".join(parts)
 
     def predicate(self) -> Callable[[T], bool]:
@@ -167,9 +169,9 @@ class Structured(TokenSpecBase[T]):
         pred.__name__ = f"P({self.describe()})"
         return pred
 
-    def generator(self) -> Callable[[Any, random.Random], T]:
+    def generator(self) -> Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]:
         config, kwargs, _ = self.normalise_kwargs(dict(self.kwargs))
-        def gen(input: Any, rnd: random.Random) -> T:
+        def gen(input: Any, rnd: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
             data = {}
             for k, v in kwargs.items():
                 if isinstance(v, re.Pattern):
@@ -179,7 +181,7 @@ class Structured(TokenSpecBase[T]):
                         data[k] = v.pattern
                 else:
                     data[k] = v
-            return CallWith(self.constructor, **data)()
+            return ((), data)
         gen.__name__ = f"G({self.describe()})"
         return gen
     

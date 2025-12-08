@@ -41,7 +41,8 @@ TODO
 
 - [ ]  PyDatalog adapter, with example
 
-
+- [ ]  iso only works on terminals and failed on higher level grammar nodes
+       bimap
 
 
 

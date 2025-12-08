@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import overload, Literal, List
+from typing import overload, Literal
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
@@ -10,9 +10,10 @@ from syncraft.algebra import Error
 from syncraft.syntax import Syntax
 from syncraft.fa import Builder
 from syncraft.cache import Cache
+from syncraft.alphabet import Alphabet
 from syncraft.grammar import Grammar as G, lazy, rule, grammar
 from syncraft.mapper import call, _0, _1, const, at
-from functools import partial
+from functools import partial, reduce
 
 try:
     import regex as re
@@ -21,33 +22,17 @@ except ImportError:
 
 
 
-class AnchorKind(Enum):
-    LINE_START = auto()
-    LINE_END = auto()
-    ABSOLUTE_START = auto()
-    ABSOLUTE_END = auto()
-    WORD_BOUNDARY = auto()
-    NOT_WORD_BOUNDARY = auto()
-    @classmethod
-    def from_literal(cls, literal: str) -> AnchorKind:        
-        return {
-            "^": cls.LINE_START,
-            "$": cls.LINE_END,
-            r"\A": cls.ABSOLUTE_START,
-            r"\Z": cls.ABSOLUTE_END,
-            r"\b": cls.WORD_BOUNDARY,
-            r"\B": cls.NOT_WORD_BOUNDARY,
-        }[literal]
-    
 
-
-@dataclass(frozen=True, slots=True)
 class UnsupportedFeature:
-    feature: str
-    message: Optional[str] = None
+    def __init__(self, feature: str, message: Optional[str] = None, *args, **kwargs) -> None:
+        self.feature = feature
+        self.message = message
 
     def __str__(self) -> str:
         return f"Unsupported feature: {self.feature}" + (f" - {self.message}" if self.message else "")
+    
+    def builder(self) -> Builder[str]:
+        raise NotImplementedError(f"Cannot build UnsupportedFeature: {self.feature}")
     
 
 
@@ -73,12 +58,35 @@ class ShorthandKind(Enum):
 class ShorthandAtom:
     kind: ShorthandKind
 
+    def builder(self) -> Builder[str]:
+        if self.kind == ShorthandKind.DIGIT:
+            return Builder.unicode_category(["Nd"])
+        elif self.kind == ShorthandKind.NOT_DIGIT:
+            return Builder.any(Alphabet(str)) - Builder.unicode_category(["Nd"])
+        elif self.kind == ShorthandKind.WORD:
+            return Builder.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]) | Builder.unicode_category(["Nd"]) | Builder.lit("_")
+        elif self.kind == ShorthandKind.NOT_WORD:
+            return Builder.any(Alphabet(str)) - (Builder.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]) | Builder.unicode_category(["Nd"]) | Builder.lit("_"))
+        elif self.kind == ShorthandKind.SPACE:
+            return Builder.unicode_category(["Zs"]) | Builder.oneof("\t\n\r\f\v")
+        elif self.kind == ShorthandKind.NOT_SPACE:
+            return Builder.any(Alphabet(str)) - (Builder.unicode_category(["Zs"]) | Builder.oneof("\t\n\r\f\v"))
+        else:
+            raise ValueError(f"Unknown shorthand kind: {self.kind}")
+
 
 
 @dataclass(frozen=True, slots=True)
 class UnicodeCategoryAtom:
     categories: Tuple[str, ...]
     negated: bool = False   
+    def builder(self) -> Builder[str]:
+        b = Builder.none(Alphabet(str))
+        for category in self.categories:
+            b = b | Builder.unicode_category([category])
+        if self.negated:
+            b = Builder.any(Alphabet(str)) - b
+        return b
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +98,16 @@ class CharRange:
 class CharClassAtom:
     items: Tuple[Union[str, CharRange], ...]
     negated: bool = False
+    def builder(self) -> Builder[str]:
+        b = Builder.none(Alphabet(str))
+        for item in self.items:
+            if isinstance(item, CharRange):
+                b = b | Builder.range(item.start, item.end)
+            else:
+                b = b | Builder.lit(item)
+        if self.negated:
+            b = Builder.any(Alphabet(str)) - b
+        return b
 
 
 
@@ -106,7 +124,6 @@ class GroupKind(Enum):
     CONDITION_ASSERTION = auto()
     CONDITION_GROUP = auto()
     COMMENT= auto()
-    RECURSION= auto()
 
 @dataclass(frozen=True, slots=True)
 class InlineFlags:
@@ -120,31 +137,63 @@ class GroupAtom:
     pattern: Optional[Regex] = None
     name: Optional[str] = None
     inline_flags: Optional[InlineFlags] = None
+    def builder(self) -> Builder[str]:
+        if self.kind in (GroupKind.CAPTURE, GroupKind.NON_CAPTURE):
+            if self.pattern is not None:
+                inner = self.pattern.builder()
+                if self.name is not None:
+                    return inner.tagged(self.name)
+                else:
+                    return inner
+            else:
+                raise NotImplementedError(f"Cannot build GroupAtom of kind: {self.kind}")
+        elif self.kind == GroupKind.COMMENT:
+            return Builder.none(Alphabet(str))
+        else:
+            raise NotImplementedError(f"Cannot build GroupAtom of kind: {self.kind}")
 
-    
+@dataclass(frozen=True, slots=True)
+class LiteralAtom:
+    text: str
+    def builder(self) -> Builder[str]:
+        return Builder.lit(self.text)
 
 
 
+class AnchorKind(Enum):
+    LINE_START = auto()
+    LINE_END = auto()
+    ABSOLUTE_START = auto()
+    ABSOLUTE_END = auto()
+    WORD_BOUNDARY = auto()
+    NOT_WORD_BOUNDARY = auto()
+    @classmethod
+    def from_literal(cls, literal: str) -> AnchorKind:        
+        return {
+            "^": cls.LINE_START,
+            "$": cls.LINE_END,
+            r"\A": cls.ABSOLUTE_START,
+            r"\Z": cls.ABSOLUTE_END,
+            r"\b": cls.WORD_BOUNDARY,
+            r"\B": cls.NOT_WORD_BOUNDARY,
+        }[literal]
+
+@dataclass(frozen=True, slots=True)
+class AnchorAtom:
+    kind: AnchorKind
+    def builder(self) -> Builder[str]:
+        raise NotImplementedError(f"Cannot build AnchorAtom of kind: {self.kind}")
+
+@dataclass(frozen=True, slots=True)
+class DotAtom:
+    def builder(self) -> Builder[str]:
+        return Builder.any(Alphabet(str))
 
 @dataclass(frozen=True, slots=True)
 class Quantifier:
     minimum: int
     maximum: Optional[int]     # None → unbounded
     greedy: bool = True
-
-@dataclass(frozen=True, slots=True)
-class LiteralAtom:
-    text: str
-
-
-@dataclass(frozen=True, slots=True)
-class AnchorAtom:
-    kind: AnchorKind
-
-@dataclass(frozen=True, slots=True)
-class DotAtom:
-    pass
-
 
 @dataclass(frozen=True, slots=True)
 class Piece:
@@ -156,16 +205,30 @@ class Piece:
                 CharClassAtom,
                 GroupAtom]
     quantifier: Optional[Quantifier] = None
+    def builder(self) -> Builder[str]:
+        b = self.atom.builder()
+        if self.quantifier is not None:
+            q = self.quantifier
+            b = b.many(at_least=q.minimum, at_most=q.maximum).with_non_greedy(not q.greedy)        
+        return b
 
 
 @dataclass(frozen=True, slots=True)
 class Branch:
     pieces: Tuple[Piece, ...]
+    def builder(self) -> Builder[str]:
+        ret = [p.builder() for p in self.pieces]
+        return reduce(lambda a, b: a + b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
+    
 
 
 @dataclass(frozen=True, slots=True)
 class Regex:
     branches: Tuple[Branch, ...]
+    def builder(self) -> Builder[str]:
+        ret = [b.builder() for b in self.branches]
+        return reduce(lambda a, b: a | b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
+
 
 B = Builder[str]
 S = Syntax.set(builtin=True)
@@ -302,7 +365,7 @@ class RE(G):
                 ).named("group_alternatives").update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
 
 
-    anchor = S.alt(caret, dollar, boundary_escape).map(AnchorKind.from_literal).to(AnchorAtom)
+    anchor = S.alt(caret, dollar, boundary_escape).to(partial(UnsupportedFeature, feature="group existence test"))
 
 
     braced_quantifier = S.alt(

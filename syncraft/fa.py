@@ -1229,9 +1229,37 @@ class Builder(Generic[C]):
             non_greedy=non_greedy,
         )
 
+    @classmethod
+    def any(cls, 
+            alphabet: AlphabetProtocol[C],
+            *,
+            tag: Optional[Tag] = None,
+            skip: bool = False, 
+            priority: int = 0,
+            non_greedy: bool = False,
+            action: Optional[ModeAction] = None,
+            ) -> Builder[C]:
+        return cls(kind=_NodeKind.RANGE, 
+                   intervals=alphabet.symbols, 
+                   tag=tag, 
+                   action=action, 
+                   skip=skip, 
+                   priority=priority, 
+                   non_greedy=non_greedy)
 
-
-
+    @classmethod
+    def none(cls, 
+             alphabet: AlphabetProtocol[C],
+             *,
+             tag: Optional[Tag] = None,
+             skip: bool = False, 
+             priority: int = 0,
+             non_greedy: bool = False,
+             action: Optional[ModeAction] = None,
+             ) -> Builder[C]:
+        any = cls.any(alphabet, tag=tag, skip=skip, priority=priority, non_greedy=non_greedy, action=action)
+        return -any
+    
     @classmethod
     def unicode_category(cls, 
                          cats: List[str], 

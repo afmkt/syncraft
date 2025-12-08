@@ -114,7 +114,7 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def tags(self) -> frozenset[str|Enum|None]: ...
 
-    def gen(self, tag: Tag | None, rng: random.Random) -> Any: ...
+    def gen(self, tag: Tag | None, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]: ...
 
     def candidate(self) -> LexerError | LexerResult[C]: ...
     
@@ -353,7 +353,7 @@ class Lexer(LexerBase[C]):
         lexer.push_mode(default_mode)
         return lexer
 
-    def gen(self, tag: Tag | None, rng: random.Random) -> Any:
+    def gen(self, tag: Tag | None, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
         ret = self.current_mode.rdfa.gen(tag, rng)
         act = self.actions.get(tag)
         if act is not None:
@@ -364,7 +364,7 @@ class Lexer(LexerBase[C]):
                     self.pop_mode(mode_name)
                 case _:
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
-        return ret
+        return ((), {'text': ret, 'token_type': tag})
 
     def varify(self, tag: frozenset[Tag | None], value: Any) -> bool:
         if isinstance(value, Token):
@@ -466,7 +466,7 @@ class Lexer(LexerBase[C]):
 @dataclass(frozen=True, slots=True)
 class ExtRule(Generic[T]):
     predicate: Callable[[T], bool]
-    generator: Callable[[Any, random.Random], T]
+    generator: Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]
 
 @dataclass(slots=True)
 class ExtLexer(LexerBase[T]):
@@ -479,7 +479,7 @@ class ExtLexer(LexerBase[T]):
         return frozenset(self.rules.keys())
 
     @classmethod
-    def create(cls, tkspec: TokenSpec[T]) -> Optional["ExtLexer[T]"]:
+    def create(cls, tkspec: TokenSpec[T]) -> Optional[ExtLexer[T]]:
         if isinstance(tkspec, TokenSpec):
             ret = cls()
             for t in tkspec.tags():
@@ -521,7 +521,7 @@ class ExtLexer(LexerBase[T]):
                     return True
         return False
 
-    def gen(self, tag: Tag | None, rng: random.Random) -> Any:
+    def gen(self, tag: Tag | None, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
         rule = self.rules.get(tag)
         if rule is None or rule.generator is None:
             raise SyncraftError(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from syncraft.regex import (
-    parse_regex, parse, RE,
+    parse_regex, parse, RE, UnsupportedFeature,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
@@ -85,7 +85,8 @@ def test_anchors():
 
     for pattern, expected_kind in test_cases:
         result = parse_regex(RE.anchor, pattern)
-        assert result.kind == expected_kind
+        assert isinstance(result, UnsupportedFeature)
+        
 
 
 def test_shorthands():
@@ -551,10 +552,10 @@ def test_regex_complex_regex():
     assert len(b.pieces) == 11
 
     # Check anchors
-    assert isinstance(b.pieces[0].atom, AnchorAtom)
-    assert b.pieces[0].atom.kind == AnchorKind.LINE_START
-    assert isinstance(b.pieces[-1].atom, AnchorAtom)
-    assert b.pieces[-1].atom.kind == AnchorKind.LINE_END
+    assert isinstance(b.pieces[0].atom, UnsupportedFeature)
+    # assert b.pieces[0].atom.kind == AnchorKind.LINE_START
+    assert isinstance(b.pieces[-1].atom, UnsupportedFeature)
+    # assert b.pieces[-1].atom.kind == AnchorKind.LINE_END
 
 
 def test_regex_unicode_category_escape():

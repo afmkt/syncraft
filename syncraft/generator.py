@@ -496,9 +496,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
             if input.pruned:
                 tag = input.rng("lex_tag").choice(tuple(ntags))
                 input = input.fork(tag=tag)
-                generated = lexer.gen(tag, input.rng())
-                generated = terminal_cls(text=generated, token_type=tag, custom_mapping=None)
-
+                args, kwargs = lexer.gen(tag, input.rng())
+                generated = terminal_cls(*args, **kwargs)
                 return Right.new((cast(ParseResult[T], generated), input))
             else:
                 current = input.ast
@@ -511,6 +510,9 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             )
                         )
                 parsed_value = cast(ParseResult[T], current)
+                if isinstance(parsed_value, AST):
+                    parsed_value = replace(parsed_value, custom_mapping=None) # type: ignore
+                
                 return Right.new((parsed_value, input))
 
         return cls(lex_run) 

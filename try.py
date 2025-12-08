@@ -13,56 +13,6 @@ from rich import print
 import timeit
 # from syncraft.regex2 import verify
 
-def x():
-    size = 1000
-    intdict = {k: str(k) for k in range(size)}
-    tupledict= {(k, k): str(k) for k in range(size)}
-
-    t1 = timeit.timeit(lambda: all([i in intdict for i in range(size)]), number=10000)
-    t2 = timeit.timeit(lambda: all([(i, i) in tupledict for i in range(size)]), number=10000)
-
-    print("int key", t1)
-    print('tuple key', t2)
-    print('int / tuple', float(t1) / t2)
-    
-def y():
-    class A:
-        def __init__(self):
-            self.id = 1
-
-    class B:
-        def __init__(self):
-            self.id = 2
-
-    a = A()
-    b = B()
-
-
-    t1 = timeit.timeit(lambda: isinstance(a, A) and isinstance(b, B) and (isinstance(a, B) or isinstance(b, A)), number=1000000)
-    t2 = timeit.timeit(lambda: a.id==1 and b.id == 2 and (a.id == 2 or b.id == 1), number=1000000)
-    print("isinstance", t1)
-    print("id check", t2)
-    print("id check / isinstance", float(t2) / t1)
-
-
-def z():
-    callable_dict = {}
-    tuple_key_dict = {}
-    callables = []
-    tuples = []
-    for i in range(1000):
-        callables.append((lambda x: x + i, i))
-        tuples.append((i, i))
-        callable_dict[callables[-1]] = 'hello'
-        tuple_key_dict[tuples[-1]] = 'hello'
-
-    t1 = timeit.timeit(lambda: [callable_dict[tmp] for tmp in callables], number=100000)
-    t2 = timeit.timeit(lambda: [tuple_key_dict[tmp] for tmp in tuples], number=100000)
-    print("callable key", t1)
-    print("tuple key", t2)
-    print("tuple / callable", float(t2) / t1)
-        
-
 
 
 def benchmark_fair():
@@ -120,60 +70,32 @@ def benchmark_fair():
 
 
 
+def test_many_or()->None:
+    import syncraft.generator as gen
+    from syncraft.syntax import Syntax
+    from syncraft.parser import parse_word
+    from syncraft.ast import Token
+    literal = Syntax.set(terminal_cls=lambda *args, **kwargs: Token(*args, **{**kwargs, 'custom_mapping': None})).lit
+    IF = literal("if")
+    THEN = literal("then")
+    END = literal("end")
+    syntax = (IF.many() + THEN.many()).many() // END
+    sql = "if if then end"
+    
+    ast, bound = parse_word(syntax, sql, cache=None)
+    generated, bound = gen.generate_with(syntax, ast)
+    print(ast)
+    print(generated)
+    
+    assert ast == generated, "Parsed and generated results do not match."
 
-
-def test_groups_flags_with_disable():
-    """Test parsing of flag groups with disabled flags."""
-    # result = parse_regex(group, "(?im-s)")
-    tmp = parse("(?im-s)", raw=False)
-    assert isinstance(tmp, Regex)
-    result = tmp.branches[0].pieces[0].atom
-
-    assert isinstance(result, GroupAtom)
-    assert result.kind == GroupKind.FLAGS
-    assert result.inline_flags
-    assert result.inline_flags.enabled == ("i", "m")
-    assert result.inline_flags.disabled == ("s",)
-    assert result.pattern is None
-
-
-
-def test_groups_flags_only():
-    """Test parsing of flag-only groups."""
-    # result = parse_regex(group, "(?i)")
-    tmp = parse("(?i)", raw=False)
-    assert isinstance(tmp, Regex)
-    result = tmp.branches[0].pieces[0].atom
-
-    assert isinstance(result, GroupAtom)
-    assert result.kind == GroupKind.FLAGS
-    print(result)
-    assert result.inline_flags
-    assert result.inline_flags.enabled == ("i",)
-    assert result.inline_flags.disabled is None
-    assert result.pattern is None
-
-
-
+    x, f = generated.bimap
+    u, v = gen.generate_with(syntax, f(x))
+    assert u == ast
 
 
 if __name__ == "__main__":
-    test_groups_flags_only()
-    # test_noncap()
-    # test_named()
-    # test_neg_lookahead()
-    # test_all()
-    # x()
-    # y()
-    # z()
-    # r = benchmark_fair()
-    # for line in r:
-    #     print(line)
-    # test()
-    # test1_simple_then()
-    # main()
-
-    # test_graph()
+    test_many_or()
     
 
     

@@ -8,11 +8,12 @@ from syncraft.syntax import Syntax
 from syncraft.cache import Cache
 
 
+S = Syntax.set(terminal_cls=lambda *args, **kwargs: Token(*args, **{**kwargs, "custom_mapping": None}))
 
-literal = Syntax.lit
+literal = S.lit
 
 def from_string(string: str) -> Token:
-    return Token(text=string)
+    return Token(text=string, custom_mapping=None)
 
 def test1_simple_then() -> None:
     A, B, C = literal("a"), literal("b"), literal("c")
