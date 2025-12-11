@@ -10,10 +10,10 @@ from syncraft.ast import Bimap, ThenKind, Lazy, Then, OrElse, Many, OrElseKind, 
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
-from syncraft.utils import callable_str, is_orelse, is_lazy
+from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER
 
 if TYPE_CHECKING:
-    from syncraft.syntax import Syntax, SyntaxSpec, Graph
+    from syncraft.syntax import Syntax, SyntaxSpec
 
 
 S = TypeVar('S', bound=Bindable)    
@@ -62,31 +62,11 @@ class Error:
         object.__setattr__(obj, 'depth', depth)
         return obj
 
-    @staticmethod
-    def get_syntax(f: Any) -> Syntax | None:
-        if isinstance(f, Algebra):  # for Algebra subclasses
-            return f.syntax
-        elif hasattr(f, 'syntax'):     # for Algebra.run_f, set by Algebra._flag
-            return getattr(f, 'syntax')
-        elif hasattr(f, 'spec') and hasattr(f, 'alg_f') and f.__class__.__name__ == 'Syntax':  # Duck typing for Syntax
-            return f
-        return None
-
-    @property
-    def syntax(self) -> Syntax | None:
-        h = Error.get_syntax(self.this) 
-        return h
     
-    @property
-    def graph(self) -> None | Graph[SyntaxSpec]:
-        h = Error.get_syntax(self.this) 
-        if h:
-            return h.graph()
-        return None
 
     @property
     def spec(self) -> None | SyntaxSpec:
-        h = Error.get_syntax(self.this) 
+        h = syntax_of(self.this) 
         if h:
             return h.spec
         return None
@@ -141,19 +121,19 @@ class Error:
 
     @staticmethod
     def fmt_stack(stack: List[Tuple[Any, int]], indent: str="") -> List[str]:
+        
         def str_rule(rule: Callable[..., Any]) -> str:
-            syn = Error.get_syntax(rule)
+            syn = syntax_of(rule)
             orelse = syn.is_orelse if syn else is_orelse(rule)
             lazy = syn.is_lazy if syn else is_lazy(rule)
             spec = syn.spec if syn else None
-            orelse_mark = "\u220B " if orelse else ""
-            lazy_mark = ("\u29D6 " if lazy else "")
-
+            orelse_mark = f"{ORELSE_MARKER} " if orelse else ""
+            lazy_mark = (f"{LAZY_MARKER} " if lazy else "")
             if spec and hasattr(spec, 'location'):
                 if spec.location is not None:
                     return f"{lazy_mark}{orelse_mark}{str(spec)} ({spec.location})"
             if spec is None:
-                return f"{lazy_mark}{orelse_mark}{callable_str(rule)}"
+                return f"{callable_str(rule)}"
             return f"{lazy_mark}{orelse_mark}{str(spec)}"
 
         lines = []
@@ -374,7 +354,7 @@ class Algebra(Generic[A, S]):
             assert syn is syn1, f"{syn} != {syn1}"
             stack = []
             for rule, pos in cache.stack:
-                s = Error.get_syntax(rule)
+                s = syntax_of(rule)
                 if s is not None:
                     stack.append((s, pos))
             result = yield from self.run(input, cache)

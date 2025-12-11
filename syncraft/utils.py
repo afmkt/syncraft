@@ -13,6 +13,9 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 
 MISSING: Any = object()
 
+LAZY_MARKER = '\u29D6'
+ORELSE_MARKER = '\u220B'
+
 def callable_str(obj:Any, with_id: bool=False)->str:
     if not callable(obj):
         return repr(obj)
@@ -21,13 +24,19 @@ def callable_str(obj:Any, with_id: bool=False)->str:
         obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
     prefix = '' if not with_id else f"{idstr} @ "
     if hasattr(obj, 'is_lazy') and obj.is_lazy:
-        return f"{prefix}\u25CA {name}"
+        return f"{prefix}{LAZY_MARKER} {name}"
     elif hasattr(obj, 'is_orelse') and obj.is_orelse:
-        return f"{prefix}\u2a01 {name}"
+        return f"{prefix}{ORELSE_MARKER} {name}"
     else:
         return f"{prefix}{name}"
 
 
+def syntax_of(f: Any):
+    if hasattr(f, 'syntax'):     # Algebra object or Algebra.run_f, set by Algebra.flag
+        return getattr(f, 'syntax')
+    elif hasattr(f, 'spec') and hasattr(f, 'alg_f') and f.__class__.__name__ == 'Syntax':  # Duck typing for Syntax
+        return f
+    return None
     
 
 

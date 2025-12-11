@@ -449,11 +449,11 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
     err = None
     cache: Cache[Any] = Cache()
     if profile:
-        cache = cache.with_profiler()
+        cache = cache.trace()
     
     parsed = parse(pattern, raw=False, cache=cache)
-    if cache.profiler is not None:
-        cache.profiler.report()
+    if cache.tracer is not None:
+        cache.tracer
         
     if not isinstance(parsed, Regex):
         myerr = parsed

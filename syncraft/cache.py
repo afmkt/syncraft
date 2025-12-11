@@ -6,12 +6,12 @@ from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optio
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from rich import print
-from syncraft.utils import callable_str, is_lazy, is_orelse
-from syncraft.profile import Profile
+from syncraft.utils import callable_str, is_lazy, is_orelse, syntax_of
+from syncraft.tracer import Tracer
 from collections import defaultdict
 import copy
 import random
-
+import time
 
 def randomized(collection, enable_randomization=True):
     """Helper function to randomize iteration order of sets and other collections."""
@@ -41,6 +41,7 @@ Rule = Callable[[S, "Cache[S]"], Generator[Any, Any, Ret]]
 @dataclass(frozen=True, slots=True)
 class Left(Either[L, Any]):
     value: Optional[L] = None
+
     @classmethod
     def new(cls, value: Optional[L] = None) -> Left[L]:
         obj = cls.__new__(cls)
@@ -124,7 +125,7 @@ class InProgress(Generic[S]):
         object.__setattr__(obj, 'result', result)
         return obj
 
-    def grow(self, rule: Rule, cache_key: int, new_result: Ret) -> InProgress[S]:
+    def grow(self, rule: Rule, new_result: Ret) -> InProgress[S]:
         assert rule is self.rule, f"Rule mismatch during grow: {rule} != {self.rule}"
 
         if isinstance(new_result, Right):
@@ -219,13 +220,13 @@ class Cache(Generic[S]):
     max_revision: int = 512  # Protection against runaway single-head growth
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
-    profiler: Optional[Profile] = None
+    tracer: Optional[Tracer] = None
     
 
 
-    def with_profiler(self, sample_interval: int = 1) -> Cache[S]:
-        if self.profiler is None:
-            self.profiler = Profile(sample_interval=sample_interval)
+    def trace(self, tracer: Tracer | None = None) -> Cache[S]:
+        if self.tracer is None:
+            self.tracer = tracer or Tracer()
         return self
 
     def clone(self) -> Cache[S]:
@@ -279,30 +280,31 @@ class Cache(Generic[S]):
             print("[Cache]    ", *args, **kwargs)
     
     def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
-        if self.profiler is not None:
-            record = self.profiler.should_log(rule)
-            if record is not None:
-                import time
-                start_time = time.perf_counter()
-                result = yield from rule(key, self)
-                end_time = time.perf_counter()
-                duration = end_time - start_time
-                pos = key.cache_key
-                if isinstance(result, Right):
-                    success = True
-                    consumed = result.value[1].cache_key - pos
-                else:
-                    success = False
-                    consumed = 0
-                parent = self.stack[-2][0] if len(self.stack) > 1 else None
-                self.profiler.log(record=record,
-                                  rule=rule, 
-                                  parent=parent, 
-                                  pos=pos, 
-                                  duration=duration, 
-                                  success=success,
-                                  consumed=consumed)
-                return result
+        if self.tracer is not None:
+            start_time = time.perf_counter_ns()
+            result = yield from rule(key, self) 
+            end_time = time.perf_counter_ns()
+
+            if isinstance(result, Right):
+                consumed = result.value[1].cache_key - key.cache_key
+                end = result.value[1]
+                value = result.value[0]
+            elif isinstance(result, Left):
+                consumed = 0
+                end = None
+                value = result.value
+            else:
+                raise SyncraftError("Unexpected result type in profiler", result)
+            parent = self.stack[-2][0] if len(self.stack) > 1 else None
+            self.tracer.trace(rule=syntax_of(rule), 
+                              parent=syntax_of(parent), 
+                              start_time=start_time,
+                              end_time=end_time, 
+                              start=key, 
+                              end=end,
+                              result=value,
+                              consumed=consumed)
+            return result
         result = yield from rule(key, self)
         return result
     
@@ -364,7 +366,7 @@ class Cache(Generic[S]):
             assert state is not None, "State is None when installing seed"
             end_key = state.cache_key
             self.end2rules[end_key].add(entry.payload.rule)
-            new_payload = entry.payload.grow(entry.payload.rule, entry.start_key, seed)
+            new_payload = entry.payload.grow(entry.payload.rule, seed)
             if new_payload.growing:
                 entry.payload = new_payload
 
@@ -399,7 +401,7 @@ class Cache(Generic[S]):
                     assert isinstance(payload, InProgress), f"Cache entry payload is not InProgress for {callable_str(f)} at {pos} during group resolution"
                     assert payload.rule is f, f"Cache entry rule is not {callable_str(f)} for {callable_str(f)} at {pos} during group resolution"
                     new_result = yield from self.run_rule(f, entry.state)  # Use f, not rule
-                    new_payload = payload.grow(f, pos, new_result)  # Use f, not rule
+                    new_payload = payload.grow(f, new_result)  # Use f, not rule
                     if new_payload.growing:
                         entry.payload = new_payload
                         changed = True
@@ -518,7 +520,7 @@ class Cache(Generic[S]):
                 
                 if old_end is None or new_end > old_end:
                     # Update the InProgress entry with the improved result
-                    new_payload = entry.payload.grow(rule, pos, new_result)
+                    new_payload = entry.payload.grow(rule, new_result)
                     entry.payload = new_payload
                     
                     # Update end2rules mapping if needed
