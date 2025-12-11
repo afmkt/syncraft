@@ -859,17 +859,14 @@ class Syntax(Generic[A, S]):
     def debug(self, 
               dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = None,
               *,
-              disable: bool = False,
               show_stack: bool = True,
               only_fail: bool = False,
               only_success: bool = False,
-              misc: Callable[..., Any] | None = None,
+              papuse: bool = False,
               level:int = 0) -> Syntax[A, S]:
-        if disable:
-            return self
         file=get_file(level+1)
         line=get_line(level+1)
-        def default_dbg(syn: Syntax[A, S], input: S, new_state: Optional[S], value: A | Any, stack: List[Tuple[Syntax[Any, S], int]])->None:
+        def default_dbg(syn: Syntax[A, S], state: S, new_state: Optional[S], value: A | Any, stack: List[Tuple[Syntax[Any, S], int]])->None:
             if new_state is not None and only_fail:
                 return
             if new_state is None and only_success:
@@ -880,7 +877,7 @@ class Syntax(Generic[A, S]):
                     return f(False)
                 else:
                     return str(ipt)
-            null = new_state is not None and new_state.cache_key == input.cache_key
+            null = new_state is not None and new_state.cache_key == state.cache_key
             GREEN = "\033[92m"
             RESET = "\033[0m"
             RED = "\033[91m"
@@ -888,14 +885,14 @@ class Syntax(Generic[A, S]):
             sign = f"{RED}\u2718{RESET}" if new_state is None else f"{GREEN}\u2714{RESET}"
             print('=' * 20, "DEBUG", sign, dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
             print(f"       Syntax: {syn.spec}")
-            print(f"  Input State: {fmt_input(input)}")
+            print(f"  Input State: {fmt_input(state)}")
             if new_state is not None:
                 print(f"    New State: {fmt_input(new_state) if not null else '< NO CHANGE >'}")
             indent = " " * 15
             if isinstance(value, Error):
                 depth: int | None = None
                 if value.state:
-                    depth = value.state.cache_key - input.cache_key
+                    depth = value.state.cache_key - state.cache_key
                 depth_str=f"{depth}" if depth is not None else ""
                 lns = [f"{indent if i>0 else ''}{s}" for i, s in enumerate(value.compact)]
                 s = '\n'.join(lns)
@@ -910,11 +907,8 @@ class Syntax(Generic[A, S]):
                 print( "   Call Stack:")
                 lns = Error.fmt_stack(stack, indent=" " * 13)
                 print('\n'.join(lns))
-            if callable(misc):
-                print("-" * 50, "Misc", "-" * 50)
-                print()
-                misc(list(s for s, _ in stack))
-                print()
+            if papuse:
+                input("Press Enter to continue...")
 
 
         xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = dbg if callable(dbg) else default_dbg
