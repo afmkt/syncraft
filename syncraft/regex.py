@@ -12,7 +12,7 @@ from syncraft.fa import Builder
 from syncraft.cache import Cache
 from syncraft.alphabet import Alphabet
 from syncraft.grammar import Grammar as G, lazy, rule, grammar
-from syncraft.mapper import call, _0, _1, const, at
+from syncraft.mapper import call, _0, _1, at
 from functools import partial, reduce
 
 try:

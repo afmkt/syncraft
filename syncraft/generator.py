@@ -46,6 +46,16 @@ class GenState(Bindable, Generic[T]):
     restore_pruned: bool = False
     seed: int = 0
 
+    def str_input(self, ul: bool) -> str:
+        if not self.ast:
+            return "<PRUNED>"
+        s = str(self.ast)
+        if len(s) > 20:
+            return f"{self.ast.__class__.__name__}(...)"
+        else:
+            return s
+
+
     @property
     def ended(self) -> bool:
         return False

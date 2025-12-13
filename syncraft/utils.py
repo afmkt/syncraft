@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Callable, Generator,Generic, TypeVar, cast, Dict, Hashable, Optional, MutableMapping, Type, Tuple
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, field
 import inspect
 import functools
 import types
@@ -37,17 +37,6 @@ def syntax_of(f: Any):
     elif hasattr(f, 'spec') and hasattr(f, 'alg_f') and f.__class__.__name__ == 'Syntax':  # Duck typing for Syntax
         return f
     return None
-    
-
-
-def is_grammar(f: Callable[..., Any], name: str) -> bool:
-    if hasattr(f, 'syntax'):
-        syn = f.syntax
-        spec = syn.spec
-        if spec.name == f'"{name}"':
-            print("name MATCH", spec.name, f'"{name}"')
-            return True
-    return False
     
 
 

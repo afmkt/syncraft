@@ -49,6 +49,9 @@ class Bindable(Protocol):
     
     @property
     def ended(self) -> bool: ...
+
+    def str_input(self, ul: bool) -> str: ...
+
         
 
 class Quantifier(Enum):

@@ -108,6 +108,7 @@ class SyntaxSpec:
     line: Optional[int] = field(compare=False, hash=False)
     func: Optional[str] = field(compare=False, hash=False)
 
+
     @property
     def location(self) -> Optional[str]:
         if self.file:
@@ -192,6 +193,7 @@ class SyntaxSpec:
 class LazySpec(SyntaxSpec):
     lazy_state: LazyState
     creation_site: str = field(compare=False, hash=False, init=False)
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
     def __post_init__(self):
         level = 5
@@ -208,8 +210,13 @@ class LazySpec(SyntaxSpec):
 
     def __str__(self) -> str:
         try:
-            name = self.name or f"lazy({self.inner_spec})"
-            return self.format("{0}", name)
+            if self.str_cache is None:
+                name = self.name or f"lazy({self.inner_spec})"
+                ret = self.format("{0}", name)
+                object.__setattr__(self, 'str_cache', ret)
+                return ret
+            else:
+                return self.str_cache
         except RecursionError:
             name = self.name or "lazy(UNSOLVED)"
             return self.format("{0}", name)
@@ -237,6 +244,8 @@ class LazySpec(SyntaxSpec):
 class MarkedSpec(SyntaxSpec):
     mname: str
     spec: SyntaxSpec
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
@@ -247,11 +256,16 @@ class MarkedSpec(SyntaxSpec):
         return ret
 
     def __str__(self) -> str:
-        if self.name:
-            return self.format("{0}", self.name)
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
+            else:
+                ret = self.format("{spec}.mark({mname})", spec=str(self.spec), mname=self.mname)
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
         else:
-            return self.format("{spec}.mark({mname})", spec=str(self.spec), mname=self.mname)
-        
+            return self.str_cache
+
     @property
     def complexity(self) -> float:
         return self.spec.complexity
@@ -265,7 +279,8 @@ class CollectSpec(SyntaxSpec):
     collector: Collector = field(compare=False, hash=False)
     id: Hashable
     spec: SyntaxSpec 
-    # kwargs: FrozenDict[str, Any] = field(compare=False, hash=False)
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+    
 
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -277,10 +292,15 @@ class CollectSpec(SyntaxSpec):
         return ret
 
     def __str__(self) -> str:
-        if self.name:
-            return self.format("{0}", self.name)
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
+            else:
+                ret = self.format("{spec}.to({collector})", spec=str(self.spec), collector=str(self.collector))
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
         else:
-            return self.format("{spec}.to({collector})", spec=str(self.spec), collector=str(self.collector))
+            return self.str_cache
         
     @property
     def complexity(self) -> float:
@@ -292,6 +312,8 @@ class CollectSpec(SyntaxSpec):
 @dataclass(frozen=True, slots=True)
 class SeqSpec(SyntaxSpec):
     steps: Tuple[Tuple[SyntaxSpec, bool], ...]
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
@@ -302,11 +324,16 @@ class SeqSpec(SyntaxSpec):
         return ret
 
     def __str__(self) -> str:
-        if self.name:
-            return self.format("{0}", self.name)
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
+            else:
+                inner = " ".join(str(s[0]) for s in self.steps)
+                ret = self.format("({steps})", steps=inner)
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
         else:
-            inner = " ".join(str(s[0]) for s in self.steps)
-            return self.format("({steps})", steps=inner)
+            return self.str_cache
         
     @property
     def complexity(self) -> float:
@@ -320,6 +347,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
     kind: ThenKind
     left: SyntaxSpec
     right: SyntaxSpec
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -351,11 +379,16 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
         return parts
 
     def __str__(self) -> str:
-        if self.name:
-            return self.format("{0}", self.name)
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
+            else:
+                parts = ThenSpec.flatten(self)
+                ret =  f"({' '.join(str(n) for n in parts)})"
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
         else:
-            parts = ThenSpec.flatten(self)
-            return  f"({' '.join(str(n) for n in parts)})"
+            return self.str_cache
         
 
     @property
@@ -369,6 +402,8 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
 class ParallelSpec(SyntaxSpec):
     options: Tuple[SyntaxSpec, ...]
     reducer: Callable[[Any, List[Tuple]], Either[Any, Tuple]]
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax:
         if self in cache:
             return cache[self]
@@ -379,12 +414,17 @@ class ParallelSpec(SyntaxSpec):
         return ret
     
     def __str__(self) -> str:
-        if self.name:
-            return self.name
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
+            else:
+                choices = [str(opt) for opt in self.options]
+                inner = " || ".join(str(c) for c in choices)
+                ret = self.format("({choices})", choices=inner)
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
         else:
-            choices = [str(opt) for opt in self.options]
-            inner = " || ".join(str(c) for c in choices)
-            return self.format("({choices})", choices=inner)
+            return self.str_cache
 
     @property
     def complexity(self) -> float:
@@ -397,6 +437,8 @@ class ParallelSpec(SyntaxSpec):
 @dataclass(frozen=True, slots=True)
 class ChoiceSpec(SyntaxSpec):
     options: Tuple[SyntaxSpec, ...]
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax]) -> Syntax:
         if self in cache:
             return cache[self]
@@ -407,12 +449,17 @@ class ChoiceSpec(SyntaxSpec):
         return ret
 
     def __str__(self) -> str:
-        if self.name:
-            return self.name
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
+            else:
+                choices = [str(opt) for opt in self.options]
+                inner = " | ".join(str(c) for c in choices)
+                ret = self.format("({choices})", choices=inner)
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
         else:
-            choices = [str(opt) for opt in self.options]
-            inner = " | ".join(str(c) for c in choices)
-            return self.format("({choices})", choices=inner)
+            return self.str_cache
 
     @property
     def complexity(self) -> float:
@@ -425,6 +472,8 @@ class ChoiceSpec(SyntaxSpec):
 class OrElseSpec(SyntaxSpec, Generic[A, B]):
     left: SyntaxSpec
     right: SyntaxSpec
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+
 
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -448,15 +497,20 @@ class OrElseSpec(SyntaxSpec, Generic[A, B]):
 
 
     def __str__(self) -> str:
-        if self.name:
-            return self.name
-        else:
-            choices = OrElseSpec.flatten(self)
-            if len(choices) == 2:
-                return self.format("({left} | {right})", left=str(choices[0]), right=str(choices[1]))
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
             else:
-                inner = " | ".join(str(c) for c in choices)
-                return self.format("({choices})", choices=inner)
+                choices = OrElseSpec.flatten(self)
+                if len(choices) == 2:
+                    ret = self.format("({left} | {right})", left=str(choices[0]), right=str(choices[1]))
+                else:
+                    inner = " | ".join(str(c) for c in choices)
+                    ret = self.format("({choices})", choices=inner)
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
+        else:
+            return self.str_cache
             
     @property
     def complexity(self) -> float:
@@ -470,6 +524,8 @@ class ManySpec(SyntaxSpec, Generic[A]):
     spec: SyntaxSpec
     at_least: int
     at_most: Optional[int]
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+
 
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -481,10 +537,15 @@ class ManySpec(SyntaxSpec, Generic[A]):
         return ret
 
     def __str__(self) -> str:
-        if self.name:
-            return self.name
+        if self.str_cache is None:
+            if self.name:
+                ret = self.name
+            else:
+                ret = self.format("*({spec})", spec=str(self.spec))
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
         else:
-            return self.format("*({spec})", spec=str(self.spec))
+            return self.str_cache
         
     @property
     def complexity(self) -> float:
@@ -504,6 +565,8 @@ class LexSpec(SyntaxSpec):
     MAX_NAME_LENGTH: Optional[int] = field(compare=False, hash=False, repr=False)
     args: Tuple[Any, ...] = field(default_factory=tuple)
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
+    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
+
     
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -514,32 +577,37 @@ class LexSpec(SyntaxSpec):
         return ret
     
     def __str__(self) -> str:
-        if self.name or not (self.kwargs or self.args):
-            return self.name or self.fname
-        else:
-            parts = []
-            for a in self.args:
-                s = str(a)
-                if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
-                    s = s[:self.MAX_NAME_LENGTH-3] + "..."
-                parts.append(s)
-            args = ','.join(parts)
-            kwparts = []
-            for k, v in self.kwargs.items():
-                if v is not None:
-                    s = str(v)
+        if self.str_cache is None:
+            if self.name or not (self.kwargs or self.args):
+                ret = self.name or self.fname
+            else:
+                parts = []
+                for a in self.args:
+                    s = str(a)
                     if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
                         s = s[:self.MAX_NAME_LENGTH-3] + "..."
-                    kwparts.append(f"{k}={s}")
-            kwargs = ', '.join(kwparts)
-            if args and kwargs:
-                return self.format("{fname}({args}, {kwargs})", fname=self.fname, args=args, kwargs=kwargs)
-            elif args:
-                return self.format("{args}", args=args)
-            elif kwargs:
-                return self.format("{kwargs}", kwargs=kwargs)
-            else:
-                return self.fname
+                    parts.append(s)
+                args = ','.join(parts)
+                kwparts = []
+                for k, v in self.kwargs.items():
+                    if v is not None:
+                        s = str(v)
+                        if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
+                            s = s[:self.MAX_NAME_LENGTH-3] + "..."
+                        kwparts.append(f"{k}={s}")
+                kwargs = ', '.join(kwparts)
+                if args and kwargs:
+                    ret = self.format("{fname}({args}, {kwargs})", fname=self.fname, args=args, kwargs=kwargs)
+                elif args:
+                    ret = self.format("{args}", args=args)
+                elif kwargs:
+                    ret = self.format("{kwargs}", kwargs=kwargs)
+                else:
+                    ret = self.fname
+            object.__setattr__(self, 'str_cache', ret)
+            return ret
+        else:
+            return self.str_cache
 
     @property
     def complexity(self) -> float:
@@ -871,12 +939,6 @@ class Syntax(Generic[A, S]):
                 return
             if new_state is None and only_success:
                 return
-            def fmt_input(ipt)->str:
-                if hasattr(ipt, 'str_input'):
-                    f = getattr(ipt, 'str_input')
-                    return f(False)
-                else:
-                    return str(ipt)
             null = new_state is not None and new_state.cache_key == state.cache_key
             GREEN = "\033[92m"
             RESET = "\033[0m"
@@ -885,9 +947,9 @@ class Syntax(Generic[A, S]):
             sign = f"{RED}\u2718{RESET}" if new_state is None else f"{GREEN}\u2714{RESET}"
             print('=' * 20, "DEBUG", sign, dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
             print(f"       Syntax: {syn.spec}")
-            print(f"  Input State: {fmt_input(state)}")
+            print(f"  Input State: {state.str_input(False)}")
             if new_state is not None:
-                print(f"    New State: {fmt_input(new_state) if not null else '< NO CHANGE >'}")
+                print(f"    New State: {new_state.str_input(False) if not null else '< NO CHANGE >'}")
             indent = " " * 15
             if isinstance(value, Error):
                 depth: int | None = None

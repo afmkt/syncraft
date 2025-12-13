@@ -224,7 +224,7 @@ class Cache(Generic[S]):
     
 
 
-    def trace(self, tracer: Tracer | None = None) -> Cache[S]:
+    def with_tracer(self, tracer: Tracer | None = None) -> Cache[S]:
         if self.tracer is None:
             self.tracer = tracer or Tracer()
         return self
@@ -296,12 +296,13 @@ class Cache(Generic[S]):
             else:
                 raise SyncraftError("Unexpected result type in profiler", result)
             parent = self.stack[-2][0] if len(self.stack) > 1 else None
-            self.tracer.trace(rule=syntax_of(rule), 
+            self.tracer.trace(
+                              rule=syntax_of(rule), 
                               parent=syntax_of(parent), 
                               start_time=start_time,
                               end_time=end_time, 
-                              start=key, 
-                              end=end,
+                              start=key.str_input(ul=False), 
+                              end=end.str_input(ul=False) if end is not None else None,
                               result=value,
                               consumed=consumed)
             return result
