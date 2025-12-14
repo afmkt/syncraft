@@ -11,7 +11,6 @@ from syncraft.tracer import Tracer
 from collections import defaultdict
 import copy
 import random
-import time
 
 def randomized(collection, enable_randomization=True):
     """Helper function to randomize iteration order of sets and other collections."""
@@ -281,30 +280,22 @@ class Cache(Generic[S]):
     
     def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
         if self.tracer is not None:
-            start_time = time.perf_counter_ns()
+            frame_id = self.tracer.push(rule=syntax_of(rule), 
+                                        parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, 
+                                        state=key)
+            if syntax_of(rule) is None:
+                print(rule)
             result = yield from rule(key, self) 
-            end_time = time.perf_counter_ns()
-
             if isinstance(result, Right):
-                consumed = result.value[1].cache_key - key.cache_key
-                end = result.value[1]
-                value = result.value[0]
+                self.tracer.pop(frame_id, 
+                                state = result.state,
+                                result = result.value[0])
             elif isinstance(result, Left):
-                consumed = 0
-                end = None
-                value = result.value
+                self.tracer.pop(frame_id, 
+                                state = None,
+                                result = result.value)
             else:
-                raise SyncraftError("Unexpected result type in profiler", result)
-            parent = self.stack[-2][0] if len(self.stack) > 1 else None
-            self.tracer.trace(
-                              rule=syntax_of(rule), 
-                              parent=syntax_of(parent), 
-                              start_time=start_time,
-                              end_time=end_time, 
-                              start=key.str_input(ul=False), 
-                              end=end.str_input(ul=False) if end is not None else None,
-                              result=value,
-                              consumed=consumed)
+                raise SyncraftError("Unexpected result type in tracer", offender=result, expect=(Left, Right))
             return result
         result = yield from rule(key, self)
         return result

@@ -408,7 +408,7 @@ class Algebra(Generic[A, S]):
                                                         Either[Any, Tuple[A, S]]]:
             result = yield from self.run(f(state), cache)
             return result
-        return replace(self, run_f=map_state_run) 
+        return replace(self, run_f=map_state_run).flag(syntax=self.syntax)
         
 
 
@@ -429,7 +429,7 @@ class Algebra(Generic[A, S]):
                 return Right.new((f(data), s))            
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        alg = replace(self, run_f=map_run) # type: ignore
+        alg = replace(self, run_f=map_run).flag(syntax=self.syntax) # type: ignore
         return cast(Algebra[B, S], alg)
     
     def bimap(self, b: Callable[[A], Reversible[A, B]], *, raw:bool) -> Algebra[B, S]:
@@ -451,7 +451,7 @@ class Algebra(Generic[A, S]):
                 return Right.new((reversible.value, s))
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        ret: Algebra[B, S] = replace(self, run_f=bimap_run) # type: ignore
+        ret: Algebra[B, S] = replace(self, run_f=bimap_run).flag(syntax=self.syntax) # type: ignore
         return ret.map_state(lambda s: s.map(inverse_f))
 
     def iso(self, f: Callable[[A], B], i: Callable[[B], A], *, raw:bool) -> Algebra[B, S]:
@@ -495,7 +495,7 @@ class Algebra(Generic[A, S]):
                                                         Either[Any, Tuple[B, S]]]:
                 yield from ()
                 return Right.new(f(a, input))
-            return replace(self, run_f=map_all_run_f) # type: ignore
+            return replace(self, run_f=map_all_run_f).flag(syntax=self.syntax) # type: ignore
         return self.flat_map(map_all_f)
 
 
