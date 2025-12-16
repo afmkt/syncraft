@@ -45,15 +45,40 @@ def lazy(S: type[Syntax], name: str | None | Callable[..., Syntax] = None, *, is
     
 
 
+def class_field_location(cls):
+    import inspect
+    import ast
+    source = inspect.getsource(cls)
+    filename = inspect.getsourcefile(cls)
+    tree = ast.parse(source)
+    field_locations = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    field_locations[target.id] = (filename, node.lineno)
+    return field_locations
+
 def grammar(cls: type) -> type:    
+    locations = class_field_location(cls)
     rules = {}
     root = None
     for name, value in list(cls.__dict__.items()):
         if isinstance(value, Syntax):
             if value.spec.name is None:
-                value = value.named(name=name, _location=False)
+                s_name = name
             elif value.spec.name == NO_NAME:
-                value = value.named(name=None, _location=False)
+                s_name = None
+            else:
+                s_name = value.spec.name
+            if value.location is None:                
+                if name in locations:
+                    file, line = locations[name]
+                    value = value._named(name = s_name, file=file, line=line, func=None)
+                else:
+                    raise ValueError(f"Grammar rules must have location information, but rule '{name}' does not.")
+            else:
+                value = value.named(name = s_name, _location=False)
             rules[name] = value
             if value.is_root:
                 if root is not None:

@@ -113,17 +113,6 @@ class DFA(Generic[C]):
     
     @property
     def minimize(self) -> DFA[C]:
-        """Return the (language) minimal DFA using Hopcroft's algorithm.
-
-        This replaces the previous implementation which incorrectly merged states by
-        unifying predecessors across all symbols. We:
-          1. Build a global partition of the alphabet from all transition CharSets.
-          2. For each state and each partition piece, define a total transition
-             (adding a synthetic sink only if needed for missing pieces).
-          3. Apply Hopcroft refinement using piece indices as alphabet symbols.
-          4. Reconstruct minimized DFA merging contiguous intervals that target the
-             same new state.
-        """
         if not self.transitions:
             # Edge: single state DFA (maybe accepting)
             return self
@@ -1157,7 +1146,17 @@ class Builder(Generic[C]):
     def __str__(self) -> str:
         match self.kind:
             case _NodeKind.RANGE:
-                ranges_str = ", ".join(f"{start!r}-{end!r}" for start, end in self.intervals)
+                range_parts = []
+                if len(self.intervals) < 10:
+                    intervals = self.intervals
+                else:
+                    intervals = self.intervals[:3] + (("...", "..."),) + self.intervals[-3:]
+                for start, end in intervals:
+                    if start == end:
+                        range_parts.append(f"{start!r}")
+                    else:
+                        range_parts.append(f"{start!r}-{end!r}")
+                ranges_str = ", ".join(range_parts)
                 return f"/{ranges_str}/"
             case _NodeKind.LITERAL:
                 return f"{self.text!r}"
