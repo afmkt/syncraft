@@ -13,6 +13,23 @@ from syncraft.utils import file as get_file, line as get_line, func as get_func
 NO_NAME = "<no_name>"
 
 def rule(syntax: Syntax, *, name: str | None = None, is_root: bool = False) -> Syntax:
+    """Define a named grammar rule with optional metadata.
+    
+    Marks a syntax definition as a named rule within a grammar, automatically
+    capturing source location metadata for debugging and error reporting.
+    
+    Args:
+        syntax: The syntax definition to mark as a rule.
+        name: Optional name for the rule. If None, uses the variable name.
+        is_root: Whether this rule is the root/entry point of the grammar.
+    
+    Returns:
+        The syntax with updated metadata and root status.
+    
+    Example:
+        >>> number = rule(Syntax.lit("0-9").many(), name="number")
+        >>> expr = rule(number | operator, is_root=True)
+    """
     level:int = 1
     file, line, func = get_file(level), get_line(level), get_func(level)
     if not isinstance(syntax, Syntax):
@@ -26,6 +43,29 @@ def rule(syntax: Syntax, *, name: str | None = None, is_root: bool = False) -> S
 
 
 def lazy(S: type[Syntax], name: str | None | Callable[..., Syntax] = None, *, is_root: bool = False) -> Any:
+    """Create a lazy-evaluated syntax rule for recursive or forward-referenced grammars.
+    
+    Enables defining recursive grammars by deferring syntax evaluation until needed.
+    Can be used as a decorator or directly with a callable.
+    
+    Args:
+        S: The Syntax class to use for creating the lazy syntax.
+        name: Optional name for the lazy rule, or a callable returning Syntax.
+              If callable, used directly. If string/None, used as decorator.
+        is_root: Whether this lazy rule is the root of the grammar.
+    
+    Returns:
+        If name is callable: Lazy syntax wrapping that callable.
+        If name is string/None: Decorator function for wrapping a callable.
+    
+    Example:
+        >>> @lazy(Syntax, "expr")
+        ... def expr():
+        ...     return term + operator + expr | term
+        
+        >>> # Or use directly:
+        >>> expr = lazy(Syntax, lambda: term + operator + expr)
+    """
     level = 1
     file, line, func = get_file(level), get_line(level), get_func(level)
     if callable(name):
@@ -64,7 +104,33 @@ def class_field_location(cls):
 
     return field_locations
 
-def grammar(cls: type) -> type:    
+def grammar(cls: type) -> type:
+    """Class decorator for defining grammars with automatic metadata collection.
+    
+    Transforms a class with Syntax attributes into a Grammar with automatic
+    source location tracking, rule naming, and root rule detection. All class
+    attributes that are Syntax instances become grammar rules.
+    
+    The decorated class inherits from Grammar and gains parse(), generate(),
+    and validate() methods for working with the grammar.
+    
+    Args:
+        cls: Class containing Syntax definitions as class attributes.
+    
+    Returns:
+        The class with Grammar functionality and metadata attached.
+    
+    Raises:
+        ValueError: If multiple root rules are defined or rules lack location info.
+    
+    Example:
+        >>> @grammar
+        ... class SimpleGrammar(Grammar):
+        ...     number = Syntax.lit("123")
+        ...     expr = rule(number, is_root=True)
+        
+        >>> result = SimpleGrammar.parse("123")
+    """
     locations = class_field_location(cls)
     rules = {}
     root = None
@@ -101,6 +167,31 @@ def grammar(cls: type) -> type:
     
 
 class Grammar:
+    """Base class for declarative grammar definitions.
+    
+    Grammar provides a high-level interface for defining, parsing, and generating
+    text according to syntax rules. Grammars are typically defined using the
+    @grammar class decorator, which automatically collects Syntax rules and
+    provides parsing and generation methods.
+    
+    The Grammar class caches parsers and generators for efficiency across
+    multiple parse/generate operations.
+    
+    Attributes:
+        _rules: Dictionary mapping rule names to Syntax definitions.
+        _root_rule: The entry point syntax for the grammar (marked with is_root=True).
+        _parser: Cache of parser algebras for rules.
+        _generator: Cache of generator algebras for rules.
+    
+    Example:
+        >>> @grammar
+        ... class MyGrammar(Grammar):
+        ...     digit = Syntax.lit("0-9")
+        ...     number = rule(digit.many(at_least=1), is_root=True)
+        
+        >>> result = MyGrammar.parse("123")
+        >>> text = MyGrammar.generate(result)
+    """
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
     _parser: Dict[Syntax, Algebra] = {}

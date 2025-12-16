@@ -2,6 +2,8 @@
 
 ::: syncraft.syntax
 
+::: syncraft.grammar
+
 ::: syncraft.parser
 
 ::: syncraft.generator

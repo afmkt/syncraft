@@ -45,6 +45,34 @@ def identity(x: Any) -> Any:
     return x
 
 class Reversible(Generic[A, B]):
+    """A value paired with a function to reverse/invert a transformation.
+    
+    Reversible wraps a forward-transformed value along with a mapper function
+    that can reverse the transformation. This is essential for bidirectional
+    parsing and generation, enabling round-trip conversions between AST and
+    data structures.
+    
+    The Reversible is used extensively with Syntax.bimap() and Syntax.iso()
+    to maintain invertibility of transformations during parsing and generation.
+    
+    Type Parameters:
+        A: The original type before transformation.
+        B: The transformed type.
+    
+    Args:
+        value: The forward-transformed value of type B.
+        mapper: Function that reverses the transformation (B -> A).
+                Defaults to identity function.
+    
+    Example:
+        >>> # Transform string to int, with reverse function
+        >>> rev = Reversible(42, lambda x: str(x))
+        >>> rev.value  # 42
+        >>> rev.mapper(100)  # "100"
+        
+        >>> # Used in grammar for bidirectional mapping
+        >>> syntax.bimap(lambda s: Reversible(int(s), str))
+    """
     def __init__(self, value: B, mapper: Callable[[B], A] = identity) -> None:
         self._data: Tuple[B, Callable[[B], A]] = (value, mapper)
 

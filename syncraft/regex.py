@@ -11,7 +11,7 @@ from syncraft.syntax import Syntax
 from syncraft.fa import Builder
 from syncraft.cache import Cache
 from syncraft.alphabet import Alphabet
-from syncraft.grammar import Grammar as G, lazy, rule, grammar
+from syncraft.grammar import Grammar, lazy, rule, grammar
 from syncraft.mapper import call, _0, _1, at
 from functools import partial, reduce
 
@@ -233,7 +233,7 @@ class Regex:
 B = Builder[str]
 S = Syntax.set(builtin=True)
 @grammar
-class RE(G):
+class RE(Grammar):
     dollar = S.lex(B.lit("$"))
     number = S.lex(B.oneof("0123456789").many(at_least=1)).iso(int, str)
     dot = S.lex(B.lit(".")).to(DotAtom)

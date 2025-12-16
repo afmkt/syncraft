@@ -41,6 +41,7 @@ from .constraint import (
 	exists,
 )
 from .ast import (
+    Reversible,
 	AST,
     Bimap,
 	Token,
@@ -65,12 +66,15 @@ from .input import (
 	StreamCursor,
 )
 from .cache import Cache
+from .tracer import Tracer
+from .grammar import Grammar, grammar, rule, lazy
 
 # Export commonly used class methods for convenience
 lit = Syntax.lit
 choice = Syntax.choice
 
 __all__ = [
+    "Tracer", "Grammar", "grammar", "rule", "lazy",
     # charset
     "CharSet", "AlphabetProtocol", "Alphabet", "CodepointError",
 	# fa
@@ -91,7 +95,7 @@ __all__ = [
 	# constraints
 	"Constraint", "Quantifier", "forall", "exists", "FrozenDict", "CallWith",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "Collect", "Bimap", "Nothing",
+	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "Collect", "Bimap", "Nothing", "Reversible",
     # input
 	"StreamCursor",
     # convenience exports
