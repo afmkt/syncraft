@@ -449,7 +449,7 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
     err = None
     cache: Cache[Any] = Cache()
     if profile:
-        cache = cache.trace()
+        cache = cache.with_tracer()
     
     parsed = parse(pattern, raw=False, cache=cache)
     if cache.tracer is not None:
