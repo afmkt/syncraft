@@ -248,7 +248,7 @@ class Algebra(Generic[A, S]):
         return dict(cfg) if isinstance(cfg, Mapping) else {}
 
     def with_syntax(self, syntax: Syntax[A, S]) -> Algebra[A, S]:
-        print('with_syntax', id(syntax), str(syntax), syntax.location)
+        # print('with_syntax', id(syntax), str(syntax), syntax.location)
         return replace(self, syntax=syntax).flag(syntax=syntax)
 
 
