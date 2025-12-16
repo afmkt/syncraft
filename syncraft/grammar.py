@@ -79,11 +79,13 @@ def grammar(cls: type) -> type:
             if value.location is None:                
                 if name in locations:
                     file, line = locations[name]
-                    value = value._named(name = s_name, file=file, line=line, func=None)
+                    value.update_meta_in_place(name = s_name, file=file, line=line, func=None, _location=True)
+                    
                 else:
                     raise ValueError(f"Grammar rules must have location information, but rule '{name}' does not.")
             else:
-                value = value.named(name = s_name, _location=False)
+                value.update_meta_in_place(name = s_name, file = None, line= None, func=None, _location=False)
+                
             rules[name] = value
             if value.is_root:
                 if root is not None:

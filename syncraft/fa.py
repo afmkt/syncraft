@@ -1150,7 +1150,7 @@ class Builder(Generic[C]):
                 if len(self.intervals) < 10:
                     intervals = self.intervals
                 else:
-                    intervals = self.intervals[:3] + (("...", "..."),) + self.intervals[-3:]
+                    intervals = self.intervals[:1] + (("...", "..."),) + self.intervals[-1:]
                 for start, end in intervals:
                     if start == end:
                         range_parts.append(f"{start!r}")

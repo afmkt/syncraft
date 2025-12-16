@@ -70,13 +70,11 @@ def benchmark_fair():
 
 
 def test_tracer():
-    for name, s in RE._rules.items():
-        print(f"Rule({id(s)}): {name} -> {str(s)}, Location: {s.location}")
 
     pattern = r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)'
     with Tracer() as tracer:
         RE.parse(pattern, raw=False, cache = Cache().with_tracer(tracer))
-        print(tracer.tree())
+        # print(tracer.tree())
         
     
 

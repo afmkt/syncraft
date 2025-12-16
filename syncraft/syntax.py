@@ -109,6 +109,7 @@ class SyntaxSpec:
     func: Optional[str] = field(compare=False, hash=False)
 
 
+
     @property
     def location(self) -> Optional[str]:
         if self.file:
@@ -126,6 +127,18 @@ class SyntaxSpec:
         else:
             return replace(self, name=name)
         
+
+    def update_meta_in_place(self, *, name: None | str, file: None | str, line: None | int, func: None | str, _location:bool) -> SyntaxSpec:
+        if _location:
+            object.__setattr__(self, 'name', name)
+            object.__setattr__(self, 'file', file)
+            object.__setattr__(self, 'line', line)
+            object.__setattr__(self, 'func', func)
+        else:
+            object.__setattr__(self, 'name', name)
+        return self
+
+
 
     def format(self, tmplt: str, *args: Any, **kwargs: Any) -> str:
         tmp = {}
@@ -743,6 +756,21 @@ class Syntax(Generic[A, S]):
     def __call__(self, alg: Type[Algebra], **global_kwargs) -> Algebra[A, S]:
         cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
         return self.alg_f(alg, **(cfg | global_kwargs)).with_syntax(self)
+
+    def update_meta_in_place(self, *, name: None | str, file: None | str, line: None | int, func: None | str, _location:bool) -> Syntax[A, S]:
+        """
+        Update the metadata of this syntax in place. Use with caution.
+        ️⚠️ Mutates the internal state of a frozen dataclass! ⚠️
+        ONLY used in Grammar to set names on auto-named syntaxes.
+        Args:
+            name: New name to set.
+            file: New file to set.
+            line: New line to set.
+            func: New function to set.
+        """
+        self.spec.update_meta_in_place(name=name, file=file, line=line, func=func, _location=_location)
+        return self
+
 
     def _named(self, *, name: None | str, file: None | str, line: None | int, func: None | str) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
