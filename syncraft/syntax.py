@@ -136,6 +136,9 @@ class SyntaxSpec:
             object.__setattr__(self, 'func', func)
         else:
             object.__setattr__(self, 'name', name)
+        # Invalidate str_cache when metadata is updated
+        if hasattr(self, 'str_cache'):
+            object.__setattr__(self, 'str_cache', None)
         return self
 
 
@@ -217,8 +220,8 @@ class LazySpec(SyntaxSpec):
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
             return cache[self]
-        ret = cls.lazy(self.lazy_state.thunk, flatten=self.lazy_state.flatten)._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        ret = cls.lazy(self.lazy_state.thunk, flatten=self.lazy_state.flatten)
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     def __str__(self) -> str:
@@ -264,8 +267,7 @@ class MarkedSpec(SyntaxSpec):
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
         ret = inner.mark(self.mname)
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     def __str__(self) -> str:
@@ -300,8 +302,7 @@ class CollectSpec(SyntaxSpec):
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
         ret: Syntax = inner.to(self.collector)
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     def __str__(self) -> str:
@@ -332,8 +333,7 @@ class SeqSpec(SyntaxSpec):
             return cache[self]
         steps = [(step.syntax(cls, cache=cache), keep) for step, keep in self.steps]
         ret = cls.seq(*steps)
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     def __str__(self) -> str:
@@ -376,8 +376,7 @@ class ThenSpec(SyntaxSpec, Generic[A, B]):
                 ret = left >> right
             case _:
                 raise AssertionError(f"Unknown ThenKind: {self.kind}")
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     @classmethod
@@ -422,8 +421,7 @@ class ParallelSpec(SyntaxSpec):
             return cache[self]
         opts = [opt.syntax(cls, cache=cache) for opt in self.options]
         ret = cls.parallel(*opts, reducer=self.reducer)
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
     
     def __str__(self) -> str:
@@ -457,8 +455,7 @@ class ChoiceSpec(SyntaxSpec):
             return cache[self]
         opts = [opt.syntax(cls, cache=cache) for opt in self.options]
         ret = cls.choice(*opts)
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     def __str__(self) -> str:
@@ -494,8 +491,7 @@ class OrElseSpec(SyntaxSpec, Generic[A, B]):
         left = self.left.syntax(cls, cache=cache)
         right = self.right.syntax(cls, cache=cache)
         ret = left | right
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     @classmethod
@@ -545,8 +541,7 @@ class ManySpec(SyntaxSpec, Generic[A]):
             return cache[self]
         inner = self.spec.syntax(cls, cache=cache)
         ret = inner.many(at_least=self.at_least, at_most=self.at_most)
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
 
     def __str__(self) -> str:
@@ -585,8 +580,7 @@ class LexSpec(SyntaxSpec):
         if self in cache:
             return cache[self]
         ret = cls.factory(self.fname, *self.args, **self.kwargs)
-        ret = ret._named(name=self.name, file=self.file, line=self.line, func=self.func)
-        cache[self] = ret
+        cache[self] = ret = replace(ret, spec=self)
         return ret
     
     def __str__(self) -> str:
@@ -778,15 +772,6 @@ class Syntax(Generic[A, S]):
     def as_root(self) -> Syntax[A, S]:
         return replace(self, is_root=True)
 
-    def set_name(self, name: str | None) -> None:
-        """
-        Set the name of this syntax in place. Use with caution.
-        ️⚠️ Mutates the internal state of a frozen dataclass! ⚠️
-        ONLY used in Grammar to flag auto-named syntaxes.
-        Args:
-            name: New name to set.
-        """
-        object.__setattr__(self.spec, 'name', name)
 
     def named(self, name: str | None, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
