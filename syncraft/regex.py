@@ -281,10 +281,9 @@ class RE(G):
     control_escape = S.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"]))
     shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).iso(ShorthandKind.from_literal, ShorthandKind.to_literal).to(ShorthandAtom)
     category_name = unicode_category.many().iso(tuple, list)
-    unicode_category_escape = S.alt(
-        S.seq(escaped_p.bimap(lambda x: Reversible(False, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace).to(UnicodeCategoryAtom),
-        S.seq(escaped_P.bimap(lambda x: Reversible(True, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace).to(UnicodeCategoryAtom)
-        )
+    positive_unicode_category = S.seq(escaped_p.bimap(lambda x: Reversible(False, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace)
+    negative_unicode_category = S.seq(escaped_P.bimap(lambda x: Reversible(True, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace)
+    unicode_category_escape = S.alt(positive_unicode_category.to(UnicodeCategoryAtom), negative_unicode_category.to(UnicodeCategoryAtom))
         
     unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).iso((_0.list + _1).apply(''.join), lambda s: (s[0], list(s[1:])))
     name_continue = unicode_letter | underscore

@@ -72,7 +72,7 @@ class Tracer:
             result: Any) -> None:
         if isinstance(result, AST):
             result = result.mapped
-        elif hasattr(result, 'compact'):
+        elif hasattr(result, 'compact') and hasattr(result, '__class__') and result.__class__.__name__ == 'Error':
             result = result.compact
             
         self.log.append(TracerEvent(

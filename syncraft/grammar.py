@@ -50,13 +50,18 @@ def class_field_location(cls):
     import ast
     source = inspect.getsource(cls)
     filename = inspect.getsourcefile(cls)
+    start_line = inspect.getsourcelines(cls)[1]
     tree = ast.parse(source)
     field_locations = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
+    class_node = next(n for n in tree.body if isinstance(n, ast.ClassDef))
+    for stmt in class_node.body:
+        if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+            field_locations[stmt.target.id] = (filename, stmt.lineno + start_line - 1)
+        elif isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
                 if isinstance(target, ast.Name):
-                    field_locations[target.id] = (filename, node.lineno)
+                    field_locations[target.id] = (filename, stmt.lineno + start_line - 1)
+
     return field_locations
 
 def grammar(cls: type) -> type:    
