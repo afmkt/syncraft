@@ -35,11 +35,14 @@ uv sync --group dev
 ```
 
 TODO
+- [ ]  Interactive parse tree visualizer based on rich.live and Tracer.tree
 - [ ]  Static analysis tool based on Syntax.graph, for grammar analysis
-
+- [ ]  Replace positional _0, _1 accessors; remove tuple assumptions; derive inverse mappings when possible
 - [ ]  regex.py convert Regex to Builder, for grammar authoring
-
 - [ ]  PyDatalog adapter, with example
+
+
+
 
 
 
