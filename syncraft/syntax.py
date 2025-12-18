@@ -728,16 +728,27 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def cdbg(cls, e: bool)->Any:
+        # cls debug enable
         cls.print.enable(e)
         return cls
 
     def idbg(self, e: bool) -> Syntax[A, S]:
+        # instance debug enable
         self.print.enable(e)
         return self
 
-    def as_(self, typ: Type[B]) -> B:
-        return cast(typ, self)  # type: ignore
     
+    @property
+    def present(self) -> Syntax[A, S]:
+        """Positive lookahead: ensure this syntax is present. Does not consume input."""
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).present)
+
+    @property
+    def absent(self) -> Syntax[type[Nothing], S]:
+        """Negative lookahead: ensure this syntax is absent. Does not consume input."""
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).absent) # type: ignore
+
+
     @classmethod
     def set(cls, **attrs: Any) -> Type[Syntax]:
         return type(cls.__name__, (cls,), {SYNCRAFT_CONFIG_KEY: attrs})

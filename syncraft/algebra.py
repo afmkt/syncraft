@@ -288,9 +288,37 @@ class Algebra(Generic[A, S]):
                 e = e.push(f"{self.name}")
             raise e
 
-
-    def as_(self, typ: Type[B])->B:
-        return cast(typ, self) # type: ignore
+    @property
+    def present(self) -> Algebra[A, S]:
+        def present_run(input: S, 
+                        cache:Cache[S]) -> Generator[YieldChannelType, 
+                                                   S, 
+                                                   Either[Any, Tuple[A, S]]]:
+            result = yield from self.run(input, cache)
+            match result:
+                case Right((value, _)):
+                    return Right.new((value, input)) 
+                case _:
+                    return result
+        return replace(self, run_f=present_run).flag(syntax=self.syntax)
+        
+    @property
+    def absent(self) -> Algebra[type[Nothing], S]:
+        def absent_run(input: S, 
+                       cache:Cache[S]) -> Generator[YieldChannelType, 
+                                                  S, 
+                                                  Either[Any, Tuple[type[Nothing], S]]]:
+            result = yield from self.run(input, cache)
+            match result:
+                case Left():
+                    return Right.new((Nothing, input)) 
+                case _:
+                    return Left.new(Error.new(
+                        message="Expected absence",
+                        this=self,
+                        state=input
+                    ))
+        return replace(self, run_f=absent_run).flag(syntax=self.syntax) # type: ignore
         
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[A, S]], flatten:bool) -> Algebra[A, S]:
