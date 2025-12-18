@@ -1188,12 +1188,12 @@ class Syntax(Generic[A, S]):
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, False)
     
-    def fld(self, name: str | None = None) -> Tuple[Syntax[A, S], bool | str]:
+    def fld(self, name: str | None = None) -> Tuple[Syntax[A, S] | Syntax[Marked[A], S], bool]:
         name = name if name is not None else self.spec.name
         if name is None:
             return (self, True)
         else:
-            return (self, name)
+            return (self.mark(name), True)
         
         
 
@@ -1404,7 +1404,7 @@ class Syntax(Generic[A, S]):
         return cls.choice(*parsers)
 
     @classmethod
-    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str]) -> Syntax[Seq, S]:
+    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Seq, S]:
         def infer_default_keep(steps: Tuple[Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str], ...]) -> bool:
             infered_default: Optional[bool] = None
             for X in steps:
@@ -1422,14 +1422,7 @@ class Syntax(Generic[A, S]):
                 return True
             
         default:bool = infer_default_keep(steps)
-        syntaxes = []
-        for X in steps:
-            step, keep = X if isinstance(X, tuple) else (X, default)
-            if isinstance(keep, str):
-                step = step.mark(keep)
-                syntaxes.append((step, True))
-            else:
-                syntaxes.append((step, keep))
+        syntaxes = [X if isinstance(X, tuple) else (X, default) for X in steps]
         def seq_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [(step(acls, **global_kwargs), keep) for step, keep in syntaxes]
             return acls.seq(*algs)
