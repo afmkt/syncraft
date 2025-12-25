@@ -413,22 +413,14 @@ class RE(Grammar):
 
 
 
-
-
 @overload
-def parse(data: str, *, raw: Literal[True], cache: Optional[Cache[Any]] = None) -> AST: ...
+def parse(data: str, *, raw: Literal[True], syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any: ...
 @overload
-def parse(data: str, *, raw: Literal[False], cache: Optional[Cache[Any]] = None) -> Regex | Error: ...
+def parse(data: str, *, raw: Literal[False] = False, syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any: ...
 
-def parse(data: str, *, raw:bool=False, cache: Optional[Cache[Any]] = None) -> Regex | Error | AST:
-    return RE.parse(data, raw=raw, cache=cache)
+def parse(data: str, *, raw:bool=False, syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any:
+    return RE.parse(data, syntax=syntax, raw=raw, cache=cache)
 
-
-def parse_regex(syntax: Syntax, 
-                pattern: str, 
-                *, 
-                raw:bool=False) -> Any:
-    return RE.parse(pattern, syntax=syntax, raw=raw)
 
 @dataclass
 class VerifyResult:

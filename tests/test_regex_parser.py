@@ -1,7 +1,8 @@
 from __future__ import annotations
 from syncraft.regex import (
-    parse_regex, parse, RE, UnsupportedFeature,
-    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
+    parse, RE, 
+    UnsupportedFeature,
+    LiteralAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
 from syncraft.algebra import Error
@@ -13,20 +14,20 @@ from syncraft.fa import Builder as B
 def test_literal_characters():
     """Test parsing of literal characters."""
     # Single literal character
-    result = parse_regex(RE.literal, "a")
+    result = parse("a", syntax=RE.literal)
     assert result == "a"
 
 
 def test_literal_digits():
     """Test parsing of literal digits."""
-    result = parse_regex(RE.literal, "1")
+    result = parse("1", syntax=RE.literal)
     assert result == "1"
 
 
 def test_literal_special_chars():
     """Test parsing of literal special characters that are not metacharacters."""
     # Characters that are allowed as literals (not in the excluded set)
-    result = parse_regex(RE.literal, "@")
+    result = parse("@", syntax=RE.literal)
     assert result == "@"
 
 
@@ -41,7 +42,7 @@ def test_control_escapes():
     ]
 
     for pattern, expected in test_cases:
-        result = parse_regex(RE.literal, pattern)
+        result = parse(pattern, syntax=RE.literal)
         print(result)
         assert result == expected
         assert len(result) == 2
@@ -57,14 +58,14 @@ def test_unicode_escapes():
     ]
 
     for pattern, expected in test_cases:
-        result = parse_regex(RE.literal, pattern)
+        result = parse(pattern, syntax=RE.literal)
         assert result == expected
 
 
 def test_escaped_metacharacters():
     """Test parsing of escaped metacharacters."""
     metachars = r"\\\.\[\]\(\)\{\}\|\+\*\?\^\$"
-    result = parse_regex(RE.literal.many(), metachars)
+    result = parse(metachars, syntax=RE.literal.many())
     assert len(result) == len(metachars) // 2  # Each escape sequence becomes one piece
     expected_chars = r"\.[](){}|+*?^$"
     for i, expected in enumerate(expected_chars):
@@ -84,7 +85,7 @@ def test_anchors():
     ]
 
     for pattern, expected_kind in test_cases:
-        result = parse_regex(RE.anchor, pattern)
+        result = parse(pattern, syntax=RE.anchor)
         assert isinstance(result, UnsupportedFeature)
         
 
@@ -137,7 +138,7 @@ def test_quantifiers():
     ]
 
     for pattern, expected_quantifier in test_cases:
-        result = parse_regex(RE.piece, pattern)
+        result = parse(pattern, syntax=RE.piece)
         tmp = parse(pattern, raw=False)
         assert isinstance(tmp, Regex)
         result = tmp.branches[0].pieces[0]
@@ -574,32 +575,32 @@ def test_regex_unicode_category_escape():
 def test_neg_lookahead():
     negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +RE.regex.mark('pattern'), RE.rparen)
     nl = r"(?!\1)"
-    ret = parse_regex(negative_lookahead, nl, raw=False)
+    ret = parse(nl, syntax=negative_lookahead)
     assert not isinstance(ret, Error)
 
 def test_noncap():    
     noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +RE.regex.mark('pattern'), RE.rparen)
     noncap = r"(?:['\"])"
-    ret = parse_regex(noncapturing, noncap, raw = False)
+    ret = parse(noncap, syntax=noncapturing)
     assert not isinstance(ret, Error)
     
 
 def test_named():
     named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +RE.name.mark('name'), RE.greater, +RE.regex.mark('pattern'), RE.rparen)
     s = r"(?P<quote>['\"])"
-    ret = parse_regex(named, s, raw = False)
+    ret = parse(s, syntax=named)
     assert not isinstance(ret, Error)
     
 
 def test_complex():
     pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
-    ret = parse_regex(RE.regex, pattern, raw = False)
+    ret = parse(pattern, syntax=RE.regex)
     assert not isinstance(ret, Error)
     
 
 
 def test_complex1():
     pattern = r'l*[^UUf\w]?|\w{5}\W{0,5}\w*(?w)|J*\B'
-    ret= parse_regex(RE.regex, pattern, raw = False)
+    ret= parse(pattern, syntax=RE.regex)
     assert not isinstance(ret, Error)
     
