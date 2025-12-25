@@ -3,7 +3,7 @@ from __future__ import annotations
 # from rich import print
 from pyDatalog import pyDatalog as d
 from syncraft.regex import (
-    parse_regex, parse, RE, parse_regex,
+    parse, RE,
     LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
     CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
 )
