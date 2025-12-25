@@ -464,6 +464,7 @@ class Algebra(Generic[A, S]):
     def bimap(self, b: Callable[[A], Reversible[A, B]], *, raw:bool) -> Algebra[B, S]:
         def inverse_f(b_data: B) -> A:
             assert self.syntax is not None, "Bimap requires associated Syntax to store inverse mapping"
+            assert self.syntax.inverse_f is not None, "Bimap requires associated Syntax to store inverse mapping"
             return self.syntax.inverse_f(b_data)
         
         def bimap_run(input: S, cache: Cache[S])->Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
@@ -476,7 +477,8 @@ class Algebra(Generic[A, S]):
                     data = a
                 reversible = b(data)
                 assert self.syntax is not None, "Bimap requires associated Syntax to store inverse mapping"
-                object.__setattr__(self.syntax, 'inverse_f', reversible.mapper)
+                if self.syntax.inverse_f is None:
+                    object.__setattr__(self.syntax, 'inverse_f', reversible.mapper)
                 return Right.new((reversible.value, s))
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)

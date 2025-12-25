@@ -8,18 +8,17 @@ from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING
 )
-from dataclasses import dataclass, field, replace, is_dataclass, fields
+from dataclasses import dataclass, field, replace
 
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from syncraft.mapper import Record
-from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, MISSING, DbgPrint
+
+from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint
 
 from syncraft.ast import Reversible, Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, Collector, SyncraftError, Seq, Choice, AST
-from syncraft.bimap import identity
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
@@ -699,7 +698,7 @@ class Syntax(Generic[A, S]):
 
     is_root: bool = field(default=False, compare=False, hash=False, repr=False)
 
-    inverse_f: Callable[..., Any] = field(default=identity, compare=False, hash=False, repr=False)
+    inverse_f: Callable[..., Any] | None = field(default=None, compare=False, hash=False, repr=False)
 
     print: ClassVar[DbgPrint] = DbgPrint.create()
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax]] = ThreadLocalWeakValueDict()
