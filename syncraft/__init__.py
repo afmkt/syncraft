@@ -40,10 +40,9 @@ from .constraint import (
 	forall,
 	exists,
 )
+from .bimap import Reversible, Bimap
 from .ast import (
-    Reversible,
 	AST,
-    Bimap,
 	Token,
 	Then,
 	ThenKind,

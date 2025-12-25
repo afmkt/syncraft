@@ -1,12 +1,12 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Type, Generator, Hashable, TYPE_CHECKING, Dict, ClassVar
+    Generator, Hashable, TYPE_CHECKING, Dict
 )
-from weakref import WeakKeyDictionary
-from syncraft.ast import AST, Nothing, identity, Reversible
+from syncraft.bimap import Bimap
+from syncraft.ast import AST, Nothing, Reversible
 from dataclasses import dataclass, replace, field
-from syncraft.ast import Bimap, ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
+from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
 
@@ -226,7 +226,7 @@ class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
     syntax: Syntax | None = None
-    inverse_f: ClassVar[WeakKeyDictionary[Syntax, Callable[..., Any]]] = WeakKeyDictionary()
+    
 
     @property
     def is_orelse(self)->bool:
@@ -464,8 +464,8 @@ class Algebra(Generic[A, S]):
     def bimap(self, b: Callable[[A], Reversible[A, B]], *, raw:bool) -> Algebra[B, S]:
         def inverse_f(b_data: B) -> A:
             assert self.syntax is not None, "Bimap requires associated Syntax to store inverse mapping"
-            inv_f = Algebra.inverse_f.get(self.syntax, identity)
-            return inv_f(b_data)
+            return self.syntax.inverse_f(b_data)
+        
         def bimap_run(input: S, cache: Cache[S])->Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
@@ -476,10 +476,11 @@ class Algebra(Generic[A, S]):
                     data = a
                 reversible = b(data)
                 assert self.syntax is not None, "Bimap requires associated Syntax to store inverse mapping"
-                Algebra.inverse_f[self.syntax] = reversible.mapper
+                object.__setattr__(self.syntax, 'inverse_f', reversible.mapper)
                 return Right.new((reversible.value, s))
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
+            
         ret: Algebra[B, S] = replace(self, run_f=bimap_run).flag(syntax=self.syntax) # type: ignore
         return ret.map_state(lambda s: s.map(inverse_f))
 

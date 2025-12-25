@@ -19,7 +19,7 @@ from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint
 
 from syncraft.ast import Reversible, Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, Collector, SyncraftError, Seq, Choice, AST
-
+from syncraft.bimap import identity
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
@@ -696,8 +696,11 @@ class Syntax(Generic[A, S]):
     
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
+
     is_root: bool = field(default=False, compare=False, hash=False, repr=False)
-    _lexspec_cache: frozenset[LexSpec] = field(default = MISSING, init=False, repr=False, compare=False, hash=False)
+
+    inverse_f: Callable[..., Any] = field(default=identity, compare=False, hash=False, repr=False)
+
     print: ClassVar[DbgPrint] = DbgPrint.create()
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax]] = ThreadLocalWeakValueDict()
     _syntax_cache: ClassVar[ThreadLocalWeakValueDict[SyntaxSpec, Syntax]] = ThreadLocalWeakValueDict()
@@ -1370,16 +1373,6 @@ class Syntax(Generic[A, S]):
                                             line=spec.line, 
                                             func=spec.func))
     
-    @property
-    def terminals(self) -> frozenset[LexSpec]:
-        if self._lexspec_cache is MISSING:            
-            result: Set[LexSpec] = set()
-            for _, node in self.spec.walk():
-                if isinstance(node, LexSpec):
-                    result.add(node)
-            object.__setattr__(self, '_lexspec_cache', frozenset(result))
-        return self._lexspec_cache
-
 
     @classmethod
     def fail(cls, error: B) -> Syntax[B, S]:

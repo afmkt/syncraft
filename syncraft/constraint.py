@@ -178,3 +178,142 @@ def exists(f: Callable[..., bool]) -> Constraint:
 
 
 
+##################################################################################3
+# from dataclasses import dataclass, fields
+# from typing import Any, Dict, List, Set, Optional, Callable
+
+# @dataclass(frozen=True)
+# class Var:
+#     name: str
+
+# @dataclass(frozen=True)
+# class Not:
+#     pattern: Any  # A dataclass pattern to negate
+
+# Sub = Dict[Var, Any]
+# C = Callable[[Sub], bool]
+
+# @dataclass(frozen=True)
+# class Rule:
+#     head: Any
+#     body: List[Any]          # Positive patterns
+#     negations: List[Not] = []
+#     constraints: List[C] = []
+
+# # --- Core Logic Functions ---
+
+# def unify(pattern: Any, fact: Any, s: Sub) -> Optional[Sub]:
+#     if type(pattern) is not type(fact): 
+#         return None
+#     new_s = s.copy()
+#     for fld in fields(pattern):
+#         p_val, f_val = getattr(pattern, fld.name), getattr(fact, fld.name)
+#         if isinstance(p_val, Var):
+#             if p_val in new_s:
+#                 if new_s[p_val] != f_val: return None
+#             else: new_s[p_val] = f_val
+#         elif p_val != f_val: return None
+#     return new_s
+
+# def instantiate(template: Any, s: Sub) -> Any:
+#     kwargs = {f.name: (s[getattr(template, f.name)] if isinstance(getattr(template, f.name), Var) else getattr(template, f.name)) for f in fields(template)}
+#     return type(template)(**kwargs)
+
+# # --- The Stratified Solver ---
+
+# def solve(initial_facts: Set[Any], rules: List[Rule]) -> Set[Any]:
+#     knowledge = set(initial_facts)
+    
+#     # Stratification logic: In a production engine, we'd group rules into layers.
+#     # Here, we iterate until stability, applying negation against the 'current' knowledge.
+#     while True:
+#         new_facts = set()
+#         for rule in rules:
+#             # 1. GENERATE: Match positive patterns
+#             substitutions: List[Sub] = [{}]
+#             for pattern in rule.body:
+#                 next_subs = []
+#                 for s in substitutions:
+#                     for fact in knowledge:
+#                         res = unify(pattern, fact, s)
+#                         if res is not None: next_subs.append(res)
+#                 substitutions = next_subs
+            
+#             # 2. FILTER: Apply Constraints (e.g., X != Y)
+#             if rule.constraints:
+#                 for c in rule.constraints:
+#                     substitutions = [s for s in substitutions if c(s)]
+            
+#             # 3. NEGATE: The "Not In Set" logic
+#             if rule.negations:
+#                 valid_subs = []
+#                 for s in substitutions:
+#                     is_blocked = False
+#                     for neg in rule.negations:
+#                         # If ANY fact exists that matches the negated pattern...
+#                         if any(unify(neg.pattern, f, s) is not None for f in knowledge):
+#                             is_blocked = True
+#                             break
+#                     if not is_blocked:
+#                         valid_subs.append(s)
+#                 substitutions = valid_subs
+
+#             # 4. PROJECT: Create new facts
+#             for s in substitutions:
+#                 new_fact = instantiate(rule.head, s)
+#                 if new_fact not in knowledge:
+#                     new_facts.add(new_fact)
+        
+#         if not new_facts: break
+#         knowledge.update(new_facts)
+        
+#     return knowledge
+
+# # --- Usage Example: Orphan Finder ---
+
+# @dataclass(frozen=True)
+# class Person:
+#     name: str
+
+# @dataclass(frozen=True)
+# class HasParent:
+#     child: str
+
+# @dataclass(frozen=True)
+# class Orphan:
+#     name: str
+
+# X = Var("X")
+# Y = Var("Y")
+
+# my_rules = [
+#     Rule(
+#         head=Orphan(X),
+#         body=[Person(X)],
+#         negations=[Not(HasParent(X))] # Logic: Person(X) AND NOT HasParent(X)
+#     )
+# ]
+
+# facts = {
+#     Person("Bruce Wayne"), Person("Clark Kent"),
+#     HasParent("Clark Kent") # Bruce has no HasParent fact
+# }
+
+# results = solve(facts, my_rules)
+# for r in [f for f in results if isinstance(f, Orphan)]:
+#     print(f"Found Orphan: {r.name}")
+
+
+
+# @dataclass(frozen=True)
+# class Dependency:
+#     from_node: str
+#     to_node: str
+
+# initial_facts = {
+#     Dependency("A", "B"),
+#     Dependency("B", "C"),
+#     Dependency("A", "C"),  # This is the redundant one!
+#     Dependency("C", "D"),
+#     Dependency("A", "D"),  # This is also redundant (A->B->C->D)
+# }
