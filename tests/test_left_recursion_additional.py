@@ -30,17 +30,16 @@ def test_nullable_left_recursion_no_progress_error():
         return
     # Transitional behavior: accepted nullable recursion; ensure no tokens actually required.
     v, _ = parse_word(S, "", cache=Cache())
-    ast, _ = v.bimap
-    assert ast is not None
+    assert v is not None
 
 
 def test_deterministic_choice_prefers_first_branch():
     """PEG determinism: ( 'a' | 'a' 'b') on input 'a' must choose the first branch only."""
     A = (lit('a') | (lit('a') >> lit('b')))
     v, s = parse_word(A, 'a', cache=Cache())
-    ast, _ = v.bimap
+    
     # Expect just single terminal 't.a' (following existing Then/terminal string forms from collapse tests)
-    assert str(ast) == 't.a'
+    assert str(v) == 't.a'
 
 
 def test_iteration_cap_metrics_single_head():
@@ -65,12 +64,11 @@ def test_mutual_recursion_productivity_consumption():
     A = lazy(lambda: (B >> lit(text='x')) | lit(text='a'))
     B = lazy(lambda: (A >> lit(text='y')) | lit(text='b'))
     v, s = parse_word(A, 'a y b x', cache=Cache())
-    ast, end_state = v.bimap
     # Ensure at least 'a' retained
-    assert 'a' in str(ast)
+    assert 'a' in str(v)
     # Basic consumption sanity: index advanced (if state exposes index)
-    if hasattr(end_state, 'index') and hasattr(s, 'index'):
-        assert end_state.index >= s.index
+    if hasattr(s, 'index') and hasattr(s, 'index'):
+        assert s.index >= s.index
 
 
 def test_global_fixpoint_propagation_precedence_chain():
@@ -81,9 +79,8 @@ def test_global_fixpoint_propagation_precedence_chain():
     Term = lazy(lambda: (Term + lit('*') + Factor) | Factor)
     Expr = lazy(lambda: (Expr + lit('-') + Term) | Term)
     v, s = parse_word(Expr, 'n - n * n - n', cache=Cache())
-    ast, end_state = v.bimap
     # Ensure multiple 'n' tokens included
-    assert str(ast).count('n') >= 4
+    assert str(v).count('n') >= 4
     # Binding dict doesn't carry index; structural assertion is sufficient.
 
 

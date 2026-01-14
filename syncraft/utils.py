@@ -23,9 +23,9 @@ def callable_str(obj:Any, with_id: bool=False)->str:
     name = obj.syntax if hasattr(obj, 'syntax') else (
         obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
     prefix = '' if not with_id else f"{idstr} @ "
-    if hasattr(obj, 'is_lazy') and obj.is_lazy:
+    if hasattr(obj, 'syntax') and obj.syntax.is_lazy:
         return f"{prefix}{LAZY_MARKER} {name}"
-    elif hasattr(obj, 'is_orelse') and obj.is_orelse:
+    elif hasattr(obj, 'syntax') and obj.syntax.is_orelse:
         return f"{prefix}{ORELSE_MARKER} {name}"
     else:
         return f"{prefix}{name}"
@@ -41,12 +41,14 @@ def syntax_of(f: Any):
 
 
 def is_lazy(func: Callable[..., Any]) -> bool:
-    return hasattr(func, 'is_lazy') and func.is_lazy
+    return hasattr(func, 'syntax') and func.syntax.is_lazy
 
 def is_orelse(func: Callable[..., Any]) -> bool:
-    return hasattr(func, 'is_orelse') and func.is_orelse
+    return hasattr(func, 'syntax') and func.syntax.is_orelse
 
-
+def is_intrinsic(func: Callable[..., Any]) -> bool:
+    return getattr(func, 'intrinsic', False)
+    
 
 def line(level: int = 0) -> None | int:
     frame = inspect.currentframe()

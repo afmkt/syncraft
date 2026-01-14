@@ -1,10 +1,10 @@
 from __future__ import annotations
+
 from typing import (
-    Any, TypeVar, Tuple, 
-    Generic, Callable,
-    overload, Literal
+    Any, TypeVar, 
+    Generic, Callable, overload, Literal
 )
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 
 
 A = TypeVar('A')
@@ -14,119 +14,229 @@ C = TypeVar('C')
 def identity(x: Any) -> Any:
     return x
 
-class Reversible(Generic[A, B]):
-    """A value paired with a function to reverse/invert a transformation.
-    
-    Reversible wraps a forward-transformed value along with a mapper function
-    that can reverse the transformation. This is essential for bidirectional
-    parsing and generation, enabling round-trip conversions between AST and
-    data structures.
-    
-    The Reversible is used extensively with Syntax.bimap() and Syntax.iso()
-    to maintain invertibility of transformations during parsing and generation.
-    
-    Type Parameters:
-        A: The original type before transformation.
-        B: The transformed type.
-    
-    Args:
-        value: The forward-transformed value of type B.
-        mapper: Function that reverses the transformation (B -> A).
-                Defaults to identity function.
-    
-    Example:
-        >>> # Transform string to int, with reverse function
-        >>> rev = Reversible(42, lambda x: str(x))
-        >>> rev.value  # 42
-        >>> rev.mapper(100)  # "100"
-        
-        >>> # Used in grammar for bidirectional mapping
-        >>> syntax.bimap(lambda s: Reversible(int(s), str))
-    """
-    def __init__(self, value: B, mapper: Callable[[B], A] = identity) -> None:
-        self._data: Tuple[B, Callable[[B], A]] = (value, mapper)
+@dataclass(frozen=True, slots=True)
+class Iso(Generic[A, B]):
+    forward: Callable[[A], B] = field(default=identity)
+    inverse: Callable[[B], A] = field(default=identity)
+
 
     def __iter__(self):
-        yield from self._data
+        yield from (self.forward, self.inverse)
 
     def __len__(self) -> int:
-        return len(self._data)
+        return 2
     
+
     @overload
-    def __getitem__(self, index: Literal[0]) -> B: ...
+    def __getitem__(self, index: Literal[0]) -> Callable[[A], B]: ...
     @overload
     def __getitem__(self, index: Literal[1]) -> Callable[[B], A]: ...
     def __getitem__(self, index: int | slice) -> Any:
-        return self._data[index]
+        if index == 0:
+            return self.forward
+        elif index == 1:
+            return self.inverse
+        else:
+            raise IndexError("Index out of range for Iso, valid indices are 0 and 1")
+
+    def fmap(self, a : A) -> B:
+        return self.forward(a)
+    
+    def imap(self, b : B) -> A:
+        return self.inverse(b)
+
+    def __rshift__(self, other: Iso[B, C]) -> Iso[A, C]:
+        return Iso(lambda a: other.forward(self.forward(a)),
+                   lambda c: self.inverse(other.inverse(c)))
+
+    def __rrshift__(self, other: Iso[C, A]) -> Iso[C, B]:
+        return Iso(lambda c: self.forward(other.forward(c)),
+                   lambda b: other.inverse(self.inverse(b)))
+    
+    def __neg__(self) -> Iso[B, A]:
+        return Iso(self.inverse, self.forward)
+
+    @classmethod
+    def const(cls, a: A, b: B) -> Iso[A, B]:
+        return cls(lambda _: b, lambda _: a)
+
+
+class Mapper:
+    @staticmethod
+    def eval(func: Callable[..., Any], *args, **kwargs) -> Any:
+        if isinstance(func, Mapper):
+            return func(*args, **kwargs)
+        else:
+            return func
+        
+    def __init__(self, func: Callable[..., Any]):
+        self.func = func
+
+    def __call__(self, *args, **kwargs) -> Any:
+        return self.func(*args, **kwargs)
+    
+    def __add__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) + Mapper.eval(other, *args, **kwargs))
+    
+    def __radd__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) + self.func(*args, **kwargs))
+    
+    def __mul__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) * Mapper.eval(other, *args, **kwargs))
+    
+    def __rmul__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) * self.func(*args, **kwargs))
+    
+    def __div__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) / Mapper.eval(other, *args, **kwargs))
+    
+    def __rdiv__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) / self.func(*args, **kwargs))
+    
+    def __floordiv__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) // Mapper.eval(other, *args, **kwargs))
+    
+    def __rfloordiv__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) // self.func(*args, **kwargs))
+    
+    def __sub__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) - Mapper.eval(other, *args, **kwargs))
+    
+    def __rsub__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) - self.func(*args, **kwargs))
+    
+    def __neg__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: -self.func(*args, **kwargs))
+    
+    def __pos__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: +self.func(*args, **kwargs))  
+    
+    def __abs__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: abs(self.func(*args, **kwargs)))
+    
+    def __getitem__(self, index: Any ) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs)[Mapper.eval(index, *args, **kwargs)])
+    
+    def __or__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) | Mapper.eval(other, *args, **kwargs))
+    
+    def __ror__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) | self.func(*args, **kwargs))
+    
+    def __and__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) & Mapper.eval(other, *args, **kwargs))
+    
+    def __rand__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) & self.func(*args, **kwargs))
+    
+    def __invert__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: ~self.func(*args, **kwargs))  
+    
     @property
-    def value(self) -> B:
-        return self._data[0]
-    @property
-    def mapper(self) -> Callable[[B], A]:
-        return self._data[1]
+    def not_(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: not self.func(*args, **kwargs))
     
+    def __xor__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) ^ Mapper.eval(other, *args, **kwargs))
     
-
-@dataclass(frozen=True, slots=True)
-class Bimap(Generic[A, B]):
-    """A reversible mapping that returns both a forward value and an inverse function.
-
-    ``Bimap`` is like a function ``A -> B`` paired with a way to map a value
-    of type ``B`` back into an ``A``. It composes with other ``Bimap``s or a
-    ``Biarrow`` using ``>>`` and ``<<``-style operations, preserving an
-    automatically derived inverse.
-    """
-    run_f: Callable[[A], Reversible[A, B]]
-    def __call__(self, a: A) -> Reversible[A, B]:
-        """Apply the mapping to ``a``.
-
-        Returns:
-            tuple: ``(forward_value, inverse)`` where ``inverse`` maps
-            a compatible ``B`` back into an ``A``.
-        """
-        return self.run_f(a)    
+    def __rxor__(self, other: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) ^ self.func(*args, **kwargs))
     
-    def __rshift__(self, other: Bimap[B, C]) -> Bimap[A, C]:
-        """Compose this mapping with another mapping/arrow.
-
-        ``self >> other`` first applies ``self``, then ``other``. The produced
-        inverse runs ``other``'s inverse followed by ``self``'s inverse.
-        """
-        def bimap_then_run(a: A) -> Reversible[A, C]:
-            a2b = self(a)
-            b2c = other(a2b.value)
-            def inv(c2: C) -> A:
-                return a2b.mapper(b2c.mapper(c2))
-            return Reversible(b2c.value, inv)
-        return Bimap(bimap_then_run)
-
-    def __rrshift__(self, other: Bimap[C, A]) -> Bimap[C, B]:
-        """Right-composition so arrows or bimaps can be on the left of ``>>``."""
-        def bimap_then_run(c: C)->Reversible[C, B]:
-            c2a = other(c)
-            a2b = self(c2a.value)
-            def inv(b: B) -> C:
-                return c2a.mapper(a2b.mapper(b))
-            return Reversible(a2b.value, inv)
-        return Bimap(bimap_then_run)
-
-
-    @staticmethod
-    def const(a: B) -> Bimap[B, B]:
-        """Return a bimap that ignores input and always yields ``a``.
-
-        The inverse is identity for the output type.
-        """
-        return Bimap(lambda _: Reversible(a, lambda b: b))
-
-    @staticmethod
-    def identity() -> Bimap[A, A]:
-        """The identity bimap where forward and inverse are no-ops."""
-        return Bimap(lambda a: Reversible(a, lambda b: b))
+    def bool(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: bool(self.func(*args, **kwargs)))
+    
+    def __not__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: not self.func(*args, **kwargs))
+    
+    def __int__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: int(self.func(*args, **kwargs)))
+    
+    def __float__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: float(self.func(*args, **kwargs)))
+        
+    def __length_hint__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: len(self.func(*args, **kwargs)))
+    
+    def __len__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: len(self.func(*args, **kwargs)))  
+    
+    def __contains__(self, item: Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(item, *args, **kwargs) in self.func(*args, **kwargs))
+    
+    def __iter__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: iter(self.func(*args, **kwargs)))
+    
+    def __reversed__(self) -> Mapper:
+        return Mapper(lambda *args, **kwargs: reversed(self.func(*args, **kwargs)))
+    
+    def __eq__(self, other: Any):
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) == Mapper.eval(other, *args, **kwargs))
+    
+    def __ne__(self, other: Any):
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) != Mapper.eval(other, *args, **kwargs))
+    
+    def __lt__(self, other: Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) < Mapper.eval(other, *args, **kwargs))
+    
+    def __le__(self, other: Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) <= Mapper.eval(other, *args, **kwargs))
+    
+    def __gt__(self, other: Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) > Mapper.eval(other, *args, **kwargs))
+    
+    def __ge__(self, other: Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) >= Mapper.eval(other, *args, **kwargs))
+        
+    def if_then_else(self, then_mapper: Mapper | Any, else_mapper: Mapper | Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: Mapper.eval(then_mapper, *args, **kwargs) if self.func(*args, **kwargs) else Mapper.eval(else_mapper, *args, **kwargs))
     
     @staticmethod
-    def iso(f: Callable[[A], B], i: Callable[[B], A]) -> Bimap[A, B]:
-        """Create a bimap from a pair of inverse functions."""
-        def iso_f(a: A) -> Reversible[A, B]:
-            return Reversible(f(a), i)
-        return Bimap(iso_f)
+    def arg(index: int | str) -> Mapper:
+        if isinstance(index, str):
+            return Mapper(lambda *args, **kwargs: kwargs[index])
+        elif isinstance(index, int):
+            return Mapper(lambda *args, **kwargs: args[index])
+        else:
+            raise TypeError("Index must be an integer or string")
+
+    @staticmethod
+    def const(value: Any) -> Mapper:
+        return Mapper(lambda *args, **kwargs: value)
+    
+
+    @staticmethod
+    def callable(func: Callable[..., Any]) -> Mapper:
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            unnamed_args = []
+            named_args = {}
+            for v in args:
+                if isinstance(v, Mapper):
+                    unnamed_args.append(v(*args, **kwargs))
+                else:
+                    unnamed_args.append(v)
+            for k, v in kwargs.items():
+                if isinstance(v, Mapper):
+                    named_args[k] = v(*args, **kwargs)
+                else:
+                    named_args[k] = v
+            return func(*unnamed_args, **named_args)
+        return Mapper(wrapped)
+
+
+def call(c: Callable[..., Any], *args: Any, **kwargs: Any) -> Mapper:
+    def bound(t: list|tuple) -> Any:
+        unnamed_args = []
+        named_args = {}
+        for v in args:
+            if isinstance(v, Mapper):
+                unnamed_args.append(v(t))
+            else:
+                unnamed_args.append(v)
+        for k, v in kwargs.items():
+            if isinstance(v, Mapper):
+                named_args[k] = v(t)
+            else:
+                named_args[k] = v
+        return c(*unnamed_args, **named_args)
+    return Mapper(bound)
+

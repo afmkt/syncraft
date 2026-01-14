@@ -1,98 +1,83 @@
 from __future__ import annotations
-
-# from rich import print
-from pyDatalog import pyDatalog as d
-from syncraft.regex import (
-    parse, RE,
-    LiteralAtom, AnchorAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
-    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
-)
+from typing import Any, Tuple, Iterable
+from syncraft.ast import Nothing, Token, Lazy
+from syncraft.parser import parse_word
+from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
-from syncraft.tracer import Tracer
-from syncraft.cache import Cache
-
+from syncraft.cache import LeftRecursionError
+from syncraft.cache import Cache, set_randomization
+import syncraft.generator as gen
 from rich import print
-
-import timeit
-
+import re
 
 
-# def benchmark_fair():
-#     from syncraft.regex import parse as parse3
-#     count = 500
-#     result = []
-#     base_patterns = [
-#         r"(?P<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})",
-#         r'(?r)$|\W{4,}.+\U000FEAE1?u*',
-#         r'4{1}|e*\b(?0)[FyIn]{4,}',
-#         r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)',
-#         r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
-#         r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}',
-#         r'(?p)\W^|r?u{2,6}',
-#         r'(?f)',
-#         r'(?b)',
-#         r'(?r)$|\W{4,}.+\U000FEAE1?u*',
-#         r'4{1}|e*\b(?0)[FyIn]{4,}',
-#         r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)',
-#         r'\U000D6EAF.{2,6}(?r)\U0007CA66*',
-#         r'.{1}\u2B7B?[ivMe]|(?r)|[rqp\w]{2}[^HqbqM]{0,5}\D{4,}L{2,3}',
-
-#     ]
-#     t = 0
-#     t3 = 0
-#     for base_pattern in base_patterns:
-#         def run3():
-#             try:
-#                 parse3(base_pattern, raw=False) 
-#             except StopIteration:
-#                 pass
+def iter_tokens(ast: Any) -> Iterable[str]:
+    if isinstance(ast, Token):
+        yield ast.text # type: ignore
+    elif isinstance(ast, (tuple, list)):
+        for x in ast:
+            yield from iter_tokens(x)
+    elif hasattr(ast, 'value') and isinstance(getattr(ast, 'value'), tuple):
+        # For Then/OrElse wrappers from syncraft.ast
+        for x in getattr(ast, 'value'):
+            yield from iter_tokens(x)
+    elif hasattr(ast, 'left') and hasattr(ast, 'right'):
+        yield from iter_tokens(getattr(ast, 'left'))
+        yield from iter_tokens(getattr(ast, 'right'))
+    else:
+        # Fallback: scan string repr for bare word tokens (letters, digits)
+        for t in re.findall(r'[A-Za-z0-9_]+', str(ast)):
+            yield t
 
 
-#         def run():
-#             try:
-#                 parse(base_pattern, raw=False) 
-#             except StopIteration:
-#                 pass
+def token_multiset(ast: Any) -> dict[str, int]:
+    counts: dict[str,int] = {}
+    for t in iter_tokens(ast):
+        counts[t] = counts.get(t, 0) + 1
+    return counts
 
 
-#         t += timeit.timeit(run3, number=count)
-#         t3 += timeit.timeit(run, number=count)
 
-#     result.append("--- FAIR COMPARISON (Cold Start) ---")
+
+
+# Ensure randomization is enabled for these tests
+set_randomization(True)
+
+S = Syntax
+literal = S.lit
+token = S.token
+lazy = S.lazy
+
+def from_string(string: str) -> Token:
+    return Token(text=string)
+
     
-#     result.append(f"Regex: {t/count:.5f} s/parse")
-#     result.append(f"Regex3:    {t3/count:.5f} s/parse")
+
     
-#     ratio = (t) / (t3)
-#     result.append(f"Multiplier: Syncraft is {ratio:.5f}x slower than C-compiled Regex")
-#     return result
-
-
-
-        
     
-def test_graph():
-    def dump(s, g):
-        print(str(s))
-        print(str(g))
 
 
-    from syncraft.regex import RE
-    s1 = RE.regex_full
-    g1 = s1.graph()
-    print(str(g1.root))
-    s2 = Syntax.from_graph(g1)
-    g2 = s2.graph()
-    print(str(g2.root))
-    print("=== DUMP 1 ===")
-    dump(s1, g1)
-    print("=== DUMP 2 ===")
-    dump(s2, g2)
 
 
+
+
+
+
+
+def test_generate_with_mutual_left_recursion_without_base_raises():
+    # Mutual recursion with no productive base: A := B ; B := A
+    A = Syntax.lazy(lambda: B)  # type: ignore[name-defined]
+    B = Syntax.lazy(lambda: A)  # type: ignore[name-defined]
+    try:
+        generate_with(A)
+    except Exception as e:
+        assert isinstance(e, LeftRecursionError)
 
 
 if __name__ == "__main__":
-    test_graph()
     
-
+    test_generate_with_mutual_left_recursion_without_base_raises()
+    
+    # test_direct_left_recursion_unproductive_now_productive1_flatten()
+    
+    

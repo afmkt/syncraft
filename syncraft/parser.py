@@ -521,7 +521,7 @@ class Parser(Algebra[T, ParserState[T]]):
                         case x:
                             raise SyncraftError("Unknown result from lexer", offender=x, expect="LexerResult or None or LexerError")
 
-        return cls(lex_run)
+        return cls(lex_run).flag(intrinsic=True)
 
 
 

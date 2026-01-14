@@ -7,7 +7,7 @@ from syncraft.cache import Cache
 def test_tracer():
     pattern = r'\U000A231E[^OtVLo]*N{2,5}|T\u966F*.{0,3}.{5}|^\B(?R)'
     with Tracer() as tracer:
-        RE.parse(pattern, raw=False, cache = Cache().with_tracer(tracer))
+        RE.parse(pattern, cache = Cache().with_tracer(tracer))
 
     
         

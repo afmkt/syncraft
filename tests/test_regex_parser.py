@@ -102,7 +102,7 @@ def test_shorthands():
     ]
     for pattern, expected_kind in test_cases:
         # result = parse_regex(shorthand.to(ShorthandAtom), pattern)
-        tmp = parse(pattern, raw=False)
+        tmp = parse(pattern)
         assert isinstance(tmp, Regex)
         result = tmp.branches[0].pieces[0].atom
 
@@ -112,7 +112,7 @@ def test_shorthands():
 def test_dot_atom():
     """Test parsing of dot (.) atom."""
     # result = parse_regex(atom, ".")
-    tmp = parse(".", raw=False)
+    tmp = parse(".")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -139,7 +139,7 @@ def test_quantifiers():
 
     for pattern, expected_quantifier in test_cases:
         result = parse(pattern, syntax=RE.piece)
-        tmp = parse(pattern, raw=False)
+        tmp = parse(pattern)
         assert isinstance(tmp, Regex)
         result = tmp.branches[0].pieces[0]
 
@@ -151,7 +151,7 @@ def test_quantifiers():
 def test_character_classes_simple():
     """Test parsing of simple character classes."""
     # result = parse_regex(atom, "[]abc]")
-    tmp = parse("[]abc]", raw=False)
+    tmp = parse("[]abc]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -160,7 +160,7 @@ def test_character_classes_simple():
     assert set(result.items) == {"]", "a", "b", "c"}
     # result = parse_regex(atom, "[a]bc]")
     pattern = "[a]bc]"
-    tmp = parse(pattern, raw=False)
+    tmp = parse(pattern)
     assert isinstance(tmp, Regex), f"Parse {pattern} failed, {str(tmp)}"
     result = tmp.branches[0].pieces[0].atom
 
@@ -174,7 +174,7 @@ def test_character_classes_simple():
 def test_character_classes_negated():
     """Test parsing of negated character classes."""
     # result = parse_regex(atom, "[^abc]")
-    tmp = parse("[^abc]", raw=False)
+    tmp = parse("[^abc]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -183,7 +183,7 @@ def test_character_classes_negated():
     assert set(result.items) == {"a", "b", "c"} 
 
     # result = parse_regex(atom, "[^]abc]")
-    tmp = parse("[^]abc]", raw=False)
+    tmp = parse("[^]abc]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -193,7 +193,7 @@ def test_character_classes_negated():
 
     # result = parse_regex(atom, "[^a]bc]")
     pattern = "[^a]bc]"
-    tmp = parse(pattern, raw=False)
+    tmp = parse(pattern)
     assert isinstance(tmp, Regex), f"Parse {pattern} failed, {str(tmp)}"
     result = tmp.branches[0].pieces[0].atom
 
@@ -204,7 +204,7 @@ def test_character_classes_negated():
 def test_character_classes_with_ranges():
     """Test parsing of character classes with ranges."""
     # result = parse_regex(atom, "[a-zA-Z0-9]")
-    tmp = parse("[a-zA-Z0-9]", raw=False)
+    tmp = parse("[a-zA-Z0-9]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -215,7 +215,7 @@ def test_character_classes_with_ranges():
     assert result.items[1] == CharRange(start="A", end="Z")
     assert result.items[2] == CharRange(start="0", end="9")
     # result = parse_regex(atom, "[^a-zA-Z0-9]")
-    tmp = parse("[^a-zA-Z0-9]", raw=False)
+    tmp = parse("[^a-zA-Z0-9]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -230,7 +230,7 @@ def test_character_classes_with_ranges():
 def test_character_classes_with_escaped_chars():
     """Test parsing of character classes with escaped characters."""
     # result = parse_regex(atom, r"[\[\]\-\.\\]")
-    tmp = parse(r"[\[\]\-\.\\]", raw=False)
+    tmp = parse(r"[\[\]\-\.\\]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -240,7 +240,7 @@ def test_character_classes_with_escaped_chars():
     assert set(result.items) == {"[", "]", "-", ".", "\\"}
 
     # result = parse_regex(atom, r"[^\[\]\-\.\\]")
-    tmp = parse(r"[^\[\]\-\.\\]", raw=False)
+    tmp = parse(r"[^\[\]\-\.\\]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -254,7 +254,7 @@ def test_character_classes_with_escaped_chars():
 def test_character_classes_with_shorthands():
     """Test parsing of character classes containing shorthands."""
     # result = parse_regex(atom, r"[\d\s\w]")
-    tmp = parse(r"[\d\s\w]", raw=False)
+    tmp = parse(r"[\d\s\w]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -266,7 +266,7 @@ def test_character_classes_with_shorthands():
     assert result.items[2] == ShorthandAtom(kind=ShorthandKind.WORD)
     
     # result = parse_regex(atom, r"[^\d\s\w]")
-    tmp = parse(r"[^\d\s\w]", raw=False)
+    tmp = parse(r"[^\d\s\w]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -281,7 +281,7 @@ def test_character_classes_with_shorthands():
 def test_groups_capture():
     """Test parsing of capturing groups."""
     # result = parse_regex(atom, "(abc)")
-    tmp = parse("(abc)", raw=False)
+    tmp = parse("(abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -298,7 +298,7 @@ def test_groups_capture():
 def test_groups_non_capture():
     """Test parsing of non-capturing groups."""
     # result = parse_regex(group, "(?:abc)")
-    tmp = parse("(?:abc)", raw=False)
+    tmp = parse("(?:abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -316,7 +316,7 @@ def test_groups_non_capture():
 def test_groups_named():
     """Test parsing of named capturing groups."""
     # result = parse_regex(group, "(?P<name>abc)")
-    tmp = parse("(?P<name>abc)", raw=False)
+    tmp = parse("(?P<name>abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -335,7 +335,7 @@ def test_groups_named():
 def test_groups_lookahead():
     """Test parsing of positive lookahead groups."""
     # result = parse_regex(group, "(?=abc)")
-    tmp = parse("(?=abc)", raw=False)
+    tmp = parse("(?=abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -352,7 +352,7 @@ def test_groups_lookahead():
 def test_groups_negative_lookahead():
     """Test parsing of negative lookahead groups."""
     # result = parse_regex(group, "(?!abc)")
-    tmp = parse("(?!abc)", raw=False)
+    tmp = parse("(?!abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -370,7 +370,7 @@ def test_groups_negative_lookahead():
 def test_groups_lookbehind():
     """Test parsing of positive lookbehind groups."""
     # result = parse_regex(group, "(?<=abc)")
-    tmp = parse("(?<=abc)", raw=False)
+    tmp = parse("(?<=abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -388,7 +388,7 @@ def test_groups_lookbehind():
 def test_groups_negative_lookbehind():
     """Test parsing of negative lookbehind groups."""
     # result = parse_regex(group, "(?<!abc)")
-    tmp = parse("(?<!abc)", raw=False)
+    tmp = parse("(?<!abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -406,7 +406,7 @@ def test_groups_negative_lookbehind():
 def test_groups_flags_only():
     """Test parsing of flag-only groups."""
     # result = parse_regex(group, "(?i)")
-    tmp = parse("(?i)", raw=False)
+    tmp = parse("(?i)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -422,7 +422,7 @@ def test_groups_flags_only():
 def test_groups_flags_with_disable():
     """Test parsing of flag groups with disabled flags."""
     # result = parse_regex(group, "(?im-s)")
-    tmp = parse("(?im-s)", raw=False)
+    tmp = parse("(?im-s)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -437,7 +437,7 @@ def test_groups_flags_with_disable():
 def test_groups_flags_scoped():
     """Test parsing of scoped flag groups."""
     # result = parse_regex(group, "(?i:abc)")
-    tmp = parse("(?i:abc)", raw=False)
+    tmp = parse("(?i:abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -458,7 +458,7 @@ def test_groups_flags_scoped():
 def test_groups_flags_scoped_with_disable():
     """Test parsing of scoped flag groups with disabled flags."""
     # result = parse_regex(group, "(?im-s:abc)") --- IGNORE ---
-    tmp = parse("(?im-s:abc)", raw=False)
+    tmp = parse("(?im-s:abc)")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
     assert isinstance(result, GroupAtom)
@@ -477,7 +477,7 @@ def test_groups_flags_scoped_with_disable():
 
 
 def test_regex_comprehensive():
-    result = parse(r"\p{LuLl}", raw=False)
+    result = parse(r"\p{LuLl}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -488,7 +488,7 @@ def test_regex_comprehensive():
     assert p.atom.categories == ("Lu", "Ll")
 
 def test_regex_negated():
-    result = parse(r"\P{LuLl}", raw=False)
+    result = parse(r"\P{LuLl}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -499,7 +499,7 @@ def test_regex_negated():
     assert p.atom.categories == ("Lu", "Ll")
 
 def test_regex_complex():
-    result = parse(r"\p{L}", raw=False)
+    result = parse(r"\p{L}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -513,7 +513,7 @@ def test_regex_complex():
 
 def test_regex_alternation():
     """Test parsing of alternation (OR) expressions."""
-    result = parse( "abc|def|ghi", raw=False)
+    result = parse( "abc|def|ghi")
     assert isinstance(result, Regex)
     assert len(result.branches) == 3
 
@@ -545,7 +545,7 @@ def test_regex_alternation():
 def test_regex_complex_regex():
     """Test parsing of a complex regex combining multiple grammar rules."""
     pattern = r"^(\w+)\s+(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
-    result = parse(pattern, raw=False)
+    result = parse(pattern)
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -561,7 +561,7 @@ def test_regex_complex_regex():
 
 def test_regex_unicode_category_escape():
     """Test parsing of unicode category escapes."""
-    result = parse(r"\p{L}", raw=False)
+    result = parse(r"\p{L}")
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]

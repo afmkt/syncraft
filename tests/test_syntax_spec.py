@@ -103,12 +103,12 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     assert base_alts, "Expected at least one non-left-recursive alternative"
 
     base_nodes = [TestSyntax.from_spec(alt) for alt in base_alts]
-    base_syntax = base_nodes[0] if len(base_nodes) == 1 else TestSyntax.choice(*base_nodes)
+    base_syntax = base_nodes[0] if len(base_nodes) == 1 else TestSyntax.alt(*base_nodes)
 
     suffix_nodes = [
         TestSyntax.from_spec(_strip_left_recursion(alt, root_spec)) for alt in recursive_alts
     ]
-    suffix_choice = suffix_nodes[0] if len(suffix_nodes) == 1 else TestSyntax.choice(*suffix_nodes)
+    suffix_choice = suffix_nodes[0] if len(suffix_nodes) == 1 else TestSyntax.alt(*suffix_nodes)
 
     transformed = base_syntax + suffix_choice.many().optional
     from syncraft.cache import Cache

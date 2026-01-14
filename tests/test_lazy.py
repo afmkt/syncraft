@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any, Tuple
 from syncraft.ast import Nothing, Token, Lazy
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
@@ -29,9 +30,9 @@ def test_simple_recursion()->None:
     A = lazy(lambda: literal('a') + ~A | literal('a'))
     v, s = parse_word(A, 'a a a', cache=Cache())
     # print(v)
-    ast1, inv = v.bimap
+    # ast1, inv = v.bimap
     # print(ast1)
-    assert ast1 == (
+    assert v == (
         from_string('a'), 
         (
             from_string('a'), 
@@ -44,10 +45,10 @@ def test_simple_recursion()->None:
     # print(v)
     # print(ast1)    
     # print(inv(ast1))
-    x, y = inv(ast1).bimap
-    assert x == ast1
+    # x, y = inv(ast1).bimap
+    # assert x == ast1
 
-    vv, ss = generate_with(A, y(x))
+    vv, ss = generate_with(A, v)
     assert vv == v
 
 
@@ -58,7 +59,7 @@ def test_direct_recursion_equivalence()->None:
     """
     Expr1 = lazy(lambda: literal('a') + ~Expr1)
     v, s = parse_word(Expr1, 'a a a', cache=Cache())
-    ast, inv = v.bimap
+    # ast, inv = v.bimap
     expected = (
         from_string('a'), 
         (
@@ -69,11 +70,9 @@ def test_direct_recursion_equivalence()->None:
             )
         )
     )
-    assert ast == expected
-    rt_x, rt_builder = inv(ast).bimap
-    assert rt_x == ast
-    gen_v, _ = generate_with(Expr1, rt_builder(rt_x))
-    assert gen_v == v
+    assert v == expected
+    ast, _ = gen.generate_with(Expr1, v)
+    assert v == ast
 
 
 def test_mutual_recursion()->None:
@@ -82,9 +81,8 @@ def test_mutual_recursion()->None:
     v, s = parse_word(A, 'a b a b a c', cache=Cache())
     # print('--' * 20, "test_mutual_recursion", '--' * 20)
     # print(v)
-    ast1, inv = v.bimap
     # print(ast1)
-    assert ast1 == (
+    assert v == (
         from_string('a'), 
         (
             from_string('b'), 
@@ -105,10 +103,10 @@ def test_mutual_recursion()->None:
     # print(v)
     # print(ast1)    
     # print(inv(ast1))
-    x, y = inv(ast1).bimap
-    assert x == ast1
+    # x, y = inv(ast1).bimap
+    # assert x == ast1
 
-    vv, ss = generate_with(A, y(x))
+    vv, ss = generate_with(A, v)
     assert vv == v
 
 
@@ -123,8 +121,7 @@ def test_recursion() -> None:
     LL = parens() | L
     
     v, s = parse_word(LL, p_code, cache=Cache())
-    ast1, inv = v.bimap
-    assert ast1 == (
+    assert v == (
             from_string('a'), 
             (
                 from_string('a'), 
@@ -133,13 +130,8 @@ def test_recursion() -> None:
             ), 
             from_string('b')
         )
-    # print(v)
-    # print(ast1)    
-    # print(inv(ast1))
-    x, y = inv(ast1).bimap
-    assert x == ast1
-
-    vv, ss = generate_with(LL, y(x))
+    
+    vv, ss = generate_with(LL, v)
     assert vv == v
 
 
@@ -156,28 +148,28 @@ def test_left_recursion_variants()->None:
     Term = literal('n')
     Expr = lazy(lambda: Expr + literal('+') + Term | Term)
     v1, _ = parse_word(Expr, 'n + n + n', cache=Cache())
-    ast1, _ = v1.bimap
-    counts1 = token_multiset(ast1)
+    # ast1, _ = v1.bimap
+    counts1 = token_multiset(v1)
     assert counts1.get('n', 0) == 3
     assert counts1.get('+', 0) == 2
     # Variant 2: nested right growth
-    a_tok = literal('a').map(lambda x: x.text, raw=True).named('a')
+    a_tok = literal('a').map(lambda x: x.text).named('a')
     Expr1 = lazy(lambda: (Expr1 + a_tok) | a_tok).named('Expr1')
     v2, _ = parse_word(Expr1, 'a a a a', cache=Cache())
-    ast2, _ = v2.bimap
-    assert ast2 == ((('a', 'a'), 'a'), 'a')
+    # ast2, _ = v2.bimap
+    assert v2 == ((('a', 'a'), 'a'), 'a')
 
 
 def test_indirect_left_recursion()->None:
-    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text), raw=True)
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
     PLUS = literal(text='+')
     STAR = literal(text='*')
     A = lazy(lambda: (B >> PLUS >> A) | B)
     B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
     # Now succeeds (partial parse); ensure at least first two numbers captured
     v, s = parse_word(A, '1 + 2 * 3', cache=Cache())
-    ast, _ = v.bimap
-    counts = token_multiset(ast)
+    # ast, _ = v.bimap
+    counts = token_multiset(v)
     # Current partial recovery yields only last NUMBER; ensure at least one digit captured
     assert any(k.isdigit() for k in counts.keys())
 
@@ -207,29 +199,18 @@ def test_indirect_left_recursion_2()->None:
         ( )
         1 * ( 2 + )
     """
-    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text), raw=True)
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
     PLUS = literal(text='+')
     STAR = literal(text='*')
     LPAREN = literal(text='(')
     RPAREN = literal(text=')')
     Expr = lazy(lambda: (Expr + PLUS + Term) | Term)
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)
-    Factor = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
-    # NOTE: This classic arithmetic grammar triggers deep mutual left recursion across Expr/Term.
-    # Current recovery handles direct left recursion but not multi-head cyclic growth; allow either
-    # a LeftRecursionError (no progress) or Python RecursionError (unbounded expansion) for now.
-
-    # v, s = parse_word(Expr, '1 + 2 * 3')
-    # v, s = parse_word(Expr, '(1 + 2) * 3')
-    # v, s = parse_word(Expr, '1 + (2 * 3)')
-    # v, s = parse_word(Expr, '((1 + 2) * 3) + 4 * 5 + 6')
+    Factor: Syntax[Tuple[Any, ...] | int, Any] = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
 
     v1, s1 = parse_word(Expr, '1 + 2 * 3', cache=Cache())
-    a1, _ = v1.bimap
-    # Updated semantics: left-recursive growth now preserves full infix structure.
-    # Expect canonical precedence: (1, '+', (2, '*', 3))
-    assert isinstance(a1, tuple) and len(a1) == 3, f"Expected structured AST triple, got {a1!r}"
-    # Normalize token / value leaves to plain python values where possible
+    # a1, _ = v1.bimap
+    assert isinstance(v1, tuple) and len(v1) == 3, f"Expected structured AST triple, got {v1!r}"
     def leaf(x):
         try:
             return int(str(x)[2:]) if str(x).startswith('t.') and str(x)[2:].isdigit() else (str(x)[2:] if str(x).startswith('t.') else x)
@@ -239,20 +220,14 @@ def test_indirect_left_recursion_2()->None:
         if isinstance(ast, tuple) and len(ast) == 3 and isinstance(ast[1], (str, object)):
             return (norm(ast[0]), leaf(ast[1] if not isinstance(ast[1], tuple) else ast[1]), norm(ast[2]))
         return leaf(ast)
-    normalized = norm(a1)
+    normalized = norm(v1)
     assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
 
-    # Exercise several positive examples ensuring full consumption.
-    # (Further sample loop removed due to current recursion depth behavior in repeated instantiations.)
-
-    # Representative value check (parsing '42' should yield the int 42 under current collapsing semantics)
     v_42, _ = parse_word(Expr, '42', cache=Cache())
-    a_42, _ = v_42.bimap
-    # Single number still normalizes to its integer value
-    single_norm = norm(a_42)
+    # a_42, _ = v_42.bimap
+    single_norm = norm(v_42)
     assert single_norm == 42
 
-    # print(v)
 
 def test_indirect_left_recursion_structured_plus()->None:
     """Ensure '+' combinator preserves structure in mutual left-recursive arithmetic grammar.
@@ -270,15 +245,15 @@ def test_indirect_left_recursion_structured_plus()->None:
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = lazy(lambda: NUMBER)
     v,_ = parse_word(Expr,'1 + 2 * 3', cache=Cache())
-    ast,_ = v.bimap
+    # ast,_ = v.bimap
     # Basic structural checks
-    assert isinstance(ast, tuple) and len(ast) == 3
-    assert str(ast[0]) == 't.1'
-    assert str(ast[1]) == 't.+'
-    assert isinstance(ast[2], tuple) and len(ast[2]) == 3
-    assert str(ast[2][0]) == 't.2'
-    assert str(ast[2][1]) == 't.*'
-    assert str(ast[2][2]) == 't.3'
+    assert isinstance(v, tuple) and len(v) == 3
+    assert str(v[0]) == 't.1'
+    assert str(v[1]) == 't.+'
+    assert isinstance(v[2], tuple) and len(v[2]) == 3
+    assert str(v[2][0]) == 't.2'
+    assert str(v[2][1]) == 't.*'
+    assert str(v[2][2]) == 't.3'
 
 
 def test_mutual_left_recursive_map_preserves_shape()->None:
@@ -310,11 +285,11 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = lazy(lambda: NUMBER)  # type: ignore[name-defined]
     v_raw, _ = parse_word(Expr, '1 + 2 * 3', cache=Cache())
-    raw, _ = v_raw.bimap
+    # raw, _ = v_raw.bimap
     # Raw structural assertions
-    print(raw)
-    assert isinstance(raw, tuple) and len(raw) == 3
-    left_num, plus_tok, right_term = raw
+    print(v_raw)
+    assert isinstance(v_raw, tuple) and len(v_raw) == 3
+    left_num, plus_tok, right_term = v_raw
     assert str(left_num) == 't.1'
     assert str(plus_tok) == 't.+'
     assert isinstance(right_term, tuple) and len(right_term) == 3
@@ -323,14 +298,14 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     assert str(right_term[2]) == 't.3'
 
     # Mapped variant
-    NUMBER_M = NUMBER.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  # type: ignore[name-defined]
+    NUMBER_M = NUMBER.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  # type: ignore[name-defined]
     ExprM = lazy(lambda: (ExprM + PLUS + TermM) | TermM)  # type: ignore[name-defined]
     TermM = lazy(lambda: (TermM + STAR + FactorM) | FactorM)  # type: ignore[name-defined]
     FactorM = lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
     v_mapped, _ = parse_word(ExprM, '1 + 2 * 3', cache=Cache())
-    mapped, _ = v_mapped.bimap
-    assert isinstance(mapped, tuple) and len(mapped) == 3
-    l_val, plus_tok2, right_term_m = mapped
+    # mapped, _ = v_mapped.bimap
+    assert isinstance(v_mapped, tuple) and len(v_mapped) == 3
+    l_val, plus_tok2, right_term_m = v_mapped
     assert l_val == 1
     assert plus_tok2.text == '+'
     assert isinstance(right_term_m, tuple) and len(right_term_m) == 3
@@ -349,8 +324,8 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
         if isinstance(x, int):
             return ('INT', x)
         return ('OTHER', repr(x))
-    raw_shape = shape(raw)
-    mapped_shape = shape(mapped)
+    raw_shape = shape(v_raw)
+    mapped_shape = shape(v_mapped)
     # Normalize to abstract skeleton ignoring numeric identity.
     def norm(node):
         tag, val = node
@@ -385,20 +360,20 @@ def test_non_recursive_map_preserves_shape()->None:
     PLUS = literal('+')
     Pair = NUM + PLUS + NUM
     v,_ = parse_word(Pair, '12 + 34', cache=Cache())
-    ast,_ = v.bimap
-    assert isinstance(ast, tuple) and len(ast) == 3
-    left_tok, plus_tok, right_tok = ast
+    # ast,_ = v.bimap
+    assert isinstance(v, tuple) and len(v) == 3
+    left_tok, plus_tok, right_tok = v
     assert str(plus_tok) == 't.+'
     assert str(left_tok) == 't.12'
     assert str(right_tok) == 't.34'
 
     # Mapped version
-    NUM_M = NUM.map(lambda t: int(t.text), raw=True)
+    NUM_M = NUM.map(lambda t: int(t.text))
     PairM = NUM_M + PLUS + NUM_M
     v2,_ = parse_word(PairM, '12 + 34', cache=Cache())
-    ast2,_ = v2.bimap
-    assert isinstance(ast2, tuple) and len(ast2) == 3
-    l2, plus2, r2 = ast2
+    # ast2,_ = v2.bimap
+    assert isinstance(v2, tuple) and len(v2) == 3
+    l2, plus2, r2 = v2
     # Leaves transformed to int but shape preserved.
     assert l2 == 12 and r2 == 34
     assert str(plus2) == 't.+'
@@ -422,30 +397,26 @@ def test_direct_left_recursive_map_preserves_shape()->None:
         Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
         v,_ = parse_word(Expr, '1 + 2 + 3', cache=Cache())
         generated, bound = gen.generate_with(Expr, v)
-        assert v.mapped == generated.mapped
-        ast, back = v.bimap
-        assert ast == back(ast).mapped
+        assert v == generated
 
-        raw,_ = v.bimap
+        # raw,_ = v.bimap
         # Raw structure assertions
-        assert isinstance(raw, tuple) and len(raw) == 3
-        assert isinstance(raw[0], tuple) and len(raw[0]) == 3  # left nested
+        assert isinstance(v, tuple) and len(v) == 3
+        assert isinstance(v[0], tuple) and len(v[0]) == 3  # left nested
         
-        assert raw[1] == Token(text='+')
-        assert raw[2] == Token(text='3')
+        assert v[1] == Token(text='+')
+        assert v[2] == Token(text='3')
 
         # Mapped version
-        NUM_M = NUM.iso(lambda t: int(t.text), lambda n: Token(text=str(n)))  
+        NUM_M = NUM.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  
         ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
         v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=Cache())
         generated, bound = gen.generate_with(ExprM, v2)
-        assert v2.mapped == generated.mapped
-        ast, back = v2.bimap
-        assert ast == back(ast).mapped
+        assert v2 == generated
 
-        mapped,_ = v2.bimap
-        assert isinstance(mapped, tuple) and len(mapped) == 3
-        left_nested, mid_op, right_leaf = mapped
+        # mapped,_ = v2.bimap
+        assert isinstance(v2, tuple) and len(v2) == 3
+        left_nested, mid_op, right_leaf = v2
         assert isinstance(left_nested, tuple) and len(left_nested) == 3
         assert mid_op.text == '+'
         assert right_leaf == 3
@@ -487,12 +458,9 @@ def test_indirect_left_recursion_3()->None:
     # Now succeeds but current semantics retain only last item; ensure at least 'a' present
     v, s = parse_word(List, 'a , b , a', cache=Cache())
     generated, bound = gen.generate_with(List, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    counts = token_multiset(ast)
+    counts = token_multiset(v)
     # Current semantics retains only final item
     assert counts.get('a', 0) >= 1
 
@@ -534,12 +502,9 @@ def test_indirect_left_recursion_4()->None:
     # Now succeeds but collapses to first terminal; ensure 'a' present
     v, s = parse_word(A, 'a y b x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    counts = token_multiset(ast)
+    counts = token_multiset(v)
     assert counts.get('a', 0) >= 1
 
 
@@ -576,12 +541,9 @@ def test_indirect_left_recursion_5()->None:
     # Now succeeds but retains last element only; ensure 'c' present
     v, s = parse_word(Chain, 'a -> b -> c', cache=Cache())
     generated, bound = gen.generate_with(Chain, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    counts = token_multiset(ast)
+    counts = token_multiset(v)
     assert counts.get('c', 0) >= 1
 
 
@@ -602,13 +564,10 @@ def test_multi_head_indirect_cycle_fixed_point()->None:
     B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
     v, s = parse_word(A, 'a y b x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
     # Ensure at least starting 'a' present (basic success signal)
-    assert 'a' in str(ast)
+    assert 'a' in str(v)
 
 
 def test_multi_head_identity_in_error()->None:
@@ -626,12 +585,10 @@ def test_multi_head_identity_in_error()->None:
     # is retained for when public API allows passing cache instance.
     v, s = parse_word(Expr, 'n + n + n', cache=Cache())
     generated, bound = gen.generate_with(Expr, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    assert str(ast).count('n') >= 3
+    
+    assert str(v).count('n') >= 3
 
 
 def test_direct_left_recursion_unproductive_now_productive()->None:
@@ -639,48 +596,21 @@ def test_direct_left_recursion_unproductive_now_productive()->None:
     S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
     generated, bound = gen.generate_with(S1, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    assert ast == ((((Token(text='a'),),),),)
+    assert v == ((((Token(text='a'),),),),)
 
-def test_direct_left_recursion_unproductive_now_productive_flatten()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 // S1) | literal('a'), flatten=True)
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    generated, bound = gen.generate_with(S1, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
-
-    ast, _ = v.bimap
-    assert ast == (Token(text='a'),)
 
 def test_direct_left_recursion_unproductive_now_productive1()->None:
     """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
     S1 = lazy(lambda: (S1 >> S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
     generated, bound = gen.generate_with(S1, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    assert ast == (Token(text='a'),)
 
-def test_direct_left_recursion_unproductive_now_productive1_flatten()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'), flatten=True)
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    generated, bound = gen.generate_with(S1, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == (Token(text='a'),)
 
-    ast, _ = v.bimap
-    assert ast == (Token(text='a'),)
 
 
 def test_direct_left_recursion_unproductive_now_productive2()->None:
@@ -688,32 +618,17 @@ def test_direct_left_recursion_unproductive_now_productive2()->None:
     S1 = lazy(lambda: (S1 + S1) | literal('a'))
     v, _ = parse_word(S1, 'a a a a a', cache=Cache())
     generated, bound = gen.generate_with(S1, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    assert ast == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
+    assert v == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
 
-def test_direct_left_recursion_unproductive_now_productive2_flatten()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 + S1) | literal('a'), flatten=True)
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    generated, bound = gen.generate_with(S1, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
-
-    ast, _ = v.bimap
-    assert ast == (Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a'))
 
 
 def test_direct_left_recursion_collapse()->None:
     """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
     S1 = lazy(lambda: (S1 // S1) | literal('a'))
     v, _ = parse_word(S1, 'a', cache=Cache())
-    ast, _ = v.bimap
-    assert ast == Token(text='a')
+    assert v == Token(text='a')
 
 def test_indirect_multi_head_cycle_parses_successfully():
     """
@@ -724,12 +639,8 @@ def test_indirect_multi_head_cycle_parses_successfully():
     B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
     v, s = parse_word(A, 'a y a y b x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
-
-    ast, _ = v.bimap
-    assert any(t in str(ast) for t in ['a', 'b'])
+    assert v == generated
+    assert any(t in str(v) for t in ['a', 'b'])
 
 
 def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
@@ -744,33 +655,27 @@ def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
     cache.max_growth_iterations = 500  # Increase limit for this deep recursion test
     v, s = parse_word(T, input_text, cache=cache)
     generated, bound = gen.generate_with(T, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    ast, _ = v.bimap
-    assert ast == (Token(text='a'),)
+    assert v == (Token(text='a'),)
 
 
 
 def test_multi_recursion()->None:
-    a = literal('a').iso(lambda x: x.text, lambda t: Token(text=t)).named('a')
-    b = literal('b').iso(lambda x: x.text, lambda t: Token(text=t)).named('b')
-    c = literal('c').iso(lambda x: x.text, lambda t: Token(text=t)).named('c')
-    x = literal('x').iso(lambda x: x.text, lambda t: Token(text=t)).named('x')
-    y = literal('y').iso(lambda x: x.text, lambda t: Token(text=t)).named('y')
-    z = literal('z').iso(lambda x: x.text, lambda t: Token(text=t)).named('z')
+    a = literal('a').bimap(lambda x: x.text, lambda t: Token(text=t)).named('a')
+    b = literal('b').bimap(lambda x: x.text, lambda t: Token(text=t)).named('b')
+    c = literal('c').bimap(lambda x: x.text, lambda t: Token(text=t)).named('c')
+    x = literal('x').bimap(lambda x: x.text, lambda t: Token(text=t)).named('x')
+    y = literal('y').bimap(lambda x: x.text, lambda t: Token(text=t)).named('y')
+    z = literal('z').bimap(lambda x: x.text, lambda t: Token(text=t)).named('z')
     A = lazy(lambda: (B + x) | a).named('A')
     B = lazy(lambda: (C + y) | b).named('B')
     C = lazy(lambda: (A + z) | c).named('C')
 
     v, s = parse_word(A, 'a z y x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
-    assert v.mapped == generated.mapped
-    ast, back = v.bimap
-    assert ast == back(ast).mapped
+    assert v == generated
 
-    print(v)
     # We care about the raw AST shape (pre-bimap). Extract leaves manually.
     from syncraft.ast import Then, ThenKind
     from syncraft.algebra import OrElse, OrElseKind  # type: ignore

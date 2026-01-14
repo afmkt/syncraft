@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
-from syncraft.ast import AST, Reversible
+
 from syncraft.algebra import Error
 from syncraft.syntax import Syntax
 from syncraft.fa import Builder
@@ -235,7 +235,7 @@ S = Syntax.set(builtin=True)
 @grammar
 class RE(Grammar):
     dollar = S.lex(B.lit("$"))
-    number = S.lex(B.oneof("0123456789").many(at_least=1)).iso(int, str)
+    number = S.lex(B.oneof("0123456789").many(at_least=1)).bimap(int, str)
     dot = S.lex(B.lit(".")).to(DotAtom)
     or_ = S.lex(B.lit("|"))
     whitespace = S.lex(B.oneof(" \t\n\r\f\v"))
@@ -279,31 +279,34 @@ class RE(Grammar):
     hex_pair = S.lex(B.oneof("0123456789abcdefABCDEF").many(at_least=2, at_most=2))
     meta_char = S.lex(B.oneof("\"\\.[](){}|+*?^$"))
     control_escape = S.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"]))
-    shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).iso(ShorthandKind.from_literal, ShorthandKind.to_literal).to(ShorthandAtom)
-    category_name = unicode_category.many().iso(tuple, list)
-    positive_unicode_category = S.seq(escaped_p.bimap(lambda x: Reversible(False, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace)
-    negative_unicode_category = S.seq(escaped_P.bimap(lambda x: Reversible(True, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace)
+    shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).bimap(ShorthandKind.from_literal, ShorthandKind.to_literal).to(ShorthandAtom)
+    category_name = unicode_category.many().bimap(tuple, list)
+    # positive_unicode_category = S.seq(escaped_p.bimap(lambda x: Reversible(False, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace)
+    # negative_unicode_category = S.seq(escaped_P.bimap(lambda x: Reversible(True, lambda _: x)).fld('negated'), category_name.fld('categories'), rbrace)
+    positive_unicode_category = S.seq(escaped_p.fld('negated'), category_name.fld('categories'), rbrace)
+    negative_unicode_category = S.seq(escaped_P.fld('negated'), category_name.fld('categories'), rbrace)
+
     unicode_category_escape = S.alt(positive_unicode_category, negative_unicode_category).to(UnicodeCategoryAtom)
         
-    unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).iso((_0.list + _1).apply(''.join), lambda s: (s[0], list(s[1:])))
+    unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).bimap((_0.list + _1).apply(''.join), lambda s: (s[0], list(s[1:])))
     name_continue = unicode_letter | underscore
     name_start = unicode_letter | underscore
-    name = (name_start + name_continue.many()).iso((_0.list + _1).apply(''.join), lambda s: (s[0], list(s[1:])))
-    unicode_escape = S.alt((escaped_x >> hex_pair).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '02x')), 
-                    (escaped_u >> hex_quad).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '04x')),
-                    (escaped_U >> hex_octa).iso(call(int, _0, 16).apply(chr), lambda x: format(ord(x), '08x')), 
+    name = (name_start + name_continue.many()).bimap((_0.list + _1).apply(''.join), lambda s: (s[0], list(s[1:])))
+    unicode_escape = S.alt((escaped_x >> hex_pair).bimap(call(int, _0, 16).apply(chr), lambda x: (format(ord(x), '02x'),)), 
+                    (escaped_u >> hex_quad).bimap(call(int, _0, 16).apply(chr), lambda x: (format(ord(x), '04x'),)),
+                    (escaped_U >> hex_octa).bimap(call(int, _0, 16).apply(chr), lambda x: (format(ord(x), '08x'),)), 
                     ((escaped_N >> unicode_name) // rbrace).map(_0.apply(unicodedata.lookup)))
-    escaped_metachar = (backslash >> meta_char).iso(_0, lambda x: (x,))
+    escaped_metachar = (backslash >> meta_char).bimap(_0, lambda x: (x,))
     escaped_0 = S.lex(B.lit("\\0"))
     octal_digit = S.lex(B.range("0", "7"))
     octal_escape = S.alt(
-        (escaped_0 >> octal_digit + octal_digit).iso(call(int, _0 + _1, 8).apply(chr), lambda x: format(ord(x), '03o')),
-        (backslash >> octal_digit.many(at_least=1)).iso(call(int, _0.apply(''.join), 8).apply(chr), lambda x: format(ord(x), 'o'))
+        (escaped_0 >> octal_digit + octal_digit).bimap(call(int, _0 + _1, 8).apply(chr), lambda x: (format(ord(x), '03o'),)),
+        (backslash >> octal_digit.many(at_least=1)).bimap(call(int, _0.apply(''.join), 8).apply(chr), lambda x: (format(ord(x), 'o'),))
     )
     escaped_literal = octal_escape | control_escape | unicode_escape | escaped_metachar
     literal = escaped_literal | literal_char
     class_meta_char = minus | rsquare | backslash
-    escaped_class_meta= (backslash >> class_meta_char).iso(_0, lambda x: (x,))
+    escaped_class_meta= (backslash >> class_meta_char).bimap(_0, lambda x: (x,))
     class_atom = S.alt(
                         class_literal,
                         shorthand,
@@ -317,10 +320,11 @@ class RE(Grammar):
     irange = S.seq(class_atom.fld('start'), minus, class_atom.fld('end')).to(CharRange)
     class_item = irange | class_atom
     class_class_items = (~(rsquare | minus) + class_item.many()).map(_0.if_then_else(_1 + _0.list, _1))
-    char_class = S.seq(lsquare, (~caret).bimap(lambda x: Reversible(bool(x), lambda _: x)).fld('negated'), class_class_items.fld('items'), rsquare).to(CharClassAtom)
+    # char_class = S.seq(lsquare, (~caret).bimap(lambda x: Reversible(bool(x), lambda _: x)).fld('negated'), class_class_items.fld('items'), rsquare).to(CharClassAtom)
+    char_class = S.seq(lsquare, (~caret).fld('negated'), class_class_items.fld('items'), rsquare).to(CharClassAtom)
 
     flag = S.lex(B.oneof("iLmsuaxw"))
-    flag_seq = flag.many().iso(tuple, list)
+    flag_seq = flag.many().bimap(tuple, list)
     inline_flags = S.seq(flag_seq.fld('enabled'), (~(minus >> flag_seq)).map(at().if_then_else(_0, None)).fld('disabled')).to(InlineFlags)
     comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
@@ -368,9 +372,9 @@ class RE(Grammar):
 
 
     braced_quantifier = S.alt(
-        S.seq(lbrace, +number, rbrace).iso(call(Quantifier, minimum=_0, maximum=_0), lambda q: (q.minimum,)),
-        S.seq(lbrace, +number, comma, rbrace).iso(call(Quantifier, minimum=_0, maximum=None), lambda q: (q.minimum,)),
-        S.seq(lbrace, comma, +number, rbrace).iso(call(Quantifier, minimum=0, maximum=_0), lambda q: (q.maximum,)),
+        S.seq(lbrace, +number, rbrace).bimap(call(Quantifier, minimum=_0, maximum=_0), lambda q: (q.minimum,)),
+        S.seq(lbrace, +number, comma, rbrace).bimap(call(Quantifier, minimum=_0, maximum=None), lambda q: (q.minimum,)),
+        S.seq(lbrace, comma, +number, rbrace).bimap(call(Quantifier, minimum=0, maximum=_0), lambda q: (q.maximum,)),
         S.seq(lbrace, number.fld('minimum'), comma, number.fld('maximum'), rbrace).to(Quantifier)
     )
 
@@ -384,8 +388,8 @@ class RE(Grammar):
 
 
     backreference = S.alt(
-        (backslash >> number).iso(_0, lambda x: (x,)),
-        (S.lex(B.lit("\\g<")) >> name // greater).iso(_0, lambda x: (x,))
+        (backslash >> number).bimap(_0, lambda x: (x,)),
+        (S.lex(B.lit("\\g<")) >> name // greater).bimap(_0, lambda x: (x,))
     )
 
     atom = S.alt(        
@@ -404,22 +408,15 @@ class RE(Grammar):
     branch = S.seq((piece.many().fld('pieces'))).to(Branch)
 
     regex = S.seq(branch.sep_by(or_).fld('branches')).to(Regex)
-    regex_full = rule((regex // S.eof()).iso(_0, lambda x: (x,)), is_root=True)
+    regex_full = rule((regex // S.eof()).bimap(_0, lambda x: (x,)), is_root=True)
 
 
 
 
 
 
-
-
-@overload
-def parse(data: str, *, raw: Literal[True], syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any: ...
-@overload
-def parse(data: str, *, raw: Literal[False] = False, syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any: ...
-
-def parse(data: str, *, raw:bool=False, syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any:
-    return RE.parse(data, syntax=syntax, raw=raw, cache=cache)
+def parse(data: str, *, syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any:
+    return RE.parse(data, syntax=syntax, cache=cache)
 
 
 @dataclass
@@ -442,7 +439,7 @@ def verify(pattern: str, profile: bool = False) -> VerifyResult:
     if profile:
         cache = cache.with_tracer()
     
-    parsed = parse(pattern, raw=False, cache=cache)
+    parsed = parse(pattern, cache=cache)
     if cache.tracer is not None:
         cache.tracer
         

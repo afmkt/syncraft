@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict
+from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict, Hashable
 from syncraft.constraint import Bindable
 from syncraft.ast import SyncraftError
 from rich import print
-from syncraft.utils import callable_str, is_lazy, is_orelse, syntax_of
+from syncraft.utils import callable_str, is_lazy, is_orelse, syntax_of, is_intrinsic
 from syncraft.tracer import Tracer
 from collections import defaultdict
 import copy
@@ -35,6 +35,7 @@ class Either(Generic[L, R]):
         return isinstance(self, Right)
 
 Ret = Either[Any, Tuple[Any, S]]
+
 Rule = Callable[[S, "Cache[S]"], Generator[Any, Any, Ret]]
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,10 @@ class Right(Either[Any, R]):
             if len(self.value) >= 2:
                 return self.value[1]
         return None
+    
+    def __str__(self) -> str:
+
+        return f"Right({self.value})" if not isinstance(self.value, tuple) else f"Right({self.value[0]})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +146,7 @@ class InProgress(Generic[S]):
         return self
     
     def __str__(self) -> str:
-        return f"InProgress(rule={callable_str(self.rule)}, result={self.result})"
+        return f"InProgress({self.result})"
         
 
     @property
@@ -176,6 +181,9 @@ class CacheEntry(Generic[S]):
             if state is not None:
                 return state.cache_key
         return None
+    
+    def __str__(self) -> str:
+        return f"{self.state.str_input(False)} {self.payload}"
 
 
 @dataclass(slots=True)
@@ -301,12 +309,14 @@ class Cache(Generic[S]):
         return result
     
     def __str__(self) -> str:
+
         parts = []
         for f, c in self.cache.items():
+            parts.append(" " * 4 + f"{callable_str(f)} {f}:")
             for k, v in c.items():
-                parts.append(f"{k} -> {v} ^ {callable_str(f)}")
-        content = "\n    ".join(parts)
-        return f"Cache(\n    {content})"
+                parts.append(" " * 8 + f"{k} {v}")
+        content = "\n".join(parts)
+        return f"Cache(\n{content})"
     
     
     def gc(self, min_position: int) -> None:
@@ -323,6 +333,34 @@ class Cache(Generic[S]):
             f: Rule,
             key: S) -> Generator[Any, Any, Ret]:
         
+        if is_intrinsic(f):
+            print('intrinsic_exec', f, callable_str(f), key.cache_key)
+            ret = yield from self.intrinsic_exec(f, key)
+            return ret
+        else:
+            print('transformational_exec', f, callable_str(f), key.cache_key)
+            ret = yield from self.transformational_exec(f, key)
+            return ret
+        
+        
+    def transformational_exec(self,
+            f: Rule,
+            key: S) -> Generator[Any, Any, Ret]:
+        """Execute a transformational combinator.
+        
+        Transformational combinators (map, iso, map_error, etc.) don't participate
+        in left-recursion detection or group building. They simply transform results
+        from their inner algebra, which handles its own caching.
+        """
+        # Just run the function directly - no caching at this level
+        # The inner algebra (via self.run()) will handle caching with intrinsic combinators
+        result = yield from self.run_rule(f, key)
+        return result
+
+
+    def intrinsic_exec(self,
+            f: Rule,
+            key: S) -> Generator[Any, Any, Ret]:
         cache_key = key.cache_key 
         self.stack.append((f, cache_key))
         try:

@@ -21,8 +21,8 @@ def test_lazy_state_hash_equality_contract():
         return Syntax.lit("hello")
     
     # Create two LazyState objects with same content but different thunk functions
-    state1 = LazyState(flatten=False, thunk=thunk1)
-    state2 = LazyState(flatten=False, thunk=thunk2)
+    state1 = LazyState(thunk=thunk1)
+    state2 = LazyState(thunk=thunk2)
     
     # Test structural equality - they should NOT be equal because thunks are different
     assert state1 != state2, "LazyState objects with different thunks should not be equal"
@@ -43,26 +43,13 @@ def test_lazy_state_equality_with_same_thunk():
         return Syntax.lit("shared")
     
     # Create two LazyState objects with the same thunk function reference
-    state1 = LazyState(flatten=False, thunk=shared_thunk)
-    state2 = LazyState(flatten=False, thunk=shared_thunk)
+    state1 = LazyState(thunk=shared_thunk)
+    state2 = LazyState(thunk=shared_thunk)
     
     # They should be equal because they have the same thunk reference
     assert state1 == state2, "LazyState objects with same thunk should be equal"
     assert hash(state1) == hash(state2), "LazyState objects with same thunk should have same hash"
 
-
-def test_lazy_state_flatten_affects_equality():
-    """Test that the flatten parameter affects LazyState equality."""
-    
-    def thunk():
-        return Syntax.lit("test")
-    
-    state1 = LazyState(flatten=True, thunk=thunk)
-    state2 = LazyState(flatten=False, thunk=thunk)
-    
-    # They should NOT be equal because flatten differs
-    assert state1 != state2, "LazyState objects with different flatten should not be equal"
-    assert hash(state1) != hash(state2), "LazyState objects with different flatten should have different hashes"
 
 
 def test_lazy_state_type_checking():
@@ -71,7 +58,7 @@ def test_lazy_state_type_checking():
     def thunk():
         return Syntax.lit("test")
     
-    state = LazyState(flatten=False, thunk=thunk)
+    state = LazyState(thunk=thunk)
     
     # Should not be equal to non-LazyState objects
     assert state != "not a LazyState"
@@ -156,8 +143,8 @@ def test_lazy_state_cache_independence():
     def thunk():
         return Syntax.lit("cached")
     
-    state1 = LazyState(flatten=False, thunk=thunk)
-    state2 = LazyState(flatten=False, thunk=thunk)
+    state1 = LazyState(thunk=thunk)
+    state2 = LazyState(thunk=thunk)
     
     # Force cache population in state1
     _ = state1.cached
@@ -189,8 +176,8 @@ def test_function_identity_vs_structural_equivalence():
     assert f1.__name__ == f2.__name__, "Function names should be identical"
     
     # This is why LazyState objects with "equivalent" thunks are not equal
-    state1 = LazyState(flatten=False, thunk=f1)
-    state2 = LazyState(flatten=False, thunk=f2)
+    state1 = LazyState(thunk=f1)
+    state2 = LazyState(thunk=f2)
     
     assert state1 != state2, "LazyState with different thunk objects should not be equal"
     assert hash(state1) != hash(state2), "LazyState with different thunk objects should have different hashes"

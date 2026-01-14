@@ -4,7 +4,11 @@ from .syntax import (
 	Graph,
     LazySpec,
     ThenSpec,
-    OrElseSpec,    
+    OrElseSpec,
+    ChoiceSpec,
+	SeqSpec,
+    ParallelSpec,
+    ManySpec
 )
 
 from .algebra import (
@@ -40,7 +44,7 @@ from .constraint import (
 	forall,
 	exists,
 )
-from .bimap import Reversible, Bimap
+
 from .ast import (
 	AST,
 	Token,
@@ -69,8 +73,6 @@ from .tracer import Tracer
 from .grammar import Grammar, grammar, rule, lazy
 
 # Export commonly used class methods for convenience
-lit = Syntax.lit
-choice = Syntax.choice
 
 __all__ = [
     "Tracer", "Grammar", "grammar", "rule", "lazy",
@@ -94,10 +96,9 @@ __all__ = [
 	# constraints
 	"Constraint", "Quantifier", "forall", "exists", "FrozenDict", "CallWith",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "Collect", "Bimap", "Nothing", "Reversible",
+	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "Collect", "Nothing", "ManySpec", "SeqSpec", "ChoiceSpec", "ParallelSpec",
     # input
 	"StreamCursor",
     # convenience exports
-    "lit",
-    "choice",
+    
 ]

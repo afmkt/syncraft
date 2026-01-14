@@ -140,7 +140,7 @@ def test9_recursive_lazy_pattern() -> None:
         """atom = literal | group | ..."""
         literal_node = Syntax.lit("x").named('literal')
         # Include the lazy group in atom choice (creates recursion)
-        return Syntax.choice(literal_node, group).named('atom')
+        return Syntax.alt(literal_node, group).named('atom')
     
     def make_piece():
         """piece = atom [quantifier]"""

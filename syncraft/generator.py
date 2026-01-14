@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from typing import (
     Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
     List, Generator as PyGenerator, cast, Type, Self
@@ -13,11 +12,11 @@ from syncraft.algebra import (
     Algebra, YieldChannelType, Error
 )
 
-from syncraft.lexer import LexerBase, Lexer, LexerProtocol
+from syncraft.lexer import LexerBase, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
-    ParseResult, AST, Token, Choice, Seq,
+    ParseResult, AST, Choice, Seq,
     Nothing, Lazy,
     OrElse, Many, OrElseKind,
     Then, ThenKind, SyncraftError
@@ -65,7 +64,8 @@ class GenState(Bindable, Generic[T]):
             binding: Binding,
             ast: Optional[ParseResult[T]],
             restore_pruned: bool,
-            seed: int) -> Self:
+            seed: int
+            ) -> Self:
         obj = cls.__new__(cls)
         object.__setattr__(obj, 'binding', binding)
         object.__setattr__(obj, 'ast', ast)
@@ -74,10 +74,7 @@ class GenState(Bindable, Generic[T]):
         return obj
 
     def __str__(self) -> str:
-        if isinstance(self.ast, AST):
-            return f"{self.__class__.__name__}(ast={self.ast.mapped})"
-        else:
-            return f"{self.__class__.__name__}(ast={self.ast})"
+        return f"{self.__class__.__name__}(ast={self.ast})"
         
     def unused_cache_key(self) -> int:
         return 0
@@ -88,7 +85,7 @@ class GenState(Bindable, Generic[T]):
             binding=self.binding.bind(name, node),
             ast=self.ast,
             restore_pruned=self.restore_pruned,
-            seed=self.seed
+            seed=self.seed,
         )
     
     def replace(self, name: str, node:Any)->GenState[T]:
@@ -97,7 +94,8 @@ class GenState(Bindable, Generic[T]):
             binding=self.binding.replace(name, node),
             ast=self.ast,
             restore_pruned=self.restore_pruned,
-            seed=self.seed
+            seed=self.seed,
+            
         )
     
     @property
@@ -117,17 +115,23 @@ class GenState(Bindable, Generic[T]):
             return ret
 
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
-        return GenState.new(
-            binding=self.binding,
-            ast=f(self.ast),
-            restore_pruned=self.restore_pruned,
-            seed=self.seed
-        )
+        new_ast = f(self.ast)
+        if new_ast is self.ast:
+            return self
+        else:
+            return GenState.new(
+                binding=self.binding,
+                ast=new_ast,
+                restore_pruned=self.restore_pruned,
+                seed=self.seed,
+                
+            )
     
     @property
     def cache_key(self) -> int:
-        return id(self)
+        return id(self.ast)
 
+    
     def inject(self, a: Any) -> GenState[T]:
         return self.map(lambda _: a)
     
@@ -136,7 +140,8 @@ class GenState(Bindable, Generic[T]):
             binding=self.binding,
             ast=self.ast,
             restore_pruned=self.restore_pruned,
-            seed=hash((self.seed, tag))
+            seed=hash((self.seed, tag)),
+            
         )
 
 
@@ -155,13 +160,15 @@ class GenState(Bindable, Generic[T]):
                 binding=self.binding,
                 ast=self.ast.left,
                 restore_pruned=self.restore_pruned,
-                seed=self.seed
+                seed=self.seed,
+                
             )
         return GenState.new(
             binding=self.binding,
             ast=None,
             restore_pruned=self.restore_pruned,
-            seed=self.seed
+            seed=self.seed,
+            
         )
         
 
@@ -173,13 +180,15 @@ class GenState(Bindable, Generic[T]):
                 binding=self.binding,
                 ast=self.ast.right,
                 restore_pruned=self.restore_pruned,
-                seed=self.seed
+                seed=self.seed,
+                
             )
         return GenState.new(
             binding=self.binding,
             ast=None,
             restore_pruned=self.restore_pruned,
-            seed=self.seed
+            seed=self.seed,
+            
         )
         
     
@@ -193,7 +202,7 @@ class GenState(Bindable, Generic[T]):
             binding=Binding(),
             ast=ast,
             restore_pruned=restore_pruned,
-            seed=seed
+            seed=seed,
         )
         
 
@@ -241,7 +250,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             inp = next_input
                             result.append((value, keep))    
                 return Right.new((Seq(value=tuple(result)), inp))
-        return cls(run_f=seq_run) # type: ignore
+        return cls(run_f=seq_run).flag(intrinsic=True) # type: ignore
     
 
 
@@ -269,7 +278,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         case Right((result, next_input)):
                             return Right.new((result, next_input))
             raise SyncraftError("flat_map should always return a value or an error.", offender=self_result, expect=(Left, Right))
-        return replace(self, run_f=flat_map_run) # type: ignore
+        return replace(self, run_f=flat_map_run).flag(intrinsic=True) # type: ignore
         
 
 
@@ -340,18 +349,18 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         state=input.inject(x)
                     )) 
                 return Right.new((Many(value=tuple(ret)), input))
-        return replace(self, run_f=many_run)  # type: ignore
+        return replace(self, run_f=many_run).flag(intrinsic=True)  # type: ignore
     
  
     @classmethod
-    def choice(cls, *options: Algebra[Any, GenState[T]]) -> Algebra[Choice[Any], GenState[T]]:
+    def alt(cls, *options: Algebra[Any, GenState[T]]) -> Algebra[Choice[Any], GenState[T]]:
         assert options, "At least one option is required for choice"
-        def choice_run(input: GenState[T], cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
+        def alt_run(input: GenState[T], cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                                      GenState[T], 
                                                                                      Either[Any, Tuple[Choice[Any], GenState[T]]]]:
             if input.pruned:
-                forked_input = input.fork(tag="choice")
-                idx = forked_input.rng("choice_index").randint(0, len(options) - 1)
+                forked_input = input.fork(tag="alt")
+                idx = forked_input.rng("alt_index").randint(0, len(options) - 1)
                 selected = options[idx]
                 result = yield from selected.run(forked_input, cache)
                 match result:
@@ -385,8 +394,8 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                             return Right.new((Choice(index=ast_choice.index, value=value), next_input))
                         case Left() as ERROR:
                             return ERROR
-            raise SyncraftError("choice should always return a value or an error.", offender=result, expect=(Left, Right))
-        return cls(run_f=choice_run)  # type: ignore
+            raise SyncraftError("alt should always return a value or an error.", offender=result, expect=(Left, Right))
+        return cls(run_f=alt_run).flag(intrinsic=True)  # type: ignore
 
 
     def or_else(self, # type: ignore
@@ -448,26 +457,25 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                                 input.inject(input.ast.value), 
                                 input.inject(input.ast.value))
                     return result
-        return replace(self, run_f=or_else_run) # type: ignore
+        return replace(self, run_f=or_else_run).flag(intrinsic=True) # type: ignore
 
 
     @classmethod
-    def lazy(cls, 
-             thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]], 
-             flatten:bool=False) -> Algebra[ParseResult[T], GenState[T]]:
+    def lazy(cls, thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]]) -> Algebra[ParseResult[T], GenState[T]]:
         def algebra_lazy_run(input: GenState[T],
                              cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType,
                                                                         GenState[T],
                                                                         Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
-            # Defer acquiring the underlying algebra until invocation time.
+            
             alg = thunk()
+            # print(f"Generator.lazy: Resolved lazy algebra {alg} from thunk {thunk}")
             if input.pruned:
                 result = (yield from alg.run(input, cache))
                 match result:
                     case Left() as ERROR:
                         return ERROR
                     case Right((value, state)):
-                        return Right.new((Lazy(value=value, flatten=flatten), state))
+                        return Right.new((Lazy(value=value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
             else:
@@ -476,15 +484,16 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                     return Left.new(Error.new(this=alg, 
                                       message=f"Expect Lazy got {current}",
                                       state=input))
-                result = (yield from alg.run(input.inject(current.value), cache))
+                new_state = input.inject(current.value)
+                result = (yield from alg.run(new_state, cache))
                 match result:
                     case Left() as ERROR:
                         return ERROR
                     case Right((value, state)):
-                        return Right.new((Lazy(value=value, flatten=flatten), state))
+                        return Right.new((Lazy(value=value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
-        return cls(algebra_lazy_run)
+        return cls(algebra_lazy_run).flag(intrinsic=True)
     
 
         
@@ -525,7 +534,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 
                 return Right.new((parsed_value, input))
 
-        return cls(lex_run) 
+        return cls(lex_run).flag(intrinsic=True) 
 
 
 

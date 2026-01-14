@@ -22,8 +22,7 @@ def test_between()->None:
     ast, bound = parse_word(syntax, sql, cache=Cache())    
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
-    x, f = generated.bimap
-    u, v = gen.generate_with(syntax, f(x))
+    u, v = gen.generate_with(syntax, generated)
     assert u == ast
 
 
@@ -34,8 +33,7 @@ def test_sep_by()->None:
     ast, bound = parse_word(syntax, sql, cache=Cache())    
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
-    x, f = generated.bimap
-    u, v = gen.generate_with(syntax, f(x))
+    u, v = gen.generate_with(syntax, generated)
     assert u == ast
 
 def test_many_or()->None:
@@ -49,8 +47,7 @@ def test_many_or()->None:
     ast, bound = parse_word(syntax, sql, cache=Cache())
     generated, bound = gen.generate_with(syntax, ast)
     assert ast == generated, "Parsed and generated results do not match."
-    x, f = generated.bimap
-    u, v = gen.generate_with(syntax, f(x))
+    u, v = gen.generate_with(syntax, generated)
     assert u == ast
 
 
@@ -62,6 +59,6 @@ def test_optional_many():
     ast, bound = parse_word(S, sql, cache=Cache())    
     generated, bound = gen.generate_with(S, ast)
     assert ast == generated, "Parsed and generated results do not match."
-    x, f = generated.bimap
-    u, v = gen.generate_with(S, f(x))
+
+    u, v = gen.generate_with(S, generated)
     assert u == ast

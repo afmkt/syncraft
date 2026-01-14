@@ -232,7 +232,6 @@ class Grammar:
     def parse(cls, 
               data: str, 
               syntax: Syntax | None = None, 
-              raw: bool = False, 
               cache: Cache[Any] | None = None) -> Any:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
@@ -241,20 +240,13 @@ class Grammar:
         cursor = StreamCursor.from_data(data)
         cache = cache or Cache()
         for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=cache):
-            if s:
-                if isinstance(result, AST):
-                    return result if raw else result.mapped 
-                else:
-                    return result
-            else:
-                return result
+            return result
         raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
 
     @classmethod
     def stream_parse(cls, 
                      data: StreamCursor[Any], 
                      syntax: Syntax | None = None, 
-                     raw: bool = False,
                      cache: Cache[Any] | None = None) -> Any:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
@@ -263,13 +255,7 @@ class Grammar:
         cache = cache or Cache()
         
         for result, s in runner.run(parser, state=None, cursor=data, once=False, cache=cache):
-            if s:
-                if isinstance(result, AST):
-                    yield result if raw else result.mapped
-                else:
-                    yield result
-            else:
-                yield result
+            yield result
                 
     @classmethod
     def generate(cls, data: Any, syntax: Syntax | None = None, seed: int | None = None) -> Any:
