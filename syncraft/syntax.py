@@ -732,13 +732,13 @@ class ManySpec(SyntaxSpec):
     at_most: Optional[int]
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
-    def iso(self) -> Iso[Many[Any], List[Any]]:
-        def fwd(m: Many[Any]) -> List[Any]:
+    def iso(self) -> Iso[Many[Any], Tuple[Any, ...]]:
+        def fwd(m: Many[Any]) -> Tuple[Any, ...]:
             # print('ManySpec.iso.fwd called', m, '->', list(m.value))
-            return list(m.value)
-        def inv(v: List[Any]) -> Many[Any]:
+            return m.value
+        def inv(v: Tuple[Any, ...]) -> Many[Any]:
             # print('ManySpec.iso.inv called', v, '->', Many(value=tuple(v) if v is not None else tuple([])))
-            return Many(value=tuple(v) if v is not None else tuple([]))
+            return Many(value=v if v is not None else tuple([]))
         return Iso(fwd, inv)
 
 
@@ -1216,7 +1216,7 @@ class Syntax(Generic[A, S]):
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[A, S]:
         return self.seq(left , +self , right).bimap(lambda t: t[0], lambda v: (v,))
 
-    def sep_by(self, sep: Syntax[B, S]) -> Syntax[List[A], S]:
+    def sep_by(self, sep: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
         """Parse this syntax separated by the given separator.
         
         Parses one or more occurrences of this syntax separated by the separator.
@@ -1238,13 +1238,13 @@ class Syntax(Generic[A, S]):
             >>> syntax = A.sep_by(comma)
             >>> # Parses "a,a,a" and produces Many containing three "a" elements
         """
-        def fwd(t: Tuple[A, List[Tuple[A]] ]) -> List[A]:
+        def fwd(t: Tuple[A, Tuple[Tuple[A], ...] ]) -> Tuple[A, ...]:
             first, rest = t
-            return [first] + [x[0] for x in rest]
+            return tuple([first] + [x[0] for x in rest])
 
-        def inv(v: List[A]) -> Tuple[A, List[Tuple[A]]]:
+        def inv(v: Tuple[A, ...]) -> Tuple[A, Tuple[Tuple[A], ...]]:
             first, *rest = v
-            return (first, [ (x,) for x in rest])            
+            return (first, tuple([ (x,) for x in rest]))            
 
         return (self + (sep >> self).many()).bimap(fwd, inv)
 
@@ -1254,7 +1254,7 @@ class Syntax(Generic[A, S]):
         sep: Syntax[C, S],
         open: Syntax[B, S],
         close: Syntax[D, S],
-    ) -> Syntax[List[A], S]:
+    ) -> Syntax[Tuple[A, ...], S]:
         """Parse a parenthesized, separator-delimited list.
 
         Shorthand for self.sep_by(sep).between(open, close).

@@ -129,7 +129,7 @@ class GenState(Bindable, Generic[T]):
     
     @property
     def cache_key(self) -> int:
-        return id(self.ast)
+        return hash(self.ast)
 
     
     def inject(self, a: Any) -> GenState[T]:

@@ -1,83 +1,68 @@
 from __future__ import annotations
-from typing import Any, Tuple, Iterable
-from syncraft.ast import Nothing, Token, Lazy
+from typing import Any
 from syncraft.parser import parse_word
-from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
-from syncraft.cache import LeftRecursionError
-from syncraft.cache import Cache, set_randomization
 import syncraft.generator as gen
+from syncraft.cache import Cache
+from dataclasses import dataclass
+from syncraft.lexer import ExtLexer
+from syncraft.ast import Token
+from syncraft.token import Structured
 from rich import print
-import re
+literal = Syntax.lit
 
 
-def iter_tokens(ast: Any) -> Iterable[str]:
-    if isinstance(ast, Token):
-        yield ast.text # type: ignore
-    elif isinstance(ast, (tuple, list)):
-        for x in ast:
-            yield from iter_tokens(x)
-    elif hasattr(ast, 'value') and isinstance(getattr(ast, 'value'), tuple):
-        # For Then/OrElse wrappers from syncraft.ast
-        for x in getattr(ast, 'value'):
-            yield from iter_tokens(x)
-    elif hasattr(ast, 'left') and hasattr(ast, 'right'):
-        yield from iter_tokens(getattr(ast, 'left'))
-        yield from iter_tokens(getattr(ast, 'right'))
-    else:
-        # Fallback: scan string repr for bare word tokens (letters, digits)
-        for t in re.findall(r'[A-Za-z0-9_]+', str(ast)):
-            yield t
+def test_to() -> None:
+    @dataclass
+    class IfThenElse:
+        condition: Any
+        then: Any
+        otherwise: Any
 
+    @dataclass
+    class While:
+        condition:Any
+        body:Any
 
-def token_multiset(ast: Any) -> dict[str, int]:
-    counts: dict[str,int] = {}
-    for t in iter_tokens(ast):
-        counts[t] = counts.get(t, 0) + 1
-    return counts
-
-
-
-
-
-# Ensure randomization is enabled for these tests
-set_randomization(True)
-
-S = Syntax
-literal = S.lit
-token = S.token
-lazy = S.lazy
-
-def from_string(string: str) -> Token:
-    return Token(text=string)
-
-    
-
-    
-    
-
-
-
-
-
-
-
-
-
-def test_generate_with_mutual_left_recursion_without_base_raises():
-    # Mutual recursion with no productive base: A := B ; B := A
-    A = Syntax.lazy(lambda: B)  # type: ignore[name-defined]
-    B = Syntax.lazy(lambda: A)  # type: ignore[name-defined]
-    try:
-        generate_with(A)
-    except Exception as e:
-        assert isinstance(e, LeftRecursionError)
-
+    WHILE = literal("while")
+    IF = literal("if")
+    ELSE = literal("else")
+    THEN = literal("then")
+    END = literal("end")
+    A = literal('a')
+    B = literal('b')
+    C = literal('c')
+    D = literal('d')
+    M = literal(',')
+    var = A | B | C | D
+    condition = var.sep_by(M).mark('condition') 
+    ifthenelse = (IF >> condition
+              // THEN 
+              + var.sep_by(M).mark('then') 
+              // ELSE 
+              + var.sep_by(M).mark('otherwise') 
+              // END).to(IfThenElse).many()
+    syntax = (WHILE >> condition
+            + ifthenelse.mark('body')
+            // ~END).to(While)
+    sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
+    ast, _ = parse_word(syntax, sql, cache=Cache())
+    # print(ast)
+    g, _ = gen.generate_with(syntax, ast, restore_pruned=True)
+    assert ast == g
+    # print(1, x)
+    u, _ = gen.generate_with(syntax, g, restore_pruned=True)
+    assert u == ast
+    print(g)
+    g.body.append(g.body[0])
+    # print(2, x)
+    # print(f(x))
+    ast2, _ = gen.generate_with(syntax, g, restore_pruned=True) 
+    # print(ast2)``
+    # print(3, y)
+    assert ast2 == g
+    u, v = gen.generate_with(syntax, ast2, restore_pruned=True)
+    assert u == ast2
 
 if __name__ == "__main__":
-    
-    test_generate_with_mutual_left_recursion_without_base_raises()
-    
-    # test_direct_left_recursion_unproductive_now_productive1_flatten()
-    
-    
+    test_to()

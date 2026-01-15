@@ -334,16 +334,16 @@ class Cache(Generic[S]):
             key: S) -> Generator[Any, Any, Ret]:
         
         if is_intrinsic(f):
-            print('intrinsic_exec', f, callable_str(f), key.cache_key)
+            # print('intrinsic', f, callable_str(f), key.cache_key)
             ret = yield from self.intrinsic_exec(f, key)
             return ret
         else:
-            print('transformational_exec', f, callable_str(f), key.cache_key)
-            ret = yield from self.transformational_exec(f, key)
+            # print('trans', f, callable_str(f), key.cache_key)
+            ret = yield from self.trans_exec(f, key)
             return ret
         
         
-    def transformational_exec(self,
+    def trans_exec(self,
             f: Rule,
             key: S) -> Generator[Any, Any, Ret]:
         """Execute a transformational combinator.

@@ -79,32 +79,18 @@ def test_mutual_recursion()->None:
     A = lazy(lambda: literal('a') + B)
     B = lazy(lambda: (literal('b') + A) | (literal('c')))
     v, s = parse_word(A, 'a b a b a c', cache=Cache())
-    # print('--' * 20, "test_mutual_recursion", '--' * 20)
-    # print(v)
-    # print(ast1)
     assert v == (
         from_string('a'), 
         (
             from_string('b'), 
+            from_string('a'), 
             (
+                from_string('b'), 
                 from_string('a'), 
-                (
-                    from_string('b'), 
-                    (
-                        (
-                            from_string('a'), 
-                            from_string('c'), 
-                        )
-                    )
-                )
+                from_string('c')
             )
         )
-    )
-    # print(v)
-    # print(ast1)    
-    # print(inv(ast1))
-    # x, y = inv(ast1).bimap
-    # assert x == ast1
+    )    
 
     vv, ss = generate_with(A, v)
     assert vv == v
@@ -675,27 +661,7 @@ def test_multi_recursion()->None:
     v, s = parse_word(A, 'a z y x', cache=Cache())
     generated, bound = gen.generate_with(A, v)
     assert v == generated
-
-    # We care about the raw AST shape (pre-bimap). Extract leaves manually.
-    from syncraft.ast import Then, ThenKind
-    from syncraft.algebra import OrElse, OrElseKind  # type: ignore
-
-    def leaves(node):
-        if isinstance(node, Lazy):
-            return leaves(node.value)
-        if isinstance(node, Then) and node.kind == ThenKind.BOTH:
-            return leaves(node.left) + leaves(node.right)
-        if isinstance(node, OrElse):
-            # For this grammar OrElse.RIGHT wraps literal terminal; LEFT wraps a Then chain.
-            if node.kind == OrElseKind.RIGHT:
-                return (node.value,)
-            else:
-                return leaves(node.value)
-        if isinstance(node, str):
-            return (node,)
-        return ()
-
-    assert leaves(v) == ('a','z','y','x')
+    assert v == ((('a', 'z'), 'y'), 'x')
 
 
 

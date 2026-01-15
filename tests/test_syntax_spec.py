@@ -85,7 +85,7 @@ def _flatten_token_text(node: object) -> List[str]:
 
 
 def test_spec_can_drive_left_recursion_elimination() -> None:
-    TestSyntax = Syntax.set(tkspec=Structured(Token))
+    TestSyntax = Syntax.set(tkspec=Structured())
     literal = TestSyntax.lit
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]
@@ -116,13 +116,13 @@ def test_spec_can_drive_left_recursion_elimination() -> None:
     original_ast, _ = parse_word(Expr, "n + n + n", cache=Cache())
     transformed_ast, _ = parse_word(transformed, "n + n + n", cache=Cache())
 
-    assert _flatten_token_text(original_ast) == ["n", "+", "n", "+", "n"]
-    assert _flatten_token_text(transformed_ast) == ["n", "+", "n", "+", "n"]
+    assert original_ast == ((Token(text='n'), Token(text='+'), Token(text='n')), Token(text='+'), Token(text='n'))
+    assert transformed_ast == (Token(text='n'), ((Token(text='+'), Token(text='n')), (Token(text='+'), Token(text='n'))))
     assert not _grammar_is_left_recursive(transformed.spec)
 
 
 def test_walk_handles_recursive_grammar() -> None:
-    TestSyntax = Syntax.set(tkspec=Structured(Token))
+    TestSyntax = Syntax.set(tkspec=Structured())
     literal = TestSyntax.lit
 
     Expr = TestSyntax.lazy(lambda: (Expr + literal("+") + literal("n")) | literal("n"))  # type: ignore[name-defined]
