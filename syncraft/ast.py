@@ -105,7 +105,7 @@ OrElseKind.__str__ = lambda self: self.value   # type: ignore
 
 
 @dataclass(frozen=True, slots=True)
-class OrElse(AST, Generic[A, B]):
+class OrElse(AST):
     """Represent a binary alternative between left and right values.
 
     ``kind`` indicates which branch was taken, or ``None`` when unknown.
@@ -113,7 +113,7 @@ class OrElse(AST, Generic[A, B]):
     
     kind: Optional[OrElseKind]
 
-    value: Optional[A | B] = None
+    value: Optional[Any] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,7 +230,7 @@ T = TypeVar('T', bound=Hashable)
 ParseResult = Union[
     Lazy['ParseResult[T]'],
     Then['ParseResult[T]', 'ParseResult[T]'], 
-    OrElse['ParseResult[T]', 'ParseResult[T]'],
+    OrElse,
     Many['ParseResult[T]'],
     Collect['ParseResult[T]', Any],
     Marked['ParseResult[T]'],

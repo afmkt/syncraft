@@ -79,6 +79,7 @@ T = TypeVar('T', bound=Hashable)
 A = TypeVar('A')
 
 
+
 def underline(text: str, ul: bool) -> str:
     if ul:
         return ''.join(ch + '\u0332' for ch in text)
@@ -469,6 +470,9 @@ class ParserState(Bindable, Generic[T]):
     
 @dataclass(frozen=True, slots=True)
 class Parser(Algebra[T, ParserState[T]]):
+    def bimap(self, f: Callable[[T], A], i: Callable[[A], T]) -> Algebra[A, ParserState[T]]:
+        return self.map(f)
+        
 
     @classmethod
     def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, **kwargs) -> Algebra[T, ParserState[T]]:

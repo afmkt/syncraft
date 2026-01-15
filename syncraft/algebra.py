@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace, field
 from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.constraint import Bindable
-from syncraft.bimap import Iso
+from syncraft.bimap import Iso, identity
 from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER
 
 if TYPE_CHECKING:
@@ -462,20 +462,19 @@ class Algebra(Generic[A, S]):
         alg = replace(self, run_f=map_run).flag(syntax=self.syntax) # type: ignore
         return cast(Algebra[B, S], alg)
     
+    
+    def imap(self, f: Callable[[Any], A]) -> Algebra[A, S]:
+        def map_state_f(s: S) -> S:
+            return s.map(f)
+        return self.map_state(map_state_f)
 
     def iso(self, iso: Iso[A, B]) -> Algebra[B, S]:
-        # return self
-        # return self.map(lambda x: x)
-        tmp = self.map(iso.forward)
-        def ms_f(s: S) -> S:
-            return s.map(iso.inverse)
-        return tmp.map_state(ms_f)
+        return self.bimap(iso.forward, iso.inverse)
 
     
     def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
-        def map_state_f(s: S) -> S:
-            return s.map(i)
-        return self.map(f).map_state(map_state_f)
+        raise NotImplementedError("Algebra.bimap is abstract, concrete subclasses must implement it")
+
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, 
@@ -519,11 +518,11 @@ class Algebra(Generic[A, S]):
 
 
     
-    def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[OrElse[A, B], S]:
+    def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[OrElse, S]:
         def or_else_run(input: S, 
                         cache:Cache[S]) -> Generator[YieldChannelType, 
                                                     S,
-                                                    Either[Any, Tuple[OrElse[A, B], S]]]:
+                                                    Either[Any, Tuple[OrElse, S]]]:
             inp = input.enter()
             left = yield from self.run(inp, cache)
             match left:
@@ -542,7 +541,7 @@ class Algebra(Generic[A, S]):
             raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
         
         alg = replace(self, run_f=or_else_run).flag(intrinsic=True) # type: ignore
-        return cast(Algebra[OrElse[A, B], S], alg)
+        return cast(Algebra[OrElse, S], alg)
         
     @classmethod
     def parallel(cls, 

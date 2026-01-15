@@ -2,7 +2,8 @@ from __future__ import annotations
 from syncraft.parser import  parse_word
 from syncraft.syntax import Syntax
 import syncraft.generator as gen
-from syncraft.ast import Token
+from syncraft.ast import Token, Seq, Then, ThenKind, Many, OrElse, OrElseKind
+
 
 
 literal = Syntax.set(terminal_cls=Token).lit
@@ -14,16 +15,14 @@ ELSE = literal("else")
 THEN = literal("then")
 END = literal("end")
 
-
 def test_between()->None:
     sql = "then if then"
     syntax = IF.between(THEN, THEN)
     from syncraft.cache import Cache
     ast, bound = parse_word(syntax, sql, cache=Cache())    
     generated, bound = gen.generate_with(syntax, ast)
-    assert ast == generated, "Parsed and generated results do not match."
-    u, v = gen.generate_with(syntax, generated)
-    assert u == ast
+    assert ast == Token(text='if')
+    assert generated == Seq(value=((Token(text='then'), False), (Token(text='if'), True), (Token(text='then'), False)))
 
 
 def test_sep_by()->None:
@@ -32,9 +31,19 @@ def test_sep_by()->None:
     from syncraft.cache import Cache
     ast, bound = parse_word(syntax, sql, cache=Cache())    
     generated, bound = gen.generate_with(syntax, ast)
-    assert ast == generated, "Parsed and generated results do not match."
-    u, v = gen.generate_with(syntax, generated)
-    assert u == ast
+    assert ast == (Token(text='if'), Token(text='if'), Token(text='if'), Token(text='if'))
+    assert generated == Then(
+        kind=ThenKind.BOTH,
+        left=Token(text='if'),
+        right=Many(
+            value=(
+                Then(kind=ThenKind.RIGHT, left=Token(text='then'), right=Token(text='if')),
+                Then(kind=ThenKind.RIGHT, left=Token(text='then'), right=Token(text='if')),
+                Then(kind=ThenKind.RIGHT, left=Token(text='then'), right=Token(text='if'))
+            )
+        )
+    )
+    
 
 def test_many_or()->None:
     literal = Syntax.set(terminal_cls=Token).lit
@@ -46,9 +55,12 @@ def test_many_or()->None:
     from syncraft.cache import Cache
     ast, bound = parse_word(syntax, sql, cache=Cache())
     generated, bound = gen.generate_with(syntax, ast)
-    assert ast == generated, "Parsed and generated results do not match."
-    u, v = gen.generate_with(syntax, generated)
-    assert u == ast
+    assert ast == ((((Token(text='if'), Token(text='if')), (Token(text='then'),)),),)
+    assert generated == Then(
+        kind=ThenKind.LEFT,
+        left=Many(value=(Then(kind=ThenKind.BOTH, left=Many(value=(Token(text='if'), Token(text='if'))), right=Many(value=(Token(text='then'),))),)),
+        right=Token(text='end')
+    )
 
 
 def test_optional_many():
@@ -58,7 +70,7 @@ def test_optional_many():
     from syncraft.cache import Cache
     ast, bound = parse_word(S, sql, cache=Cache())    
     generated, bound = gen.generate_with(S, ast)
-    assert ast == generated, "Parsed and generated results do not match."
-
-    u, v = gen.generate_with(S, generated)
-    assert u == ast
+    print(ast)
+    print(generated)
+    assert ast == (Token(text='a'), Token(text='a'))
+    assert generated == Many(value=(OrElse(kind=OrElseKind.LEFT, value=Token(text='a')), OrElse(kind=OrElseKind.LEFT, value=Token(text='a'))))

@@ -208,6 +208,11 @@ class GenState(Bindable, Generic[T]):
 
 @dataclass(frozen=True, slots=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):      
+    def bimap(self, 
+              f: Callable[[ParseResult[T]], Any], 
+              i: Callable[[Any], ParseResult[T]]) -> Algebra[Any, GenState[T]]:
+        return self.imap(i)
+
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState[T]] | Tuple[Algebra[Any, GenState[T]], bool]) -> Algebra[Seq, GenState[T]]:
         normaize_steps: List[Tuple[Algebra[Any, GenState[T]], bool]] = [X if isinstance(X, tuple) else (X, True) for X in steps]

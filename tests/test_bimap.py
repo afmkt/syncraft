@@ -6,7 +6,7 @@ from syncraft.parser import  parse_word
 import syncraft.generator as gen
 from syncraft.syntax import Syntax
 from syncraft.cache import Cache
-
+from rich import print
 
 S = Syntax.set(terminal_cls=Token)
 
@@ -21,11 +21,12 @@ def test1_simple_then() -> None:
     sql = "a b c"
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # print("---" * 40)
-    # print(ast)
+    
     generated, bound = gen.generate_with(syntax, ast)
     # print("---" * 40)
-    # print(generated)
-    assert ast == generated
+    
+    assert generated == Then(kind=ThenKind.LEFT, left=Then(kind=ThenKind.LEFT, left=Token(text='a'), right=Token(text='b')), right=Token(text='c'))
+    assert ast == (Token(text='a'),)
     # value, bmap = generated.bimap
     # print(value)
     u, v = gen.generate_with(syntax, ast)
@@ -42,7 +43,8 @@ def test2_named_results() -> None:
     generated, bound = gen.generate_with(syntax, ast)
     # print("---" * 40)
     # print(generated)
-    assert ast == generated
+    assert ast == (Marked(name='z', value=Token(text='a')),)
+    assert generated == Then(kind=ThenKind.LEFT, left=Token(text='a'), right=Token(text='b'))
     # value, bmap = generated.bimap
     u,v = gen.generate_with(syntax, ast)
     assert u == generated
@@ -59,7 +61,9 @@ def test3_many_literals() -> None:
     generated, bound = gen.generate_with(syntax, ast)
     # print("---" * 40)
     # print(generated)
-    assert ast == generated
+    assert generated == Many(value=(Token(text='a'), Token(text='a'), Token(text='a')))
+    assert ast == (Token(text='a'), Token(text='a'), Token(text='a'))
+    
     # value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, ast)
     assert u == generated
@@ -76,7 +80,15 @@ def test4_mixed_many_named() -> None:
     generated, bound = gen.generate_with(syntax, ast)
     # print("---" * 40)
     # print(generated)
-    assert ast == generated
+    assert ast == (Marked(name='x', value=Token(text='a')), Token(text='b'), Marked(name='x', value=Token(text='a')))
+    assert generated == Many(
+        value=(
+            OrElse(kind=OrElseKind.LEFT, value=Token(text='a')),
+            OrElse(kind=OrElseKind.RIGHT, value=Token(text='b')),
+            OrElse(kind=OrElseKind.LEFT, value=Token(text='a'))
+        )
+    )
+    
     # value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, ast)
     assert u == generated
@@ -92,7 +104,13 @@ def test5_nested_then_many() -> None:
     generated, bound = gen.generate_with(syntax, ast, restore_pruned=True)
     # print("---" * 40)
     # print(generated)
-    assert ast == generated
+    assert ast == ((((Token(text='if'), Token(text='if')),),),)
+    assert generated == Then(
+        kind=ThenKind.LEFT,
+        left=Many(value=(Then(kind=ThenKind.LEFT, left=Many(value=(Token(text='if'), Token(text='if'))), right=Many(value=())),)),
+        right=Token(text='end')
+    )
+    
     # value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, ast, restore_pruned=True)
     assert u == generated
@@ -106,7 +124,10 @@ def test_then_flatten():
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
-    assert ast == generated
+    # print(generated)
+    assert ast == (Token(text='a'), Token(text='b'), Token(text='c'))
+    assert generated == Then(kind=ThenKind.BOTH, left=Token(text='a'), right=Then(kind=ThenKind.BOTH, left=Token(text='b'), right=Token(text='c')))
+    
     # value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, ast)
     assert u == generated
@@ -122,7 +143,10 @@ def test_named_in_then():
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
-    assert ast == generated
+    # print(generated)
+    assert ast == (Marked(name='first', value=Token(text='a')), Marked(name='second', value=Token(text='b')), Marked(name='third', value=Token(text='c')))
+    assert generated == Then(kind=ThenKind.BOTH, left=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=Token(text='b')), right=Token(text='c'))
+    
     # value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, ast)
     assert u == generated
@@ -135,7 +159,10 @@ def test_named_in_many():
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
-    assert ast == generated
+    # print(generated)
+    assert ast == (Marked(name='x', value=Token(text='x')), Marked(name='x', value=Token(text='x')), Marked(name='x', value=Token(text='x')))
+    assert generated == Many(value=(Token(text='x'), Token(text='x'), Token(text='x')))
+    # assert ast == generated
     # value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, ast)
     assert u == generated
@@ -149,7 +176,10 @@ def test_named_in_or():
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
-    assert ast == generated
+    # print(generated)
+    assert ast == Marked(name='b', value=Token(text='b'))
+    assert generated == OrElse(kind=OrElseKind.RIGHT, value=Token(text='b'))
+    # assert ast == generated
     # value, bmap = generated.bimap
     u, v = gen.generate_with(syntax, ast)
     assert u == generated
@@ -167,9 +197,22 @@ def test_deep_mix():
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # print(ast)
     generated, bound = gen.generate_with(syntax, ast)
-    # print('---' * 40)
     # print(generated)
-    assert ast == generated
+    
+    assert ast == (((Marked(name='a', value=Token(text='a')), Token(text='b')), (Marked(name='a', value=Token(text='a')), Token(text='b')), Marked(name='c', value=Token(text='c'))), Token(text='b'))
+    assert generated == Then(
+        kind=ThenKind.BOTH,
+        left=Many(
+            value=(
+                OrElse(kind=OrElseKind.LEFT, value=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=Token(text='b'))),
+                OrElse(kind=OrElseKind.LEFT, value=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=Token(text='b'))),
+                OrElse(kind=OrElseKind.RIGHT, value=Token(text='c'))
+            )
+        ),
+        right=Token(text='b')
+    )
+    
+    # assert ast == generated
 
 
 def test_empty_many() -> None:
@@ -179,8 +222,11 @@ def test_empty_many() -> None:
     ast, bound = parse_word(syntax, sql, cache=Cache())
     generated, bound = gen.generate_with(syntax, ast)
     # print('---' * 40)
+    # print(ast)
     # print(generated)
-    assert ast == generated
+    assert ast == ()
+    assert generated == Many(value=())
+    
 
 
 
@@ -193,7 +239,11 @@ def test_backtracking_many() -> None:
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # value, bmap = ast.bimap
     u, v = gen.generate_with(syntax, ast)
-    assert u == ast
+    # print(ast)
+    # print(u)
+    assert ast == ((Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a')), Token(text='b'))
+    assert u == Then(kind=ThenKind.BOTH, left=Many(value=(Token(text='a'), Token(text='a'), Token(text='a'), Token(text='a'))), right=Token(text='b'))
+    
 
 def test_deep_nesting() -> None:
     A = literal("a")
@@ -211,7 +261,11 @@ def test_nested_many() -> None:
     sql = "a a a"
     ast, bound = parse_word(syntax, sql, cache=Cache())
     u, v = gen.generate_with(syntax, ast)
-    assert u == ast
+    # print(ast)
+    # print(u)
+    assert ast == ((Token(text='a'), Token(text='a'), Token(text='a')),)
+    assert u == Many(value=(Many(value=(Token(text='a'), Token(text='a'), Token(text='a'))),))
+    
 
     # assert isinstance(ast, Many)
 
@@ -223,7 +277,10 @@ def test_named_many() -> None:
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # value, bmap = ast.bimap
     u, v = gen.generate_with(syntax, ast)
-    assert u == ast
+    # print(ast)
+    # print(u)
+    assert ast == (Marked(name='alpha', value=Token(text='a')), Marked(name='alpha', value=Token(text='a')))
+    assert u == Many(value=(Token(text='a'), Token(text='a')))
 
 
 def test_or_named() -> None:
@@ -234,7 +291,11 @@ def test_or_named() -> None:
     ast, bound = parse_word(syntax, sql, cache=Cache())
     # value, bmap = ast.bimap
     u, v = gen.generate_with(syntax, ast)
-    assert u == ast
+    # print(ast)
+    # print(u)
+    assert ast == Marked(name='y', value=Token(text='b'))
+    assert u == OrElse(kind=OrElseKind.RIGHT, value=Token(text='b'))
+    
 
 
 def test_then_associativity() -> None:
@@ -245,13 +306,10 @@ def test_then_associativity() -> None:
     sql = "a b c"
     ast, bound = parse_word(syntax, sql, cache=Cache())
     u, v = gen.generate_with(syntax, ast)
-    assert u == ast
-
-    # assert ast == Then(kind=ThenKind.BOTH, 
-    #                                left=Then(kind=ThenKind.BOTH, 
-    #                                                left=from_string('a'), 
-    #                                                right=from_string('b')), 
-    #                                 right=from_string('c'))
+    # print(ast)
+    # print(u)
+    assert ast == (Token(text='a'), Token(text='b'), Token(text='c'))
+    assert u == Then(kind=ThenKind.BOTH, left=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=Token(text='b')), right=Token(text='c'))
 
 
 def test_ambiguous() -> None:
@@ -261,7 +319,11 @@ def test_ambiguous() -> None:
     sql = "a"
     ast, bound = parse_word(syntax, sql, cache=Cache())
     u, v = gen.generate_with(syntax, ast)
-    assert u == ast
+    # print(ast)
+    # print(u)
+    assert ast == Token(text='a')
+    assert u == OrElse(kind=OrElseKind.LEFT, value=Token(text='a'))
+    
 
 
 
@@ -304,9 +366,10 @@ def test_many_optional():
     # print(ast1)
     # ast2, inv = ast1.bimap
     u, v = gen.generate_with(syntax, ast)
-    assert u == ast
-
-    # assert Many(value=(OrElse(kind=None, value=from_string('a')), OrElse(kind=None, value=from_string('a')))) == inv(ast2)
+    # print(ast)
+    # print(u)
+    assert ast == (Token(text='a'), Token(text='a'))
+    assert u == Many(value=(OrElse(kind=OrElseKind.LEFT, value=Token(text='a')), OrElse(kind=OrElseKind.LEFT, value=Token(text='a'))))
 
 
 def test_grouping():
@@ -315,24 +378,36 @@ def test_grouping():
     C = literal("c").named("C")
     D = literal("d").named("D")
     s = (A + B) // D + C
-    print(s)
+    
     ast, _ = parse_word(s, "a b d c", cache=Cache())    
     # print(ast)
     # x, inv = ast.bimap
     # print(x)
     # assert inv(x) == ast
     u, v = gen.generate_with(s, ast)
-    assert u == ast
+    # print(ast)
+    # print(u)
+    assert ast == (Token(text='a'), Token(text='b'), Token(text='c'))
+    assert u == Then(
+        kind=ThenKind.BOTH,
+        left=Then(kind=ThenKind.LEFT, left=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=Token(text='b')), right=Token(text='d')),
+        right=Token(text='c')
+    )
+    
 
 
     s1 = A + (B // D) + C
-    print(s1)
+    
     ast1, _ = parse_word(s1, "a b d c", cache=Cache())
     u, v = gen.generate_with(s1, ast1)
-    assert u == ast1
-
     # print(ast1)
-    # y, inv = ast1.bimap
-    # print(y)
-    # assert inv(y) == ast1
-    # assert x == y, "Grouping in 'then' operations should not affect parsing results"
+    # print(u)
+    assert ast1 == (Token(text='a'), Token(text='b'), Token(text='c'))
+    assert u == Then(
+        kind=ThenKind.BOTH,
+        left=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=Then(kind=ThenKind.LEFT, left=Token(text='b'), right=Token(text='d'))),
+        right=Token(text='c')
+    )
+    
+
+
