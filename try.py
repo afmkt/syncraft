@@ -1,83 +1,70 @@
 from __future__ import annotations
-from syncraft.parser import  parse_word
+from typing import Any
+from syncraft.parser import parse_word
 from syncraft.syntax import Syntax
 import syncraft.generator as gen
-from syncraft.ast import Token, Seq, Then, ThenKind, Many, OrElse, OrElseKind
+from syncraft.cache import Cache
+from dataclasses import dataclass
+from syncraft.lexer import ExtLexer
+from syncraft.ast import Token
+from syncraft.token import Structured
 from rich import print
-
-literal = Syntax.set(terminal_cls=Token).lit
-
+literal = Syntax.lit
 
 
-IF = literal("if")
-ELSE = literal("else")
-THEN = literal("then")
-END = literal("end")
+def test_to() -> None:
+    @dataclass
+    class IfThenElse:
+        condition: Any
+        then: Any
+        otherwise: Any
 
+    @dataclass
+    class While:
+        condition:Any
+        body:Any
 
-def test_between()->None:
-    sql = "then if then"
-    syntax = IF.between(THEN, THEN)
-    from syncraft.cache import Cache
-    ast, bound = parse_word(syntax, sql, cache=Cache())    
-    generated, bound = gen.generate_with(syntax, ast)
-    assert ast == Token(text='if')
-    assert generated == Seq(value=((Token(text='then'), False), (Token(text='if'), True), (Token(text='then'), False)))
-
-
-def test_sep_by()->None:
-    sql = "if then if then if then if"
-    syntax = IF.sep_by(THEN)
-    from syncraft.cache import Cache
-    ast, bound = parse_word(syntax, sql, cache=Cache())    
-    generated, bound = gen.generate_with(syntax, ast)
-    assert ast == (Token(text='if'), Token(text='if'), Token(text='if'), Token(text='if'))
-    assert generated == Then(
-        kind=ThenKind.BOTH,
-        left=Token(text='if'),
-        right=Many(
-            value=(
-                Then(kind=ThenKind.RIGHT, left=Token(text='then'), right=Token(text='if')),
-                Then(kind=ThenKind.RIGHT, left=Token(text='then'), right=Token(text='if')),
-                Then(kind=ThenKind.RIGHT, left=Token(text='then'), right=Token(text='if'))
-            )
-        )
-    )
-    
-
-def test_many_or()->None:
-    literal = Syntax.set(terminal_cls=Token).lit
+    WHILE = literal("while")
     IF = literal("if")
+    ELSE = literal("else")
     THEN = literal("then")
     END = literal("end")
-    syntax = (IF.many() + THEN.many()).many() // END
-    sql = "if if then end"
-    from syncraft.cache import Cache
-    ast, bound = parse_word(syntax, sql, cache=Cache())
-    generated, bound = gen.generate_with(syntax, ast)
-    assert ast == ((((Token(text='if'), Token(text='if')), (Token(text='then'),)),),)
-    assert generated == Then(
-        kind=ThenKind.LEFT,
-        left=Many(value=(Then(kind=ThenKind.BOTH, left=Many(value=(Token(text='if'), Token(text='if'))), right=Many(value=(Token(text='then'),))),)),
-        right=Token(text='end')
-    )
-
-
-def test_optional_many():
-    a = literal('a')
-    S = a.optional.many()
-    sql = "a a"
-    from syncraft.cache import Cache
-    ast, bound = parse_word(S, sql, cache=Cache())    
-    generated, bound = gen.generate_with(S, ast)
+    A = literal('a')
+    B = literal('b')
+    C = literal('c')
+    D = literal('d')
+    M = literal(',')
+    var = A | B | C | D
+    condition = var.sep_by(M).mark('condition') 
+    ifthenelse = (IF >> condition
+              // THEN 
+              + var.sep_by(M).mark('then') 
+              // ELSE 
+              + var.sep_by(M).mark('otherwise') 
+              // END).to(IfThenElse).many()
+    syntax = (WHILE >> condition
+            + ifthenelse.mark('body')
+            // ~END).to(While)
+    sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
+    ast, _ = parse_word(syntax, sql, cache=Cache())
+    
+    g, _ = gen.generate_with(syntax, ast, restore_pruned=True)
     print(ast)
-    print(generated)
-    assert ast == (Token(text='a'), Token(text='a'))
-    assert generated == Many(value=(OrElse(kind=OrElseKind.LEFT, value=Token(text='a')), OrElse(kind=OrElseKind.LEFT, value=Token(text='a'))))
+    print(g)
+    assert ast == g
+    # print(1, x)
+    u, _ = gen.generate_with(syntax, g, restore_pruned=True)
+    assert u == ast
+    g.body.append(g.body[0])
+    # print(2, x)
+    # print(f(x))
+    ast2, _ = gen.generate_with(syntax, g, restore_pruned=True) 
+    # print(ast2)``
+    # print(3, y)
+    assert ast2 == g
+    u, v = gen.generate_with(syntax, ast2, restore_pruned=True)
+    assert u == ast2
 
 
-if __name__ == "__main__":
-    test_between()
-    test_sep_by()
-    test_many_or()
-    test_optional_many()
+if __name__ == '__main__':
+    test_to()

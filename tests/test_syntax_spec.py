@@ -16,7 +16,7 @@ from syncraft.ast import (
     OrElse,
     Many,
     Marked,
-    Collect,
+    To,
     Nothing,
     Lazy,
 )
@@ -76,7 +76,7 @@ def _flatten_token_text(node: object) -> List[str]:
         return _flatten_token_text(node.value)
     if isinstance(node, Marked):
         return _flatten_token_text(node.value)
-    if isinstance(node, Collect):
+    if isinstance(node, To):
         return _flatten_token_text(node.value)
     if isinstance(node, Nothing):
         return []

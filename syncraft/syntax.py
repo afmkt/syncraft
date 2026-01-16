@@ -18,7 +18,7 @@ from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, 
 from syncraft.cache import Cache, Incomplete
 from syncraft.constraint import Bindable, Constraint
 
-from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, Collect, Collector, SyncraftError, Seq, Choice, Lazy, OrElseKind
+from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, To, Collector, SyncraftError, Seq, Choice, Lazy, OrElseKind
 from syncraft.bimap import Iso
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
@@ -348,7 +348,7 @@ class MarkedSpec(SyntaxSpec):
 
 
 @dataclass(frozen=True, slots=True)
-class CollectSpec(SyntaxSpec):
+class ToSpec(SyntaxSpec):
     collector: Collector = field(compare=False, hash=False)
     id: Hashable
     spec: SyntaxSpec 
@@ -1361,7 +1361,7 @@ class Syntax(Generic[A, S]):
 
     def __or__(self, other: Syntax[B, S]) -> Syntax[A | B, S]:
         spec = OrElseSpec(left=self.spec, right=other.spec, name=None, file=None, line=None, func=None)
-        def alg_f(cls: type[Algebra], **global_kwargs) -> Algebra[OrElse[A, B], S]:
+        def alg_f(cls: type[Algebra], **global_kwargs) -> Algebra[OrElse, S]:
             return self(cls, **global_kwargs).or_else(other(cls, **global_kwargs))
             
         return replace(self, alg_f=alg_f, spec=spec).iso(spec.iso()) # type: ignore
@@ -1403,7 +1403,7 @@ class Syntax(Generic[A, S]):
                 new_value = this_f(v, s)
                 if isinstance(v, Marked):
                     real_name = v.name
-                elif isinstance(v, Collect) and isinstance(v.collector, type):
+                elif isinstance(v, To) and isinstance(v.collector, type):
                     real_name = v.collector.__name__
                 else:
                     raise SyncraftError("bind this_f requires marked or collected value", offender=v, expect="Marked or Collect")
@@ -1426,7 +1426,7 @@ class Syntax(Generic[A, S]):
             if callable(this_f):
                 if isinstance(v, Marked):
                     real_name = v.name
-                elif isinstance(v, Collect) and isinstance(v.collector, type):
+                elif isinstance(v, To) and isinstance(v.collector, type):
                     real_name = v.collector.__name__
                 else:
                     raise SyncraftError("update this_f requires marked or collected value", offender=v, expect="Marked or Collect")
@@ -1475,7 +1475,7 @@ class Syntax(Generic[A, S]):
             return Right.new(result)
         return self.on_success(check_v)
 
-    def to(self, f: Collector) -> Syntax[Collect[A, Any], S]:
+    def to(self, f: Collector) -> Syntax[To[A, Any], S]:
         """Attach a collector to the produced value.
         A collector can be a dataclass, and the Marked nodes will be 
         mapped to the fields of the dataclass.
@@ -1493,17 +1493,16 @@ class Syntax(Generic[A, S]):
         if not callable(f):
             raise SyncraftError("Collector f must be callable", offender=f, expect="callable")
 
-        def to_f(v: A) -> Collect[A, Any]:
-            if isinstance(v, Collect):
+        def to_f(v: A) -> To[A, Any]:
+            if isinstance(v, To):
                 return replace(v, collector=f)
             else:
-                return Collect(collector=f, value=v)
-
-        def ito_f(c: Collect[A, Any]) -> A:
-            return c.value if isinstance(c, Collect) else c
+                return To(collector=f, value=v)
+        def ito_f(c: To[A, Any]) -> A:
+            return c.value if isinstance(c, To) else c
 
         ret = self.bimap(to_f, ito_f)
-        return replace(ret, spec=CollectSpec(collector=f, 
+        return replace(ret, spec=ToSpec(collector=f, 
                                              id=hash(f),
                                              spec=self.spec, 
                                              name=self.spec.name, 

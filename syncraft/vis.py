@@ -9,7 +9,7 @@ from syncraft.syntax import (
     OrElseSpec,
     ManySpec,
     LexSpec,
-    CollectSpec,
+    ToSpec,
     MarkedSpec,
 )
 from syncraft.ast import ThenKind
@@ -200,7 +200,7 @@ def syntax2svg(syntax: SyntaxSpec, max_depth: int) -> Optional[SVGVisualization]
             return f"Many[{node.at_least},{upper}]"
         if isinstance(node, LazySpec):
             return "Lazy"
-        if isinstance(node, CollectSpec):
+        if isinstance(node, ToSpec):
             collector_name = getattr(node.collector, '__name__', str(node.collector))
             return f"Collect({collector_name})"
         if isinstance(node, MarkedSpec):
@@ -273,7 +273,7 @@ def syntax2svg(syntax: SyntaxSpec, max_depth: int) -> Optional[SVGVisualization]
                 diagram_cache[node] = child_items[0] if child_items else Comment("lazy …")
                 continue
 
-            if isinstance(node, CollectSpec):
+            if isinstance(node, ToSpec):
                 # CollectSpec wraps another spec - show the inner content with a collect annotation
                 inner = child_items[0] if child_items else Comment("…")
                 collector_name = getattr(node.collector, '__name__', str(node.collector))

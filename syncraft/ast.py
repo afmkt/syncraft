@@ -174,7 +174,7 @@ E = TypeVar("E", bound=DataclassInstance)
 
 Collector = Type[Any] | Callable[..., Any]
 @dataclass(frozen=True, slots=True)
-class Collect(AST, Generic[A, E]):
+class To(AST, Generic[A, E]):
     collector: Collector
     value: A
 
@@ -232,7 +232,7 @@ ParseResult = Union[
     Then['ParseResult[T]', 'ParseResult[T]'], 
     OrElse,
     Many['ParseResult[T]'],
-    Collect['ParseResult[T]', Any],
+    To['ParseResult[T]', Any],
     Marked['ParseResult[T]'],
     Nothing,
     Token,
