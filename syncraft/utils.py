@@ -385,6 +385,9 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
         self._data = dict(*args, **kwargs)
         self._hash = None
 
+    def __contains__(self, key: object) -> bool:
+        return key in self._data
+
     def __bool__(self)->bool:
         return bool(self._data)
 

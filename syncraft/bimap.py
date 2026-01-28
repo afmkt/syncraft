@@ -1,10 +1,102 @@
+"""
+Docstring for syncraft.bimap
+
+  This document outlines the architecture for a bidirectional data transformation DSL based on Structural Unification 
+and Functional Injection. It focuses on a "Pure Structural" engine where functional relationships are treated as declarative constraints.
+
+1. Core Architecture
+    The system operates on a Variable Environment (a context dictionary) and a Template. The transformation is 
+    bidirectional by nature: the engine either extracts values into variables or reconstructs structures from variables.
+    The Two Modes of Operation:
+    Deconstruction (Raw → Domain): Matches the input against a structural pattern and binds values to variables.
+    Reconstruction (Domain → Raw): Uses bound variables to fill "holes" in a structural pattern.
+
+
+2. Key DSL Components
+    A. Logic Variables (V_VAR)
+    Singletons or objects that act as placeholders.
+    State: Can be Unbound (empty) or Bound (contains a value).
+    Constraint: Once bound, a variable cannot change its value (ensuring consistency).
+
+    B. Structural Patterns
+    Standard Python collections used as templates:
+    Tuples/Lists: (V_A, V_B) or (V_HEAD, *V_TAIL).
+    Dictionaries: {"key": V_VAL}.
+
+    C. The Computed Injector
+    The bridge between pure structure and logic.
+    Syntax: Computed(Target_Var, Function, *Source_Vars)
+    Behavior: * If Target_Var is unknown: Calculates Function(*Source_Vars) and assigns the result.
+    If Target_Var is known: Validates that Target_Var == Function(*Source_Vars).
+
+3. Transformation Example: Length-Prefixed List
+    This example demonstrates how the len function serves both directions without needing a formal "inverse."
+    ```
+    V_SIZE = Var("size")
+    V_ITEMS = Var("items")
+
+    template = Mapping(
+        # The 'raw' side expects a tuple: (length, item1, item2...)
+        raw = (Computed(V_SIZE, len, V_ITEMS), *V_ITEMS),
+        
+        # The 'domain' side expects a structured dict
+        domain = {"size": V_SIZE, "content": V_ITEMS}
+    )
+    ```
+    Direction,  Input,                      Action,                                                     Output
+    Parsing     "(2, ""A"", ""B"")",        "Bind V_SIZE=2, V_ITEMS=[""A"", ""B""]. len validates.",    "{""size"": 2, ""content"": [""A"", ""B""]}"
+    Generating  "{""content"": [""A""]}",   "Bind V_ITEMS=[""A""]. Computed calculates V_SIZE=1.",      "(1, ""A"")"
+
+4. Technical Details: The Resolution Engine
+    Local Backtracking (Choice Points)
+    To support branching (e.g., or_else), the engine uses Environment Snapshots.
+    Checkpoint: Copy the current variable bindings.
+    Attempt: Try Branch A.
+    Rollback: If structural matching or Computed constraints fail, restore the checkpoint.
+    Succeed: If Branch A finishes, discard the checkpoint and commit.
+    The Resolution Loop
+    Since Computed fields might depend on other Computed fields, the engine uses a reactive loop:
+    Step 1: Perform all direct structural bindings.
+    Step 2: Identify all Computed constraints.
+    Step 3: Repeatedly execute constraints where all Source_Vars are bound until the environment stabilizes.
+    Step 4: Verify no "Deadlocks" (circular dependencies) or "Unbound" requirements remain. 
+
+5. Summary Comparison: Why this is better than Manual Isos
+    Feature,                Manual Pair (to/from),                      Unification DSL
+    Maintenance,            High (must keep 2 functions in sync),       Low (Single template definition)
+    Validation,             Manual if checks,                           Automatic (Mismatch = Failure)
+    Logic,                  Procedural,                                 Declarative (WYSIWYG)
+    Functional Case,        Requires explicit Inverse (Iso),            Can use ordinary functions (Computed)    
+
+
+6. Formal Structure of Terms
+    Primitive ::= int | float | str | bool | bytes | None
+
+    Value ::= Primitive | Var | Structure
+
+    Structure ::= dict[hashable, Term]
+                | list[Term]
+                | tuple[Term, ...]
+                | dataclass(Term fields)
+
+    Term ::= Value | Computed
+
+    Computed ::= constraint(Target: Var, func, args: Tuple[Value, ...])
+
+"""
+
+
+
 from __future__ import annotations
 
 from typing import (
-    Any, TypeVar, 
+    Any, TypeVar, Tuple, List, Set,
     Generic, Callable, overload, Literal
 )
-from dataclasses import dataclass,field
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field, is_dataclass, fields
+
+
 
 
 A = TypeVar('A')
@@ -61,182 +153,249 @@ class Iso(Generic[A, B]):
         return cls(lambda _: b, lambda _: a)
 
 
-class Mapper:
-    @staticmethod
-    def eval(func: Callable[..., Any], *args, **kwargs) -> Any:
-        if isinstance(func, Mapper):
-            return func(*args, **kwargs)
-        else:
-            return func
-        
-    def __init__(self, func: Callable[..., Any]):
-        self.func = func
 
-    def __call__(self, *args, **kwargs) -> Any:
-        return self.func(*args, **kwargs)
-    
-    def __add__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) + Mapper.eval(other, *args, **kwargs))
-    
-    def __radd__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) + self.func(*args, **kwargs))
-    
-    def __mul__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) * Mapper.eval(other, *args, **kwargs))
-    
-    def __rmul__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) * self.func(*args, **kwargs))
-    
-    def __div__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) / Mapper.eval(other, *args, **kwargs))
-    
-    def __rdiv__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) / self.func(*args, **kwargs))
-    
-    def __floordiv__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) // Mapper.eval(other, *args, **kwargs))
-    
-    def __rfloordiv__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) // self.func(*args, **kwargs))
-    
-    def __sub__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) - Mapper.eval(other, *args, **kwargs))
-    
-    def __rsub__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) - self.func(*args, **kwargs))
-    
-    def __neg__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: -self.func(*args, **kwargs))
-    
-    def __pos__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: +self.func(*args, **kwargs))  
-    
-    def __abs__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: abs(self.func(*args, **kwargs)))
-    
-    def __getitem__(self, index: Any ) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs)[Mapper.eval(index, *args, **kwargs)])
-    
-    def __or__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) | Mapper.eval(other, *args, **kwargs))
-    
-    def __ror__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) | self.func(*args, **kwargs))
-    
-    def __and__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) & Mapper.eval(other, *args, **kwargs))
-    
-    def __rand__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) & self.func(*args, **kwargs))
-    
-    def __invert__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: ~self.func(*args, **kwargs))  
-    
-    @property
-    def not_(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: not self.func(*args, **kwargs))
-    
-    def __xor__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) ^ Mapper.eval(other, *args, **kwargs))
-    
-    def __rxor__(self, other: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(other, *args, **kwargs) ^ self.func(*args, **kwargs))
-    
-    def bool(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: bool(self.func(*args, **kwargs)))
-    
-    def __not__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: not self.func(*args, **kwargs))
-    
-    def __int__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: int(self.func(*args, **kwargs)))
-    
-    def __float__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: float(self.func(*args, **kwargs)))
-        
-    def __length_hint__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: len(self.func(*args, **kwargs)))
-    
-    def __len__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: len(self.func(*args, **kwargs)))  
-    
-    def __contains__(self, item: Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(item, *args, **kwargs) in self.func(*args, **kwargs))
-    
-    def __iter__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: iter(self.func(*args, **kwargs)))
-    
-    def __reversed__(self) -> Mapper:
-        return Mapper(lambda *args, **kwargs: reversed(self.func(*args, **kwargs)))
-    
-    def __eq__(self, other: Any):
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) == Mapper.eval(other, *args, **kwargs))
-    
-    def __ne__(self, other: Any):
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) != Mapper.eval(other, *args, **kwargs))
-    
-    def __lt__(self, other: Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) < Mapper.eval(other, *args, **kwargs))
-    
-    def __le__(self, other: Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) <= Mapper.eval(other, *args, **kwargs))
-    
-    def __gt__(self, other: Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) > Mapper.eval(other, *args, **kwargs))
-    
-    def __ge__(self, other: Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: self.func(*args, **kwargs) >= Mapper.eval(other, *args, **kwargs))
-        
-    def if_then_else(self, then_mapper: Mapper | Any, else_mapper: Mapper | Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: Mapper.eval(then_mapper, *args, **kwargs) if self.func(*args, **kwargs) else Mapper.eval(else_mapper, *args, **kwargs))
-    
-    @staticmethod
-    def arg(index: int | str) -> Mapper:
-        if isinstance(index, str):
-            return Mapper(lambda *args, **kwargs: kwargs[index])
-        elif isinstance(index, int):
-            return Mapper(lambda *args, **kwargs: args[index])
-        else:
-            raise TypeError("Index must be an integer or string")
+class MetaUnbound(type):
+    def __instancecheck__(cls, instance: Any) -> bool:
+        return instance is cls or super().__instancecheck__(instance)
+    def __str__(cls)->str:
+        return "Unbound"
+    def __repr__(cls)->str:
+        return "Unbound"
+    def __bool__(cls)->bool:
+        return False
+@dataclass(frozen=True, slots=True)
+class Unbound(metaclass=MetaUnbound):
+    """Singleton sentinel representing the absence of a value in the AST."""
+    def __call__(self)-> Unbound:
+        return self
+    def __new__(cls):
+        return cls
+    def __bool__(self)->bool:
+        return False
+    def __str__(self)->str:
+        return "Unbound"
+    def __repr__(self)->str:
+        return "Unbound"
 
-    @staticmethod
-    def const(value: Any) -> Mapper:
-        return Mapper(lambda *args, **kwargs: value)
-    
+class Term(ABC):
+    @abstractmethod
+    def bind(self, env: Env, value: Any) -> bool:
+        ...
 
-    @staticmethod
-    def callable(func: Callable[..., Any]) -> Mapper:
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
-            unnamed_args = []
-            named_args = {}
-            for v in args:
-                if isinstance(v, Mapper):
-                    unnamed_args.append(v(*args, **kwargs))
-                else:
-                    unnamed_args.append(v)
-            for k, v in kwargs.items():
-                if isinstance(v, Mapper):
-                    named_args[k] = v(*args, **kwargs)
-                else:
-                    named_args[k] = v
-            return func(*unnamed_args, **named_args)
-        return Mapper(wrapped)
+    @abstractmethod
+    def eval(self, env: Env) -> Tuple[bool, Any]:
+        ...
+
+    @abstractmethod
+    def unify(self, other: Any, env: Env) -> bool:
+        ...
 
 
-def call(c: Callable[..., Any], *args: Any, **kwargs: Any) -> Mapper:
-    def bound(t: list|tuple) -> Any:
-        unnamed_args = []
-        named_args = {}
-        for v in args:
-            if isinstance(v, Mapper):
-                unnamed_args.append(v(t))
+@dataclass(frozen=True, slots=True)
+class Var(Term):
+    name: str | None = None
+    def is_bound(self, env: Env) -> bool:
+        return self in env.bindings and env.bindings[self].value is not Unbound
+    
+    def bind(self, env: Env, value: Any) -> bool:
+        binding = env.bind(self, value)
+        return binding is not None
+    
+    def eval(self, env: Env) -> Tuple[bool, Any]:
+        if self.is_bound(env):
+            resolved = env.resolve(self)
+            if isinstance(resolved, Unbound):
+                return False, self
             else:
-                unnamed_args.append(v)
-        for k, v in kwargs.items():
-            if isinstance(v, Mapper):
-                named_args[k] = v(t)
-            else:
-                named_args[k] = v
-        return c(*unnamed_args, **named_args)
-    return Mapper(bound)
+                full, v = eval(resolved, env)
+                return full, v
+        else:
+            return False, self
+        
+    def unify(self, other: Any, env: Env) -> bool:
+        return env.bind(self, other) is not None
+    
+    
 
+@dataclass(frozen=True, slots=True)
+class Fun(Term):
+    target: Var
+    func: Callable[..., Any]
+    args: tuple[Any, ...]
+
+    def bind(self, env: Env, value: Any) -> bool:
+        binding = env.bind(self.target, value)
+        if binding is None:
+            return False
+        binding.constraints.append(self)
+        return binding is not None
+    
+    def eval(self, env: Env) -> Tuple[bool, Any]:
+        collected_args = []
+        for arg in self.args:
+            full, v = eval(arg, env)
+            if not full:
+                return False, self
+            collected_args.append(v)
+        return True, self.func(*collected_args)
+    
+    def unify(self, other: Any, env: Env) -> bool:
+        return self.bind(env, other)
+
+
+
+@dataclass(slots=True)
+class Binding:
+    value: Any = Unbound
+    constraints: List[Fun] = field(default_factory=list)
+    satisfied: Set[int] = field(default_factory=set)
+
+@dataclass(slots=True)
+class Env:
+    bindings: dict[Var, Binding] = field(default_factory=dict)
+    def __contains__(self, var: Var) -> bool:
+        return var in self.bindings
+    
+    def resolve(self, var: Var) -> Any | Unbound:
+        ret = self.bindings.get(var, Unbound())
+        if isinstance(ret, Unbound):
+            return Unbound
+        else:
+            return ret.value
+        
+    def bind(self, var: Var, value: Any) -> Binding | None:
+        if var in self.bindings:
+            binding = self.bindings[var]
+            if binding.value is not Unbound:
+                assert not is_fun(binding.value), "Binding.value cannot be a Fun"
+                if not unify(binding.value, value, self):
+                    return None
+            else:
+                binding.value = value
+            return binding
+        else:
+            binding = Binding(value=value)
+            self.bindings[var] = binding
+            return binding
+    
+
+    def solve(self)-> bool:
+        changed = True
+        while changed:
+            changed = False
+            for var, binding in self.bindings.items():
+                for fun in binding.constraints:
+                    full, value = eval(fun, self)
+                    if not full:
+                        continue
+                    if binding.value is not Unbound:
+                        if not unify(fun.target, value, self):
+                            return False
+                    else:
+                        binding.value = value
+                        changed = True
+                    binding.satisfied.add(id(fun))
+        for var, binding in self.bindings.items():
+            for fun in binding.constraints:
+                if id(fun) not in binding.satisfied:
+                    return False
+        return True
+
+def is_primitive(value: Any) -> bool:
+    return isinstance(value, (int, float, str, bool, bytes, type(None)))
+
+def is_fun(value: Any) -> bool:
+    return isinstance(value, Fun)
+
+def is_variable(value: Any) -> bool:
+    return isinstance(value, Var)
+
+def is_structure(value: Any) -> bool:
+    return isinstance(value, (dict, list, tuple)) or is_dataclass(value) 
+
+
+def eval(expr: Any, env: Env) -> Tuple[bool, Any]:
+    if isinstance(expr, Term):
+        return expr.eval(env)
+    elif is_structure(expr):
+        result = {}
+        if isinstance(expr, dict):
+            for k, v in expr.items():
+                full, val = eval(v, env)
+                if not full:
+                    return False, expr
+                result[k] = val
+            return True, result
+        elif isinstance(expr, list):
+            lst = []
+            for item in expr:
+                full, v = eval(item, env)
+                if not full:
+                    return False, expr
+                lst.append(v)
+            return True, lst
+        elif isinstance(expr, tuple):
+            tpl = []
+            for item in expr:
+                full, v = eval(item, env)
+                if not full:
+                    return False, expr
+                tpl.append(v)
+            return True, tuple(tpl)
+        elif is_dataclass(expr):
+            all_fields = {}
+            for field in fields(expr):
+                full, v = eval(getattr(expr, field.name), env)
+                if not full:
+                    return False, expr
+                all_fields[field.name] = v
+            return True, type(expr)(**all_fields) # type: ignore
+    return True, expr
+    
+def unify(pattern: Any, value: Any, env: Env) -> bool:
+    if pattern is Unbound or value is Unbound:
+        raise ValueError("Cannot unify with Unbound pattern.")
+    elif isinstance(pattern, Term):
+        return pattern.unify(value, env)
+
+    elif is_primitive(pattern):
+        if is_primitive(value):
+            return pattern == value
+        else:
+            return False
+
+    elif is_structure(pattern):
+        if isinstance(pattern, dict) and isinstance(value, dict):
+            for k, v in pattern.items():
+                if k not in value:
+                    return False
+                if not unify(v, value[k], env):
+                    return False
+            return True
+        elif isinstance(pattern, (list, tuple)) and isinstance(value, (list, tuple)):
+            for p_item, v_item in zip(pattern, value):
+                if not unify(p_item, v_item, env):
+                    return False
+            return True
+        elif is_dataclass(pattern) and is_dataclass(value):
+            for field in fields(pattern):
+                p_item = getattr(pattern, field.name)
+                v_item = getattr(value, field.name)
+                if not unify(p_item, v_item, env):
+                    return False
+            return True
+
+    raise ValueError("Unsupported pattern or value type for unification.")
+
+
+
+def unify_all(pattern: Any, value: Any) -> Env:
+    # from rich import print
+    env = Env()
+    success = unify(pattern, value, env)
+    # print(env)
+    if not success:
+        raise ValueError("Unification failed.")
+    if not env.solve():
+        raise ValueError("Constraints not satisfied after unification.")
+    return env
