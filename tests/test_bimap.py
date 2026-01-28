@@ -315,3 +315,129 @@ def test_partial_structure_with_computed():
 
     assert env.resolve(HEAD) == "a"
         
+###################################################################
+
+def test_mutual_chain_resolution():
+    A = Var("A")
+    B = Var("B")
+    C = Var("C")
+
+    pattern = (
+        Fun(A, lambda b: b + 1, (B,)),
+        Fun(B, lambda c: c * 2, (C,)),
+        C,
+    )
+
+    value = (7, 6, 3)
+
+    env = unify_all(pattern, value)
+
+    assert env.resolve(C) == 3
+    assert env.resolve(B) == 6
+    assert env.resolve(A) == 7
+
+
+def test_two_way_dependency():
+    A = Var("A")
+    B = Var("B")
+
+    pattern = (
+        Fun(A, lambda b: b + 1, (B,)),
+        Fun(B, lambda a: a - 1, (A,)),
+    )
+
+    value = (10, 9)
+
+    env = unify_all(pattern, value)
+
+    assert env.resolve(A) == 10
+    assert env.resolve(B) == 9
+
+
+def test_cyclic_constraints_with_ground_values():
+    A = Var("A")
+    B = Var("B")
+
+    pattern = (
+        Fun(A, lambda b: b + 1, (B,)),
+        Fun(B, lambda a: a - 1, (A,)),
+    )
+    value = (4, 3)
+    env = unify_all(pattern, value)
+    assert env.resolve(A) == 4
+    assert env.resolve(B) == 3
+
+###########################################################################
+def test_inconsistent_cycle_fails():
+    A = Var("A")
+    B = Var("B")
+
+    pattern = (
+        Fun(A, lambda b: b + 1, (B,)),
+        Fun(B, lambda a: a + 1, (A,)),
+        A,
+    )
+
+    value = (None, None, 0)
+
+    with pytest.raises(ValueError):
+        unify_all(pattern, value)
+
+
+
+def test_recursive_structure_constraints():
+    X = Var("x")
+    Y = Var("y")
+    Z = Var("z")
+
+    pattern = {
+        "left": X,
+        "right": {
+            "value": Y,
+            "sum": Fun(Z, lambda a, b: a + b, (X, Y)),
+        }
+    }
+
+    value = {
+        "left": 4,
+        "right": {
+            "value": 6,
+            "sum": 10,
+        }
+    }
+
+    env = unify_all(pattern, value)
+
+    assert env.resolve(X) == 4
+    assert env.resolve(Y) == 6
+    assert env.resolve(Z) == 10
+
+
+def test_forward_reference_constraint():
+    X = Var("x")
+    Y = Var("y")
+
+    pattern = (
+        Fun(Y, lambda x: x * 2, (X,)),
+        X,
+    )
+
+    value = (10, 5)
+
+    env = unify_all(pattern, value)
+
+    assert env.resolve(X) == 5
+    assert env.resolve(Y) == 10
+
+
+
+def test_constraint_does_not_create_binding():
+    X = Var("x")
+    Y = Var("y")
+
+    pattern = Fun(Y, lambda x: x + 1, (X,))
+    value = 10
+
+    with pytest.raises(ValueError):
+        unify_all(pattern, value)
+

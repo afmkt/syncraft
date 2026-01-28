@@ -11,57 +11,39 @@ import pytest
 literal = Syntax.lit
 
 
-
-def test_nested_fun_arguments():
+def test_recursive_structure_constraints():
     X = Var("x")
     Y = Var("y")
-
-    pattern = Fun(
-        Y,
-        lambda v: v * 2,
-        (Fun(X, lambda z: z + 1, (5,)),),
-    )
-
-    env = unify_all(pattern, 12)
-    assert X not in env
-    assert env.resolve(Y) == 12
-
-
-def test_dataclass_with_constraint()-> None:
-    @dataclass
-    class Point:
-        x: Any
-        y: Any
-
-
-    X = Var("x")
-    Y = Var("y")
-    S = Var("sum")
+    Z = Var("z")
 
     pattern = {
-        "p": Point(X, Y),
-        "sum": Fun(S, lambda a, b: a + b, (X, Y)),
+        "left": X,
+        "right": {
+            "value": Y,
+            "sum": Fun(Z, lambda a, b: a + b, (X, Y)),
+        }
     }
 
-    value = {"p": Point(2, 3), "sum": 5}
+    value = {
+        "left": 4,
+        "right": {
+            "value": 6,
+            "sum": 10,
+        }
+    }
 
     env = unify_all(pattern, value)
 
-    assert env.resolve(S) == 5
+    assert env.resolve(X) == 4
+    assert env.resolve(Y) == 6
+    assert env.resolve(Z) == 10
 
-
-
-def test_unsatisfied_constraint_fails():
-    X = Var("x")
-    Y = Var("y")
-    pattern = Fun(X, lambda v: v + 1, (Y,))
-    value = {}
-    with pytest.raises(ValueError):
-        unify_all(pattern, value)
-
-
-        
 
 if __name__ == '__main__':
-    test_unsatisfied_constraint_fails()
+    
+    test_recursive_structure_constraints()
+    
+    
+    
+    
     
