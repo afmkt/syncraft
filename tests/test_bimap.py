@@ -1,4 +1,4 @@
-from syncraft.bimap import Var, unify_all, Fun, Env, eval, unify, Unbound
+from syncraft.bimap import Var, unify_all, Fun, Env, eval, unify
 from typing import Any
 import pytest
 from dataclasses import dataclass
@@ -83,9 +83,9 @@ def test_dependency_chain():
     env.bind(V_QTY, 2)
     
     # Manually register constraints (simulating what Mapping would do)
-    env.bind(V_TOTAL, Unbound) # Ensure binding exists for the solver
+    env.bind(V_TOTAL, ...) # Ensure binding exists for the solver
     env.bindings[V_TOTAL].constraints.append(constraints[0])
-    env.bind(V_GRAND, Unbound)
+    env.bind(V_GRAND, ...)
     env.bindings[V_GRAND].constraints.append(constraints[1])
 
     if env.solve():

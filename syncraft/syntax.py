@@ -16,9 +16,9 @@ if TYPE_CHECKING:
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
-from syncraft.constraint import Bindable, Constraint
+from syncraft.constraint import Bindable
 
-from syncraft.ast import Then, ThenKind, Marked, OrElse, Many, Nothing, To, Collector, SyncraftError, Seq, Choice, Lazy, OrElseKind
+from syncraft.ast import Then, ThenKind, OrElse, Many, Nothing, SyncraftError, Seq, Choice, Lazy, OrElseKind
 from syncraft.bimap import Iso
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
@@ -314,72 +314,7 @@ class LazySpec(SyntaxSpec):
         lazy_cache[key] = target
         return (target,)
     
-@dataclass(frozen=True, slots=True)
-class MarkedSpec(SyntaxSpec):
-    mname: str
-    spec: SyntaxSpec
-    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
-        if self in cache:
-            return cache[self]
-        inner = self.spec.syntax(cls, cache=cache)
-        ret = inner.mark(self.mname)
-        cache[self] = ret = replace(ret, spec=self)
-        return ret
-
-    def __str__(self) -> str:
-        if self.str_cache is None:
-            if self.name:
-                ret = self.name
-            else:
-                ret = self.format("{spec}.mark({mname})", spec=str(self.spec), mname=self.mname)
-            object.__setattr__(self, 'str_cache', ret)
-            return ret
-        else:
-            return self.str_cache
-
-    @property
-    def complexity(self) -> float:
-        return self.spec.complexity
-    
-    def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
-        return (self.spec,)
-
-
-@dataclass(frozen=True, slots=True)
-class ToSpec(SyntaxSpec):
-    collector: Collector = field(compare=False, hash=False)
-    id: Hashable
-    spec: SyntaxSpec 
-    str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
-    
-
-    def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
-        if self in cache:
-            return cache[self]
-        inner = self.spec.syntax(cls, cache=cache)
-        ret: Syntax = inner.to(self.collector)
-        cache[self] = ret = replace(ret, spec=self)
-        return ret
-
-    def __str__(self) -> str:
-        if self.str_cache is None:
-            if self.name:
-                ret = self.name
-            else:
-                ret = self.format("{spec}.to({collector})", spec=str(self.spec), collector=str(self.collector))
-            object.__setattr__(self, 'str_cache', ret)
-            return ret
-        else:
-            return self.str_cache
-        
-    @property
-    def complexity(self) -> float:
-        return 1 + self.spec.complexity
-    
-    def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
-        return (self.spec,)
 
 @dataclass(frozen=True, slots=True)
 class SeqSpec(SyntaxSpec):
@@ -1378,12 +1313,12 @@ class Syntax(Generic[A, S]):
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, False)
     
-    def fld(self, name: str | None = None) -> Tuple[Syntax[A, S] | Syntax[Marked[A], S], bool]:
+    def fld(self, name: str | None = None) -> Tuple[Syntax[A, S], bool]:
         name = name if name is not None else self.spec.name
         if name is None:
             return (self, True)
         else:
-            return (self.mark(name), True)
+            return (self.bind(name), True)
         
         
 
@@ -1392,67 +1327,25 @@ class Syntax(Generic[A, S]):
         return self.optional
 
     ######################################################################## data processing combinators #########################################################
-    def bind(self, 
-             this_f: None | str | Callable[[Any, S], Any] = None,
-
-             **kwargs: Callable[[Any, S], Any]) -> Syntax[A, S]:
-        def bind_v(v: A, s: S) -> Tuple[A, S]:
-
-
-            if callable(this_f):
-                new_value = this_f(v, s)
-                if isinstance(v, Marked):
-                    real_name = v.name
-                elif isinstance(v, To) and isinstance(v.collector, type):
-                    real_name = v.collector.__name__
-                else:
-                    raise SyncraftError("bind this_f requires marked or collected value", offender=v, expect="Marked or Collect")
-                s = s.bind(real_name, new_value)
-            elif isinstance(this_f, str):
+    
+    def bind(self, this_f : str | None = None ,**kwargs: Callable[[Any, Any], Any]) -> Syntax[A, S]:
+        def bind_v(v: A, s: S) -> tuple[A, S]:
+            if isinstance(this_f, str):
                 s = s.bind(this_f, v)
+
             for real_name, f in kwargs.items():
-                new_value = f(v, s)
+                new_value = f(v, s.get(real_name))
                 s = s.bind(real_name, new_value)
 
             return v, s
+        
         return self.map_all(bind_v)
     
-    def update(self,
-               this_f: None | str | Callable[[Any, Any], Any] = None,
-
-               **kwargs: Callable[[Any, Any], Any]) -> Syntax[A, S]:
-        def replace_v(v: A, s: S) -> tuple[A, S]:
-
-            if callable(this_f):
-                if isinstance(v, Marked):
-                    real_name = v.name
-                elif isinstance(v, To) and isinstance(v.collector, type):
-                    real_name = v.collector.__name__
-                else:
-                    raise SyncraftError("update this_f requires marked or collected value", offender=v, expect="Marked or Collect")
-                new_value = this_f(s.get(real_name), v)
-                s = s.replace(real_name, new_value)
-            elif isinstance(this_f, str):
-                s = s.replace(this_f, v)
-
-            for real_name, f in kwargs.items():
-                new_value = f(s.get(real_name), v)
-                s = s.replace(real_name, new_value)
-            return v, s
-        return self.map_all(replace_v)
-    
-    def check(self,
-              this_f: None | Callable[..., bool] | Constraint = None) -> Syntax[A, S]:
+    def check(self, this_f: Callable[..., bool]) -> Syntax[A, S]:
         def check_v(this: Optional[Syntax[A, S]], old_s: S, result: Tuple[A, S]) -> Either[Any, Tuple[Any, S]]:
             v, s = result
 
-            if isinstance(this_f, Constraint):
-                check_result = this_f(v, s.all_bindings)
-                if not check_result.result:
-                    return Left.new(Error.new(this=this, 
-                                              message=f"Check failed for 'this' with value {v}: {check_result}", 
-                                              state=old_s))
-            elif callable(this_f):
+            if callable(this_f):
                 d = s.all_bindings
                 if d:
                     c = CallWith(this_f, v, **d)
@@ -1474,68 +1367,7 @@ class Syntax(Generic[A, S]):
 
             return Right.new(result)
         return self.on_success(check_v)
-
-    def to(self, f: Collector) -> Syntax[To[A, Any], S]:
-        """Attach a collector to the produced value.
-        A collector can be a dataclass, and the Marked nodes will be 
-        mapped to the fields of the dataclass.
-
-        Wraps the value in Collect or updates an existing one.
-
-        Args:
-            f: Collector invoked during generation/printing.
-            id: Optional unique identifier for the syntax node. When f is a lambda function, id should be provided to distinguish different collectors.
-                When f is a lambda the same function has different identity each time it is defined, so id helps to identify the collector uniquely.
-
-        Returns:
-            Syntax producing Collect(value, collector=f).
-        """
-        if not callable(f):
-            raise SyncraftError("Collector f must be callable", offender=f, expect="callable")
-
-        def to_f(v: A) -> To[A, Any]:
-            if isinstance(v, To):
-                return replace(v, collector=f)
-            else:
-                return To(collector=f, value=v)
-        def ito_f(c: To[A, Any]) -> A:
-            return c.value if isinstance(c, To) else c
-
-        ret = self.bimap(to_f, ito_f)
-        return replace(ret, spec=ToSpec(collector=f, 
-                                             id=hash(f),
-                                             spec=self.spec, 
-                                             name=self.spec.name, 
-                                             file=self.spec.file, 
-                                             line=self.spec.line, 
-                                             func=self.spec.func))
-
-    def mark(self, name: str) -> Syntax[Marked[A], S]:
-
-        assert valid_name(name), f"Invalid mark name: {name}"
-
-        def mark_s(value: A) -> Marked[A]:
-            if isinstance(value, Marked):
-                return replace(value, name=name)
-            else:
-                return Marked(name=name, value=value)
-
-        def imark_s(m: Marked[A]) -> A:
-            return m.value if isinstance(m, Marked) else m
-
-
-        ret = self.bimap(mark_s, imark_s)
-        spec = self.spec
-        if isinstance(spec, MarkedSpec):
-            spec = replace(spec, mname=name)
         
-        return replace(ret, spec=MarkedSpec(mname=name, 
-                                            name=spec.name,
-                                            spec=spec, 
-                                            file=spec.file, 
-                                            line=spec.line, 
-                                            func=spec.func))
-    
 
     @classmethod
     def fail(cls, error: B) -> Syntax[B, S]:

@@ -8,10 +8,8 @@ from typing import (
 )
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
-from syncraft.mapper import Record
 from dataclasses import dataclass, replace, is_dataclass, fields, field
 from enum import Enum
-from syncraft.utils import CallWith, MISSING
 class SyncraftError(Exception):
     def __init__(self, message: str, offender: Any, expect: Any = None, **kwargs: Any) -> None:
         super().__init__(message)
@@ -79,24 +77,6 @@ class Lazy(AST, Generic[A]):
     value: A
     
     
-
-
-
-@dataclass(frozen=True, slots=True)
-class Marked(AST, Generic[A]):
-    """Annotate a AST node with a name.
-
-    Used to tag subtrees so they can be collected by name later (e.g., in
-    collectors) without altering the structural shape.
-    """
-    
-    name: str
-    value: A
-
-
-    
-
-    
 class OrElseKind(Enum):
     LEFT = 'left'
     RIGHT = 'right'
@@ -163,22 +143,6 @@ class Then(AST, Generic[A, B]):
     right: B
 
 
-
-
-
-class DataclassInstance(Protocol):
-    __dataclass_fields__: ClassVar[dict[str, Any]]
-
-
-E = TypeVar("E", bound=DataclassInstance)
-
-Collector = Type[Any] | Callable[..., Any]
-@dataclass(frozen=True, slots=True)
-class To(AST, Generic[A, E]):
-    collector: Collector
-    value: A
-
-
 Char = TypeVar('Char', bound=Hashable)
 @dataclass(frozen=True, slots=True)
 class Token(AST, Generic[Char]):
@@ -232,8 +196,6 @@ ParseResult = Union[
     Then['ParseResult[T]', 'ParseResult[T]'], 
     OrElse,
     Many['ParseResult[T]'],
-    To['ParseResult[T]', Any],
-    Marked['ParseResult[T]'],
     Nothing,
     Token,
     T,

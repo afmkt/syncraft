@@ -365,7 +365,8 @@ class RE(Grammar):
             S.seq(S.lex(B.lit("(?#")), 
                   RE.comment.fld(),
                   RE.rparen).to(partial(UnsupportedFeature, feature="comment group")),
-                ).named("group_alternatives").update(group_counter = lambda c, _: c + 1 if c is not ... else 1)
+                  
+                ).named("group_alternatives").bind(group_counter = lambda _, c: c + 1 if c is not ... else 1)
 
 
     anchor = S.alt(caret, dollar, boundary_escape).to(partial(UnsupportedFeature, feature="group existence test"))

@@ -79,40 +79,25 @@ class GenState(Bindable, Generic[T]):
     def unused_cache_key(self) -> int:
         return 0
 
+    
     def bind(self, name: str, node:Any)->GenState[T]:
-        """Return a copy with ``node`` recorded under ``name`` in bindings."""
+        """Return a copy with ``node`` replacing existing binding under ``name``."""
         return GenState.new(
             binding=self.binding.bind(name, node),
             ast=self.ast,
             restore_pruned=self.restore_pruned,
-            seed=self.seed,
-        )
-    
-    def replace(self, name: str, node:Any)->GenState[T]:
-        """Return a copy with ``node`` replacing existing binding under ``name``."""
-        return GenState.new(
-            binding=self.binding.replace(name, node),
-            ast=self.ast,
-            restore_pruned=self.restore_pruned,
-            seed=self.seed,
-            
+            seed=self.seed
         )
     
     @property
-    def all_bindings(self) -> FrozenDict[str, Tuple[Any, ...]]:
+    def all_bindings(self) -> FrozenDict[str, Any]:
         """Get all bindings recorded in this ParserState."""
         return self.binding.bindings
 
 
-    def get(self, name: str, unwrapper: bool=True) -> Tuple[Any, ...] | Any: 
+    def get(self, name: str) -> Any: 
         """Get the binding(s) recorded under ``name``."""
-        ret = self.binding.bindings.get(name, ())
-        if len(ret) == 1:
-            return ret[0] if unwrapper else ret
-        elif len(ret) == 0:
-            return ... if unwrapper else ()
-        else:
-            return ret
+        return self.binding.bindings.get(name, ...)
 
     def map(self, f: Callable[[Any], Any]) -> GenState[T]:
         new_ast = f(self.ast)
@@ -405,16 +390,16 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
     def or_else(self, # type: ignore
                 other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]: 
+                ) -> Algebra[OrElse, GenState[T]]: 
         def or_else_run(input: GenState[T], 
                         cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
                                                                 GenState[T], 
-                                                                Either[Any, Tuple[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+                                                                Either[Any, Tuple[OrElse, GenState[T]]]]:
             def exec(kind: OrElseKind | None, 
                      left: GenState[T], 
                      right: GenState[T]) -> PyGenerator[YieldChannelType, 
                                                         GenState[T], 
-                                                        Either[Any, Tuple[OrElse[ParseResult[T], ParseResult[T]], GenState[T]]]]:
+                                                        Either[Any, Tuple[OrElse, GenState[T]]]]:
                 match kind:
                     case OrElseKind.LEFT:
                         self_result = yield from self.run(left, cache)

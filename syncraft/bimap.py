@@ -1,93 +1,5 @@
-"""
-Docstring for syncraft.bimap
-
-  This document outlines the architecture for a bidirectional data transformation DSL based on Structural Unification 
-and Functional Injection. It focuses on a "Pure Structural" engine where functional relationships are treated as declarative constraints.
-
-1. Core Architecture
-    The system operates on a Variable Environment (a context dictionary) and a Template. The transformation is 
-    bidirectional by nature: the engine either extracts values into variables or reconstructs structures from variables.
-    The Two Modes of Operation:
-    Deconstruction (Raw → Domain): Matches the input against a structural pattern and binds values to variables.
-    Reconstruction (Domain → Raw): Uses bound variables to fill "holes" in a structural pattern.
-
-
-2. Key DSL Components
-    A. Logic Variables (V_VAR)
-    Singletons or objects that act as placeholders.
-    State: Can be Unbound (empty) or Bound (contains a value).
-    Constraint: Once bound, a variable cannot change its value (ensuring consistency).
-
-    B. Structural Patterns
-    Standard Python collections used as templates:
-    Tuples/Lists: (V_A, V_B) or (V_HEAD, *V_TAIL).
-    Dictionaries: {"key": V_VAL}.
-
-    C. The Computed Injector
-    The bridge between pure structure and logic.
-    Syntax: Computed(Target_Var, Function, *Source_Vars)
-    Behavior: * If Target_Var is unknown: Calculates Function(*Source_Vars) and assigns the result.
-    If Target_Var is known: Validates that Target_Var == Function(*Source_Vars).
-
-3. Transformation Example: Length-Prefixed List
-    This example demonstrates how the len function serves both directions without needing a formal "inverse."
-    ```
-    V_SIZE = Var("size")
-    V_ITEMS = Var("items")
-
-    template = Mapping(
-        # The 'raw' side expects a tuple: (length, item1, item2...)
-        raw = (Computed(V_SIZE, len, V_ITEMS), *V_ITEMS),
-        
-        # The 'domain' side expects a structured dict
-        domain = {"size": V_SIZE, "content": V_ITEMS}
-    )
-    ```
-    Direction,  Input,                      Action,                                                     Output
-    Parsing     "(2, ""A"", ""B"")",        "Bind V_SIZE=2, V_ITEMS=[""A"", ""B""]. len validates.",    "{""size"": 2, ""content"": [""A"", ""B""]}"
-    Generating  "{""content"": [""A""]}",   "Bind V_ITEMS=[""A""]. Computed calculates V_SIZE=1.",      "(1, ""A"")"
-
-4. Technical Details: The Resolution Engine
-    Local Backtracking (Choice Points)
-    To support branching (e.g., or_else), the engine uses Environment Snapshots.
-    Checkpoint: Copy the current variable bindings.
-    Attempt: Try Branch A.
-    Rollback: If structural matching or Computed constraints fail, restore the checkpoint.
-    Succeed: If Branch A finishes, discard the checkpoint and commit.
-    The Resolution Loop
-    Since Computed fields might depend on other Computed fields, the engine uses a reactive loop:
-    Step 1: Perform all direct structural bindings.
-    Step 2: Identify all Computed constraints.
-    Step 3: Repeatedly execute constraints where all Source_Vars are bound until the environment stabilizes.
-    Step 4: Verify no "Deadlocks" (circular dependencies) or "Unbound" requirements remain. 
-
-5. Summary Comparison: Why this is better than Manual Isos
-    Feature,                Manual Pair (to/from),                      Unification DSL
-    Maintenance,            High (must keep 2 functions in sync),       Low (Single template definition)
-    Validation,             Manual if checks,                           Automatic (Mismatch = Failure)
-    Logic,                  Procedural,                                 Declarative (WYSIWYG)
-    Functional Case,        Requires explicit Inverse (Iso),            Can use ordinary functions (Computed)    
-
-
-6. Formal Structure of Terms
-    Primitive ::= int | float | str | bool | bytes | None
-
-    Value ::= Primitive | Var | Structure
-
-    Structure ::= dict[hashable, Term]
-                | list[Term]
-                | tuple[Term, ...]
-                | dataclass(Term fields)
-
-    Term ::= Value | Computed
-
-    Computed ::= constraint(Target: Var, func, args: Tuple[Value, ...])
-
-"""
-
-
-
 from __future__ import annotations
+
 
 from typing import (
     Any, TypeVar, Tuple, List, Set,
@@ -95,7 +7,7 @@ from typing import (
 )
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, is_dataclass, fields
-
+from syncraft.utils import FrozenDict
 
 
 
@@ -151,31 +63,11 @@ class Iso(Generic[A, B]):
     @classmethod
     def const(cls, a: A, b: B) -> Iso[A, B]:
         return cls(lambda _: b, lambda _: a)
+    
+    
 
 
 
-class MetaUnbound(type):
-    def __instancecheck__(cls, instance: Any) -> bool:
-        return instance is cls or super().__instancecheck__(instance)
-    def __str__(cls)->str:
-        return "Unbound"
-    def __repr__(cls)->str:
-        return "Unbound"
-    def __bool__(cls)->bool:
-        return False
-@dataclass(frozen=True, slots=True)
-class Unbound(metaclass=MetaUnbound):
-    """Singleton sentinel representing the absence of a value in the AST."""
-    def __call__(self)-> Unbound:
-        return self
-    def __new__(cls):
-        return cls
-    def __bool__(self)->bool:
-        return False
-    def __str__(self)->str:
-        return "Unbound"
-    def __repr__(self)->str:
-        return "Unbound"
 
 class Term(ABC):
     @abstractmethod
@@ -191,11 +83,13 @@ class Term(ABC):
         ...
 
 
+
+
 @dataclass(frozen=True, slots=True)
 class Var(Term):
     name: str | None = None
     def is_bound(self, env: Env) -> bool:
-        return self in env.bindings and env.bindings[self].value is not Unbound
+        return self in env.bindings and env.bindings[self].value is not ...
     
     def bind(self, env: Env, value: Any) -> bool:
         binding = env.bind(self, value)
@@ -204,7 +98,7 @@ class Var(Term):
     def eval(self, env: Env) -> Tuple[bool, Any]:
         if self.is_bound(env):
             resolved = env.resolve(self)
-            if isinstance(resolved, Unbound):
+            if resolved is ...:
                 return False, self
             else:
                 full, v = eval(resolved, env)
@@ -246,27 +140,36 @@ class Fun(Term):
 
 @dataclass(slots=True)
 class Binding:
-    value: Any = Unbound
+    value: Any = ...
     constraints: List[Fun] = field(default_factory=list)
     satisfied: Set[int] = field(default_factory=set)
 
 @dataclass(slots=True)
 class Env:
+    constants: FrozenDict[str, Any] = field(default_factory=FrozenDict) 
     bindings: dict[Var, Binding] = field(default_factory=dict)
+    scope: dict[str, Var] = field(default_factory=dict)
+    
+    
+    def __getattr__(self, name: str) -> Var:
+        if name not in self.scope:
+            self.scope[name] = Var(name)
+        return self.scope[name]
+        
     def __contains__(self, var: Var) -> bool:
         return var in self.bindings
     
-    def resolve(self, var: Var) -> Any | Unbound:
-        ret = self.bindings.get(var, Unbound())
-        if isinstance(ret, Unbound):
-            return Unbound
+    def resolve(self, var: Var) -> Any:
+        ret = self.bindings.get(var, ...)
+        if ret is ...:
+            return self.constants.get(var.name, ...)
         else:
             return ret.value
         
     def bind(self, var: Var, value: Any) -> Binding | None:
         if var in self.bindings:
             binding = self.bindings[var]
-            if binding.value is not Unbound:
+            if binding.value is not ...:
                 assert not is_fun(binding.value), "Binding.value cannot be a Fun"
                 if not unify(binding.value, value, self):
                     return None
@@ -288,7 +191,7 @@ class Env:
                     full, value = eval(fun, self)
                     if not full:
                         continue
-                    if binding.value is not Unbound:
+                    if binding.value is not ...:
                         if not unify(fun.target, value, self):
                             return False
                     else:
@@ -310,14 +213,14 @@ def is_fun(value: Any) -> bool:
 def is_variable(value: Any) -> bool:
     return isinstance(value, Var)
 
-def is_structure(value: Any) -> bool:
+def is_struct(value: Any) -> bool:
     return isinstance(value, (dict, list, tuple)) or is_dataclass(value) 
 
 
 def eval(expr: Any, env: Env) -> Tuple[bool, Any]:
     if isinstance(expr, Term):
         return expr.eval(env)
-    elif is_structure(expr):
+    elif is_struct(expr):
         result = {}
         if isinstance(expr, dict):
             for k, v in expr.items():
@@ -353,8 +256,8 @@ def eval(expr: Any, env: Env) -> Tuple[bool, Any]:
     return True, expr
     
 def unify(pattern: Any, value: Any, env: Env) -> bool:
-    if pattern is Unbound or value is Unbound:
-        raise ValueError("Cannot unify with Unbound pattern.")
+    if pattern is ... or value is ...:
+        raise ValueError("Cannot unify with Unbound(...) pattern.")
     elif isinstance(pattern, Term):
         return pattern.unify(value, env)
 
@@ -364,7 +267,7 @@ def unify(pattern: Any, value: Any, env: Env) -> bool:
         else:
             return False
 
-    elif is_structure(pattern):
+    elif is_struct(pattern):
         if isinstance(pattern, dict) and isinstance(value, dict):
             for k, v in pattern.items():
                 if k not in value:
@@ -399,3 +302,5 @@ def unify_all(pattern: Any, value: Any) -> Env:
     if not env.solve():
         raise ValueError("Constraints not satisfied after unification.")
     return env
+
+

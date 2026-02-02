@@ -35,15 +35,15 @@ def test_to() -> None:
     D = literal('d')
     M = literal(',')
     var = A | B | C | D
-    condition = var.sep_by(M).mark('condition').bind() 
+    condition = var.sep_by(M).mark('condition').append() 
     ifthenelse = (IF >> condition
               // THEN 
-              + var.sep_by(M).mark('then').bind() 
+              + var.sep_by(M).mark('then').append() 
               // ELSE 
-              + var.sep_by(M).mark('otherwise').bind() 
+              + var.sep_by(M).mark('otherwise').append() 
               // END).to(IfThenElse).many()
     syntax = (WHILE >> condition
-            + ifthenelse.mark('body').bind()
+            + ifthenelse.mark('body').append()
             // ~END).to(While)
     sql = 'while b if a , b then c , d else a , d end if a , b then c , d else a , d end'
     from syncraft.cache import Cache

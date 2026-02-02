@@ -32,12 +32,6 @@ from .generator import (
     generate_with,
     validate,
 )
-from .constraint import (
-	Constraint,
-	Quantifier,
-	forall,
-	exists,
-)
 
 from .ast import (
 	AST,
@@ -47,8 +41,6 @@ from .ast import (
 	OrElse,
 	OrElseKind,
 	Many,
-	Marked,
-	To,
     Nothing,
 )
 from .charset import  CharSet
@@ -86,9 +78,9 @@ __all__ = [
 	"parse", "parser", "parse_data", "parse_word", "ParserState",
 	"generate", "generate_with", "validate", "Parser", "Generator",
 	# constraints
-	"Constraint", "Quantifier", "forall", "exists", "FrozenDict", "CallWith",
+	"FrozenDict", "CallWith",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Marked", "To", "Nothing", "ManySpec", "SeqSpec", "ChoiceSpec", "ParallelSpec",
+	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Nothing", "ManySpec", "SeqSpec", "ChoiceSpec", "ParallelSpec",
     # input
 	"StreamCursor",
     # convenience exports

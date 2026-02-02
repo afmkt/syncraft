@@ -8,9 +8,7 @@ from syncraft.syntax import (
     ThenSpec,
     OrElseSpec,
     ManySpec,
-    LexSpec,
-    ToSpec,
-    MarkedSpec,
+    LexSpec,    
 )
 from syncraft.ast import ThenKind
 import xml.dom.minidom
@@ -200,11 +198,7 @@ def syntax2svg(syntax: SyntaxSpec, max_depth: int) -> Optional[SVGVisualization]
             return f"Many[{node.at_least},{upper}]"
         if isinstance(node, LazySpec):
             return "Lazy"
-        if isinstance(node, ToSpec):
-            collector_name = getattr(node.collector, '__name__', str(node.collector))
-            return f"Collect({collector_name})"
-        if isinstance(node, MarkedSpec):
-            return f"Mark({node.mname})"
+        
         return type(node).__name__
 
     def placeholder(node: SyntaxSpec) -> Any:
@@ -273,19 +267,6 @@ def syntax2svg(syntax: SyntaxSpec, max_depth: int) -> Optional[SVGVisualization]
                 diagram_cache[node] = child_items[0] if child_items else Comment("lazy …")
                 continue
 
-            if isinstance(node, ToSpec):
-                # CollectSpec wraps another spec - show the inner content with a collect annotation
-                inner = child_items[0] if child_items else Comment("…")
-                collector_name = getattr(node.collector, '__name__', str(node.collector))
-                diagram_cache[node] = Sequence(Comment(f"→{collector_name}"), inner)
-                continue
-
-            if isinstance(node, MarkedSpec):
-                # MarkedSpec wraps another spec - show the inner content with a mark annotation
-                inner = child_items[0] if child_items else Comment("…")
-                diagram_cache[node] = Sequence(Comment(f"@{node.mname}"), inner)
-                continue
-
             if isinstance(node, ThenSpec):
                 parts = child_items[:2]
                 while len(parts) < 2:
@@ -348,19 +329,17 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
         return None
 
     def node_label(node):
-        from syncraft.ast import Nothing, Marked, OrElse, Many, Then, Collect, Token
+        from syncraft.ast import Nothing, OrElse, Many, Then, Token
         if node is Nothing:
             return "Nothing"
-        elif isinstance(node, Marked):
-            return f"Marked(name={node.name})"
+        
         elif isinstance(node, OrElse):
             return f"OrElse(kind={getattr(node.kind, 'name', node.kind)})"
         elif isinstance(node, Many):
             return "Many"
         elif isinstance(node, Then):
             return f"Then(kind={node.kind.name})"
-        elif isinstance(node, Collect):
-            return f"Collect({getattr(node.collector, '__name__', str(node.collector))})"
+        
         elif isinstance(node, Token):
             return f"Token({str(node)})"
         elif hasattr(node, '__class__'):
@@ -371,7 +350,7 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
     def add_nodes_edges(dot, node, *, depth, parent_id=None, node_id_gen=[0]):
         if depth == 0:
             return
-        from syncraft.ast import Nothing, Marked, OrElse, Many, Then, Collect
+        from syncraft.ast import Nothing, Marked, OrElse, Many, Then
         node_id = f"n{node_id_gen[0]}"
         node_id_gen[0] += 1
         label = node_label(node)
@@ -393,8 +372,7 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
         elif isinstance(node, Then):
             add_nodes_edges(dot, node.left, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
             add_nodes_edges(dot, node.right, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
-        elif isinstance(node, Collect):
-            add_nodes_edges(dot, node.value, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
+
         # Token is a leaf
         # For other types, try to walk __dict__ if they are dataclasses
         elif hasattr(node, '__dataclass_fields__'):

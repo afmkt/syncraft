@@ -130,8 +130,9 @@ class ParserState(Bindable, Generic[T]):
         """Optionally transform the underlying value (no-op by default)."""
         return self
     
+    
     def bind(self, name: str, node:Any)->ParserState[T]:
-        """Return a copy with ``node`` recorded under ``name`` in bindings."""
+        """Return a copy with ``node`` replacing any existing binding under ``name``."""
         return ParserState.new(
             binding=self.binding.bind(name, node),
             input=self.input,
@@ -143,36 +144,17 @@ class ParserState(Bindable, Generic[T]):
             line=self.line,
             column=self.column
         )
-    
-    def replace(self, name: str, node:Any)->ParserState[T]:
-        """Return a copy with ``node`` replacing any existing binding under ``name``."""
-        return ParserState.new(
-            binding=self.binding.replace(name, node),
-            input=self.input,
-            index=self.index,
-            base=self.base,
-            final=self.final,
-            safe_base=self.safe_base,
-            choice_depth=self.choice_depth,
-            line=self.line,
-            column=self.column
-        )
-    
+
     @property
-    def all_bindings(self) -> FrozenDict[str, Tuple[Any, ...]]:
+    def all_bindings(self) -> FrozenDict[str, Any]:
         """Get all bindings recorded in this ParserState."""
         return self.binding.bindings
 
 
-    def get(self, name: str, unwrapper: bool=True) -> Tuple[Any, ...] | Any: 
+    def get(self, name: str) -> Any: 
         """Get the binding(s) recorded under ``name``."""
-        ret = self.binding.bindings.get(name, ())
-        if len(ret) == 1:
-            return ret[0] if unwrapper else ret
-        elif len(ret) == 0:
-            return ... if unwrapper else ()
-        else:
-            return ret
+        return self.binding.bindings.get(name, ...)
+
 
 
 
