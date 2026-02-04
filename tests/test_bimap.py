@@ -1,4 +1,4 @@
-from syncraft.bimap import Var, unify_all, Fun, Env, eval, unify
+from syncraft.bimap import Var, unify_all, Env, evaluate, let, Expr, Scope
 from typing import Any
 import pytest
 from dataclasses import dataclass
@@ -8,12 +8,13 @@ def test_length_prefixed():
     Docstring for test_length_prefixed
     This tests if the engine can calculate a value (V_SIZE) during generation, but validate it during parsing.
     """
-    V_SIZE = Var("size")
-    V_ITEMS = Var("items")
+    scope = Scope()
+    V_SIZE = scope.V_SIZE
+    V_ITEMS = scope.V_ITEMS
     
     # Template: (size, items)
     # raw side pattern
-    raw_pattern = (Fun(V_SIZE, len, (V_ITEMS,)), V_ITEMS)
+    raw_pattern = (let(V_SIZE, Expr.apply(len, V_ITEMS)), V_ITEMS)
     
     # 1. PARSING: We provide the data, engine validates len
     print("--- Parsing Test ---")
@@ -28,7 +29,7 @@ def test_length_prefixed():
     env_gen.bind(V_ITEMS, [1, 2])
     env_gen.solve() # This should trigger Fun(V_SIZE, len...)
     
-    full, result = eval(raw_pattern, env_gen)
+    full, result = evaluate(raw_pattern, env_gen, set())
     print(f"Generated Structure: {result}") # Expected: (2, [1, 2])
 
 
@@ -39,7 +40,8 @@ def test_shared_variable():
     Docstring for test_shared_variable
     This tests if a single Var used in two different parts of a dictionary forces the entire structure to be consistent.
     """
-    V_ID = Var("id")
+    scope = Scope()
+    V_ID = scope.V_ID
     # A structure where 'request_id' and 'header.log_id' must be identical
     pattern = {
         "request_id": V_ID,
@@ -60,42 +62,30 @@ def test_shared_variable():
 
 
 def test_dependency_chain():
-    """
-    Docstring for test_dependency_chain
-    This tests the "Reactive Loop" in solve(). 
-    Total = Price * Quantity 
-    GrandTotal = Total + (Total * Tax)
-    """
-    V_PRICE = Var("price")
-    V_QTY = Var("qty")
-    V_TOTAL = Var("total")
-    V_GRAND = Var("grand_total")
+    scope = Scope()
+    V_PRICE = scope.V_PRICE
+    V_QTY = scope.V_QTY
+    V_TOTAL = scope.V_TOTAL
+    V_GRAND = scope.V_GRAND
 
-    # The chain of constraints
+    
     constraints = [
-        Fun(V_TOTAL, lambda p, q: p * q, (V_PRICE, V_QTY)),
-        Fun(V_GRAND, lambda t: t * 1.1, (V_TOTAL,))
+        let(V_TOTAL, V_PRICE * V_QTY),
+        let(V_GRAND, V_TOTAL * 1.1)
     ]
 
-    # We only know Price and Quantity
+    
     env = Env()
     env.bind(V_PRICE, 100)
     env.bind(V_QTY, 2)
     
-    # Manually register constraints (simulating what Mapping would do)
-    env.bind(V_TOTAL, ...) # Ensure binding exists for the solver
-    env.bindings[V_TOTAL].constraints.append(constraints[0])
-    env.bind(V_GRAND, ...)
-    env.bindings[V_GRAND].constraints.append(constraints[1])
+    env = unify_all(constraints, [200, 220.0], env)
 
-    if env.solve():
-        print(f"Subtotal: {env.resolve(V_TOTAL)}")    # Expected: 200
-        print(f"Grand Total: {env.resolve(V_GRAND)}") # Expected: 220.0        
+    assert env.resolve(V_PRICE) == 100
+    assert env.resolve(V_QTY) == 2
 
-
-
-# assume all engine symbols are imported:
-# Var, Fun, unify_all, Unbound
+    assert env.resolve(V_TOTAL) == 200
+    assert env.resolve(V_GRAND) == 220.0
 
 
 # ---------------------------------------------------------------------
@@ -103,11 +93,12 @@ def test_dependency_chain():
 # ---------------------------------------------------------------------
 
 def test_length_prefixed_list_forward():
-    V_SIZE = Var("size")
-    V_ITEMS = Var("items")
+    scope = Scope()
+    V_SIZE = scope.V_SIZE
+    V_ITEMS = scope.V_ITEMS
 
     pattern = (
-        Fun(V_SIZE, len, (V_ITEMS,)),
+        let(V_SIZE, Expr.apply(len, V_ITEMS)),
         V_ITEMS,
     )
 
@@ -120,11 +111,12 @@ def test_length_prefixed_list_forward():
 
 
 def test_length_prefixed_list_backward():
-    V_SIZE = Var("size")
-    V_ITEMS = Var("items")
+    scope = Scope()
+    V_SIZE = scope.V_SIZE
+    V_ITEMS = scope.V_ITEMS
 
     pattern = (
-        Fun(V_SIZE, len, (V_ITEMS,)),
+        let(V_SIZE, Expr.apply(len, V_ITEMS)),
         V_ITEMS,
     )
 
@@ -141,7 +133,8 @@ def test_length_prefixed_list_backward():
 # ---------------------------------------------------------------------
 
 def test_shared_variable_success():
-    X = Var("x")
+    scope = Scope()
+    X = scope.X
 
     pattern = {"a": X, "b": X}
     value = {"a": 10, "b": 10}
@@ -151,7 +144,8 @@ def test_shared_variable_success():
 
 
 def test_shared_variable_conflict():
-    X = Var("x")
+    scope = Scope()
+    X = scope.X
 
     pattern = {"a": X, "b": X}
     value = {"a": 10, "b": 11}
@@ -165,14 +159,15 @@ def test_shared_variable_conflict():
 # ---------------------------------------------------------------------
 
 def test_sum_constraint_forward_and_backward():
-    A = Var("a")
-    B = Var("b")
-    S = Var("sum")
+    scope = Scope()
+    A = scope.A
+    B = scope.B
+    S = scope.S
 
     pattern = {
         "a": A,
         "b": B,
-        "sum": Fun(S, lambda x, y: x + y, (A, B)),
+        "sum": let(S, A + B),
     }
 
     value = {"a": 2, "b": 3, "sum": 5}
@@ -187,14 +182,15 @@ def test_sum_constraint_forward_and_backward():
 # ---------------------------------------------------------------------
 
 def test_constraint_chain():
-    A = Var("a")
-    B = Var("b")
-    C = Var("c")
+    scope = Scope()
+    A = scope.A
+    B = scope.B
+    C = scope.C
 
     pattern = {
         "a": A,
-        "b": Fun(B, lambda x: x + 1, (A,)),
-        "c": Fun(C, lambda y: y * 2, (B,)),
+        "b": let(B, A + 1),
+        "c": let(C, B * 2),
     }
 
     value = {"a": 3, "b": 4, "c": 8}
@@ -210,13 +206,13 @@ def test_constraint_chain():
 # ---------------------------------------------------------------------
 
 def test_nested_fun_arguments():
-    X = Var("x")
-    Y = Var("y")
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
 
-    pattern = Fun(
+    pattern = let(
         Y,
-        lambda v: v * 2,
-        (Fun(X, lambda z: z + 1, (5,)),),
+        let(X, 5 + 1) * 2,
     )
 
     env = unify_all(pattern, 12)
@@ -236,8 +232,9 @@ class Point:
 
 
 def test_dataclass_unification():
-    X = Var("x")
-    Y = Var("y")
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
 
     pattern = Point(X, Y)
     value = Point(1, 2)
@@ -249,13 +246,14 @@ def test_dataclass_unification():
 
 
 def test_dataclass_with_constraint():
-    X = Var("x")
-    Y = Var("y")
-    S = Var("sum")
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    S = scope.S
 
     pattern = {
         "p": Point(X, Y),
-        "sum": Fun(S, lambda a, b: a + b, (X, Y)),
+        "sum": let(S, X + Y),
     }
 
     value = {"p": Point(2, 3), "sum": 5}
@@ -270,10 +268,11 @@ def test_dataclass_with_constraint():
 # ---------------------------------------------------------------------
 
 def test_unsatisfied_constraint_fails():
-    X = Var("x")
-    Y = Var("y")
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
 
-    pattern = Fun(X, lambda v: v + 1, (Y,))
+    pattern = let(X, Y + 1)
     value = {}
 
     with pytest.raises(ValueError):
@@ -285,11 +284,12 @@ def test_unsatisfied_constraint_fails():
 # ---------------------------------------------------------------------
 
 def test_conflicting_constraints_fail():
-    X = Var("x")
+    scope = Scope()
+    X = scope.X
 
     pattern = {
-        "a": Fun(X, lambda _: 1, (0,)),
-        "b": Fun(X, lambda _: 2, (0,)),
+        "a": let(X, Expr.apply(lambda _: 1, 0)),
+        "b": let(X, Expr.apply(lambda _: 2, 0)),
     }
 
     with pytest.raises(ValueError):
@@ -301,12 +301,13 @@ def test_conflicting_constraints_fail():
 # ---------------------------------------------------------------------
 
 def test_partial_structure_with_computed():
-    ITEMS = Var("items")
-    HEAD = Var("head")
+    scope = Scope()
+    ITEMS = scope.ITEMS
+    HEAD = scope.HEAD
 
     pattern = {
         "items": ITEMS,
-        "head": Fun(HEAD, lambda xs: xs[0], (ITEMS,)),
+        "head": let(HEAD, ITEMS[0]),
     }
 
     value = {"items": ["a", "b", "c"], "head": "a"}
@@ -318,13 +319,14 @@ def test_partial_structure_with_computed():
 ###################################################################
 
 def test_mutual_chain_resolution():
-    A = Var("A")
-    B = Var("B")
-    C = Var("C")
+    scope = Scope()
+    A = scope.A
+    B = scope.B
+    C = scope.C
 
     pattern = (
-        Fun(A, lambda b: b + 1, (B,)),
-        Fun(B, lambda c: c * 2, (C,)),
+        let(A, B + 1),
+        let(B, C * 2),
         C,
     )
 
@@ -338,12 +340,13 @@ def test_mutual_chain_resolution():
 
 
 def test_two_way_dependency():
-    A = Var("A")
-    B = Var("B")
+    scope = Scope()
+    A = scope.A
+    B = scope.B
 
     pattern = (
-        Fun(A, lambda b: b + 1, (B,)),
-        Fun(B, lambda a: a - 1, (A,)),
+        let(A, B + 1),
+        let(B, A - 1),
     )
 
     value = (10, 9)
@@ -355,12 +358,13 @@ def test_two_way_dependency():
 
 
 def test_cyclic_constraints_with_ground_values():
-    A = Var("A")
-    B = Var("B")
+    scope = Scope()
+    A = scope.A
+    B = scope.B
 
     pattern = (
-        Fun(A, lambda b: b + 1, (B,)),
-        Fun(B, lambda a: a - 1, (A,)),
+        let(A, B + 1),
+        let(B, A - 1),
     )
     value = (4, 3)
     env = unify_all(pattern, value)
@@ -369,12 +373,13 @@ def test_cyclic_constraints_with_ground_values():
 
 ###########################################################################
 def test_inconsistent_cycle_fails():
-    A = Var("A")
-    B = Var("B")
+    scope = Scope()
+    A = scope.A
+    B = scope.B
 
     pattern = (
-        Fun(A, lambda b: b + 1, (B,)),
-        Fun(B, lambda a: a + 1, (A,)),
+        let(A, B + 1),
+        let(B, A + 1),
         A,
     )
 
@@ -386,15 +391,16 @@ def test_inconsistent_cycle_fails():
 
 
 def test_recursive_structure_constraints():
-    X = Var("x")
-    Y = Var("y")
-    Z = Var("z")
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    Z = scope.Z
 
     pattern = {
         "left": X,
         "right": {
             "value": Y,
-            "sum": Fun(Z, lambda a, b: a + b, (X, Y)),
+            "sum": let(Z, X + Y),
         }
     }
 
@@ -414,11 +420,12 @@ def test_recursive_structure_constraints():
 
 
 def test_forward_reference_constraint():
-    X = Var("x")
-    Y = Var("y")
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
 
     pattern = (
-        Fun(Y, lambda x: x * 2, (X,)),
+        let(Y, X * 2),
         X,
     )
 
@@ -432,10 +439,11 @@ def test_forward_reference_constraint():
 
 
 def test_constraint_does_not_create_binding():
-    X = Var("x")
-    Y = Var("y")
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
 
-    pattern = Fun(Y, lambda x: x + 1, (X,))
+    pattern = let(Y, X + 1)
     value = 10
 
     with pytest.raises(ValueError):
