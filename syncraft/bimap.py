@@ -155,8 +155,6 @@ class Expr:
     def __contains__(self, item: Any) -> Expr:
         return self._unary_op(lambda v: item in v)
     
-    def __len__(self) -> Any:
-        return self._unary_op(lambda v: len(v))
     
     # Arithmetic Operators
     def __add__(self, other: Any) -> Expr:
@@ -296,7 +294,7 @@ class Var(Expr):
 @dataclass(frozen=True, slots=True, eq=False)
 class Let(Expr):
     var: Var = field(default_factory=lambda: Var(_default_eval('Var')), compare=False, hash=False)
-    body: Expr = field(default_factory=lambda: Expr(_default_eval('Expr')), compare=False, hash=False)
+    body: Any = field(default_factory=lambda: Expr(_default_eval('Expr')), compare=False, hash=False)
 
     def __post_init__(self):
         def expr_f(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:

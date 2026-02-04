@@ -1,56 +1,36 @@
 from __future__ import annotations
 from syncraft.syntax import Syntax
-from syncraft.bimap import unify_all, let, Env, Scope
+from syncraft.bimap import unify_all, let, Env, Scope, evaluate, Expr
 import pytest
 
 literal = Syntax.lit
 
 
-def test_constraint_does_not_create_binding():
+def test_length_prefixed():
     scope = Scope()
-    X = scope.X
-    Y = scope.Y
+    V_SIZE = scope.V_SIZE
+    V_ITEMS = scope.V_ITEMS
+    
+    raw_pattern = (let(V_SIZE, Expr.apply(len, V_ITEMS)), V_ITEMS)
+    
+    
+    print("--- Parsing Test ---")
+    data_in = (3, ["a", "b", "c"])
+    env_parse = unify_all(raw_pattern, data_in)
+    print(f"Bound Size: {env_parse.resolve(V_SIZE)}") # Expected: 3
+    
+    print("\n--- Generating Test ---")
+    env_gen = Env()
+    env_gen.bind(V_ITEMS, [1, 2])
+    env_gen.solve() # This should trigger Fun(V_SIZE, len...)
+    
+    full, result = evaluate(raw_pattern, env_gen, set())
+    print(f"Generated Structure: {result}") # Expected: (2, [1, 2])
 
-    pattern = let(Y, X + 1)
-    value = 10
-
-    with pytest.raises(ValueError):
-        unify_all(pattern, value)
-
-
-def test_recursive_structure_constraints():
-    scope = Scope()
-    X = scope.X
-    Y = scope.Y
-    Z = scope.Z
-
-    pattern = {
-        "left": X,
-        "right": {
-            "value": Y,
-            "sum": let(Z, X + Y),
-        }
-    }
-
-    value = {
-        "left": 4,
-        "right": {
-            "value": 6,
-            "sum": 10,
-        }
-    }
-
-    env = unify_all(pattern, value)
-
-    assert env.resolve(X) == 4
-    assert env.resolve(Y) == 6
-    assert env.resolve(Z) == 10
 
 
 if __name__ == '__main__':
-    
-    test_constraint_does_not_create_binding()
-    test_recursive_structure_constraints()
+    test_length_prefixed()    
     
     
     

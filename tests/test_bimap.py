@@ -4,27 +4,19 @@ import pytest
 from dataclasses import dataclass
 
 def test_length_prefixed():
-    """
-    Docstring for test_length_prefixed
-    This tests if the engine can calculate a value (V_SIZE) during generation, but validate it during parsing.
-    """
     scope = Scope()
     V_SIZE = scope.V_SIZE
     V_ITEMS = scope.V_ITEMS
     
-    # Template: (size, items)
-    # raw side pattern
     raw_pattern = (let(V_SIZE, Expr.apply(len, V_ITEMS)), V_ITEMS)
     
-    # 1. PARSING: We provide the data, engine validates len
+    
     print("--- Parsing Test ---")
     data_in = (3, ["a", "b", "c"])
     env_parse = unify_all(raw_pattern, data_in)
     print(f"Bound Size: {env_parse.resolve(V_SIZE)}") # Expected: 3
     
-    # 2. GENERATING: We provide items, engine calculates size
     print("\n--- Generating Test ---")
-    # We simulate starting with just the domain variable
     env_gen = Env()
     env_gen.bind(V_ITEMS, [1, 2])
     env_gen.solve() # This should trigger Fun(V_SIZE, len...)
