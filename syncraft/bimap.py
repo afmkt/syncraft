@@ -65,7 +65,9 @@ class Iso(Generic[A, B]):
         return cls(lambda _: b, lambda _: a)
     
 
-
+    @classmethod
+    def unify(cls, source: A, target: B) -> Iso[A, B]:
+        return cls(lambda _: target, lambda _: source)
 
 def _default_eval(msg: str) -> Callable[[Env, Set[Any]], Tuple[bool, Any]]:
     def default_eval(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
@@ -81,12 +83,12 @@ class Expr:
         visited.add(self)
         return self.expr(env, visited)
     
-    def bind(self, env: Env, value: Any) -> bool:
+    def bind(self, env: Env, value: Any) -> Tuple[bool, List[Any]]:
         env.constraints.add(Constraint(self, value))
-        return True
+        return True, []
         
     
-    def unify(self, other: Any, env: Env) -> bool:
+    def unify(self, other: Any, env: Env) -> Tuple[bool, List[Any]]:
         return self.bind(env, other)
 
     
@@ -283,11 +285,14 @@ class Var(Expr):
     def is_bound(self, env: Env) -> bool:
         return self in env.bindings and env.bindings[self].value is not ...
     
-    def bind(self, env: Env, value: Any) -> bool:
-        return env.bind(self, value) is not None
+    def bind(self, env: Env, value: Any) -> Tuple[bool, List[Any]]:
+        success, reason = env.bind(self, value)
+        if success:
+            return True, []
+        return False, reason + [(self, "Variable binding conflict")]
 
-    def unify(self, other: Any, env: Env) -> bool:
-        return env.bind(self, other) is not None
+    def unify(self, other: Any, env: Env) -> Tuple[bool, List[Any]]:
+        return self.bind(env, other)
             
 
 
@@ -301,11 +306,11 @@ class Let(Expr):
             return evaluate(self.body, env, visited)
         object.__setattr__(self, 'expr', expr_f)
 
-    def unify(self, target: Any, env: Env) -> bool:
-        if not unify(self.var, target, env):
-            return False
-        env.constraints.add(Constraint(self, target))
-        return True
+    def unify(self, target: Any, env: Env) -> Tuple[bool, List[Any]]:
+        success, reason = unify(self.var, target, env)
+        if success:
+            env.constraints.add(Constraint(self, target))
+        return success, reason
 
 def let(var: Var, rhs: Any) -> Let:
     return Let(lambda env, visited: (False, ...), var, rhs)
@@ -343,14 +348,15 @@ class Constraint:
             return hash(v)        
         object.__setattr__(self, '_val_hash', structural_hash(self.expected))
 
-    def __call__(self, env: Env, visited: Set[Any]) -> Tuple[bool, bool | Any]:
+    def __call__(self, env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
         full, v = self.expr.evaluate(env, visited)
         if not full:
             return False, self.expr
         full_v, result_v = evaluate(self.expected, env, visited)
         if not full_v:
             return False, self.expected
-        return True, unify(v, result_v, env)
+        success, reason = unify(v, result_v, env)
+        return True, success
 
 @dataclass(slots=True)
 class Env:
@@ -371,13 +377,13 @@ class Env:
         else:
             return ret.value
         
-    def bind(self, var: Var, value: Any) -> Binding | None:
+    def bind(self, var: Var, value: Any) -> Tuple[bool, List[Any]]:
         if var in self.bindings:
             binding = self.bindings[var]
             if binding.value is not ...:
-
-                if not unify(binding.value, value, self):
-                    return None
+                success, reason = unify(binding.value, value, self)
+                if not success:
+                    return False, reason + [(var, value, "Variable binding conflict")]
             else:
                 binding.value = value
 
@@ -385,7 +391,7 @@ class Env:
             binding = Binding(value=value)
             self.bindings[var] = binding
         self.changed = True
-        return binding
+        return True, []
     
 
     def solve(self)-> Tuple[bool, List[Any]]:
@@ -465,7 +471,7 @@ def evaluate(expr: Any, env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
             return True, type(expr)(**all_fields) # type: ignore
     return True, expr
     
-def unify(pattern: Any, value: Any, env: Env) -> bool:
+def unify(pattern: Any, value: Any, env: Env) -> Tuple[bool, List[Any]]:
     if pattern is ... or value is ...:
         raise ValueError("Cannot unify with Unbound(...) pattern.")
     elif isinstance(pattern, Expr):
@@ -477,32 +483,39 @@ def unify(pattern: Any, value: Any, env: Env) -> bool:
         if is_primitive(value):
             if isinstance(pattern, float) and isinstance(value, float):
                 import math
-                return math.isclose(pattern, value, rel_tol=1e-9)
+                ret = math.isclose(pattern, value, rel_tol=1e-9)
             else:
-                return pattern == value
+                ret = pattern == value
+            if not ret:
+                return False, [(pattern, value, "Primitive values do not match")]
+            else:
+                return True, []
         else:
-            return False
+            return False, [(pattern, value, "Type mismatch between primitive and non-primitive")]
 
     elif is_struct(pattern):
         if isinstance(pattern, dict) and isinstance(value, dict):
             for k, v in pattern.items():
                 if k not in value:
-                    return False
-                if not unify(v, value[k], env):
-                    return False
-            return True
+                    return False, [(pattern, value, f"Key {k} not found in value")]
+                success, reason = unify(v, value[k], env)
+                if not success:
+                    return False, reason + [(pattern, value, f"Failed to unify key {k}")]
+            return True, []
         elif isinstance(pattern, (list, tuple)) and isinstance(value, (list, tuple)):
             for p_item, v_item in zip(pattern, value):
-                if not unify(p_item, v_item, env):
-                    return False
-            return True
+                success, reason = unify(p_item, v_item, env)
+                if not success:
+                    return False, reason + [(pattern, value, "Failed to unify list/tuple items")]
+            return True, []
         elif is_dataclass(pattern) and is_dataclass(value):
             for field in fields(pattern):
                 p_item = getattr(pattern, field.name)
                 v_item = getattr(value, field.name)
-                if not unify(p_item, v_item, env):
-                    return False
-            return True
+                success, reason = unify(p_item, v_item, env)
+                if not success:
+                    return False, reason + [(pattern, value, f"Failed to unify dataclass field {field.name}")]
+            return True, []
 
     raise ValueError("Unsupported pattern or value type for unification.")
 
@@ -511,9 +524,9 @@ def unify(pattern: Any, value: Any, env: Env) -> bool:
 def unify_all(pattern: Any, value: Any, env: Env | None = None) -> Env:
     if env is None:
         env = Env()
-    success = unify(pattern, value, env)
+    success, reason = unify(pattern, value, env)
     if not success:
-        raise ValueError("Unification failed.")
+        raise ValueError(f"Unification failed: {reason}")
     success, reason = env.solve()
     if not success:
         raise ValueError(f"Constraints not satisfied after unification: {reason}")

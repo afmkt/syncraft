@@ -5,32 +5,29 @@ import pytest
 
 literal = Syntax.lit
 
-
-def test_length_prefixed():
+def test_constraint_chain():
     scope = Scope()
-    V_SIZE = scope.V_SIZE
-    V_ITEMS = scope.V_ITEMS
-    
-    raw_pattern = (let(V_SIZE, Expr.apply(len, V_ITEMS)), V_ITEMS)
-    
-    
-    print("--- Parsing Test ---")
-    data_in = (3, ["a", "b", "c"])
-    env_parse = unify_all(raw_pattern, data_in)
-    print(f"Bound Size: {env_parse.resolve(V_SIZE)}") # Expected: 3
-    
-    print("\n--- Generating Test ---")
-    env_gen = Env()
-    env_gen.bind(V_ITEMS, [1, 2])
-    env_gen.solve() # This should trigger Fun(V_SIZE, len...)
-    
-    full, result = evaluate(raw_pattern, env_gen, set())
-    print(f"Generated Structure: {result}") # Expected: (2, [1, 2])
+    A = scope.A
+    B = scope.B
+    C = scope.C
 
+    pattern = {
+        "a": A,
+        "b": let(B, A + 1),
+        "c": let(C, B * 2),
+        "d": A
+    }
+
+    value = {"a": 3, "b": 4, "c": 8, "d": 30}
+
+    env = unify_all(pattern, value)
+
+    assert env.resolve(B) == 4
+    assert env.resolve(C) == 8
 
 
 if __name__ == '__main__':
-    test_length_prefixed()    
+    test_constraint_chain()    
     
     
     
