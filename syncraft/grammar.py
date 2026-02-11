@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Callable, Any, overload, Dict, Set, Literal
-from syncraft.ast import AST, SyncraftError
+from typing import Callable, Any, Dict
+from syncraft.ast import SyncraftError
 from syncraft.syntax import Syntax
 from syncraft.algebra import Algebra
 from syncraft.parser import parser
@@ -8,6 +8,7 @@ from syncraft.generator import generator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
+from syncraft.bimap import Scope
 
 
 NO_NAME = "<no_name>"
@@ -160,6 +161,7 @@ def grammar(cls: type) -> type:
             setattr(cls, name, value)
     setattr(cls, '_rules', rules)
     setattr(cls, '_root_rule', root)
+    setattr(cls, 'vars', Scope())
     return cls
 
         
@@ -192,10 +194,12 @@ class Grammar:
         >>> result = MyGrammar.parse("123")
         >>> text = MyGrammar.generate(result)
     """
+    vars: Scope # Scope for variable bindings in the grammar, @grammar will initialize this to an empty Scope for each subclass
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
     _parser: Dict[Syntax, Algebra] = {}
     _generator: Dict[Syntax, Algebra] = {}
+    
 
     @classmethod
     def parser(cls, syntax: Syntax | None = None) -> Algebra:

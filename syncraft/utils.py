@@ -82,7 +82,7 @@ def func(level: int = 0) -> None | str:
 class CallWith:
     cache: WeakKeyDictionary[Callable[...,Any], inspect.Signature] = WeakKeyDictionary()
     @staticmethod
-    def get_callable_signature(obj: Any, follow_wrapped: bool = True) -> inspect.Signature:
+    def signature(obj: Any, follow_wrapped: bool = True) -> inspect.Signature:
         """
         Given a callable object, retrieves its signature.
         Handles normal functions, bound methods, unbound methods, 
@@ -130,7 +130,7 @@ class CallWith:
     
     def __init__(self, specific_func:Callable[...,Any], *general_args:Any, **general_kwargs:Any) -> None:
         self.func = specific_func
-        sig = CallWith.get_callable_signature(specific_func) 
+        sig = CallWith.signature(specific_func) 
         params = sig.parameters.values()
 
         args = []
@@ -146,7 +146,7 @@ class CallWith:
 
         consumed_kwargs = set()
 
-        self.missing_args = set()
+        self.missing_args = []
         self.missing_kwargs = set()
         for param in params:
             if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
@@ -160,7 +160,7 @@ class CallWith:
                     elif param.default is not inspect.Parameter.empty:
                         args.append(param.default)
                     else:
-                        self.missing_args.add(param.name)
+                        self.missing_args.append(param.name)
                         # raise TypeError(f"Missing required positional argument: {param.name}")
 
             elif param.kind == inspect.Parameter.VAR_POSITIONAL:
@@ -201,6 +201,7 @@ class CallWith:
         self.kwargs = kwargs
         self.unused_args = remaining_args
         self.unused_kwargs = remaining_kwargs
+        
 
     def __call__(self) -> Any:
         return self.func(*self.args, **self.kwargs)

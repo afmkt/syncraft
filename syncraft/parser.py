@@ -16,13 +16,13 @@ from syncraft.algebra import (
 )
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.input import StreamCursor
 
 from syncraft.ast import Token, AST, SyncraftError
-from syncraft.constraint import Binding, Bindable
+from syncraft.bimap import Bindable
 import re
 
 from pathlib import Path
@@ -89,7 +89,7 @@ def underline(text: str, ul: bool) -> str:
 @total_ordering
 @dataclass(frozen=True, slots=True)
 class ParserState(Bindable, Generic[T]):
-    binding: Binding = field(default_factory=Binding)
+
 
     input: Tuple[T, ...] | str | bytes = field(default_factory=tuple, compare=False, hash=False)
     index: int = 0
@@ -100,63 +100,7 @@ class ParserState(Bindable, Generic[T]):
     choice_depth: int = 0
 
     line: int = 0
-    column: int = 0
-
-    @classmethod
-    def new(cls, 
-            binding: Binding, 
-            input: Tuple[T, ...] | str | bytes, 
-            index: int, 
-            base: int, 
-            final: bool, 
-            safe_base: int, 
-            choice_depth: int, 
-            line: int, 
-            column: int) -> Self:
-        obj = cls.__new__(cls)
-        object.__setattr__(obj, 'binding', binding)
-        object.__setattr__(obj, 'input', input)
-        object.__setattr__(obj, 'index', index)
-        object.__setattr__(obj, 'base', base)
-        object.__setattr__(obj, 'final', final)
-        object.__setattr__(obj, 'safe_base', safe_base)
-        object.__setattr__(obj, 'choice_depth', choice_depth)
-        object.__setattr__(obj, 'line', line)
-        object.__setattr__(obj, 'column', column)
-        return obj
-    
-
-    def map(self, f: Callable[[Any], Any])->Self: 
-        """Optionally transform the underlying value (no-op by default)."""
-        return self
-    
-    
-    def bind(self, name: str, node:Any)->ParserState[T]:
-        """Return a copy with ``node`` replacing any existing binding under ``name``."""
-        return ParserState.new(
-            binding=self.binding.bind(name, node),
-            input=self.input,
-            index=self.index,
-            base=self.base,
-            final=self.final,
-            safe_base=self.safe_base,
-            choice_depth=self.choice_depth,
-            line=self.line,
-            column=self.column
-        )
-
-    @property
-    def all_bindings(self) -> FrozenDict[str, Any]:
-        """Get all bindings recorded in this ParserState."""
-        return self.binding.bindings
-
-
-    def get(self, name: str) -> Any: 
-        """Get the binding(s) recorded under ``name``."""
-        return self.binding.bindings.get(name, ...)
-
-
-
+    column: int = 0    
 
 
 
@@ -168,45 +112,14 @@ class ParserState(Bindable, Generic[T]):
         return self.safe_base
 
     def enter(self) -> ParserState[T]:
-        return ParserState.new(
-            binding=self.binding,
-            input=self.input,
-            index=self.index,
-            base=self.base,
-            final=self.final,
-            safe_base=self.safe_base,
-            choice_depth=self.choice_depth + 1,
-            line=self.line,
-            column=self.column
-        )
+        return replace(self, choice_depth=self.choice_depth + 1)
         
     
     def leave(self) -> ParserState[T]:
         if self.choice_depth > 1:
-            return ParserState.new(
-                binding=self.binding,
-                input=self.input,
-                index=self.index,
-                base=self.base,
-                final=self.final,
-                safe_base=self.safe_base,
-                choice_depth=self.choice_depth - 1,
-                line=self.line,
-                column=self.column
-            )
-            
+            return replace(self, choice_depth=self.choice_depth - 1)            
         else:
-            return ParserState.new(
-                binding=self.binding,
-                input=self.input,
-                index=self.index,
-                base=self.base,
-                final=self.final,
-                safe_base=max(self.base + self.index, self.safe_base),
-                choice_depth=0,
-                line=self.line,
-                column=self.column
-            )
+            return replace(self, choice_depth=0, safe_base=max(self.base + self.index, self.safe_base))
 
     def slice(self, start: int, end: int) -> Tuple[T, ...] | str | bytes:
         start_rel = start - self.base
@@ -352,17 +265,7 @@ class ParserState(Bindable, Generic[T]):
     def gc(self)-> ParserState[T]:
         if self.safe_base > self.base:
             drop = min(self.safe_base - self.base, len(self.input))
-            return ParserState.new(
-                binding=self.binding,
-                input=self.input[drop:],
-                index=max(0, self.index - drop),
-                base=self.safe_base,
-                final=self.final,
-                safe_base=self.safe_base,
-                choice_depth=self.choice_depth,
-                line=self.line,
-                column=self.column
-            )
+            return replace(self, input=self.input[drop:], index=max(0, self.index - drop))
         return self
 
     def extend(self, more: str | bytes | Tuple[T, ...], *, final: bool = False) -> "ParserState[T]":
@@ -383,17 +286,7 @@ class ParserState(Bindable, Generic[T]):
             new_index = self.index
 
         # ---- Step 2: Return new ParserState ----
-        return ParserState.new(
-            binding=self.binding,
-            input=new_input,
-            index=new_index,
-            base=new_base,
-            final=self.final or final,
-            safe_base=self.safe_base,
-            choice_depth=self.choice_depth,
-            line=self.line,
-            column=self.column
-        )
+        return replace(self, input=new_input, index=new_index, base=new_base, final=self.final or final)
         
     @property
     def current(self) -> T:
@@ -413,48 +306,19 @@ class ParserState(Bindable, Generic[T]):
     def advance(self) -> ParserState[T]:
         if isinstance(self.input, str):
             if self.current == '\n':
-                return ParserState.new(
-                    binding=self.binding,
-                    input=self.input,
-                    index=min(self.index + 1, len(self.input)),
-                    base=self.base,
-                    final=self.final,
-                    safe_base=self.safe_base,
-                    choice_depth=self.choice_depth,
-                    line=self.line + 1,
-                    column=1
-                )
+                return replace(self, index=min(self.index + 1, len(self.input)), line=self.line + 1, column=1)
             else:
-                return ParserState.new(
-                    binding=self.binding,
-                    input=self.input,
-                    index=min(self.index + 1, len(self.input)),
-                    base=self.base,
-                    final=self.final,
-                    safe_base=self.safe_base,
-                    choice_depth=self.choice_depth,
-                    line=self.line,
-                    column=self.column + 1
-                )
-        return ParserState.new(
-            binding=self.binding,
-            input=self.input,
-            index=min(self.index + 1, len(self.input)),
-            base=self.base,
-            final=self.final,
-            safe_base=self.safe_base,
-            choice_depth=self.choice_depth,
-            line=self.line,
-            column=self.column
-        )
+                return replace(self, index=min(self.index + 1, len(self.input)), column=self.column + 1)
+            
+        return replace(self, index=min(self.index + 1, len(self.input)))
             
         
     
 @dataclass(frozen=True, slots=True)
 class Parser(Algebra[T, ParserState[T]]):
-    def bimap(self, f: Callable[[T], A], i: Callable[[A], T]) -> Algebra[A, ParserState[T]]:
-        return self.map(f)
         
+    def bimap(self, f: Callable[[T, Any], A], i: Callable[[A, Any], T]) -> Algebra[A, ParserState[T]]:
+        return self.map(f)
 
     @classmethod
     def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, **kwargs) -> Algebra[T, ParserState[T]]:

@@ -9,7 +9,7 @@ import random
 
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
-    Algebra, YieldChannelType, Error
+    Algebra, YieldChannelType, Error, get_arity
 )
 
 from syncraft.lexer import LexerBase, LexerProtocol
@@ -27,7 +27,7 @@ from syncraft.fa import Builder
 from syncraft.token import TokenSpec
 from syncraft.syntax import Syntax, RunnerProtocol
 
-from syncraft.constraint import Bindable, Binding
+from syncraft.bimap import Bindable
 from syncraft.input import StreamCursor
 
 
@@ -40,7 +40,7 @@ B = TypeVar('B')
 
 @dataclass(frozen=True, slots=True)
 class GenState(Bindable, Generic[T]):
-    binding: Binding = field(default_factory=Binding)
+
     ast: Optional[ParseResult[T]] = None
     restore_pruned: bool = False
     seed: int = 0
@@ -59,19 +59,7 @@ class GenState(Bindable, Generic[T]):
     def ended(self) -> bool:
         return False
 
-    @classmethod
-    def new(cls, 
-            binding: Binding,
-            ast: Optional[ParseResult[T]],
-            restore_pruned: bool,
-            seed: int
-            ) -> Self:
-        obj = cls.__new__(cls)
-        object.__setattr__(obj, 'binding', binding)
-        object.__setattr__(obj, 'ast', ast)
-        object.__setattr__(obj, 'restore_pruned', restore_pruned)
-        object.__setattr__(obj, 'seed', seed)
-        return obj
+
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}(ast={self.ast})"
@@ -79,55 +67,37 @@ class GenState(Bindable, Generic[T]):
     def unused_cache_key(self) -> int:
         return 0
 
+    def enter(self) -> Self: 
+        return self
     
-    def bind(self, name: str, node:Any)->GenState[T]:
-        """Return a copy with ``node`` replacing existing binding under ``name``."""
-        return GenState.new(
-            binding=self.binding.bind(name, node),
-            ast=self.ast,
-            restore_pruned=self.restore_pruned,
-            seed=self.seed
-        )
+    def leave(self) -> Self: 
+        return self
     
-    @property
-    def all_bindings(self) -> FrozenDict[str, Any]:
-        """Get all bindings recorded in this ParserState."""
-        return self.binding.bindings
-
-
-    def get(self, name: str) -> Any: 
-        """Get the binding(s) recorded under ``name``."""
-        return self.binding.bindings.get(name, ...)
-
-    def map(self, f: Callable[[Any], Any]) -> GenState[T]:
-        new_ast = f(self.ast)
+    
+    def map(self, f: Callable[..., Any]) -> GenState[T]:
+        arity = get_arity(f)
+        if arity == 1:
+            new_ast = f(self.ast)
+        elif arity == 2:
+            new_ast = f(self.ast, self.ctx)
+        else:
+            raise ValueError(f"Unsupported arity {arity} for map function {f}, expected 1 or 2")
         if new_ast is self.ast:
             return self
         else:
-            return GenState.new(
-                binding=self.binding,
-                ast=new_ast,
-                restore_pruned=self.restore_pruned,
-                seed=self.seed,
-                
-            )
-    
+            return replace(self, ast=new_ast)
+        
+
     @property
     def cache_key(self) -> int:
         return hash(self.ast)
 
     
     def inject(self, a: Any) -> GenState[T]:
-        return self.map(lambda _: a)
+        return self.map(lambda _, __: a)
     
     def fork(self, tag: Any) -> GenState[T]:
-        return GenState.new(
-            binding=self.binding,
-            ast=self.ast,
-            restore_pruned=self.restore_pruned,
-            seed=hash((self.seed, tag)),
-            
-        )
+        return replace(self, seed=hash((self.seed, tag)))
 
 
     def rng(self, tag: Any = None) -> random.Random:
@@ -141,40 +111,16 @@ class GenState(Bindable, Generic[T]):
         if self.ast is None:
             return self
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.RIGHT or self.restore_pruned):
-            return GenState.new(
-                binding=self.binding,
-                ast=self.ast.left,
-                restore_pruned=self.restore_pruned,
-                seed=self.seed,
-                
-            )
-        return GenState.new(
-            binding=self.binding,
-            ast=None,
-            restore_pruned=self.restore_pruned,
-            seed=self.seed,
-            
-        )
+            return replace(self, ast=self.ast.left)
+        return replace(self, ast=None)
         
 
     def right(self) -> GenState[T]:
         if self.ast is None:
             return self
         if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.LEFT or self.restore_pruned):
-            return GenState.new(
-                binding=self.binding,
-                ast=self.ast.right,
-                restore_pruned=self.restore_pruned,
-                seed=self.seed,
-                
-            )
-        return GenState.new(
-            binding=self.binding,
-            ast=None,
-            restore_pruned=self.restore_pruned,
-            seed=self.seed,
-            
-        )
+            return replace(self, ast=self.ast.right)
+        return replace(self, ast=None)
         
     
     @classmethod
@@ -183,20 +129,17 @@ class GenState(Bindable, Generic[T]):
                  ast: Optional[ParseResult[T]], 
                  seed: int = 0, 
                  restore_pruned:bool=False) -> GenState[T]:
-        return cls.new(
-            binding=Binding(),
-            ast=ast,
-            restore_pruned=restore_pruned,
-            seed=seed,
-        )
+        return GenState(ast=ast, seed=seed, restore_pruned=restore_pruned)
         
 
 @dataclass(frozen=True, slots=True)
 class Generator(Algebra[ParseResult[T], GenState[T]]):      
     def bimap(self, 
-              f: Callable[[ParseResult[T]], Any], 
-              i: Callable[[Any], ParseResult[T]]) -> Algebra[Any, GenState[T]]:
+              f: Callable[[ParseResult[T], Any], Any], 
+              i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState[T]]:
         return self.imap(i)
+
+
 
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState[T]] | Tuple[Algebra[Any, GenState[T]], bool]) -> Algebra[Seq, GenState[T]]:
@@ -570,7 +513,7 @@ def generate_with(
 
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
-        return v, s.binding.bindings
+        return v, s.ctx
     else:
         return v, None    
 
@@ -581,7 +524,7 @@ def validate(syntax: Syntax, data: ParseResult[Any]) -> Tuple[AST, None | Frozen
     
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
-        return v, s.binding.bindings
+        return v, s.ctx
     else:
         return v, None    
 
@@ -594,7 +537,7 @@ def generate(syntax, seed: Optional[int] = None) -> Tuple[AST, None | FrozenDict
     
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     if s is not None:
-        return v, s.binding.bindings
+        return v, s.ctx
     else:
         return v, None
     

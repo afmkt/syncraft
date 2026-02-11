@@ -16,10 +16,8 @@ if TYPE_CHECKING:
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
-from syncraft.constraint import Bindable
-
+from syncraft.bimap import Bindable, Iso
 from syncraft.ast import Then, ThenKind, OrElse, Many, Nothing, SyncraftError, Seq, Choice, Lazy, OrElseKind
-from syncraft.bimap import Iso
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
@@ -262,9 +260,9 @@ class LazySpec(SyntaxSpec):
         return self.inner_spec.is_then
     
     def iso(self) -> Iso[Lazy[Any], Any]:
-        def fwd(lz: Lazy[Any]) -> Any:
+        def fwd(lz: Lazy[Any], ctx: Any) -> Any:
             return lz.value
-        def inv(v: Any) -> Lazy[Any]:
+        def inv(v: Any, ctx: Any) -> Lazy[Any]:
             return Lazy(value=v)
         return Iso(fwd, inv)
 
@@ -334,7 +332,7 @@ class SeqSpec(SyntaxSpec):
 
 
     def iso(self) -> Iso[Seq, Tuple[Any, ...]]:
-        def inv(v: Tuple[Any, ...]) -> Seq:
+        def inv(v: Tuple[Any, ...], ctx: Any) -> Seq:
             if len(v) != self.arity:
                 raise SyncraftError("Length of provided values does not match Seq inclusion pattern",
                                      offender=v,
@@ -350,7 +348,7 @@ class SeqSpec(SyntaxSpec):
                     new_elements.append((None, False))
 
             return Seq(value=tuple(new_elements))
-        def fwd(s: Seq) -> Tuple[Any, ...]:
+        def fwd(s: Seq, ctx: Any) -> Tuple[Any, ...]:
             vs = []
             index = 0
             for spec, include in self.steps:
@@ -419,25 +417,25 @@ class ThenSpec(SyntaxSpec):
         
         match self.kind:
             case ThenKind.LEFT:
-                def left_fwd(t: Then[Any, Any]) -> Any:
+                def left_fwd(t: Then[Any, Any], ctx: Any) -> Any:
                     if self.left.is_then:
                         return t.left
                     else:
                         return (t.left,)
-                def left_inv(v: Any) -> Then[Any, Any]:
+                def left_inv(v: Any, ctx: Any) -> Then[Any, Any]:
                     if self.left.is_then:
                         return Then(kind=self.kind, left=v, right=None)
                     else:
                         return Then(kind=self.kind, left=v[0], right=None)
                 return Iso(left_fwd, left_inv)
             case ThenKind.RIGHT:
-                def right_fwd(t: Then[Any, Any]) -> Any:
+                def right_fwd(t: Then[Any, Any], ctx: Any) -> Any:
                     if self.right.is_then:
                         return t.right
                     else:
                         return (t.right,)
                     
-                def right_inv(v: Any) -> Then[Any, Any]:
+                def right_inv(v: Any, ctx: Any) -> Then[Any, Any]:
                     if self.right.is_then:
                         return Then(kind=self.kind, left=None, right=v)
                     else:
@@ -445,13 +443,13 @@ class ThenSpec(SyntaxSpec):
                 return Iso(right_fwd, right_inv)
                 
             case ThenKind.BOTH:
-                def fwd(t: Then[Any, Any]) -> Tuple[Any, ...]:
+                def fwd(t: Then[Any, Any], ctx: Any) -> Tuple[Any, ...]:
                     
                     left = t.left if self.left.is_then else (t.left,)
                     right = t.right if self.right.is_then else (t.right,)
                     # print('ThenSpec.iso.fwd called', self.kind, t, '->', left + right)
                     return left + right
-                def inv(v: Tuple[Any, ...]) -> Then[Any, Any]:
+                def inv(v: Tuple[Any, ...], ctx: Any) -> Then[Any, Any]:
                     assert len(v) == self.left.arity + self.right.arity
                     lraw: Tuple[Any, ...] = v[:self.left.arity]
                     rraw: Tuple[Any, ...] = v[self.left.arity:self.left.arity + self.right.arity]
@@ -521,9 +519,9 @@ class ParallelSpec(SyntaxSpec):
 
     
     def iso(self, index: Optional[int] = None) -> Iso[Choice[Any], Any]:
-        def fwd(o: Choice[Any]) -> Any:
+        def fwd(o: Choice[Any], ctx: Any) -> Any:
             return o.value
-        def inv(v: Any) -> Choice[Any]:
+        def inv(v: Any, ctx: Any) -> Choice[Any]:
             return Choice(index=index, value=v)
         return Iso(fwd, inv)
 
@@ -565,9 +563,9 @@ class ChoiceSpec(SyntaxSpec):
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
     def iso(self, index: Optional[int] = None) -> Iso[Choice[Any], Any]:
-        def fwd(o: Choice) -> Any:
+        def fwd(o: Choice[Any], ctx: Any) -> Any:
             return o.value
-        def inv(v: Any) -> Choice:
+        def inv(v: Any, ctx: Any) -> Choice[Any]    :
             return Choice(index=index, value=v)
         return Iso(fwd, inv)
 
@@ -608,10 +606,10 @@ class OrElseSpec(SyntaxSpec):
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
     def iso(self, kind: Optional[OrElseKind] = None) -> Iso[OrElse, Any]:
-        def fwd(o: OrElse) -> Any:
+        def fwd(o: OrElse, ctx: Any) -> Any:
             # print('OrElseSpec.iso.fwd called', kind, o, '->', o.value)
             return o.value
-        def inv(v: Any) -> OrElse:
+        def inv(v: Any, ctx: Any) -> OrElse:
             # print('OrElseSpec.iso.inv called', kind, v, '->', OrElse(kind=kind, value=v))
             return OrElse(kind=kind, value=v)
         return Iso(fwd, inv)
@@ -668,10 +666,10 @@ class ManySpec(SyntaxSpec):
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
     def iso(self) -> Iso[Many[Any], Tuple[Any, ...]]:
-        def fwd(m: Many[Any]) -> Tuple[Any, ...]:
+        def fwd(m: Many[Any], ctx: Any) -> Tuple[Any, ...]:
             # print('ManySpec.iso.fwd called', m, '->', list(m.value))
             return m.value
-        def inv(v: Tuple[Any, ...]) -> Many[Any]:
+        def inv(v: Tuple[Any, ...], ctx: Any) -> Many[Any]:
             # print('ManySpec.iso.inv called', v, '->', Many(value=tuple(v) if v is not None else tuple([])))
             return Many(value=v if v is not None else tuple([]))
         return Iso(fwd, inv)
@@ -935,8 +933,18 @@ class Syntax(Generic[A, S]):
     def named(self, name: str | None, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
         return replace(self, spec=self.spec.named(name=name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
 
+    def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
+        return self.spec.walk(max_depth=max_depth)
+
+    def graph(
+        self,
+        *,
+        max_depth: Optional[int] = None,
+    ) -> Graph[SyntaxSpec]:
+        return self.spec.graph(max_depth=max_depth)
+
     ######################################################## value transformation ########################################################
-    def map(self, f: Callable[[Any], B]) -> Syntax[B, S]:
+    def map(self, f: Callable[..., B]) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
 
         Args:
@@ -947,16 +955,8 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f)) # type: ignore
     
-
-    def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
-        return self.spec.walk(max_depth=max_depth)
-
-    def graph(
-        self,
-        *,
-        max_depth: Optional[int] = None,
-    ) -> Graph[SyntaxSpec]:
-        return self.spec.graph(max_depth=max_depth)
+    def imap(self, f: Callable[..., A]) -> Syntax[A, S]:
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f)) # type: ignore
 
     def iso(self, iso: Iso[A, B]) -> Syntax[B, S]:
         """Isomorphically map values, preserving round-trip info.
@@ -969,7 +969,7 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(iso)) # type: ignore
 
-    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Syntax[B, S]:
+    def bimap(self, f: Callable[..., B], i: Callable[..., A]) -> Syntax[B, S]:
         """Bidirectionally map values with an inverse, keeping round-trip info.
 
         Applies f to the value and adjusts internal state via inverse i so
@@ -983,19 +983,7 @@ class Syntax(Generic[A, S]):
             Syntax yielding B with state alignment preserved.
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(f, i)) # type: ignore
-
-
-    def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Syntax[B, S]:
-        """Map both value and state on success.
-
-        Args:
-            f: Function mapping (value, state) to (new_value, new_state).
-
-        Returns:
-            Syntax yielding transformed value and state.
-        """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_all(f)) # type: ignore
-
+    
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
         """Transform the error payload when this syntax fails.
 
@@ -1005,20 +993,7 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that preserves successes and maps failures.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_error(f)) 
-        
-
-    def map_state(self, f: Callable[[S], S]) -> Syntax[A, S]:
-        """Map the input state before running this syntax.
-
-        Args:
-            f: S -> S function applied to the state prior to running.
-
-        Returns:
-            Syntax that runs with f(state).
-        """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_state(f))
-        
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_error(f))         
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Syntax[B, S]:
         """Chain computations where the next step depends on the value.
@@ -1031,7 +1006,7 @@ class Syntax(Generic[A, S]):
         """
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).flat_map(f)) # type: ignore
 
-    def many(self, *, at_least: int = 0, at_most: Optional[int] = None) -> Syntax[List[A], S]:
+    def many(self, *, at_least: int = 0, at_most: Optional[int] = None) -> Syntax[Tuple[A, ...], S]:
         """Repeat this syntax and collect results into Many.
 
         Repeats greedily until failure or no progress. Enforces bounds.
@@ -1149,7 +1124,7 @@ class Syntax(Generic[A, S]):
             
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[A, S]:
-        return self.seq(left , +self , right).bimap(lambda t: t[0], lambda v: (v,))
+        return self.seq(left , +self , right).bimap(lambda t, _: t[0], lambda v, _: (v,))
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
         """Parse this syntax separated by the given separator.
@@ -1173,11 +1148,11 @@ class Syntax(Generic[A, S]):
             >>> syntax = A.sep_by(comma)
             >>> # Parses "a,a,a" and produces Many containing three "a" elements
         """
-        def fwd(t: Tuple[A, Tuple[Tuple[A], ...] ]) -> Tuple[A, ...]:
+        def fwd(t: Tuple[A, Tuple[Tuple[A], ...] ], ctx: Any) -> Tuple[A, ...]:
             first, rest = t
             return tuple([first] + [x[0] for x in rest])
 
-        def inv(v: Tuple[A, ...]) -> Tuple[A, Tuple[Tuple[A], ...]]:
+        def inv(v: Tuple[A, ...], ctx: Any) -> Tuple[A, Tuple[Tuple[A], ...]]:
             first, *rest = v
             return (first, tuple([ (x,) for x in rest]))            
 
@@ -1301,11 +1276,10 @@ class Syntax(Generic[A, S]):
             
         return replace(self, alg_f=alg_f, spec=spec).iso(spec.iso()) # type: ignore
         
-
     def __ror__(self, other: Syntax[Any, S]) -> Syntax[Any, S]:
 
         return self.__or__(other)
-    
+
 
     def __pos__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, True)
@@ -1313,60 +1287,29 @@ class Syntax(Generic[A, S]):
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, False)
     
-    def fld(self, name: str | None = None) -> Tuple[Syntax[A, S], bool]:
-        name = name if name is not None else self.spec.name
-        if name is None:
-            return (self, True)
-        else:
-            return (self.bind(name), True)
-        
-        
-
     def __invert__(self) -> Syntax[A | type[Nothing], S]:
         """Syntactic sugar for optional() (tilde operator)."""
         return self.optional
 
     ######################################################################## data processing combinators #########################################################
     
-    def bind(self, this_f : str | None = None ,**kwargs: Callable[[Any, Any], Any]) -> Syntax[A, S]:
-        def bind_v(v: A, s: S) -> tuple[A, S]:
-            if isinstance(this_f, str):
-                s = s.bind(this_f, v)
-
-            for real_name, f in kwargs.items():
-                new_value = f(v, s.get(real_name))
-                s = s.bind(real_name, new_value)
-
-            return v, s
-        
-        return self.map_all(bind_v)
+    def bind(self, **f: Callable[[Any, Any], Any]) -> Syntax[A, S]:
+        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(**f)) 
     
-    def check(self, this_f: Callable[..., bool]) -> Syntax[A, S]:
-        def check_v(this: Optional[Syntax[A, S]], old_s: S, result: Tuple[A, S]) -> Either[Any, Tuple[Any, S]]:
-            v, s = result
+    def to(self, a: Callable[..., A], b: Callable[..., B]) -> Syntax[B, S]:
+        return self.iso(Iso.derive(a, b))
 
-            if callable(this_f):
-                d = s.all_bindings
-                if d:
-                    c = CallWith(this_f, v, **d)
-                else:
-                    c = CallWith(this_f, v)
-                    if c.missing_args:
-                        pesudo_args = [... for _ in c.missing_args]
-                    else:
-                        pesudo_args = []
-                    if c.missing_kwargs:
-                        pesudo_kwargs = {k: ... for k in c.missing_kwargs}
-                    else:
-                        pesudo_kwargs = {}
-                    c = CallWith(this_f, v, *pesudo_args, **pesudo_kwargs)
-                if not c():
-                    return Left.new(Error.new(this=this, 
-                                              message=f"Check failed for 'this' with value {v}", 
-                                              state=old_s))
-
-            return Right.new(result)
-        return self.on_success(check_v)
+    def check(self, pred: Callable[..., bool], forward: bool = True, level:int = 0) -> Syntax[A, S]:
+        file = get_file(level+1)        
+        line = get_line(level+1)
+        f = CallWith(pred)
+        names = f.missing_args[1:]
+        def check_preds(value: Any, ctx: FrozenDict[str, Any]) -> Any:
+            vars = [ctx.get(name, ...) for name in names]
+            if not pred(value, *vars):
+                raise ValueError(f"Predicate failed for value {value} with context {ctx}, at {file}:{line}")
+            return value
+        return self.map(check_preds) if forward else self.imap(check_preds)
         
 
     @classmethod

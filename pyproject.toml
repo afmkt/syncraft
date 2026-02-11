@@ -8,10 +8,7 @@ readme = "README.md"
 authors = [{name = "Michael Afmokt", email = "michael@esacca.com"}]
 keywords = ["parser", "combinator", "sql", "sqlite", "generator", 'printer']
 requires-python = ">=3.10"
-dependencies = [
-    "rstr>=3.2.2",
-    "sqlglot>=27.14.0",
-]
+dependencies = []
 
 
 [dependency-groups]
@@ -34,7 +31,6 @@ dev = [
     "mypy>=1.18.2",
     "regex>=2025.11.3",
     "types-regex>=2025.11.3.20251106",
-    "pydatalog>=0.17.4",
 ]
 
 

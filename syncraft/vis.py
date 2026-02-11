@@ -350,7 +350,7 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
     def add_nodes_edges(dot, node, *, depth, parent_id=None, node_id_gen=[0]):
         if depth == 0:
             return
-        from syncraft.ast import Nothing, Marked, OrElse, Many, Then
+        from syncraft.ast import Nothing, OrElse, Many, Then
         node_id = f"n{node_id_gen[0]}"
         node_id_gen[0] += 1
         label = node_label(node)
@@ -361,8 +361,6 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
         # Walk children according to AST type
         if node is Nothing:
             return
-        elif isinstance(node, Marked):
-            add_nodes_edges(dot, node.value, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
         elif isinstance(node, OrElse):
             if node.value is not None:
                 add_nodes_edges(dot, node.value, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)

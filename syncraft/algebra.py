@@ -7,8 +7,7 @@ from syncraft.ast import Nothing
 from dataclasses import dataclass, replace, field
 from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
-from syncraft.constraint import Bindable
-from syncraft.bimap import Iso, identity
+from syncraft.bimap import Bindable, Iso
 from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER
 
 if TYPE_CHECKING:
@@ -218,7 +217,19 @@ class Error:
         return self.contextual
     
     
+def mark_arity(f: Callable[..., Any]) -> Callable[..., Any]:
+    import inspect
+    sig = inspect.signature(f)
+    arity = len(sig.parameters)
+    setattr(f, "__syncraft_arity__", arity)
+    return f
 
+def get_arity(f: Callable[..., Any]) -> int:
+    ret = getattr(f, "__syncraft_arity__", None)
+    if ret is None:
+        f = mark_arity(f)
+        ret = getattr(f, "__syncraft_arity__")
+    return ret
 
 @dataclass(frozen=True, slots=True)        
 class Algebra(Generic[A, S]):
@@ -447,34 +458,61 @@ class Algebra(Generic[A, S]):
 
 
 ######################################################## fundamental combinators ############################################    
-    def map(self, f: Callable[[A], B]) -> Algebra[B, S]:
-        def map_run(input: S, 
-                    cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                S, 
-                                                Either[Any, Tuple[B, S]]]:
-            parsed = yield from self.run(input, cache)
-            if isinstance(parsed, Right):
-                ast, s = parsed.value
-                new_data = f(ast)
-                return Right.new((new_data, s))            
-            else:
-                return cast(Either[Any, Tuple[B, S]], parsed)
-        alg = replace(self, run_f=map_run).flag(syntax=self.syntax) # type: ignore
-        return cast(Algebra[B, S], alg)
-    
-    
-    def imap(self, f: Callable[[Any], A]) -> Algebra[A, S]:
-        def map_state_f(s: S) -> S:
+
+    def map(self, f: Callable[..., B]) -> Algebra[B, S]:
+        f = mark_arity(f)
+        def map_f(a : A) -> Algebra[B, S]:
+            def map_run_f(input:S, 
+                              cache:Cache[S]) -> Generator[YieldChannelType, 
+                                                        S, 
+                                                        Either[Any, Tuple[B, S]]]:
+                yield from ()
+                try:
+                    arity = get_arity(f)
+                    if arity == 1:
+                        data = f(a)
+                    elif arity == 2:
+                        data = f(a, input.ctx)
+                    else:
+                        raise ValueError(f"Unsupported arity {arity} for map function {f}, expected 1 or 2")
+                    return Right.new((data, input))
+                except Exception as e:
+                    return Left.new(Error.new(
+                        message="Error in map function",
+                        error=e,
+                        this=self,
+                        state=input
+                    ))
+            return replace(self, run_f=map_run_f).flag(syntax=self.syntax) # type: ignore
+        return self.flat_map(map_f)
+
+    def imap(self, f: Callable[..., A]) -> Algebra[A, S]:
+        f = mark_arity(f)
+        def imap_all_f(s: S) -> S:
             return s.map(f)
-        return self.map_state(map_state_f)
+        return self.map_state(imap_all_f)
+
 
     def iso(self, iso: Iso[A, B]) -> Algebra[B, S]:
         return self.bimap(iso.forward, iso.inverse)
 
-    
-    def bimap(self, f: Callable[[A], B], i: Callable[[B], A]) -> Algebra[B, S]:
-        raise NotImplementedError("Algebra.bimap is abstract, concrete subclasses must implement it")
 
+    def bimap(self, f: Callable[..., B], i: Callable[..., A]) -> Algebra[B, S]:
+        raise NotImplementedError("Algebra.bimap_all is abstract, concrete subclasses must implement it")
+    
+    def bind(self, **f: Callable[[Any, Any], Any])-> Algebra[A, S]:
+        def bind_run(input: S, 
+                     cache:Cache[S]) -> Generator[YieldChannelType, 
+                                                S, 
+                                                Either[Any, Tuple[A, S]]]:
+            result = yield from self.run(input, cache)
+            if isinstance(result, Right):
+                value, state = result.value
+                state = state.bind(value, **f)
+                return Right.new((value, state))
+            else:
+                return result
+        return replace(self, run_f=bind_run).flag(syntax=self.syntax) # type: ignore
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, 
@@ -504,19 +542,7 @@ class Algebra(Generic[A, S]):
         alg = replace(self, run_f=flat_map_run).flag(intrinsic=True) # type: ignore
         from typing import cast as _cast
         return _cast(Algebra[B, S], alg)
-
-    def map_all(self, f: Callable[[A, S], Tuple[B, S]]) -> Algebra[B, S]:
-        def map_all_f(a : A) -> Algebra[B, S]:
-            def map_all_run_f(input:S, 
-                              cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                        S, 
-                                                        Either[Any, Tuple[B, S]]]:
-                yield from ()
-                return Right.new(f(a, input))
-            return replace(self, run_f=map_all_run_f).flag(syntax=self.syntax) # type: ignore
-        return self.flat_map(map_all_f)
-
-
+    
     
     def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[OrElse, S]:
         def or_else_run(input: S, 
@@ -626,7 +652,7 @@ class Algebra(Generic[A, S]):
 
     def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_both_f(a: A) -> Algebra[Then[A, B], S]:
-            def combine(b: B) -> Then[A, B]:
+            def combine(b: B, ctx: Any) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.BOTH)
             return other.map(combine)        
         return self.flat_map(then_both_f).flag(intrinsic=True)
@@ -634,7 +660,7 @@ class Algebra(Generic[A, S]):
 
     def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_left_f(a: A) -> Algebra[Then[A, B], S]:
-            def combine(b: B) -> Then[A, B]:
+            def combine(b: B, ctx: Any) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.LEFT)
             return other.map(combine)
         return self.flat_map(then_left_f).flag(intrinsic=True)
@@ -642,7 +668,7 @@ class Algebra(Generic[A, S]):
 
     def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
         def then_right_f(a: A) -> Algebra[Then[A, B], S]:
-            def combine(b: B) -> Then[A, B]:
+            def combine(b: B, ctx: Any) -> Then[A, B]:
                 return Then(left=a, right=b, kind=ThenKind.RIGHT)
             return other.map(combine)        
         return self.flat_map(then_right_f).flag(intrinsic=True)

@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import  Any, Literal
 from dataclasses import dataclass, field
 import time
-from syncraft.constraint import Bindable
+from syncraft.bimap import Bindable
 from syncraft.ast import AST
 
 

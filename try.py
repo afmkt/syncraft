@@ -1,33 +1,29 @@
 from __future__ import annotations
-from syncraft.syntax import Syntax
-from syncraft.bimap import unify_all, let, Env, Scope, evaluate, Expr
-import pytest
 
-literal = Syntax.lit
+from syncraft.bimap import let, Env, Scope, evaluate, Expr, Iso, Not
+from dataclasses import dataclass
+from typing import Any, Optional
 
-def test_constraint_chain():
-    scope = Scope()
-    A = scope.A
-    B = scope.B
-    C = scope.C
+def test_transformation()->None:
+    @dataclass(frozen=True, slots=True)
+    class Quantifier:
+        minimum: int
+        maximum: Optional[int]     # None → unbounded
+        greedy: bool = True
 
-    pattern = {
-        "a": A,
-        "b": let(B, A + 1),
-        "c": let(C, B * 2),
-        "d": A
-    }
 
-    value = {"a": 3, "b": 4, "c": 8, "d": 30}
+    iso = Iso.derive(lambda env: (Quantifier(minimum=env.minimum, maximum=env.maximum), env.greedy), 
+                    lambda env: Quantifier(minimum=env.minimum, maximum=env.maximum, greedy=Not(env.greedy)))
 
-    env = unify_all(pattern, value)
-
-    assert env.resolve(B) == 4
-    assert env.resolve(C) == 8
+    a = (Quantifier(1, 5, True), False)
+    b = iso.forward(a, None)
+    assert b == Quantifier(1, 5, True)
+    c = iso.inverse(b, None)
+    assert c == (Quantifier(1, 5, True), False)
 
 
 if __name__ == '__main__':
-    test_constraint_chain()    
+    test_transformation()    
     
     
     

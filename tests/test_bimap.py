@@ -1,7 +1,16 @@
-from syncraft.bimap import Var, unify_all, Env, evaluate, let, Expr, Scope
-from typing import Any
+from syncraft.bimap import solve, Env, evaluate, let, Expr, Scope, transform, Iso, Not
+from typing import Any, Optional
 import pytest
 from dataclasses import dataclass
+
+def unify_all(pattern: Any, value: Any, env: Env | None = None) -> Env:
+    if env is None:
+        env = Env()
+    result = solve(pattern, value, env)
+    if isinstance(result, list):
+        raise ValueError(f"Unification failed: {result}")
+    return env
+
 
 def test_length_prefixed():
     scope = Scope()
@@ -441,3 +450,20 @@ def test_constraint_does_not_create_binding():
     with pytest.raises(ValueError):
         unify_all(pattern, value)
 
+
+def test_transformation()->None:
+    @dataclass(frozen=True, slots=True)
+    class Quantifier:
+        minimum: int
+        maximum: Optional[int]     # None → unbounded
+        greedy: bool = True
+
+
+    iso = Iso.derive(lambda env: (Quantifier(minimum=env.minimum, maximum=env.maximum), env.greedy), 
+                    lambda env: Quantifier(minimum=env.minimum, maximum=env.maximum, greedy=Not(env.greedy)))
+
+    a = (Quantifier(1, 5, True), False)
+    b = iso.forward(a, None)
+    assert b == Quantifier(1, 5, False)
+    c = iso.inverse(b, None)
+    assert c == Quantifier(1, 5, True)
