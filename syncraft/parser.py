@@ -434,7 +434,7 @@ def parse_data(syntax: Syntax,
     input : StreamCursor[T] = StreamCursor.from_data(data)
     v, s = parse(syntax, input, cache=cache)
     if s is not None:
-        return v, s.binding.bindings
+        return v, s.ctx
     else:
         return v, None
 

@@ -653,9 +653,7 @@ def evaluate(expr: Any, env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
     return True, expr
     
 def unify(pattern: Any, value: Any, env: Env) -> Tuple[bool, List[Any]]:
-    if pattern is ... or value is ...:
-        raise DataError("Cannot unify with Unbound(...) pattern.")
-    elif pattern is value:
+    if pattern is value:
         return True, []
     elif isinstance(pattern, Expr):
         return pattern.unify(value, env)
@@ -743,8 +741,67 @@ def transform(source: Callable[..., Any], target: Callable[..., Any]) -> Callabl
         return result
     return transform_f
 
+class Match:
+    def __init__(self, source: Callable[..., Any], target: Callable[..., Any]):
+        self.cases = [(source, target)]
 
+    def case(self, source: Callable[..., Any], target: Callable[..., Any]) -> Match:
+        self.cases.append((source, target))   
+        return self
 
+    @staticmethod
+    def overlap(*ptns: Callable[..., Any]) -> Tuple[bool, List[Any]]:
+        def build(env: Env, ptn: Callable[..., Any]) -> Any:
+            sig = CallWith(ptn)
+            vars = [env.create_var(name) for name in sig.missing_args[1:]]
+            return ptn(env, *vars)
+
+        n = len(ptns)
+        for i in range(n):
+            for j in range(i + 1, n):
+                env = Env()  # fresh env per pair
+                a = build(env, ptns[i])
+                b = build(env, ptns[j])
+                success, _ = unify(a, b, env)
+                if not success:
+                    continue
+                else:
+                    return True, [a, b]
+        return False, []
+    
+    def forward(self, overlap: bool) -> Callable[[Any, Any], Any]:
+        if not overlap:
+            o, offender = Match.overlap(*(src for src, tgt in self.cases))
+            if o:
+                raise DataError(f"Overlapping patterns detected in Match.forward: {offender[0]} VS. {offender[1]}")
+        transforms = [transform(src, tgt) for src, tgt in self.cases]
+        def transform_f(value: Any, ctx: Any) -> Any:
+            for t in transforms:
+                try:
+                    return t(value, ctx)
+                except DataError:
+                    continue
+            raise DataError(f"No matching case found for value: {value}")
+        return transform_f
+    
+    def inverse(self, overlap: bool) -> Callable[[Any, Any], Any]:
+        if not overlap:
+            o, offender = Match.overlap(*(tgt for src, tgt in self.cases))
+            if o:
+                raise DataError(f"Overlapping patterns detected in Match.inverse: {offender[0]} VS. {offender[1]}")
+        transforms = [transform(tgt, src) for src, tgt in self.cases]
+        def transform_f(value: Any, ctx: Any) -> Any:
+            for t in transforms:
+                try:
+                    return t(value, ctx)
+                except DataError:
+                    continue
+            raise DataError(f"No matching case found for value: {value}")
+        return transform_f
+    
+    def iso(self, overlap: bool = True) -> Iso:
+        return Iso(self.forward(overlap=overlap), self.inverse(overlap=overlap))
+        
 
 def Not(expr: Any) -> Any:
     def infer_not(value: Any, child: List[Tuple[bool, int|str, Expr, Any]], env: Env, visited: Set[Any]) -> Generator[Tuple[Tuple[Var, Any], ...], None, None]:
@@ -759,3 +816,5 @@ def Not(expr: Any) -> Any:
         else:
             raise DataError(f"Expected boolean value for Not inference, got {value}")
     return replace(Expr.apply(lambda x: not x, expr), infer = infer_not)
+
+

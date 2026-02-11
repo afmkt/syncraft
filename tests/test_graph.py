@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from syncraft.ast import Then, ThenKind, Many, OrElse, OrElseKind, Token, Marked, Nothing, Any
-from syncraft.algebra import Error
+
+
 from syncraft.parser import  parse_word
-import syncraft.generator as gen
+
 from syncraft.syntax import Syntax
 from syncraft.cache import Cache
-import pytest
+
 
 
 literal = Syntax.lit
@@ -60,16 +60,6 @@ def test4_complex_syntax() -> None:
     assert ast == ast2, "ASTs from original and reconstructed syntax should match"
     assert g == syntax2.graph(), "Original and reconstructed syntax graphs should match"
 
-def test5_marked_tokens() -> None:
-    A = literal("a").mark("x").mark("y")
-    syntax = A.many()
-    sql = "a a a"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
-    g = syntax.graph()
-    syntax2 = Syntax.from_graph(g)
-    ast2, bound2 = parse_word(syntax2, sql, cache=Cache())
-    assert ast == ast2, "ASTs from original and reconstructed syntax should match"
-    assert g == syntax2.graph(), "Original and reconstructed syntax graphs should match"
 
 def test6_lazy() -> None:
     A = literal("a")
