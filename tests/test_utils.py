@@ -34,8 +34,3 @@ def token_multiset(ast: Any) -> dict[str, int]:
 __all__ = ['iter_tokens', 'token_multiset']
 
 
-def parse_with_state(syntax, sql: str):
-    from syncraft.cache import Cache
-    return parse_word(syntax, sql, cache=Cache())
-
-__all__.append('parse_with_state')

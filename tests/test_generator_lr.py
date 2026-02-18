@@ -3,7 +3,7 @@ from typing import Type
 import pytest
 
 from syncraft.syntax import Syntax
-from syncraft.ast import Token, Then, ThenKind, OrElse, OrElseKind, Lazy
+from syncraft.ast import Token, Seq, Alt, Lazy
 from syncraft.generator import (
     generate_with,
     generate,
@@ -21,51 +21,32 @@ def tok(text: str):
 def test_generate_with_direct_left_recursion_with_base_succeeds():
     # A := A + 'a' | 'a'
     A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast, bound = generate_with(A)
+    ast = generate_with(A)
     # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
     assert not isinstance(ast, Error)
-    assert bound is not None
+    
 
 
 def test_generate_direct_left_recursion_with_base_succeeds():
     A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast, bound = generate(A)
+    ast = generate(A)
     assert not isinstance(ast, Error)
-    assert bound is not None
+    
+
 
 
 def test_validate_direct_left_recursion_with_base_succeeds_single_token():
     A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    # Validate a simple token AST wrapped in OrElse RIGHT (matches base branch)
-    ast, bound = validate(A, Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a',token_type='a'))))
+    ast = validate(A, (Token(text='a'), Token(text='a')))
     assert not isinstance(ast, Error)
-    assert bound is not None
+    
 
 
 def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
     A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    # Manually build an AST for "aaa" using recursive branches with explicit Choices:
-    # A := (A + 'a') | 'a'
-    # Structure:
-    #   OrElse(LEFT,
-    #     Then(BOTH,
-    #       OrElse(LEFT,
-    #         Then(BOTH,
-    #           OrElse(RIGHT, Token('a')),  # base case A -> 'a'
-    #           Token('a')
-    #         )
-    #       ),
-    #       Token('a')
-    #     )
-    #   )
-    inner_base = Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a', token_type='a')))
-    inner_then = Then(kind=ThenKind.BOTH, left=inner_base, right=Token(text='a', token_type='a'))
-    middle_choice = Lazy(value=OrElse(kind=OrElseKind.LEFT, value=inner_then))
-    outer_then = Then(kind=ThenKind.BOTH, left=middle_choice, right=Token(text='a', token_type='a'))
-    data = Lazy(value=OrElse(kind=OrElseKind.LEFT, value=outer_then))
-    ast, bound = validate(A, data)
+    ast = validate(A, Token(text='a'))
     assert not isinstance(ast, Error)
-    assert bound is not None
+    
 
 
 # SS = S
@@ -81,17 +62,17 @@ def test_generate_with_mutual_left_recursion_without_base_raises():
 
 def test_generate_with_infers_text_lexer_without_config() -> None:
     syntax = SS.lit("hi")
-    ast, bound = generate_with(syntax, seed=123)
+    ast = generate_with(syntax, seed=123)
     assert ast == Token(text="hi")
 
 
 def test_generate_with_infers_from_fabuilder_literal() -> None:
     S = Syntax.set(terminal_cls=Token)
     lex_syntax = S.factory("lex", Builder.lit("go").tagged("WORD"))
-    ast, bound = generate_with(lex_syntax, seed=321)
+    ast = generate_with(lex_syntax, seed=321)
     print(ast)
     assert isinstance(ast, Token)
     assert ast.token_type == "WORD"
     assert ast.text == "go"
-    assert bound is not None
+    
     

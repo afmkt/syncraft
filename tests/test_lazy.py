@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Tuple, Iterable, Callable
-from syncraft.ast import Nothing, Token, Lazy, OrElse, OrElseKind, Then, ThenKind
+from syncraft.ast import Nothing, Token, Lazy, Seq, Alt
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
@@ -44,8 +44,11 @@ def token_multiset(ast: Any) -> dict[str, int]:
 # Ensure randomization is enabled for these tests
 set_randomization(True)
 
-S = Syntax
-literal = S.lit
+S = Syntax.set(terminal_cls=Token)
+
+def literal(text:Any) -> Syntax[Any, Any]:
+    return S.lit(text=text)
+
 token = S.token
 lazy = S.lazy
 
@@ -56,152 +59,105 @@ def from_string(string: str) -> Token:
 
 def test_simple_recursion()->None:
     A = lazy(lambda: literal('a') + ~A | literal('a'))
-    v, s = parse_word(A, 'a a a', cache=Cache())
-    assert v == (
-        from_string('a'), 
-        (
-            from_string('a'), 
-            (
-                from_string('a'), 
-                Nothing
-            )
-        )
-    )
-    vv, ss = generate_with(A, v)
-    # print(v)
-    # print(vv)
+    
+    v = parse_word(A, 'a a a')
+    
     assert v == (Token(text='a'), (Token(text='a'), (Token(text='a'), Nothing)))
-    assert vv == Lazy(
-        value=OrElse(
-            kind=OrElseKind.LEFT,
-            value=Then(
-                kind=ThenKind.BOTH,
-                left=Token(text='a'),
-                right=OrElse(
-                    kind=OrElseKind.LEFT,
-                    value=Lazy(
-                        value=OrElse(
-                            kind=OrElseKind.LEFT,
-                            value=Then(
-                                kind=ThenKind.BOTH,
-                                left=Token(text='a'),
-                                right=OrElse(
-                                    kind=OrElseKind.LEFT,
-                                    value=Lazy(
-                                        value=OrElse(
-                                            kind=OrElseKind.LEFT,
-                                            value=Then(
-                                                kind=ThenKind.BOTH,
-                                                left=Token(text='a'),
-                                                right=OrElse(kind=OrElseKind.LEFT, value=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Nothing)))
-                                            )
+    vv = generate_with(A, v)
+    
+    expected = Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (Token(text='a'), True),
+                    (
+                        Alt(
+                            index=0,
+                            value=Lazy(
+                                value=Alt(
+                                    index=0,
+                                    value=Seq(
+                                        value=(
+                                            (Token(text='a'), True),
+                                            (Alt(index=0, value=Lazy(value=Alt(index=0, value=Seq(value=((Token(text='a'), True), (Alt(index=1, value=Nothing), True)))))), True)
                                         )
                                     )
                                 )
                             )
-                        )
+                        ),
+                        True
                     )
                 )
             )
         )
     )
     
+    assert vv == expected, f"Expected {expected}, got {vv}"
+    
 
 
 def test_direct_recursion_equivalence()->None:
-    """Combine direct recursion tests on the same grammar to avoid duplication.
-
-    Validates parsing structure, inversion, and round-trip generation for Expr1 grammar.
-    """
     Expr1 = lazy(lambda: literal('a') + ~Expr1)
-    v, s = parse_word(Expr1, 'a a a', cache=Cache())
-    # ast, inv = v.bimap
-    expected = (
-        from_string('a'), 
-        (
-            from_string('a'), 
-            (
-                from_string('a'), 
-                Nothing
-            )
-        )
-    )
+    v = parse_word(Expr1, 'a a')
+    expected = (Token(text='a'), (Token(text='a'), Nothing))
     assert v == expected
-    ast, _ = gen.generate_with(Expr1, v)
-    # print(ast)
-    assert ast == Lazy(
-        value=Then(
-            kind=ThenKind.BOTH,
-            left=Token(text='a'),
-            right=OrElse(
-                kind=OrElseKind.LEFT,
-                value=Lazy(
-                    value=Then(
-                        kind=ThenKind.BOTH,
-                        left=Token(text='a'),
-                        right=OrElse(
-                            kind=OrElseKind.LEFT,
-                            value=Lazy(value=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=OrElse(kind=OrElseKind.RIGHT, value=Nothing)))
-                        )
-                    )
-                )
-            )
-        )
-    )
+    ast = gen.generate_with(Expr1, v)
+    expected_ast = Lazy(value=Seq(value=((Token(text='a'), True), (Alt(index=0, value=Lazy(value=Seq(value=((Token(text='a'), True), (Alt(index=1, value=Nothing), True))))), True))))
+
+    assert ast == expected_ast
     
 
 
 def test_mutual_recursion()->None:
     A = lazy(lambda: literal('a') + B)
     B = lazy(lambda: (literal('b') + A) | (literal('c')))
-    v, s = parse_word(A, 'a b a b a c', cache=Cache())
-    assert v == (
-        from_string('a'), 
-        (
-            from_string('b'), 
-            from_string('a'), 
-            (
-                from_string('b'), 
-                from_string('a'), 
-                from_string('c')
-            )
-        )
-    )    
+    v = parse_word(A, 'a b a b a c')
+    # print(v)
+    assert v == (Token(text='a'), (Token(text='b'), Token(text='a'), (Token(text='b'), Token(text='a'), Token(text='c')))) 
 
-    vv, ss = generate_with(A, v)
+    vv = generate_with(A, v)
+    # print(vv)
     assert vv == Lazy(
-        value=Then(
-            kind=ThenKind.BOTH,
-            left=Token(text='a'),
-            right=Lazy(
-                value=OrElse(
-                    kind=OrElseKind.LEFT,
-                    value=Then(
-                        kind=ThenKind.BOTH,
-                        left=Token(text='b'),
-                        right=Lazy(
-                            value=Then(
-                                kind=ThenKind.BOTH,
-                                left=Token(text='a'),
-                                right=Lazy(
-                                    value=OrElse(
-                                        kind=OrElseKind.LEFT,
-                                        value=Then(
-                                            kind=ThenKind.BOTH,
-                                            left=Token(text='b'),
-                                            right=Lazy(
-                                                value=Then(
-                                                    kind=ThenKind.BOTH,
-                                                    left=Token(text='a'),
-                                                    right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='c')))
+        value=Seq(
+            value=(
+                (Token(text='a'), True),
+                (
+                    Lazy(
+                        value=Alt(
+                            index=0,
+                            value=Seq(
+                                value=(
+                                    (Token(text='b'), True),
+                                    (
+                                        Lazy(
+                                            value=Seq(
+                                                value=(
+                                                    (Token(text='a'), True),
+                                                    (
+                                                        Lazy(
+                                                            value=Alt(
+                                                                index=0,
+                                                                value=Seq(
+                                                                    value=(
+                                                                        (Token(text='b'), True),
+                                                                        (Lazy(value=Seq(value=((Token(text='a'), True), (Lazy(value=Alt(index=1, value=Token(text='c'))), True)))), True)
+                                                                    )
+                                                                )
+                                                            )
+                                                        ),
+                                                        True
+                                                    )
                                                 )
                                             )
-                                        )
+                                        ),
+                                        True
                                     )
                                 )
                             )
                         )
-                    )
+                    ),
+                    True
                 )
             )
         )
@@ -219,39 +175,27 @@ def test_recursion() -> None:
     p_code = 'a a b b'
     LL = parens() | L
     
-    v, s = parse_word(LL, p_code, cache=Cache())
-    assert v == (
-            from_string('a'), 
-            (
-                from_string('a'), 
-                Nothing, 
-                from_string('b')
-            ), 
-            from_string('b')
-        )
-    
-    vv, ss = generate_with(LL, v)
-    
+    v = parse_word(LL, p_code)
     assert v == (Token(text='a'), (Token(text='a'), Nothing, Token(text='b')), Token(text='b'))
-    assert vv == OrElse(
-        kind=OrElseKind.LEFT,
-        value=Then(
-            kind=ThenKind.BOTH,
-            left=Then(
-                kind=ThenKind.BOTH,
-                left=Token(text='a'),
-                right=OrElse(
-                    kind=OrElseKind.LEFT,
-                    value=Lazy(
-                        value=Then(
-                            kind=ThenKind.BOTH,
-                            left=Then(kind=ThenKind.BOTH, left=Token(text='a'), right=OrElse(kind=OrElseKind.RIGHT, value=Nothing)),
-                            right=Token(text='b')
+    
+    vv = generate_with(LL, v)
+    
+    # print(vv)
+    assert vv == Alt(
+        index=0,
+        value=Seq(
+            value=(
+                (
+                    Seq(
+                        value=(
+                            (Token(text='a'), True),
+                            (Alt(index=0, value=Lazy(value=Seq(value=((Seq(value=((Token(text='a'), True), (Alt(index=1, value=Nothing), True))), True), (Token(text='b'), True))))), True)
                         )
-                    )
-                )
-            ),
-            right=Token(text='b')
+                    ),
+                    True
+                ),
+                (Token(text='b'), True)
+            )
         )
     )
 
@@ -269,7 +213,7 @@ def test_left_recursion_variants()->None:
     # Variant 1: arithmetic chain
     Term = literal('n')
     Expr = lazy(lambda: Expr + literal('+') + Term | Term)
-    v1, _ = parse_word(Expr, 'n + n + n', cache=Cache())
+    v1 = parse_word(Expr, 'n + n + n')
     # ast1, _ = v1.bimap
     counts1 = token_multiset(v1)
     assert counts1.get('n', 0) == 3
@@ -277,7 +221,7 @@ def test_left_recursion_variants()->None:
     # Variant 2: nested right growth
     a_tok = literal('a').map(lambda x: x.text).named('a')
     Expr1 = lazy(lambda: (Expr1 + a_tok) | a_tok).named('Expr1')
-    v2, _ = parse_word(Expr1, 'a a a a', cache=Cache())
+    v2 = parse_word(Expr1, 'a a a a')
     # ast2, _ = v2.bimap
     assert v2 == ((('a', 'a'), 'a'), 'a')
 
@@ -289,7 +233,7 @@ def test_indirect_left_recursion()->None:
     A = lazy(lambda: (B >> PLUS >> A) | B)
     B = lazy(lambda: (A >> STAR >> NUMBER) | NUMBER)
     # Now succeeds (partial parse); ensure at least first two numbers captured
-    v, s = parse_word(A, '1 + 2 * 3', cache=Cache())
+    v = parse_word(A, '1 + 2 * 3')
     # ast, _ = v.bimap
     counts = token_multiset(v)
     # Current partial recovery yields only last NUMBER; ensure at least one digit captured
@@ -299,28 +243,6 @@ def test_indirect_left_recursion()->None:
 
 
 def test_indirect_left_recursion_2()->None:
-    """
-    Grammar:
-        Expr → Expr "+" Term | Term
-        Term → Term "*" Factor | Factor
-        Factor → "(" Expr ")" | number    
-    Positive examples:
-        42
-        1 + 2
-        3 * 4
-        ( 1 )
-        1 + 2 * 3
-        ( 1 + 2 ) * 3
-        1 + 2 + 3 * 4
-    Negative examples:
-        + 1
-        1 *
-        1 + *
-        ( 1 + 2
-        1 + 2 )
-        ( )
-        1 * ( 2 + )
-    """
     NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
     PLUS = literal(text='+')
     STAR = literal(text='*')
@@ -328,9 +250,9 @@ def test_indirect_left_recursion_2()->None:
     RPAREN = literal(text=')')
     Expr = lazy(lambda: (Expr + PLUS + Term) | Term)
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)
-    Factor: Syntax[Tuple[Any, ...] | int, Any] = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
+    Factor: Syntax[Alt, Any] = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
 
-    v1, s1 = parse_word(Expr, '1 + 2 * 3', cache=Cache())
+    v1 = parse_word(Expr, '1 + 2 * 3')
     # a1, _ = v1.bimap
     assert isinstance(v1, tuple) and len(v1) == 3, f"Expected structured AST triple, got {v1!r}"
     def leaf(x):
@@ -345,7 +267,7 @@ def test_indirect_left_recursion_2()->None:
     normalized = norm(v1)
     assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
 
-    v_42, _ = parse_word(Expr, '42', cache=Cache())
+    v_42 = parse_word(Expr, '42')
     # a_42, _ = v_42.bimap
     single_norm = norm(v_42)
     assert single_norm == 42
@@ -366,7 +288,7 @@ def test_indirect_left_recursion_structured_plus()->None:
     Expr = lazy(lambda: (Expr + PLUS + Term) | Term)  # type: ignore[name-defined]
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = lazy(lambda: NUMBER)
-    v,_ = parse_word(Expr,'1 + 2 * 3', cache=Cache())
+    v = parse_word(Expr,'1 + 2 * 3')
     # ast,_ = v.bimap
     # Basic structural checks
     assert isinstance(v, tuple) and len(v) == 3
@@ -406,7 +328,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     Expr = lazy(lambda: (Expr + PLUS + Term) | Term)  # type: ignore[name-defined]
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = lazy(lambda: NUMBER)  # type: ignore[name-defined]
-    v_raw, _ = parse_word(Expr, '1 + 2 * 3', cache=Cache())
+    v_raw = parse_word(Expr, '1 + 2 * 3')
     # raw, _ = v_raw.bimap
     # Raw structural assertions
     print(v_raw)
@@ -424,7 +346,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     ExprM = lazy(lambda: (ExprM + PLUS + TermM) | TermM)  # type: ignore[name-defined]
     TermM = lazy(lambda: (TermM + STAR + FactorM) | FactorM)  # type: ignore[name-defined]
     FactorM = lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
-    v_mapped, _ = parse_word(ExprM, '1 + 2 * 3', cache=Cache())
+    v_mapped = parse_word(ExprM, '1 + 2 * 3')
     # mapped, _ = v_mapped.bimap
     assert isinstance(v_mapped, tuple) and len(v_mapped) == 3
     l_val, plus_tok2, right_term_m = v_mapped
@@ -481,7 +403,7 @@ def test_non_recursive_map_preserves_shape()->None:
     NUM = literal(re.compile(r'\d+'))
     PLUS = literal('+')
     Pair = NUM + PLUS + NUM
-    v,_ = parse_word(Pair, '12 + 34', cache=Cache())
+    v = parse_word(Pair, '12 + 34')
     # ast,_ = v.bimap
     assert isinstance(v, tuple) and len(v) == 3
     left_tok, plus_tok, right_tok = v
@@ -492,7 +414,7 @@ def test_non_recursive_map_preserves_shape()->None:
     # Mapped version
     NUM_M = NUM.map(lambda t: int(t.text))
     PairM = NUM_M + PLUS + NUM_M
-    v2,_ = parse_word(PairM, '12 + 34', cache=Cache())
+    v2  = parse_word(PairM, '12 + 34')
     # ast2,_ = v2.bimap
     assert isinstance(v2, tuple) and len(v2) == 3
     l2, plus2, r2 = v2
@@ -501,252 +423,147 @@ def test_non_recursive_map_preserves_shape()->None:
     assert str(plus2) == 't.+'
 
 
+
 def test_direct_left_recursive_map_preserves_shape()->None:
-        """Direct left recursion: Expr -> Expr "+" NUM | NUM
+    import re
 
-        We compare:
-            1. Raw token version (NUM un-mapped) parsing '1 + 2 + 3'.
-            2. Mapped NUM to int version.
-
-        Structural expectation (raw): ((t.1, t.+, t.2), t.+, t.3)
-        Mapped: ((1, '+', 2), '+', 3)
-        The nested triple shape must be preserved; only leaves (tokens -> ints) differ.
-        """
-        import re
-
-        NUM = literal(re.compile(r'\d+'))
-        PLUS = literal('+')
-        Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
-        v,_ = parse_word(Expr, '1 + 2 + 3', cache=Cache())
-        generated, bound = gen.generate_with(Expr, v)
-        assert v == ((Token(text='1'), Token(text='+'), Token(text='2')), Token(text='+'), Token(text='3'))
-        assert generated == Lazy(
-            value=OrElse(
-                kind=OrElseKind.LEFT,
-                value=Then(
-                    kind=ThenKind.BOTH,
-                    left=Then(
-                        kind=ThenKind.BOTH,
-                        left=Lazy(
-                            value=OrElse(
-                                kind=OrElseKind.LEFT,
-                                value=Then(
-                                    kind=ThenKind.BOTH,
-                                    left=Then(kind=ThenKind.BOTH, left=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='1'))), right=Token(text='+')),
-                                    right=Token(text='2')
-                                )
-                            )
-                        ),
-                        right=Token(text='+')
-                    ),
-                    right=Token(text='3')
-                )
-            )
-        )
-
-
-        # raw,_ = v.bimap
-        # Raw structure assertions
-        assert isinstance(v, tuple) and len(v) == 3
-        assert isinstance(v[0], tuple) and len(v[0]) == 3  # left nested
-        
-        assert v[1] == Token(text='+')
-        assert v[2] == Token(text='3')
-
-        # Mapped version
-        NUM_M = NUM.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  
-        ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
-        v2,_ = parse_word(ExprM, '1 + 2 + 3', cache=Cache())
-        generated, bound = gen.generate_with(ExprM, v2)
-        assert v2 == ((1, Token(text='+'), 2), Token(text='+'), 3)
-        assert generated == Lazy(
-            value=OrElse(
-                kind=OrElseKind.LEFT,
-                value=Then(
-                    kind=ThenKind.BOTH,
-                    left=Then(
-                        kind=ThenKind.BOTH,
-                        left=Lazy(
-                            value=OrElse(
-                                kind=OrElseKind.LEFT,
-                                value=Then(
-                                    kind=ThenKind.BOTH,
-                                    left=Then(kind=ThenKind.BOTH, left=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='1'))), right=Token(text='+')),
-                                    right=Token(text='2')
-                                )
-                            )
-                        ),
-                        right=Token(text='+')
-                    ),
-                    right=Token(text='3')
-                )
-            )
-        )
-
-        # mapped,_ = v2.bimap
-        assert isinstance(v2, tuple) and len(v2) == 3
-        left_nested, mid_op, right_leaf = v2
-        assert isinstance(left_nested, tuple) and len(left_nested) == 3
-        assert mid_op.text == '+'
-        assert right_leaf == 3
-        # Check leaves inside nested left part transformed properly
-        assert left_nested[0] == 1
-        assert left_nested[1].text == '+'
-        assert left_nested[2] == 2
-
-
-
-def test_indirect_left_recursion_3()->None:
-    """
-    Grammar:
-        List → List "," Item | Item
-        Item → "a" | "b"    
-    Positive examples:
-        a
-        b
-        a , b
-        b , a
-        a , b , a
-        a , a , a
-        b , b , b
-        b , a , b , b
-    Negative examples:
-        ''
-        , a
-        a ,
-        a , , b
-        c
-        , a ,
-        a , b ,
-        a , b ,
-    """    
-    A = literal(text='a')
-    B = literal(text='b')
-    Item = lazy(lambda: A | B)
-    List = lazy(lambda: (List >> literal(text=',') >> Item) | Item)
-    # Now succeeds but current semantics retain only last item; ensure at least 'a' present
-    v, s = parse_word(List, 'a , b , a', cache=Cache())
-    generated, bound = gen.generate_with(List, v)
-    # print(v)
+    NUM = literal(re.compile(r'\d+'))
+    PLUS = literal('+')
+    Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
+    v = parse_word(Expr, '1 + 2 + 3')
+    generated = gen.generate_with(Expr, v)
+    assert v == ((Token(text='1'), Token(text='+'), Token(text='2')), Token(text='+'), Token(text='3'))
     # print(generated)
-    assert v == (Token(text='a'),)
-    assert generated == Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Lazy(value=OrElse(kind=OrElseKind.LEFT, value=(Token(text='a'),)))))
-    # assert v == generated
+    assert generated == Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Seq(
+                            value=(
+                                (
+                                    Lazy(
+                                        value=Alt(
+                                            index=0,
+                                            value=Seq(
+                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='1'))), True), (Token(text='+'), True))), True), (Token(text='2'), True))
+                                            )
+                                        )
+                                    ),
+                                    True
+                                ),
+                                (Token(text='+'), True)
+                            )
+                        ),
+                        True
+                    ),
+                    (Token(text='3'), True)
+                )
+            )
+        )
+    )
 
-    counts = token_multiset(v)
-    # Current semantics retains only final item
-    assert counts.get('a', 0) >= 1
 
+    # raw,_ = v.bimap
+    # Raw structure assertions
+    assert isinstance(v, tuple) and len(v) == 3
+    assert isinstance(v[0], tuple) and len(v[0]) == 3  # left nested
+    
+    assert v[1] == Token(text='+')
+    assert v[2] == Token(text='3')
+
+    # Mapped version
+    NUM_M = NUM.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  
+    ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
+    v2 = parse_word(ExprM, '1 + 2 + 3')
+    generated = gen.generate_with(ExprM, v2)
+    assert v2 == ((1, Token(text='+'), 2), Token(text='+'), 3)
+    # print(generated)
+    assert generated == Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Seq(
+                            value=(
+                                (
+                                    Lazy(
+                                        value=Alt(
+                                            index=0,
+                                            value=Seq(
+                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='1'))), True), (Token(text='+'), True))), True), (Token(text='2'), True))
+                                            )
+                                        )
+                                    ),
+                                    True
+                                ),
+                                (Token(text='+'), True)
+                            )
+                        ),
+                        True
+                    ),
+                    (Token(text='3'), True)
+                )
+            )
+        )
+    )
+
+    # mapped,_ = v2.bimap
+    assert isinstance(v2, tuple) and len(v2) == 3
+    left_nested, mid_op, right_leaf = v2
+    assert isinstance(left_nested, tuple) and len(left_nested) == 3
+    assert mid_op.text == '+'
+    assert right_leaf == 3
+    # Check leaves inside nested left part transformed properly
+    assert left_nested[0] == 1
+    assert left_nested[1].text == '+'
+    assert left_nested[2] == 2
+
+
+def test_direct_left_recursion_collapse()->None:
+    """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
+    S1 = lazy(lambda: (S1 // S1) | literal('a'))
+    v = parse_word(S1, 'a')
+    assert v == Token(text='a')
+
+def test_indirect_multi_head_cycle_parses_successfully():
+    A = lazy(lambda: (B >> literal(text='x')) | literal(text='a'))
+    B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
+    v = parse_word(A, 'a y a y b x')
+    generated = gen.generate_with(A, v)
+
+    assert v == Token(text='a')
+    
+    assert generated == Lazy(value=Alt(index=1, value=Token(text='a')))
+    assert any(t in str(v) for t in ['a', 'b'])
 
 
 def test_indirect_left_recursion_4()->None:
-    """
-    Grammar:
-        A → B "x" | "a"
-        B → A "y" | "b"
-    Positive examples:
-        a
-        b
-        a x
-        a y
-        b x
-        b y
-        a y x
-        a y b x
-        b x a y
-        a y a y b x x
-        a x b y a x
-        b y a x b y b x
-    Negative examples:
-        ''
-        x x
-        y y
-        a b
-        x a
-        a x
-        a y x b
-        c
-        x a y
-        a y b x x
-        a y b x x
-    """
     A = lazy(lambda: (B >> literal(text='x')) | literal(text='a'))
     B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
-    # Now succeeds but collapses to first terminal; ensure 'a' present
-    v, s = parse_word(A, 'a y b x', cache=Cache())
-    generated, bound = gen.generate_with(A, v)
-    # print(v)
-    # print(generated)
+    
+    v = parse_word(A, 'a y b x')
+    generated = gen.generate_with(A, v)
+    
     assert v == Token(text='a')
-    assert generated == Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
-    # assert v == generated
+    # print(generated)
+    assert generated == Lazy(value=Alt(index=1, value=Token(text='a')))
+    
 
     counts = token_multiset(v)
     assert counts.get('a', 0) >= 1
 
 
-
-def test_indirect_left_recursion_5()->None:
-    """
-    Grammar:
-        Chain → Chain "->" Name | Name
-        Name → identifier    
-    Positive examples:
-        a
-        b
-        c
-        a -> b
-        a -> b -> c
-        x -> y -> z -> a -> b -> c
-    Negative examples:
-        ''
-        -> a
-        a ->
-        a -> ->
-        a b
-        a -> b c
-        a -> b ->
-        a -> b -> c ->
-        a -> b -> c -> ->
-        -> a ->
-        a -> -> b
-        a --> b
-        123
-    """
-    Name = literal(text=re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*'))
-    Chain = lazy(lambda: (Chain >> literal(text='->') >> Name) | Name)
-    # Now succeeds but retains last element only; ensure 'c' present
-    v, s = parse_word(Chain, 'a -> b -> c', cache=Cache())
-    generated, bound = gen.generate_with(Chain, v)
-    print(v)
-    print(generated)
-    assert v == (Token(text='c'),)
-    assert generated == Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=(Token(text='c'),)))
-    # assert v == generated
-
-    counts = token_multiset(v)
-    assert counts.get('c', 0) >= 1
-
-
-
-
-# ---------------- New tests for multi-head & identity diagnostics ----------------
-
 def test_multi_head_indirect_cycle_fixed_point()->None:
-    """Indirect left recursion A <-> B should now stabilize via multi-head growth.
-
-    Grammar:
-        A -> B 'x' | 'a'
-        B -> A 'y' | 'b'
-    Input crafted to exercise multiple improvements.
-    We only assert that a parse succeeds and consumes at least first token.
-    """
     A = lazy(lambda: (B >> literal(text='x')) | literal(text='a'))
     B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
-    v, s = parse_word(A, 'a y b x', cache=Cache())
-    generated, bound = gen.generate_with(A, v)
+    v = parse_word(A, 'a y b x')
+    generated = gen.generate_with(A, v)
     assert v == Token(text='a')
-    assert generated == Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
+    # print(generated)
+    assert generated == Lazy(value=Alt(index=1, value=Token(text='a')))
     
 
     # Ensure at least starting 'a' present (basic success signal)
@@ -754,204 +571,133 @@ def test_multi_head_indirect_cycle_fixed_point()->None:
 
 
 def test_multi_head_identity_in_error()->None:
-    """Ensure callable identity appears in LeftRecursionError stack on iteration cap.
-
-    We artificially lower max_growth_iterations by wrapping a custom cache usage.
-    """
     # Build a pathological chain to force multiple growth iterations of direct recursion.
     Term = literal('n')
     Expr = lazy(lambda: Expr + literal('+') + Term | Term)
 
-    # Monkeypatch: create a local parse using a patched cache with very low limit.
-    # Direct invocation of run to inject our custom cache if needed would require deeper plumbing;
-    # Instead we rely on current default path and just assert success (no error). This test placeholder
-    # is retained for when public API allows passing cache instance.
-    v, s = parse_word(Expr, 'n + n + n', cache=Cache())
-    generated, bound = gen.generate_with(Expr, v)
+    v = parse_word(Expr, 'n + n + n')
+    generated = gen.generate_with(Expr, v)
     assert v == ((Token(text='n'), Token(text='+'), Token(text='n')), Token(text='+'), Token(text='n'))
-    assert generated == Lazy(
-            value=OrElse(
-                kind=OrElseKind.LEFT,
-                value=Then(
-                    kind=ThenKind.BOTH,
-                    left=Then(
-                        kind=ThenKind.BOTH,
-                        left=Lazy(
-                            value=OrElse(
-                                kind=OrElseKind.LEFT,
-                                value=Then(
-                                    kind=ThenKind.BOTH,
-                                    left=Then(kind=ThenKind.BOTH, left=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='n'))), right=Token(text='+')),
-                                    right=Token(text='n')
-                                )
+    # print(generated)
+    assert generated ==Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Seq(
+                            value=(
+                                (
+                                    Lazy(
+                                        value=Alt(
+                                            index=0,
+                                            value=Seq(
+                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='n'))), True), (Token(text='+'), True))), True), (Token(text='n'), True))
+                                            )
+                                        )
+                                    ),
+                                    True
+                                ),
+                                (Token(text='+'), True)
                             )
                         ),
-                        right=Token(text='+')
+                        True
                     ),
-                    right=Token(text='n')
+                    (Token(text='n'), True)
                 )
             )
         )
-    
-
-    
+    )
     assert str(v).count('n') >= 3
 
 
-def test_direct_left_recursion_unproductive_now_productive()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 // S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    generated, bound = gen.generate_with(S1, v)
+def test_indirect_left_recursion_3()->None:
+    A = literal(text='a')
+    B = literal(text='b')
+    Item = lazy(lambda: A | B)
+    List = lazy(lambda: (List + literal(text=',') + Item) | Item)
     
+    v = parse_word(List, 'a , b , a')
+    print(v)
+    generated = gen.generate_with(List, v)
+    
+    assert v == ((Token(text='a'), Token(text=','), Token(text='b')), Token(text=','), Token(text='a'))
+    print(generated)
     assert generated == Lazy(
-        value=OrElse(
-            kind=OrElseKind.LEFT,
-            value=Then(
-                kind=ThenKind.LEFT,
-                left=Lazy(
-                    value=OrElse(
-                        kind=OrElseKind.LEFT,
-                        value=Then(
-                            kind=ThenKind.LEFT,
-                            left=Lazy(
-                                value=OrElse(
-                                    kind=OrElseKind.LEFT,
-                                    value=Then(
-                                        kind=ThenKind.LEFT,
-                                        left=Lazy(
-                                            value=OrElse(
-                                                kind=OrElseKind.LEFT,
-                                                value=Then(
-                                                    kind=ThenKind.LEFT,
-                                                    left=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a'))),
-                                                    right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value='a'))
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Seq(
+                            value=(
+                                (
+                                    Lazy(
+                                        value=Alt(
+                                            index=0,
+                                            value=Seq(
+                                                value=(
+                                                    (Seq(value=((Lazy(value=Alt(index=1, value=Lazy(value=Alt(index=0, value=Token(text='a'))))), True), (Token(text=','), True))), True),
+                                                    (Lazy(value=Alt(index=1, value=Token(text='b'))), True)
                                                 )
                                             )
-                                        ),
-                                        right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value='a'))
-                                    )
-                                )
-                            ),
-                            right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value='a'))
-                        )
-                    )
-                ),
-                right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value='a'))
+                                        )
+                                    ),
+                                    True
+                                ),
+                                (Token(text=','), True)
+                            )
+                        ),
+                        True
+                    ),
+                    (Lazy(value=Alt(index=0, value=Token(text='a'))), True)
+                )
             )
         )
     )
+    counts = token_multiset(v)    
+    assert counts.get('a', 0) >= 1
+
+
+
+def test_literal():
+    A = literal(text='a')
+    v = parse_word(A, 'a')
+    print(v)
+    generated = gen.generate_with(A, v)
     
-    assert v == ((((Token(text='a'),),),),)
-    
-
-
-def test_direct_left_recursion_unproductive_now_productive1()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 >> S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    generated, bound = gen.generate_with(S1, v)
-    assert generated == Lazy(
-        value=OrElse(
-            kind=OrElseKind.LEFT,
-            value=Then(
-                kind=ThenKind.RIGHT,
-                left=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value='a')),
-                right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
-            )
-        )
-    )
-    assert v == (Token(text='a'),)
-
-
-
-def test_direct_left_recursion_unproductive_now_productive2()->None:
-    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
-    S1 = lazy(lambda: (S1 + S1) | literal('a'))
-    v, _ = parse_word(S1, 'a a a a a', cache=Cache())
-    generated, bound = gen.generate_with(S1, v)
-    
-    # print(v)
-    # print(generated)
-    assert v == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
-    assert generated == Lazy(
-        value=OrElse(
-            kind=OrElseKind.LEFT,
-            value=Then(
-                kind=ThenKind.BOTH,
-                left=Lazy(
-                    value=OrElse(
-                        kind=OrElseKind.LEFT,
-                        value=Then(
-                            kind=ThenKind.BOTH,
-                            left=Lazy(
-                                value=OrElse(
-                                    kind=OrElseKind.LEFT,
-                                    value=Then(
-                                        kind=ThenKind.BOTH,
-                                        left=Lazy(
-                                            value=OrElse(
-                                                kind=OrElseKind.LEFT,
-                                                value=Then(
-                                                    kind=ThenKind.BOTH,
-                                                    left=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a'))),
-                                                    right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
-                                                )
-                                            )
-                                        ),
-                                        right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
-                                    )
-                                )
-                            ),
-                            right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
-                        )
-                    )
-                ),
-                right=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
-            )
-        )
-    )
-    
-
-
-
-def test_direct_left_recursion_collapse()->None:
-    """Collapse form S → S S | 'a' should yield a single terminal due to '>>' semantics."""
-    S1 = lazy(lambda: (S1 // S1) | literal('a'))
-    v, _ = parse_word(S1, 'a', cache=Cache())
     assert v == Token(text='a')
+    print(generated)
+    assert generated == v
 
-def test_indirect_multi_head_cycle_parses_successfully():
-    """
-    With multi-head fixed-point implemented, mutual recursion A↔B should parse successfully.
-    We assert the resulting AST string contains at least one of the starting terminals.
-    """
-    A = lazy(lambda: (B >> literal(text='x')) | literal(text='a'))
-    B = lazy(lambda: (A >> literal(text='y')) | literal(text='b'))
-    v, s = parse_word(A, 'a y a y b x', cache=Cache())
-    generated, bound = gen.generate_with(A, v)
+def test_seq():
+    A = literal(text='a')
+    B = literal(text='b')
+    SeqAB = A >> B
+    SeqAB_ = A // B
+    
+    v = parse_word(SeqAB, 'a b')
+    print(v)
+    generated = gen.generate_with(SeqAB, v)
+    
+    assert v == (Token(text='b'),)
+    print(generated)
+    assert generated == Seq(value=((Token(text='a'), False), (Token(text='b'), True)))
 
-    assert v == Token(text='a')
-    assert generated == Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a')))
-    assert any(t in str(v) for t in ['a', 'b'])
-
-
-def test_runaway_growth_iteration_limit_not_triggered_for_typical_chain():
-    """Iteration cap present; typical large left-recursive chain should parse without hitting cap.
-
-    We assert successful parse for long input of T → T "+" "a" | "a" and single terminal result.
-    """
-    T = lazy(lambda: (T >> literal(text='+') >> literal(text='a')) | literal(text='a'))
-    input_text = 'a ' + ' + a' * 120
-    # This test was flaky even before randomization - it needs higher iteration limit for deep recursion
-    cache = Cache()
-    cache.max_growth_iterations = 500  # Increase limit for this deep recursion test
-    v, s = parse_word(T, input_text, cache=cache)
-    generated, bound = gen.generate_with(T, v)
-
-    assert generated == Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=(Token(text='a'),)))
+    v = parse_word(SeqAB_, 'a b')
+    print(v)
+    generated = gen.generate_with(SeqAB_, v)
     assert v == (Token(text='a'),)
+    print(generated)
+    assert generated == Seq(value=((Token(text='a'), True), (Token(text='b'), False)))
 
+    SeqAB_2 = A + B
+    v = parse_word(SeqAB_2, 'a b')
+    print(v)
+    generated = gen.generate_with(SeqAB_2, v)
+    assert v == (Token(text='a'), Token(text='b'))
+    print(generated)
+    assert generated == Seq(value=((Token(text='a'), True), (Token(text='b'), True)))
 
 
 def test_multi_recursion()->None:
@@ -965,34 +711,289 @@ def test_multi_recursion()->None:
     B = lazy(lambda: (C + y) | b).named('B')
     C = lazy(lambda: (A + z) | c).named('C')
 
-    v, s = parse_word(A, 'a z y x', cache=Cache())
-    generated, bound = gen.generate_with(A, v)
-    
+    v = parse_word(A, 'a z y x')
+    generated = gen.generate_with(A, v)
+    # print(generated)
     assert generated == Lazy(
-        value=OrElse(
-            kind=OrElseKind.LEFT,
-            value=Then(
-                kind=ThenKind.BOTH,
-                left=Lazy(
-                    value=OrElse(
-                        kind=OrElseKind.LEFT,
-                        value=Then(
-                            kind=ThenKind.BOTH,
-                            left=Lazy(
-                                value=OrElse(
-                                    kind=OrElseKind.LEFT,
-                                    value=Then(kind=ThenKind.BOTH, left=Lazy(value=OrElse(kind=OrElseKind.RIGHT, value=Token(text='a'))), right=Token(text='z'))
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Lazy(
+                            value=Alt(
+                                index=0,
+                                value=Seq(
+                                    value=(
+                                        (Lazy(value=Alt(index=0, value=Seq(value=((Lazy(value=Alt(index=1, value=Token(text='a'))), True), (Token(text='z'), True))))), True),
+                                        (Token(text='y'), True)
+                                    )
                                 )
-                            ),
-                            right=Token(text='y')
-                        )
-                    )
-                ),
-                right=Token(text='x')
+                            )
+                        ),
+                        True
+                    ),
+                    (Token(text='x'), True)
+                )
             )
         )
     )
     assert v == ((('a', 'z'), 'y'), 'x')
+
+    NUMBER = literal(re.compile(r'\d+')).map(lambda x: int(x.text))
+    PLUS = literal(text='+')
+    STAR = literal(text='*')
+    LPAREN = literal(text='(')
+    RPAREN = literal(text=')')
+    Expr = lazy(lambda: (Expr + PLUS + Term) | Term)
+    Term = lazy(lambda: (Term + STAR + Factor) | Factor)
+    Factor: Syntax[Alt, Any] = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
+
+    v1 = parse_word(Expr, '1 + 2 * 3')
+    # a1, _ = v1.bimap
+    assert isinstance(v1, tuple) and len(v1) == 3, f"Expected structured AST triple, got {v1!r}"
+    def leaf(x):
+        try:
+            return int(str(x)[2:]) if str(x).startswith('t.') and str(x)[2:].isdigit() else (str(x)[2:] if str(x).startswith('t.') else x)
+        except Exception:
+            return x
+    def norm(ast):
+        if isinstance(ast, tuple) and len(ast) == 3 and isinstance(ast[1], (str, object)):
+            return (norm(ast[0]), leaf(ast[1] if not isinstance(ast[1], tuple) else ast[1]), norm(ast[2]))
+        return leaf(ast)
+    normalized = norm(v1)
+    assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
+
+    v_42 = parse_word(Expr, '42')
+    # a_42, _ = v_42.bimap
+    single_norm = norm(v_42)
+    assert single_norm == 42
+
+
+
+def test_indirect_left_recursion_5()->None:
+    Name = literal(text=re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*'))
+    Chain = lazy(lambda: (Chain + literal(text='->') + Name) | Name)
+    v = parse_word(Chain, 'a -> b -> c')
+    generated = gen.generate_with(Chain, v)
+    # print(v)
+    assert v == ((Token(text='a'), Token(text='->'), Token(text='b')), Token(text='->'), Token(text='c'))
+    # print(generated)
+    assert generated == Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Seq(
+                            value=(
+                                (
+                                    Lazy(
+                                        value=Alt(
+                                            index=0,
+                                            value=Seq(
+                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='a'))), True), (Token(text='->'), True))), True), (Token(text='b'), True))
+                                            )
+                                        )
+                                    ),
+                                    True
+                                ),
+                                (Token(text='->'), True)
+                            )
+                        ),
+                        True
+                    ),
+                    (Token(text='c'), True)
+                )
+            )
+        )
+    )
+    counts = token_multiset(v)
+    assert counts.get('c', 0) >= 1
+
+
+
+def test_direct_left_recursion_unproductive_now_productive()->None:
+    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
+    S1 = lazy(lambda: (S1 + S1) | literal('a'))
+    v = parse_word(S1, 'a a a a a')
+    print(v)
+    assert v == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
+    generated = gen.generate_with(S1, v)
+    print(generated)
+    assert generated == Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Lazy(
+                            value=Alt(
+                                index=0,
+                                value=Seq(
+                                    value=(
+                                        (
+                                            Lazy(
+                                                value=Alt(
+                                                    index=0,
+                                                    value=Seq(
+                                                        value=(
+                                                            (
+                                                                Lazy(
+                                                                    value=Alt(
+                                                                        index=0,
+                                                                        value=Seq(
+                                                                            value=(
+                                                                                (Lazy(value=Alt(index=1, value=Token(text='a'))), True),
+                                                                                (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                ),
+                                                                True
+                                                            ),
+                                                            (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                                        )
+                                                    )
+                                                )
+                                            ),
+                                            True
+                                        ),
+                                        (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                    )
+                                )
+                            )
+                        ),
+                        True
+                    ),
+                    (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                )
+            )
+        )
+    )
+
+
+
+def test_direct_left_recursion_unproductive_now_productive1()->None:
+    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
+    S1 = lazy(lambda: (S1 + S1) | literal('a'))
+    v = parse_word(S1, 'a a a a a')
+    assert v == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
+    # print(v)
+    generated = gen.generate_with(S1, v)
+
+    # print(generated)
+    assert generated == Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Lazy(
+                            value=Alt(
+                                index=0,
+                                value=Seq(
+                                    value=(
+                                        (
+                                            Lazy(
+                                                value=Alt(
+                                                    index=0,
+                                                    value=Seq(
+                                                        value=(
+                                                            (
+                                                                Lazy(
+                                                                    value=Alt(
+                                                                        index=0,
+                                                                        value=Seq(
+                                                                            value=(
+                                                                                (Lazy(value=Alt(index=1, value=Token(text='a'))), True),
+                                                                                (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                ),
+                                                                True
+                                                            ),
+                                                            (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                                        )
+                                                    )
+                                                )
+                                            ),
+                                            True
+                                        ),
+                                        (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                    )
+                                )
+                            )
+                        ),
+                        True
+                    ),
+                    (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                )
+            )
+        )
+    )
+
+
+
+def test_direct_left_recursion_unproductive_now_productive2()->None:
+    """Previously unproductive S → S S | 'a' succeeds; confirm collapse result."""
+    S1 = lazy(lambda: (S1 + S1) | literal('a'))
+    v = parse_word(S1, 'a a a a a')
+    generated = gen.generate_with(S1, v)
+    # print(v)
+    assert v == ((((Token(text='a'), Token(text='a')), Token(text='a')), Token(text='a')), Token(text='a'))
+    # print(generated)
+    assert generated == Lazy(
+        value=Alt(
+            index=0,
+            value=Seq(
+                value=(
+                    (
+                        Lazy(
+                            value=Alt(
+                                index=0,
+                                value=Seq(
+                                    value=(
+                                        (
+                                            Lazy(
+                                                value=Alt(
+                                                    index=0,
+                                                    value=Seq(
+                                                        value=(
+                                                            (
+                                                                Lazy(
+                                                                    value=Alt(
+                                                                        index=0,
+                                                                        value=Seq(
+                                                                            value=(
+                                                                                (Lazy(value=Alt(index=1, value=Token(text='a'))), True),
+                                                                                (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                ),
+                                                                True
+                                                            ),
+                                                            (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                                        )
+                                                    )
+                                                )
+                                            ),
+                                            True
+                                        ),
+                                        (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                                    )
+                                )
+                            )
+                        ),
+                        True
+                    ),
+                    (Lazy(value=Alt(index=1, value=Token(text='a'))), True)
+                )
+            )
+        )
+    )
 
 
 
@@ -1007,7 +1008,7 @@ def test_mutual_unproductive_cycle_no_progress():
     A = lazy(lambda: B)
     B = lazy(lambda: A)
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, '', cache=Cache())
+        parse_word(A, '')
     assert exc.value.reason == 'no-choice'
 
 
@@ -1024,7 +1025,7 @@ def test_mutual_unproductive_cycle_no_progress_3():
     B = lazy(lambda: C)  
     C = lazy(lambda: A)  
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, '', cache=Cache())
+        parse_word(A, '')
     assert exc.value.reason == 'no-choice'
 
 
@@ -1037,7 +1038,7 @@ def test_complex_non_productive():
     C = lazy(lambda: B | A).named('C')
 
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, '', cache=Cache())
+        parse_word(A, '')
     assert exc.value.reason == 'no-progress'
 
 

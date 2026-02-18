@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-
+from typing import Any
 from syncraft.parser import  parse_word
 
 from syncraft.syntax import Syntax
@@ -9,7 +9,9 @@ from syncraft.cache import Cache
 
 
 
-literal = Syntax.lit
+
+def literal(text: Any) -> Syntax[Any, Any]:
+    return Syntax.lit(text=text)
 lazy = Syntax.lazy
 
 
@@ -17,10 +19,10 @@ def test1_simple_then() -> None:
     A, B, C = literal("a"), literal("b"), literal("c")
     syntax = A // B // C
     sql = "a b c"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
+    ast = parse_word(syntax, sql)
     g = syntax.graph()
     syntax2 = Syntax.from_graph(g)
-    ast2, bound2 = parse_word(syntax2, sql, cache=Cache())
+    ast2 = parse_word(syntax2, sql)
     assert ast == ast2, "ASTs from original and reconstructed syntax should match"
     assert g == syntax2.graph(), "Original and reconstructed syntax graphs should match"
 
@@ -29,10 +31,10 @@ def test2_choice()->None:
     A, B = literal("a"), literal("b")
     syntax = A | B
     sql = "b"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
+    ast = parse_word(syntax, sql)
     g = syntax.graph()
     syntax2 = Syntax.from_graph(g)
-    ast2, bound2 = parse_word(syntax2, sql, cache=Cache())
+    ast2 = parse_word(syntax2, sql)
     assert ast == ast2, "ASTs from original and reconstructed syntax should match"
     assert g == syntax2.graph(), "Original and reconstructed syntax graphs should match"
 
@@ -41,10 +43,10 @@ def test3_many_literals() -> None:
     A = literal("a")
     syntax = A.many()
     sql = "a a a"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
+    ast = parse_word(syntax, sql)
     g = syntax.graph()
     syntax2 = Syntax.from_graph(g)
-    ast2, bound2 = parse_word(syntax2, sql, cache=Cache())
+    ast2 = parse_word(syntax2, sql)
     assert ast == ast2, "ASTs from original and reconstructed syntax should match"
     assert g == syntax2.graph(), "Original and reconstructed syntax graphs should match"
 
@@ -53,10 +55,10 @@ def test4_complex_syntax() -> None:
     A, B, C = literal("a"), literal("b"), literal("c")
     syntax = (A // B.many() // C) | (B // C.many() // A)
     sql = "a b b c"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
+    ast = parse_word(syntax, sql)
     g = syntax.graph()
     syntax2 = Syntax.from_graph(g)
-    ast2, bound2 = parse_word(syntax2, sql, cache=Cache())
+    ast2 = parse_word(syntax2, sql)
     assert ast == ast2, "ASTs from original and reconstructed syntax should match"
     assert g == syntax2.graph(), "Original and reconstructed syntax graphs should match"
 
@@ -65,10 +67,10 @@ def test6_lazy() -> None:
     A = literal("a")
     syntax = lazy(lambda: syntax + A | A)
     sql = "a a a"
-    ast, bound = parse_word(syntax, sql, cache=Cache())
+    ast = parse_word(syntax, sql)
     g = syntax.graph()
     syntax2 = Syntax.from_graph(g)
-    ast2, bound2 = parse_word(syntax2, sql, cache=Cache())
+    ast2 = parse_word(syntax2, sql)
     assert ast == ast2, "ASTs from original and reconstructed syntax should match"
     assert g == syntax2.graph(), "Original and reconstructed syntax graphs should match"
 

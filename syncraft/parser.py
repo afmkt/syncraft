@@ -330,7 +330,7 @@ class Parser(Algebra[T, ParserState[T]]):
         ntags = lexer.tags()
         
         def lex_run(state: ParserState[T], 
-                    cache: Cache[ParserState[T]]) -> Generator[
+                    cache: Cache[ParserState[T]] | None) -> Generator[
                               YieldChannelType, 
                               ParserState[T], 
                               Either[Any, Tuple[T, ParserState[T]]]]:
@@ -376,12 +376,7 @@ class Parser(Algebra[T, ParserState[T]]):
 
 
 @dataclass
-class Runner(RunnerProtocol[Any, ParserState[T]]):
-    def algebra(self, 
-                syntax: Syntax[Any, ParserState[T]], 
-                alg_cls: Type[Algebra[Any, ParserState[T]]]) -> Algebra[Any, ParserState[T]]:
-
-        return syntax(alg_cls)
+class Runner(RunnerProtocol[Any, ParserState[Any]]):
     
     def resume(self, request: Optional[ParserState[T]], cursor: Optional[StreamCursor[T]]) -> ParserState[T]:
         assert cursor or request, "Either cursor or request must be provided to resume Parser"
@@ -400,16 +395,15 @@ class Runner(RunnerProtocol[Any, ParserState[T]]):
         
 
 def parser(syntax: Syntax) -> Algebra:
-    runner: Runner[Any] = Runner()
+    runner: Runner = Runner()
     return runner.algebra(syntax=syntax, alg_cls=Parser)
 
 
 def parse(syntax: Syntax,
           data: StreamCursor[Any] | ParserState[Any],
-          *,
-          cache: None | Cache[ParserState[T]]
           ) -> Tuple:
-    runner: Runner[T] = Runner()
+    runner: Runner = Runner()
+    cache: Cache[Any] = Cache()
     if isinstance(data, ParserState):
         return runner.once(syntax=syntax, alg_cls=Parser, state=data, cursor=None, cache=cache)
     else:
@@ -418,57 +412,47 @@ def parse(syntax: Syntax,
 
 
 def parse_word(syntax: Syntax, 
-               data: str, 
-               *, 
-               cache: None| Cache[Any]
-               ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+               data: str
+               ) -> Any:
     tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
-    return parse_data(syntax, tokens, cache=cache)
+    return parse_data(syntax, tokens)
 
     
 def parse_data(syntax: Syntax, 
-          data: List[T],
-          *,
-          cache: None | Cache[ParserState[T]]
-          ) -> Tuple[Any, None | FrozenDict[str, Tuple[AST, ...]]]:
+          data: List[T]
+          ) -> Any:
     input : StreamCursor[T] = StreamCursor.from_data(data)
-    v, s = parse(syntax, input, cache=cache)
-    if s is not None:
-        return v, s.ctx
-    else:
-        return v, None
-
+    v, s = parse(syntax, input)
+    return v
 
 def parse_string(syntax: Syntax,
-                 data: str,
-                 *,
-                 cache: None | Cache[ParserState[str]]
-                 ) -> Tuple[Any, None | ParserState[str]]:
+                 data: str
+                 ) -> Any:
     input : StreamCursor[str] = StreamCursor.from_data(data)
-    return parse(syntax, input, cache=cache)
+    v, s = parse(syntax, input)
+    return v
 
 def parse_bytes(syntax: Syntax,
-                data: bytes,
-                *,
-                cache: None | Cache[ParserState[bytes]]
-                ) -> Tuple[Any, None | ParserState[bytes]]:
+                data: bytes
+                ) -> Any:
     input : StreamCursor[bytes] = StreamCursor.from_data(data)
-    return parse(syntax, input, cache=cache)
+    v, s = parse(syntax, input)
+    return v
 
 def parse_file(syntax: Syntax,
                filepath: str | Path,
                *,
-               mode: Literal['text', 'binary'] = 'text', 
-               cache: None | Cache[ParserState[str | bytes]]
-               ) -> Tuple[Any, None | ParserState[str | bytes]]:
+               mode: Literal['text', 'binary'] = 'text'
+               ) -> Any:
     input : StreamCursor[Any] = StreamCursor.from_path(filepath, mode=mode)
-    return parse(syntax, input, cache=cache)
+    v, s = parse(syntax, input)
+    return v
 
 def parse_stream(syntax: Syntax,
                  stream: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
                  *,
-                 mode: Literal['text', 'binary'] = 'text', 
-                 cache: None | Cache[ParserState[str | bytes]]
-                 ) -> Tuple[Any, None | ParserState[str | bytes]]:
+                 mode: Literal['text', 'binary'] = 'text'
+                 ) -> Any:
     input : StreamCursor[Any] = StreamCursor.from_stream(stream, mode=mode) # type: ignore
-    return parse(syntax, input, cache=cache)
+    v, s = parse(syntax, input)
+    return v

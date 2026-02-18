@@ -3,11 +3,8 @@ from .syntax import (
     SyntaxSpec,
 	Graph,
     LazySpec,
-    ThenSpec,
-    OrElseSpec,
-    ChoiceSpec,
+    AltSpec,
 	SeqSpec,
-    ParallelSpec,
     ManySpec
 )
 
@@ -36,10 +33,6 @@ from .generator import (
 from .ast import (
 	AST,
 	Token,
-	Then,
-	ThenKind,
-	OrElse,
-	OrElseKind,
 	Many,
     Nothing,
 )
@@ -73,14 +66,14 @@ __all__ = [
     # algebra
     "Algebra", "Error", "Left", "Right", "Either",
 	# syntax & core
-	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "ThenSpec", "OrElseSpec",
+	"Syntax", "SyntaxSpec", "Graph", "LazySpec",
 	# parsing/generation helpers
 	"parse", "parser", "parse_data", "parse_word", "ParserState",
 	"generate", "generate_with", "validate", "Parser", "Generator",
 	# constraints
 	"FrozenDict", "CallWith",
 	# ast
-	"AST", "Token", "Then", "ThenKind", "OrElse", "OrElseKind", "Many", "Nothing", "ManySpec", "SeqSpec", "ChoiceSpec", "ParallelSpec",
+	"AST", "Token", "Many", "Nothing", "ManySpec", "SeqSpec", "AltSpec", 
     # input
 	"StreamCursor",
     # convenience exports

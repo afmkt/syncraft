@@ -235,30 +235,25 @@ class Grammar:
     @classmethod
     def parse(cls, 
               data: str, 
-              syntax: Syntax | None = None, 
-              cache: Cache[Any] | None = None) -> Any:
+              syntax: Syntax | None = None) -> Any:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
-        runner: Runner[Any] = Runner()
+        runner: Runner = Runner()
         cursor = StreamCursor.from_data(data)
-        cache = cache or Cache()
-        for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=cache):
+        for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=Cache()):
             return result
         raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
 
     @classmethod
     def stream_parse(cls, 
                      data: StreamCursor[Any], 
-                     syntax: Syntax | None = None, 
-                     cache: Cache[Any] | None = None) -> Any:
+                     syntax: Syntax | None = None) -> Any:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
-        runner: Runner[Any] = Runner()
-        cache = cache or Cache()
-        
-        for result, s in runner.run(parser, state=None, cursor=data, once=False, cache=cache):
+        runner: Runner = Runner()
+        for result, s in runner.run(parser, state=None, cursor=data, once=False, cache=Cache()):
             yield result
                 
     @classmethod
@@ -270,7 +265,7 @@ class Grammar:
         runner = Runner(ast=data,
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                         restore_pruned=False)
-        for result, s in runner.run(generator, state=None, cursor=None, once=True, cache=None):
+        for result, s in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
             return result
         
     @classmethod
@@ -282,6 +277,6 @@ class Grammar:
         runner = Runner(ast=data, 
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1),
                         restore_pruned=True)
-        for result, _ in runner.run(generator, state=None, cursor=None, once=True, cache=None):
+        for result, _ in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
             return result
         

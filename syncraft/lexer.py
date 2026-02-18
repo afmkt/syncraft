@@ -506,7 +506,7 @@ class ExtLexer(LexerBase[T]):
                 return LexerResult(tag=tag, start=index, end=index + 1, value=item)
                 
         return LexerError.new(
-            message="External lexer token mismatch",
+            message=f"External lexer token mismatch, {tags} did not match item '{item}'",
             index=index,
             offender=item,
             expect=frozenset(tags)

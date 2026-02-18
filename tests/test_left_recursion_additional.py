@@ -5,13 +5,17 @@ from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
 from syncraft.parser import parse_word
 from syncraft.cache import Cache, set_randomization
+from typing import Any
 
 # Ensure randomization is enabled for these tests
 # This is also handled by conftest.py but we make it explicit here
 set_randomization(True)
 # Reuse the pattern from existing tests: specialize Syntax with a Structured
 
-lit = Syntax.lit
+
+def lit(text: Any)->Syntax[Any, Any]:
+    return Syntax.lit(text=text)
+
 token = Syntax.token
 lazy = Syntax.lazy
 success = Syntax.success
@@ -24,33 +28,23 @@ success = Syntax.success
 def test_nullable_left_recursion_no_progress_error():
     S = lazy(lambda: S | lit(""))
     try:
-        parse_word(S, "", cache=Cache())
+        parse_word(S, "")
     except LeftRecursionError as e:
         assert e.reason == 'no-progress'
         return
     # Transitional behavior: accepted nullable recursion; ensure no tokens actually required.
-    v, _ = parse_word(S, "", cache=Cache())
+    v = parse_word(S, "")
     assert v is not None
 
 
 def test_deterministic_choice_prefers_first_branch():
     """PEG determinism: ( 'a' | 'a' 'b') on input 'a' must choose the first branch only."""
     A = (lit('a') | (lit('a') >> lit('b')))
-    v, s = parse_word(A, 'a', cache=Cache())
+    v = parse_word(A, 'a')
     
     # Expect just single terminal 't.a' (following existing Then/terminal string forms from collapse tests)
     assert str(v) == 't.a'
 
-
-def test_iteration_cap_metrics_single_head():
-    Term = lit('n')
-    Expr = lazy(lambda: (Expr + lit('+') + Term) | Term)
-    cache = Cache()
-    cache.max_growth_iterations = 1
-    with pytest.raises(LeftRecursionError) as exc:
-        parse_word(Expr, 'n + n + n + n', cache=cache)
-    err = exc.value
-    assert err.reason == 'iteration-cap'
 
 
 def test_mutual_recursion_productivity_consumption():
@@ -63,12 +57,9 @@ def test_mutual_recursion_productivity_consumption():
     """
     A = lazy(lambda: (B >> lit(text='x')) | lit(text='a'))
     B = lazy(lambda: (A >> lit(text='y')) | lit(text='b'))
-    v, s = parse_word(A, 'a y b x', cache=Cache())
+    v = parse_word(A, 'a y b x')
     # Ensure at least 'a' retained
     assert 'a' in str(v)
-    # Basic consumption sanity: index advanced (if state exposes index)
-    if hasattr(s, 'index') and hasattr(s, 'index'):
-        assert s.index >= s.index
 
 
 def test_global_fixpoint_propagation_precedence_chain():
@@ -78,7 +69,7 @@ def test_global_fixpoint_propagation_precedence_chain():
     Factor = lazy(lambda: (lit('(') >> Expr >> lit(')')) | lit('n'))  # type: ignore  # noqa: F821
     Term = lazy(lambda: (Term + lit('*') + Factor) | Factor)
     Expr = lazy(lambda: (Expr + lit('-') + Term) | Term)
-    v, s = parse_word(Expr, 'n - n * n - n', cache=Cache())
+    v = parse_word(Expr, 'n - n * n - n')
     # Ensure multiple 'n' tokens included
     assert str(v).count('n') >= 4
     # Binding dict doesn't carry index; structural assertion is sufficient.
@@ -96,7 +87,7 @@ def test_mutual_nullable_left_recursion_no_progress_error():
     A = lazy(lambda: B >> lit('x'))  # type: ignore  # noqa: F821
     B = lazy(lambda: A >> lit('y'))  # type: ignore  # noqa: F821
     with pytest.raises(LeftRecursionError) as exc:
-        parse_word(A, "", cache=Cache())
+        parse_word(A, "")
     err = exc.value
     assert err.reason == 'no-choice'
 

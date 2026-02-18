@@ -5,11 +5,11 @@ from typing import (
 )
 from syncraft.ast import Nothing
 from dataclasses import dataclass, replace, field
-from syncraft.ast import ThenKind, Lazy, Then, OrElse, Many, OrElseKind, SyncraftError, Choice, Seq
+from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.bimap import Bindable, Iso
-from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER
-
+from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER, CallWith
+from rich import print
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax, SyntaxSpec
 
@@ -216,25 +216,26 @@ class Error:
         # Use the contextual format by default instead of the full trace
         return self.contextual
     
-    
-def mark_arity(f: Callable[..., Any]) -> Callable[..., Any]:
-    import inspect
-    sig = inspect.signature(f)
-    arity = len(sig.parameters)
-    setattr(f, "__syncraft_arity__", arity)
-    return f
 
-def get_arity(f: Callable[..., Any]) -> int:
-    ret = getattr(f, "__syncraft_arity__", None)
-    if ret is None:
-        f = mark_arity(f)
-        ret = getattr(f, "__syncraft_arity__")
-    return ret
+
+def normalize_map_f(f: Callable[..., Any]) -> Callable[..., Any]:
+    def wrapper(v: Any, s: Any) -> Any:
+        return f(v)
+    if f is int or f is str or f is float or f is bool:
+        return wrapper
+    else:
+        c = CallWith(f)
+        if len(c.missing_args) == 2:
+            return f
+        elif len(c.missing_args) == 1:
+            return wrapper
+        else:
+            raise ValueError(f"Unsupported arity {len(c.missing_args)} for map function {f}, expected 1 or 2")
 
 @dataclass(frozen=True, slots=True)        
 class Algebra(Generic[A, S]):
 ######################################################## shared among all subclasses ########################################################
-    run_f: Callable[[S, Cache[S]], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
+    run_f: Callable[[S, Cache[S] | None], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
     syntax: Syntax | None = None
 
     def flag(self, **kwargs: Hashable) -> Algebra[A, S]:
@@ -272,7 +273,7 @@ class Algebra(Generic[A, S]):
 
     def run(self, 
             input: S, 
-            cache: Cache[S]) -> Generator[YieldChannelType, 
+            cache: Cache[S] | None) -> Generator[YieldChannelType, 
                                         S, 
                                         Either[Any, Tuple[A, S]]]:
         try:
@@ -297,7 +298,7 @@ class Algebra(Generic[A, S]):
     @property
     def present(self) -> Algebra[A, S]:
         def present_run(input: S, 
-                        cache:Cache[S]) -> Generator[YieldChannelType, 
+                        cache:Cache[S] | None) -> Generator[YieldChannelType, 
                                                    S, 
                                                    Either[Any, Tuple[A, S]]]:
             result = yield from self.run(input, cache)
@@ -329,11 +330,11 @@ class Algebra(Generic[A, S]):
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
         def algebra_lazy_run(input: S,
-                             cache: Cache[S]) -> Generator[YieldChannelType,
+                             cache: Cache[S] | None) -> Generator[YieldChannelType,
                                                             S,
                                                             Either[Any, Tuple[Any, S]]]:
             alg = thunk()
-            # print(f"Algebra.lazy: Resolved lazy algebra {alg} from thunk {thunk}")
+            
             result = (yield from alg.run(input, cache))
             match result:
                 case Right((value, state)):
@@ -345,7 +346,7 @@ class Algebra(Generic[A, S]):
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:
         def fail_run(input: S, 
-                     cache:Cache[S]) -> Generator[YieldChannelType, 
+                     cache:Cache[S] | None) -> Generator[YieldChannelType, 
                                                 S, 
                                                 Either[Any, Tuple[A, S]]]:
             yield from ()
@@ -359,7 +360,7 @@ class Algebra(Generic[A, S]):
     @classmethod
     def success(cls, value: Any) -> Algebra[Any, S]:
         def success_run(input: S, 
-                        cache:Cache[S]) -> Generator[YieldChannelType, 
+                        cache:Cache[S] | None) -> Generator[YieldChannelType, 
                                                     S, 
                                                     Either[Any, Tuple[A, S]]]:
             yield from ()
@@ -382,17 +383,18 @@ class Algebra(Generic[A, S]):
               ) -> Algebra[A, S]:
         syn1 = self.syntax
         def debug_run(input: S,
-                      cache: Cache[S]) -> Generator[YieldChannelType, 
+                      cache: Cache[S] | None) -> Generator[YieldChannelType, 
                                                 S, 
                                                 Either[Any, Tuple[A, S]]]:
             syn = self.syntax
             assert syn, f"{self} doesn't have associated Syntax"    
             assert syn is syn1, f"{syn} != {syn1}"
             stack = []
-            for rule, pos in cache.stack:
-                s = syntax_of(rule)
-                if s is not None:
-                    stack.append((s, pos))
+            if cache is not None:
+                for rule, pos in cache.stack:
+                    s = syntax_of(rule)
+                    if s is not None:
+                        stack.append((s, pos))
             result = yield from self.run(input, cache)
             error = None
             value = None
@@ -434,66 +436,14 @@ class Algebra(Generic[A, S]):
                 return cast(Either[Any, Tuple[A | B, S]], result)
         return replace(self, run_f=success_run) # type: ignore
         
-
-
-######################################################## map on state ###########################################
-    def map_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
-        def map_state_run(state: S, 
-                          cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                        S, 
-                                                        Either[Any, Tuple[A, S]]]:
-            try:
-                new_state = f(state)
-            except Exception as e:
-                return Left.new(Error.new(
-                    message="Error in map_state function",
-                    error=e,
-                    this=self,
-                    state=state
-                ))
-            result = yield from self.run(new_state, cache)
-            return result
-        return replace(self, run_f=map_state_run).flag(syntax=self.syntax)
         
-
-
 ######################################################## fundamental combinators ############################################    
 
-    def map(self, f: Callable[..., B]) -> Algebra[B, S]:
-        f = mark_arity(f)
-        def map_f(a : A) -> Algebra[B, S]:
-            def map_run_f(input:S, 
-                              cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                        S, 
-                                                        Either[Any, Tuple[B, S]]]:
-                yield from ()
-                try:
-                    arity = get_arity(f)
-                    if arity == 1:
-                        data = f(a)
-                    elif arity == 2:
-                        data = f(a, input.ctx)
-                    else:
-                        raise ValueError(f"Unsupported arity {arity} for map function {f}, expected 1 or 2")
-                    return Right.new((data, input))
-                except Exception as e:
-                    return Left.new(Error.new(
-                        message="Error in map function",
-                        error=e,
-                        this=self,
-                        state=input
-                    ))
-            return replace(self, run_f=map_run_f).flag(syntax=self.syntax) # type: ignore
-        return self.flat_map(map_f)
 
-    def imap(self, f: Callable[..., A]) -> Algebra[A, S]:
-        f = mark_arity(f)
-        def imap_all_f(s: S) -> S:
-            return s.map(f)
-        return self.map_state(imap_all_f)
 
 
     def iso(self, iso: Iso[A, B]) -> Algebra[B, S]:
+        # print(iso)
         return self.bimap(iso.forward, iso.inverse)
 
 
@@ -516,7 +466,7 @@ class Algebra(Generic[A, S]):
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, 
-                          cache:Cache[S]) -> Generator[YieldChannelType, 
+                          cache:Cache[S] | None) -> Generator[YieldChannelType, 
                                                     S, 
                                                     Either[Any, Tuple[A, S]]]:
             parsed = yield from self.run(input, cache)
@@ -528,10 +478,7 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=map_error_run) 
 
     def flat_map(self, f: Callable[[A], Algebra[B, S]]) -> Algebra[B, S]:
-        def flat_map_run(input: S, 
-                         cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                    S, 
-                                                    Either[Any, Tuple[B, S]]]:
+        def flat_map_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
                 new_algebra = f(parsed.value[0])
@@ -543,68 +490,47 @@ class Algebra(Generic[A, S]):
         from typing import cast as _cast
         return _cast(Algebra[B, S], alg)
     
-    
-    def or_else(self: Algebra[A, S], other: Algebra[B, S]) -> Algebra[OrElse, S]:
-        def or_else_run(input: S, 
-                        cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                    S,
-                                                    Either[Any, Tuple[OrElse, S]]]:
-            inp = input.enter()
-            left = yield from self.run(inp, cache)
-            match left:
-                case Right((value, state)):
-                    return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), state.leave()))
-                case Left(err) as ERROR:
-                    if isinstance(err, Error) and err.committed:
-                        return ERROR
-                    other_result = yield from other.run(inp, cache)
-                    match other_result:
-                        case Right((other_value, other_state)):
-                            return Right.new((OrElse(kind=OrElseKind.RIGHT, value=other_value), other_state.leave()))
-                        case Left() as OTHER_ERROR:
-                            return OTHER_ERROR
-                    raise SyncraftError(f"Unexpected result type from {other}", offender=other_result, expect=(Left, Right))
-            raise SyncraftError(f"Unexpected result type from {self}", offender=left, expect=(Left, Right))
-        
-        alg = replace(self, run_f=or_else_run).flag(intrinsic=True) # type: ignore
-        return cast(Algebra[OrElse, S], alg)
-        
-    @classmethod
-    def parallel(cls, 
-                 *options: Algebra[Any, S], 
-                 reducer: Callable[[S, List[Tuple[Any, S]]], Either[Any, Tuple[Any, S]]],
-                 share_cache: bool=True) -> Algebra[Any, S]:
-        assert options, "At least one option is required for parallel"
-        def parallel_run(input: S,
-                         cache: Cache[S]) -> Generator[YieldChannelType, 
-                                                  S, 
-                                                  Either[Any, Tuple[Any, S]]]:
-            inp = input.enter()
-            results = []
-            if share_cache:
-                for opt in options:
-                    r = yield from opt.run(inp, cache)
-                    if isinstance(r, Right):
-                        v, s = r.value
-                        results.append((v, s.leave()))
+    def map(self, f: Callable[..., B]) -> Algebra[B, S]:
+        ff = normalize_map_f(f)
+        def map_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
+            parsed = yield from self.run(input, cache)
+            if isinstance(parsed, Right):
+                value, state = parsed.value
+                data = ff(value, state)
+                return Right.new((data, state))
             else:
-                for opt in options:
-                    new_cache = cache.clone() 
-                    r = yield from opt.run(inp, new_cache)
-                    if isinstance(r, Right):
-                        v, s = r.value
-                        results.append((v, s.leave()))
-            return reducer(input, results)
-        return cls(run_f = parallel_run).flag(intrinsic=True)
+                return cast(Either[Any, Tuple[B, S]], parsed)
+        return replace(self, run_f=map_run).flag(syntax=self.syntax) # type: ignore
+
+    def map_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
+        def map_state_run(state: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
+            try:
+                new_state = f(state)
+            except Exception as e:
+                return Left.new(Error.new(
+                    message="Error in map_state function",
+                    error=e,
+                    this=self,
+                    state=state
+                ))
+            result = yield from self.run(new_state, cache)
+            return result
+        return replace(self, run_f=map_state_run).flag(syntax=self.syntax)
+        
+
+    def imap(self, f: Callable[..., A]) -> Algebra[A, S]:
+        ff = normalize_map_f(f)
+        def imap_all_f(s: S) -> S:
+            new_state = s.apply(ff)
+            return new_state
+        return self.map_state(imap_all_f)        
+        
     
     @classmethod
-    def alt(cls, *options: Algebra[Any, S]) -> Algebra[Choice[Any], S]:
+    def alt(cls, *options: Algebra[Any, S]) -> Algebra[Alt, S]:
         assert options, "At least one option is required for alternatives"
 
-        def alt_run(input: S, 
-                       cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                  S, 
-                                                  Either[Any, Tuple[Choice[Any], S]]]:
+        def alt_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[Alt, S]]]:
             
             inp = input.enter()
             last_error: Optional[Left[Any]] = None
@@ -613,7 +539,7 @@ class Algebra(Generic[A, S]):
                 match result:
                     case Right((value, state)):
 
-                        return Right.new((Choice(value=value, index=i), state.leave()))
+                        return Right.new((Alt(value=value, index=i), state.leave()))
                     case Left(err) as ERROR:
 
                         if isinstance(err, Error) and err.committed:
@@ -650,28 +576,8 @@ class Algebra(Generic[A, S]):
             return Right.new((Seq(value=tuple(results)), inp))
         return cls(run_f=seq_run).flag(intrinsic=True) # type: ignore
 
-    def then_both(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        def then_both_f(a: A) -> Algebra[Then[A, B], S]:
-            def combine(b: B, ctx: Any) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.BOTH)
-            return other.map(combine)        
-        return self.flat_map(then_both_f).flag(intrinsic=True)
-        
 
-    def then_left(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        def then_left_f(a: A) -> Algebra[Then[A, B], S]:
-            def combine(b: B, ctx: Any) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.LEFT)
-            return other.map(combine)
-        return self.flat_map(then_left_f).flag(intrinsic=True)
-        
 
-    def then_right(self, other: Algebra[B, S]) -> Algebra[Then[A, B], S]:
-        def then_right_f(a: A) -> Algebra[Then[A, B], S]:
-            def combine(b: B, ctx: Any) -> Then[A, B]:
-                return Then(left=a, right=b, kind=ThenKind.RIGHT)
-            return other.map(combine)        
-        return self.flat_map(then_right_f).flag(intrinsic=True)
 
     @classmethod
     def eof(cls) -> Algebra[type[Nothing], S]:
@@ -690,13 +596,13 @@ class Algebra(Generic[A, S]):
                 ))
         return cls(run_f=eof_run).flag(intrinsic=True) # type: ignore        
 
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[A], S]:
+    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many, S]:
         assert at_least >= 0, "at_least must be non-negative"
         assert at_most is None or at_least <= at_most, "at_least must <= at_most"
         def many_run(input: S, 
                      cache:Cache[S]) -> Generator[YieldChannelType, 
                                                 S, 
-                                                Either[Any, Tuple[Many[A], S]]]:
+                                                Either[Any, Tuple[Many, S]]]:
             ret: List[A] = []
             current_input = input
             inner_error = None

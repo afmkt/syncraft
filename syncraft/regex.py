@@ -9,7 +9,6 @@ import unicodedata
 from syncraft.algebra import Error
 from syncraft.syntax import Syntax
 from syncraft.fa import Builder
-from syncraft.cache import Cache
 from syncraft.alphabet import Alphabet
 from syncraft.grammar import Grammar, lazy, rule, grammar
 from functools import reduce
@@ -416,8 +415,8 @@ class RE(Grammar):
 
 
 
-def parse(data: str, *, syntax: Syntax | None = None, cache: Optional[Cache[Any]] = None) -> Any:
-    return RE.parse(data, syntax=syntax, cache=cache)
+def parse(data: str, *, syntax: Syntax | None = None) -> Any:
+    return RE.parse(data, syntax=syntax)
 
 
 @dataclass
@@ -432,17 +431,13 @@ class VerifyResult:
 
 
 
-def verify(pattern: str, profile: bool = False) -> VerifyResult:
+def verify(pattern: str) -> VerifyResult:
 
     myerr = None
     err = None
-    cache: Cache[Any] = Cache()
-    if profile:
-        cache = cache.with_tracer()
     
-    parsed = parse(pattern, cache=cache)
-    if cache.tracer is not None:
-        cache.tracer
+    
+    parsed = parse(pattern)
         
     if not isinstance(parsed, Regex):
         myerr = parsed

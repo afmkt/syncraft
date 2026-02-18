@@ -467,3 +467,6 @@ def test_transformation()->None:
     assert b == Quantifier(1, 5, True)
     c = iso.inverse(b, None)
     assert c == (Quantifier(1, 5, True), False)
+
+
+

@@ -26,23 +26,25 @@ def all_subclasses(cls: Type[Any])->Set[Type[Any]]:
     return result
 
 @runtime_checkable
-class TokenSpec(Protocol[T]):
+class TokenSpec(Protocol):
     def tags(self) -> frozenset[Tag]: ...
-    def predicate(self) -> Callable[[T], bool]: ...
+    def predicate(self) -> Callable[[Any], bool]: ...
     def generator(self) -> Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]: ...
     @classmethod
-    def create(cls, *args: Any, **kwargs: Any) -> TokenSpec[T]: ...
+    def create(cls, *args: Any, **kwargs: Any) -> TokenSpec: ...
 
 
-class TokenSpecBase(TokenSpec[T]):
+class TokenSpecBase(TokenSpec):
     
     @classmethod
-    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional[TokenSpec[T]]: 
+    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional[TokenSpec]:
         all = all_subclasses(cls)
         assert all, "No subclasses of TokenSpecBase found. Please import token modules to register TokenSpec subclasses."
         for sub in all_subclasses(cls):
             c = CallWith(sub.create, *args, **kwargs)
             if c.missing_args or c.missing_kwargs:
+                continue
+            if c.unused_args or c.unused_kwargs:
                 continue
             return c()
         return None
@@ -87,12 +89,43 @@ class TokenSpecBase(TokenSpec[T]):
         tags, params = self._resolve_tag_kwargs(params)
         return config, params, tags
     
+@dataclass(frozen=True, slots=True)
+class Scalar(TokenSpecBase):
+    value: str | bytes
+    case_sensitive: bool = field(default=True, metadata={"is_config": True})
+    def __str__(self) -> str:
+        return f"{self.value!r}"
+    @classmethod
+    def create(cls, value: str|bytes, *, case_sensitive: bool = True) -> Scalar:
+        return cls(value=value, case_sensitive=case_sensitive)
+    
+    def tags(self) -> frozenset[Tag]:
+        return frozenset([str(self.value)])
+    
+    def predicate(self) -> Callable[[Any], bool]:
+        case_sensitive = self.case_sensitive
+        value = self.value
+        def pred(token: Any) -> bool:
+            token_value = str(token)
+            if case_sensitive:
+                return token_value == str(value)
+            else:
+                return token_value.upper() == str(value).upper()
+        pred.__name__ = f"P({self.value!r})"
+        return pred
+
+    def generator(self) -> Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]:
+        value = self.value
+        def gen(input: Any, rnd: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+            return ((value,), {})
+        gen.__name__ = f"G({self.value!r})"
+        return gen
+
+
 
 @dataclass(frozen=True, slots=True)
-class Structured(TokenSpecBase[T]):
-
+class Structured(TokenSpecBase):
     case_sensitive: bool = field(default=True, metadata={"is_config": True})
-    strict: bool = field(default=False, metadata={"is_config": True})
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     def __str__(self) -> str:
         return f"{self.describe()}"
@@ -100,12 +133,12 @@ class Structured(TokenSpecBase[T]):
     def create(cls, 
                *, 
                case_sensitive: bool = True, 
-               strict: bool = False, 
-               **kwargs: Any) -> Structured[T]:
+
+               **kwargs: Any) -> Structured:
         return cls(
 
             case_sensitive=case_sensitive,
-            strict=strict,
+
             kwargs=FrozenDict(kwargs)
         )
         
@@ -134,12 +167,11 @@ class Structured(TokenSpecBase[T]):
     def predicate(self) -> Callable[[T], bool]:
         config, kwargs, _ = self.normalise_kwargs(dict(self.kwargs))
         case_sensitive = config.get('case_sensitive', True)
-        strict = config.get('strict', False)
+        
         def pred(token: T) -> bool:
             for key, pattern in kwargs.items():
                 if not hasattr(token, key):
-                    if strict:
-                        return False
+                    return False
                 else:
                     data = getattr(token, key)
                     if isinstance(pattern, re.Pattern):
@@ -148,20 +180,12 @@ class Structured(TokenSpecBase[T]):
                         else:
                             continue
                     elif isinstance(pattern, str):
-                        if strict:
-                            if case_sensitive:
-                                if str(data) != pattern:
-                                    return False
-                            else:
-                                if str(data).upper() != pattern.upper():
-                                    return False
+                        if case_sensitive:
+                            if str(data) != pattern:
+                                return False
                         else:
-                            if case_sensitive:
-                                if str(data).strip() != pattern.strip():
-                                    return False
-                            else:
-                                if str(data).strip().upper() != pattern.strip().upper():
-                                    return False
+                            if str(data).upper() != pattern.upper():
+                                return False
                     elif pattern != data:
                         return False
             return True

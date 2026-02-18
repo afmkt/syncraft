@@ -228,8 +228,7 @@ class Cache(Generic[S]):
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
     tracer: Optional[Tracer] = None
-    
-
+            
 
     def with_tracer(self, tracer: Tracer | None = None) -> Cache[S]:
         if self.tracer is None:
@@ -265,7 +264,7 @@ class Cache(Generic[S]):
 
         existing_group = self.groups.get(pos)
         if existing_group is None:
-            if not has_lazy:
+            if not has_lazy: 
                 return None
             existing_group = Group(leader=(offender, pos), members=frozenset(members))
             if not has_choice:
@@ -291,8 +290,7 @@ class Cache(Generic[S]):
             frame_id = self.tracer.push(rule=syntax_of(rule), 
                                         parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, 
                                         state=key)
-            if syntax_of(rule) is None:
-                print(rule)
+            assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
             result = yield from rule(key, self) 
             if isinstance(result, Right):
                 self.tracer.pop(frame_id, 
@@ -490,7 +488,11 @@ class Cache(Generic[S]):
         improved_end = improved_result.state.cache_key
                 
         # Find rules that ended before this improvement
-        for end_pos in range(improved_end):
+        # Instead of range(improved_end), iterate only over actual keys in end2rules
+        # This works for both parsing (linear positions) and generation (object IDs)
+        for end_pos in self.end2rules.keys():
+            if end_pos >= improved_end:
+                continue  # Only consider rules that ended before the improvement
             rules_at_end = self.end2rules.get(end_pos, set())
             for rule in randomized(rules_at_end, self.enable_randomization):
                 # Find all start positions for this rule that could benefit

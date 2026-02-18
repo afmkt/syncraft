@@ -5,12 +5,12 @@ from dataclasses import dataclass
 from syncraft.syntax import (
     SyntaxSpec,
     LazySpec,
-    ThenSpec,
-    OrElseSpec,
     ManySpec,
     LexSpec,    
+    SeqSpec,
+    AltSpec,
 )
-from syncraft.ast import ThenKind
+
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
 @dataclass(frozen=True, slots=True)
@@ -189,10 +189,10 @@ def syntax2svg(syntax: SyntaxSpec, max_depth: int) -> Optional[SVGVisualization]
     def spec_label(node: SyntaxSpec) -> str:
         if isinstance(node, LexSpec):
             return node.fname
-        if isinstance(node, ThenSpec):
-            return f"Then({node.kind.name.lower()})"
-        if isinstance(node, OrElseSpec):
-            return "OrElse"
+        if isinstance(node, SeqSpec):
+            return "Seq"
+        if isinstance(node, AltSpec):
+            return "Alt"
         if isinstance(node, ManySpec):
             upper = "∞" if node.at_most is None else str(node.at_most)
             return f"Many[{node.at_least},{upper}]"
@@ -267,18 +267,12 @@ def syntax2svg(syntax: SyntaxSpec, max_depth: int) -> Optional[SVGVisualization]
                 diagram_cache[node] = child_items[0] if child_items else Comment("lazy …")
                 continue
 
-            if isinstance(node, ThenSpec):
-                parts = child_items[:2]
-                while len(parts) < 2:
-                    parts.append(Comment("…"))
-                if node.kind is not ThenKind.BOTH:
-                    parts = parts + [Comment(f"keep {node.kind.name.lower()}")]
-                diagram_cache[node] = Sequence(*parts)
+            if isinstance(node, SeqSpec):
+                diagram_cache[node] = Sequence(*child_items)
                 continue
 
-            if isinstance(node, OrElseSpec):
-                options = child_items[:2] if len(child_items) >= 2 else child_items
-                diagram_cache[node] = Choice(0, *options) if len(options) > 1 else (options[0] if options else Comment("choice"))
+            if isinstance(node, AltSpec):
+                diagram_cache[node] = Choice(0, *child_items) 
                 continue
 
             if isinstance(node, ManySpec):
@@ -329,16 +323,16 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
         return None
 
     def node_label(node):
-        from syncraft.ast import Nothing, OrElse, Many, Then, Token
+        from syncraft.ast import Nothing, Alt, Many, Seq, Token
         if node is Nothing:
             return "Nothing"
         
-        elif isinstance(node, OrElse):
-            return f"OrElse(kind={getattr(node.kind, 'name', node.kind)})"
+        elif isinstance(node, Alt):
+            return "Alt"
         elif isinstance(node, Many):
             return "Many"
-        elif isinstance(node, Then):
-            return f"Then(kind={node.kind.name})"
+        elif isinstance(node, Seq):
+            return "Seq"
         
         elif isinstance(node, Token):
             return f"Token({str(node)})"
@@ -350,7 +344,7 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
     def add_nodes_edges(dot, node, *, depth, parent_id=None, node_id_gen=[0]):
         if depth == 0:
             return
-        from syncraft.ast import Nothing, OrElse, Many, Then
+        from syncraft.ast import Nothing, Alt, Many, Seq
         node_id = f"n{node_id_gen[0]}"
         node_id_gen[0] += 1
         label = node_label(node)
@@ -361,15 +355,15 @@ def ast2svg(ast: Any, max_depth:int) -> Optional[SVGVisualization]:
         # Walk children according to AST type
         if node is Nothing:
             return
-        elif isinstance(node, OrElse):
+        elif isinstance(node, Alt):
             if node.value is not None:
                 add_nodes_edges(dot, node.value, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
         elif isinstance(node, Many):
             for child in node.value:
                 add_nodes_edges(dot, child, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
-        elif isinstance(node, Then):
-            add_nodes_edges(dot, node.left, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
-            add_nodes_edges(dot, node.right, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
+        elif isinstance(node, Seq):
+            for child in node.value:
+                add_nodes_edges(dot, child, depth=depth-1, parent_id=node_id, node_id_gen=node_id_gen)
 
         # Token is a leaf
         # For other types, try to walk __dict__ if they are dataclasses

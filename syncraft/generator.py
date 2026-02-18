@@ -1,27 +1,28 @@
 from __future__ import annotations
 from typing import (
-    Any, TypeVar, Tuple, Optional, Callable, Generic, Hashable,
-    List, Generator as PyGenerator, cast, Type, Self
+    Any, TypeVar, Tuple, Optional, Callable, Dict, Hashable,
+    List, Generator as PyGenerator, cast, Self
 )
+
 
 
 import random
 
 from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
-    Algebra, YieldChannelType, Error, get_arity
+    Algebra, YieldChannelType, Error
 )
 
 from syncraft.lexer import LexerBase, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
-    ParseResult, AST, Choice, Seq,
+    ParseResult, AST, Alt, Seq,
     Nothing, Lazy,
-    OrElse, Many, OrElseKind,
-    Then, ThenKind, SyncraftError
+    Many, Unknown,
+    SyncraftError
 )
-from syncraft.utils import FrozenDict
+from syncraft.utils import callable_str
 
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec
@@ -30,7 +31,7 @@ from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.bimap import Bindable
 from syncraft.input import StreamCursor
 
-
+from rich import print
 
 
 T = TypeVar('T', bound=Hashable)
@@ -38,12 +39,17 @@ T = TypeVar('T', bound=Hashable)
 B = TypeVar('B')
 
 
-@dataclass(frozen=True, slots=True)
-class GenState(Bindable, Generic[T]):
+def debug_print(*arg, **kwargs) -> None:
+    pass
+    # print(*arg, **kwargs)
 
-    ast: Optional[ParseResult[T]] = None
+@dataclass(frozen=True, slots=True)
+class GenState(Bindable):
+
+    ast: Optional[ParseResult] = None
     restore_pruned: bool = False
     seed: int = 0
+    id_cache: Dict[Any, int] = field(default_factory=dict, compare=False, hash=False, repr=False)
 
     def str_input(self, ul: bool) -> str:
         if not self.ast:
@@ -59,6 +65,23 @@ class GenState(Bindable, Generic[T]):
     def ended(self) -> bool:
         return False
 
+    def __post_init__(self):
+        if self.ast is not None:
+            self.mark_id(self.ast)
+
+    def mark_id(self, data: Any) -> Any:
+        if data not in self.id_cache:
+            self.id_cache[data] = id(data)
+        return data
+
+    def transfer_id(self, source: Any, target: Any) -> None:
+        if target not in self.id_cache and source in self.id_cache:
+            self.id_cache[target] = self.id_cache[source]
+            
+
+    def get_id(self, data: Any) -> int:
+        assert data in self.id_cache, f"Data object {data} does not have a generator state position marker"
+        return self.id_cache[data]
 
 
     def __str__(self) -> str:
@@ -74,29 +97,27 @@ class GenState(Bindable, Generic[T]):
         return self
     
     
-    def map(self, f: Callable[..., Any]) -> GenState[T]:
-        arity = get_arity(f)
-        if arity == 1:
-            new_ast = f(self.ast)
-        elif arity == 2:
-            new_ast = f(self.ast, self.ctx)
+    def apply(self, f: Callable[..., Any]) -> GenState:
+        if isinstance(self.ast, Unknown):            
+            new_ast = self.ast
         else:
-            raise ValueError(f"Unsupported arity {arity} for map function {f}, expected 1 or 2")
+            new_ast = f(self.ast, self.ctx)            
         if new_ast is self.ast:
             return self
         else:
+            self.transfer_id(self.ast, new_ast)
             return replace(self, ast=new_ast)
         
 
     @property
     def cache_key(self) -> int:
-        return hash(self.ast)
+        return self.get_id(self.ast) 
 
     
-    def inject(self, a: Any) -> GenState[T]:
-        return self.map(lambda _, __: a)
+    def inject(self, a: Any) -> GenState:
+        return replace(self, ast=self.mark_id(a))
     
-    def fork(self, tag: Any) -> GenState[T]:
+    def fork(self, tag: Any) -> GenState:
         return replace(self, seed=hash((self.seed, tag)))
 
 
@@ -105,141 +126,91 @@ class GenState(Bindable, Generic[T]):
 
     @property
     def pruned(self)->bool:
-        return self.ast is None
-    
-    def left(self)-> GenState[T]:
-        if self.ast is None:
-            return self
-        if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.RIGHT or self.restore_pruned):
-            return replace(self, ast=self.ast.left)
-        return replace(self, ast=None)
+        return isinstance(self.ast, Unknown)
         
-
-    def right(self) -> GenState[T]:
-        if self.ast is None:
-            return self
-        if isinstance(self.ast, Then) and (self.ast.kind != ThenKind.LEFT or self.restore_pruned):
-            return replace(self, ast=self.ast.right)
-        return replace(self, ast=None)
-        
+            
     
     @classmethod
     def from_ast(cls, 
                  *, 
                  ast: Optional[ParseResult[T]], 
                  seed: int = 0, 
-                 restore_pruned:bool=False) -> GenState[T]:
+                 restore_pruned:bool=False) -> GenState:
         return GenState(ast=ast, seed=seed, restore_pruned=restore_pruned)
         
 
 @dataclass(frozen=True, slots=True)
-class Generator(Algebra[ParseResult[T], GenState[T]]):      
+class Generator(Algebra[ParseResult[T], GenState]):      
     def bimap(self, 
               f: Callable[[ParseResult[T], Any], Any], 
-              i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState[T]]:
+              i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState]:
         return self.imap(i)
 
 
 
     @classmethod
-    def seq(cls, *steps: Algebra[Any, GenState[T]] | Tuple[Algebra[Any, GenState[T]], bool]) -> Algebra[Seq, GenState[T]]:
-        normaize_steps: List[Tuple[Algebra[Any, GenState[T]], bool]] = [X if isinstance(X, tuple) else (X, True) for X in steps]
-        def seq_run(input: GenState[T], 
-                    cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                           GenState[T], 
-                                                           Either[Any, Tuple[Seq, GenState[T]]]]:
-            if not input.pruned and not isinstance(input.ast, Seq):
-                return Left.new(Error.new(this=input.ast, 
-                                    message=f"Expect Seq got {input.ast}",
-                                    state=input))
+    def seq(cls, *steps: Algebra[Any, GenState] | Tuple[Algebra[Any, GenState], bool]) -> Algebra[Seq, GenState]:
+        normaize_steps: List[Tuple[Algebra[Any, GenState], bool]] = [X if isinstance(X, tuple) else (X, True) for X in steps]
+        def seq_run(input: GenState, 
+                    cache: Cache[GenState]) -> PyGenerator[YieldChannelType, 
+                                                           GenState, 
+                                                           Either[Any, Tuple[Seq, GenState]]]:
+            
             if input.pruned:
                 result = []
                 for step, keep in normaize_steps:
                     step_result = yield from step.run(input, cache)
                     match step_result:
-                        case Left(error) as ERROR:
+                        case Left(_) as ERROR:
+                            debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> FAILED")
                             return ERROR
                         case Right((value, next_input)):
                             input = next_input
                             result.append((value, keep))
+                debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> {Seq(value=tuple(result))}")
                 return Right.new((Seq(value=tuple(result)), input))
             else:
+                if not input.pruned and not isinstance(input.ast, Seq):
+                    debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> FAILED")
+                    return Left.new(Error.new(this=input.ast, 
+                                        message=f"Expect Seq got {input.ast}",
+                                        state=input))
                 result = []
                 ast_seq = cast(Seq, input.ast)
                 if len(ast_seq.value) != len(normaize_steps):
+                    debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> FAILED with wrong length")
                     return Left.new(Error.new(this=input.ast, 
                                         message=f"Expect Seq of length {len(normaize_steps)} got {len(ast_seq.value)}",
                                         state=input))
                 inp = input
                 for (step, keep), (ast_elem, _) in zip(normaize_steps, ast_seq.value):
                     if input.restore_pruned or keep:
-                        step_result = yield from step.run(inp.inject(ast_elem), cache)
+                        tmp_state = inp.inject(ast_elem)
+                        step_result = yield from step.run(tmp_state, cache)
+                        debug_print(f"\nCALLING SEQ {callable_str(step.run_f)} with {ast_elem} -> {step_result}")
                     else:
-                        step_result = yield from step.run(inp.inject(None), cache)
+                        tmp_state = inp.inject(Unknown())
+                        step_result = yield from step.run(tmp_state, cache)
+                        debug_print(f"\nCALLING SEQ {callable_str(step.run_f)} with {tmp_state.ast} -> {step_result}")
                     match step_result:
                         case Left() as ERROR:
+                            debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> FAILED at step with ast {ast_elem}")
                             return ERROR
                         case Right((value, next_input)):
                             inp = next_input
                             result.append((value, keep))    
+                debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> {Seq(value=tuple(result))}")
                 return Right.new((Seq(value=tuple(result)), inp))
-        return cls(run_f=seq_run).flag(intrinsic=True) # type: ignore
-    
+        return cls(run_f=seq_run).flag(intrinsic=True) # type: ignore        
 
 
-    def flat_map(self, f: Callable[[ParseResult[T]], Algebra[B, GenState[T]]]) -> Algebra[B, GenState[T]]: 
-
-        def flat_map_run(input: GenState[T], 
-                         cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                                GenState[T], 
-                                                                Either[Any, Tuple[B, GenState[T]]]]:
-            if not input.pruned and (not isinstance(input.ast, Then) or input.ast is Nothing):
-                return Left.new(Error.new(this=self, 
-                                    message=f"Expect Then got {input.ast}",
-                                    state=input))
-            lft = input.left() 
-            self_result = yield from self.run(lft, cache=cache)
-            match self_result:
-                case Left() as ERROR:
-                    return ERROR
-                case Right((value, next_input)):
-                    r = input.right() 
-                    other_result = yield from f(value).run(r, cache)
-                    match other_result:
-                        case Left() as ERROR:
-                            return ERROR
-                        case Right((result, next_input)):
-                            return Right.new((result, next_input))
-            raise SyncraftError("flat_map should always return a value or an error.", offender=self_result, expect=(Left, Right))
-        return replace(self, run_f=flat_map_run).flag(intrinsic=True) # type: ignore
-        
-
-
-    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many[ParseResult[T]], GenState[T]]:
-        """Apply ``self`` repeatedly with cardinality constraints.
-
-        In pruned mode, generates a random number of items in the inclusive
-        range ``[at_least, at_most or at_least+2]`` and attempts each
-        independently. Otherwise, validates an existing ``Many`` node and
-        applies ``self`` to each element.
-
-        Args:
-            at_least: Minimum number of successful applications required.
-            at_most: Optional maximum number allowed.
-
-        Returns:
-            Algebra[Many[ParseResult[T]], GenState[T]]: An algebra that yields a
-            ``Many`` of results.
-
-        Raises:
-            ValueError: If bounds are invalid.
-        """
+    def many(self, *, at_least: int, at_most: Optional[int]) -> Algebra[Many, GenState]:
         assert at_least >= 0, "at_least must be non-negative"
         assert at_most is None or at_least <= at_most, "at_least must <= at_most"
-        def many_run(input: GenState[T], 
-                     cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                            GenState[T], 
-                                                            Either[Any, Tuple[Many[ParseResult[T]], GenState[T]]]]:
+        def many_run(input: GenState, 
+                     cache:Cache[GenState]) -> PyGenerator[YieldChannelType, 
+                                                            GenState, 
+                                                            Either[Any, Tuple[Many, GenState]]]:
             if input.pruned:
                 ret: List[Any] = []
                 while True:
@@ -254,166 +225,134 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                         if (at_most is None or len(ret) < at_most):
                             if not forked_input.rng("many_continue").choice((True, False)):
                                 break
+                debug_print(f"\nCALLING MANY {callable_str(many_run)} with {input.ast} -> {Many(value=tuple(ret))}")
                 return Right.new((Many(value=tuple(ret)), input))
             else:
                 if not isinstance(input.ast, Many) or input.ast is Nothing:
+                    debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED")
                     return Left.new(Error.new(this=self, 
                                       message=f"Expect Many got {input.ast}",
                                       state=input))
                 ret = []
+                tmp_state = input
                 for x in input.ast.value:
-                    self_result = yield from self.run(input.inject(x), cache) 
+                    tmp_state = input.inject(x)
+                    self_result = yield from self.run(tmp_state, cache) 
                     match self_result:
                         case Right((value, _)):
                             if value is not Nothing:
                                 ret.append(value)
                             if at_most is not None and len(ret) > at_most:
+                                debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED with too many matches")
                                 return Left.new(Error.new(
                                         message=f"Expected at most {at_most} matches, got {len(ret)}",
                                         this=self,
-                                        state=input.inject(x)
+                                        state=tmp_state
                                     ))                             
                         case Left(_):
                             pass
                 if len(ret) < at_least:
+                    debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED with too few matches")
                     return Left.new(Error.new(
                         message=f"Expected at least {at_least} matches, got {len(ret)}",
                         this=self,
-                        state=input.inject(x)
+                        state=tmp_state
                     )) 
+                debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> {Many(value=tuple(ret))}")
                 return Right.new((Many(value=tuple(ret)), input))
         return replace(self, run_f=many_run).flag(intrinsic=True)  # type: ignore
     
  
     @classmethod
-    def alt(cls, *options: Algebra[Any, GenState[T]]) -> Algebra[Choice[Any], GenState[T]]:
+    def alt(cls, *options: Algebra[Any, GenState]) -> Algebra[Alt, GenState]:
         assert options, "At least one option is required for choice"
-        def alt_run(input: GenState[T], cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                                                     GenState[T], 
-                                                                                     Either[Any, Tuple[Choice[Any], GenState[T]]]]:
+        def alt_run(input: GenState, cache: Cache[GenState]) -> PyGenerator[YieldChannelType, 
+                                                                                     GenState, 
+                                                                                     Either[Any, Tuple[Alt, GenState]]]:
             if input.pruned:
+                indexes = list(range(len(options)))
                 forked_input = input.fork(tag="alt")
-                idx = forked_input.rng("alt_index").randint(0, len(options) - 1)
-                selected = options[idx]
-                result = yield from selected.run(forked_input, cache)
-                match result:
-                    case Right((value, next_input)):
-                        return Right.new((Choice(index=idx, value=value), next_input))
-                    case Left() as ERROR:
-                        return ERROR
+                forked_input.rng("alt_index").shuffle(indexes)
+                for idx in indexes:
+                    selected = options[idx]
+                    result = yield from selected.run(forked_input, cache)
+                    match result:
+                        case Right((value, next_input)):
+                            debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> {Alt(index=idx, value=value)}")
+                            return Right.new((Alt(index=idx, value=value), next_input))
+                        case Left() as ERROR:
+                            last_error = ERROR
+                            debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
+                            
+                if last_error is not None:
+                    return last_error
+                else:
+                    return Left.new(Error.new(
+                        message="No options provided",
+                        this=cls,
+                        state=input
+                    ))
             else:
-                if not isinstance(input.ast, Choice):
+                if not isinstance(input.ast, Alt):
+                    debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
                     return Left.new(Error.new(this=input.ast, 
-                                      message=f"Expect Choice got {input.ast}",
+                                      message=f"Expect Alt got {input.ast}",
                                       state=input))
                 ast_choice = input.ast
                 if ast_choice.index is None:
                     for i, option in enumerate(options):
-                        result = yield from option.run(input.inject(ast_choice.value), cache)
+                        tmp_state = input.inject(ast_choice.value)
+                        result = yield from option.run(tmp_state, cache)
                         match result:
                             case Right((value, next_input)):
-                                return Right.new((Choice(index=i, value=value), next_input))
+                                debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> {Alt(index=i, value=value)}")
+                                return Right.new((Alt(index=i, value=value), next_input))
                             case Left(err) as ERROR:
                                 if isinstance(err, Error) and err.committed:
+                                    debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED with committed error")
                                     return ERROR
+                    debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
                     return Left.new(Error.new(this=input.ast, 
                                       message=f"None of the choices matched for {input.ast}",
                                       state=input))
                 else:
                     selected = options[ast_choice.index]
-                    result = yield from selected.run(input.inject(ast_choice.value), cache)
+                    tmp_state = input.inject(ast_choice.value)
+                    result = yield from selected.run(tmp_state, cache)
                     match result:
                         case Right((value, next_input)):
-                            return Right.new((Choice(index=ast_choice.index, value=value), next_input))
+                            debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> {Alt(index=ast_choice.index, value=value)}")
+                            return Right.new((Alt(index=ast_choice.index, value=value), next_input))
                         case Left() as ERROR:
+                            debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
                             return ERROR
             raise SyncraftError("alt should always return a value or an error.", offender=result, expect=(Left, Right))
         return cls(run_f=alt_run).flag(intrinsic=True)  # type: ignore
-
-
-    def or_else(self, # type: ignore
-                other: Algebra[ParseResult[T], GenState[T]]
-                ) -> Algebra[OrElse, GenState[T]]: 
-        def or_else_run(input: GenState[T], 
-                        cache:Cache[GenState[T]]) -> PyGenerator[YieldChannelType, 
-                                                                GenState[T], 
-                                                                Either[Any, Tuple[OrElse, GenState[T]]]]:
-            def exec(kind: OrElseKind | None, 
-                     left: GenState[T], 
-                     right: GenState[T]) -> PyGenerator[YieldChannelType, 
-                                                        GenState[T], 
-                                                        Either[Any, Tuple[OrElse, GenState[T]]]]:
-                match kind:
-                    case OrElseKind.LEFT:
-                        self_result = yield from self.run(left, cache)
-                        match self_result:
-                            case Right((value, next_input)):
-                                return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), next_input))
-                            case Left() as ERROR:
-                                return ERROR
-                    case OrElseKind.RIGHT:
-                        other_result = yield from other.run(right, cache)
-                        match other_result:
-                            case Right((value, next_input)):
-                                return Right.new((OrElse(kind=OrElseKind.RIGHT, value=value), next_input))
-                            case Left() as ERROR:
-                                return ERROR
-                    case None:
-
-                        self_result = yield from self.run(left, cache)
-                        match self_result:
-                            case Right((value, next_input)):
-                                return Right.new((OrElse(kind=OrElseKind.LEFT, value=value), next_input))
-                            case Left(error) as ERROR:
-                                if isinstance(error, Error) and error.committed:
-                                    return ERROR
-                                other_result = yield from other.run(right, cache)
-                                match other_result:
-                                    case Right((value, next_input)):
-                                        return Right.new((OrElse(kind=OrElseKind.RIGHT, value=value), next_input))
-                                    case Left() as ERROR:
-                                        return ERROR
-                raise SyncraftError(f"Invalid OrElseKind: {kind}", offender=kind, expect=(OrElseKind.LEFT, OrElseKind.RIGHT, None))
-
-            if input.pruned:
-                forked_input = input.fork(tag="or_else")
-                which = forked_input.rng("or_else").choice((OrElseKind.LEFT, OrElseKind.RIGHT))
-                result = yield from exec(which, forked_input, forked_input)
-                return result
-            else:
-                if not isinstance(input.ast, OrElse):
-                    return Left.new(Error.new(this=self, 
-                                      message=f"Expect OrElse got {input.ast}",
-                                      state=input))
-                else:
-                    result = yield from exec(input.ast.kind, 
-                                input.inject(input.ast.value), 
-                                input.inject(input.ast.value))
-                    return result
-        return replace(self, run_f=or_else_run).flag(intrinsic=True) # type: ignore
-
+    
 
     @classmethod
-    def lazy(cls, thunk: Callable[[], Algebra[ParseResult[T], GenState[T]]]) -> Algebra[ParseResult[T], GenState[T]]:
-        def algebra_lazy_run(input: GenState[T],
-                             cache: Cache[GenState[T]]) -> PyGenerator[YieldChannelType,
-                                                                        GenState[T],
-                                                                        Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
+    def lazy(cls, thunk: Callable[[], Algebra[ParseResult[T], GenState]]) -> Algebra[ParseResult[T], GenState]:
+        def algebra_lazy_run(input: GenState,
+                             cache: Cache[GenState] | None) -> PyGenerator[YieldChannelType,
+                                                                        GenState,
+                                                                        Either[Any, Tuple[ParseResult[T], GenState]]]:
             
-            alg = thunk()
-            # print(f"Generator.lazy: Resolved lazy algebra {alg} from thunk {thunk}")
+            alg = thunk()            
             if input.pruned:
                 result = (yield from alg.run(input, cache))
                 match result:
                     case Left() as ERROR:
+                        debug_print(f"\nCALLING {callable_str(algebra_lazy_run)} with {input.ast} -> FAILED")
                         return ERROR
                     case Right((value, state)):
+                        debug_print(f"\nCALLING {callable_str(algebra_lazy_run)} with {input.ast} -> {Lazy(value=value)}")
                         return Right.new((Lazy(value=value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
             else:
                 current = input.ast
                 if not isinstance(current, Lazy) or current is Nothing:
+                    debug_print(f"\nCALLING {callable_str(algebra_lazy_run)} with {current} -> FAILED")
                     return Left.new(Error.new(this=alg, 
                                       message=f"Expect Lazy got {current}",
                                       state=input))
@@ -421,8 +360,10 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 result = (yield from alg.run(new_state, cache))
                 match result:
                     case Left() as ERROR:
+                        debug_print(f"\nCALLING {callable_str(algebra_lazy_run)} with {current} -> FAILED")
                         return ERROR
                     case Right((value, state)):
+                        debug_print(f"\nCALLING {callable_str(algebra_lazy_run)} with {current} -> {Lazy(value=value)}")
                         return Right.new((Lazy(value=value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
@@ -431,29 +372,33 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
         
     @classmethod
-    def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, **kwargs) -> Algebra[ParseResult[T], GenState[T]]:
+    def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, **kwargs) -> Algebra[ParseResult[T], GenState]:
         terminal_cls = terminal_cls or cls.default_terminal_cls
         lexer:LexerProtocol[Any] | None
         lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
         assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
         ntags = lexer.tags()
         name = ','.join(str(tag) for tag in ntags)
-        def lex_run(input: GenState[T], 
-                    cache: Cache[GenState[T]]) -> PyGenerator[
+        def lex_run(input: GenState, 
+                    cache: Cache[GenState] | None) -> PyGenerator[
                               YieldChannelType, 
-                              GenState[T], 
-                              Either[Any, Tuple[ParseResult[T], GenState[T]]]]:
+                              GenState, 
+                              Either[Any, Tuple[ParseResult[T], GenState]]]:
             lexer.reset()
             yield from ()
+            
             if input.pruned:
+                
                 tag = input.rng("lex_tag").choice(tuple(ntags))
                 input = input.fork(tag=tag)
                 args, kwargs = lexer.gen(tag, input.rng())
                 generated = terminal_cls(*args, **kwargs)
+                debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> {generated}")
                 return Right.new((cast(ParseResult[T], generated), input))
             else:
                 current = input.ast
                 if not lexer.varify(ntags, current):
+                    debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> FAILED")
                     return Left.new(
                             Error.new(
                                 this=lex_run,
@@ -464,7 +409,7 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
                 parsed_value = cast(ParseResult[T], current)
                 if isinstance(parsed_value, AST):
                     parsed_value = replace(parsed_value) # type: ignore
-                
+                debug_print(f"\nCALLING {callable_str(lex_run)} with {current} -> {parsed_value}")
                 return Right.new((parsed_value, input))
 
         return cls(lex_run).flag(intrinsic=True) 
@@ -473,20 +418,12 @@ class Generator(Algebra[ParseResult[T], GenState[T]]):
 
 
 @dataclass
-class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
-    ast : ParseResult[T] | None = None
+class Runner(RunnerProtocol[ParseResult, GenState]):
+    ast : ParseResult | None = None
     seed: int = field(default_factory=lambda: random.randint(0, 2**32 - 1))
     restore_pruned: bool = False
 
-    
-    def algebra(self, 
-                  syntax: Syntax[ParseResult[T], GenState[T]], 
-                  alg_cls: Type[Algebra[ParseResult[T], GenState[T]]]
-                  ) -> Algebra[ParseResult[T], GenState[T]]:
-        
-        return syntax(alg_cls, syntax = syntax)
-    
-    def resume(self, request: Optional[GenState[T]], cursor: Optional[StreamCursor[Any]]) -> GenState[T]:
+    def resume(self, request: Optional[GenState], cursor: Optional[StreamCursor[Any]]) -> GenState:
         if request is None:
             return GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
         raise SyncraftError("Generator does not support resuming from Incomplete states.", offender=request, expect="Not Incomplete")
@@ -495,51 +432,40 @@ class Runner(RunnerProtocol[ParseResult[T], GenState[T]]):
 
 
 def generator(syntax: Syntax) -> Algebra:
-    runner: Runner[Any] = Runner()
+    runner: Runner = Runner()
     return runner.algebra(syntax=syntax, alg_cls=Generator)
 
     
     
 def generate_with(
     syntax: Syntax, 
-    data: Optional[ParseResult[Any]] = None, 
+    data: Optional[ParseResult] = None, 
     seed: Optional[int] = None,
     restore_pruned: bool = False
-) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
+) -> AST:
     
-    runner = Runner(ast=data, 
+    runner = Runner(ast=data if data is not None else Unknown(), 
                     seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                     restore_pruned=restore_pruned)
 
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-    if s is not None:
-        return v, s.ctx
-    else:
-        return v, None    
+    return v
 
-
-def validate(syntax: Syntax, data: ParseResult[Any]) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
+def validate(syntax: Syntax, data: ParseResult[Any]) -> AST:
     
     runner = Runner(ast=data, seed=0, restore_pruned=True)
     
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-    if s is not None:
-        return v, s.ctx
-    else:
-        return v, None    
+    return v
 
-
-def generate(syntax, seed: Optional[int] = None) -> Tuple[AST, None | FrozenDict[str, Tuple[AST, ...]]]:
+def generate(syntax, seed: Optional[int] = None) -> AST:
     
-    runner = Runner(ast=None, 
+    runner = Runner(ast=Unknown(), 
                     seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                     restore_pruned=False)
     
     v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-    if s is not None:
-        return v, s.ctx
-    else:
-        return v, None
+    return v
     
 
 

@@ -27,8 +27,8 @@ class DataError(Exception):
 class Bindable(ABC):
     ctx: FrozenDict = field(default_factory=FrozenDict)
 
-    def get(self, name: str) -> Any:
-        return self.ctx.get(name, ...)
+    def get(self, name: str, default: Any = ...) -> Any:
+        return self.ctx.get(name, default)
     
     def bind(self, value: Any, **trans: Callable[[Any, Any], Any] | Any) -> Self:
         new_ctx = self.ctx
@@ -50,7 +50,7 @@ class Bindable(ABC):
     @abstractmethod
     def unused_cache_key(self) -> int: ...
 
-    def map(self, f: Callable[..., Any])->Self: 
+    def apply(self, f: Callable[..., Any])->Self: 
         return self
         
     @abstractmethod

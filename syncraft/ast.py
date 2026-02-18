@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import (
     Optional, Any, TypeVar, Tuple,
-    Generic, Union, TYPE_CHECKING,
+    Union, TYPE_CHECKING, 
     Hashable
 )
 if TYPE_CHECKING:
@@ -26,18 +26,6 @@ class SyncraftError(Exception):
             details += ", " + ", ".join(f"{k}={v!r}" for k, v in self.data.items())
         return f"{base} ({details})"
     
-
-
-
-A = TypeVar('A')
-B = TypeVar('B')  
-C = TypeVar('C')  
-D = TypeVar('D')
-S = TypeVar('S')  
-S1 = TypeVar('S1')
-
-
-
 
 @dataclass(frozen=True, slots=True)    
 class AST:
@@ -71,49 +59,30 @@ class Nothing(metaclass=MetaNothing):
         return "Nothing"
     def __repr__(self)->str:
         return "Nothing"
-    
-@dataclass(frozen=True, slots=True)
-class Lazy(AST, Generic[A]):
-    value: A
-    
-    
-class OrElseKind(Enum):
-    LEFT = 'left'
-    RIGHT = 'right'
-
-OrElseKind.__str__ = lambda self: self.value   # type: ignore
 
 
 @dataclass(frozen=True, slots=True)
-class OrElse(AST):
-    """Represent a binary alternative between left and right values.
-
-    ``kind`` indicates which branch was taken, or ``None`` when unknown.
-    """
-    
-    kind: Optional[OrElseKind]
-
-    value: Optional[Any] = None
+class Unknown(AST):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
-class Choice(AST, Generic[A]):
+class Lazy(AST):
+    value: Any
+    
+
+@dataclass(frozen=True, slots=True)
+class Alt(AST):
     index: Optional[int]
-    value: Optional[A]
+    value: Optional[Any]
 
 
 
 
 @dataclass(frozen=True, slots=True)
-class Many(AST, Generic[A]):
+class Many(AST):
     """A finite sequence of values within the AST."""
-    value: Tuple[A, ...]
-
-
-
-
-
-
+    value: Tuple[Any, ...]
 
 @dataclass(frozen=True, slots=True)
 class Seq(AST):
@@ -123,30 +92,14 @@ class Seq(AST):
 
 
 
-class ThenKind(Enum):
-    BOTH = '+'
-    LEFT = '//'
-    RIGHT = '>>'
 
-ThenKind.__str__ = lambda self: self.value   # type: ignore
+
+
+
 
 @dataclass(frozen=True, slots=True)
-class Then(AST, Generic[A, B]):
-    """Pair two values with a composition kind (both, left, or right).
-
-    The ``kind`` determines how values are combined.
-    ``LEFT``/``RIGHT`` indicate single-sided results; ``BOTH`` flattens both
-    sides.
-    """
-    kind: ThenKind
-    left: A
-    right: B
-
-
-Char = TypeVar('Char', bound=Hashable)
-@dataclass(frozen=True, slots=True)
-class Token(AST, Generic[Char]):
-    text: str | bytes | Tuple[Char, ...]
+class Token(AST):
+    text: str | bytes | Tuple[Any, ...]
     token_type: Optional[Union[str, Enum]] = None    
 
     def __repr__(self) -> str:
@@ -192,14 +145,21 @@ T = TypeVar('T', bound=Hashable)
 
 #: Union-like type describing the shape of AST parse results across nodes.
 ParseResult = Union[
-    Lazy['ParseResult[T]'],
-    Then['ParseResult[T]', 'ParseResult[T]'], 
-    OrElse,
-    Many['ParseResult[T]'],
+    Lazy,
+    Many,
+    Alt,
+    Seq,
     Nothing,
     Token,
+    Unknown,
     T,
 ]
 
 
+
+                
+
+
+
+    
 
