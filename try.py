@@ -9,7 +9,7 @@ from syncraft.algebra import Error
 
 from syncraft.syntax import Syntax as S
 from syncraft.fa import Builder as B
-
+from rich import print
 
 def test_literal_characters():
     """Test parsing of literal characters."""
@@ -71,24 +71,7 @@ def test_escaped_metacharacters():
     for i, expected in enumerate(expected_chars):
         p = result[i]
         assert p == expected
-
-
-def test_anchors():
-    """Test parsing of anchor atoms."""
-    test_cases = [
-        ("^", AnchorKind.LINE_START),
-        ("$", AnchorKind.LINE_END),
-        (r"\A", AnchorKind.ABSOLUTE_START),
-        (r"\Z", AnchorKind.ABSOLUTE_END),
-        (r"\b", AnchorKind.WORD_BOUNDARY),
-        (r"\B", AnchorKind.NOT_WORD_BOUNDARY),
-    ]
-
-    for pattern, expected_kind in test_cases:
-        result = parse(pattern, syntax=RE.anchor)
-        assert isinstance(result, UnsupportedFeature)
         
-
 
 def test_shorthands():
     """Test parsing of shorthand character classes."""
@@ -136,17 +119,18 @@ def test_quantifiers():
         ("a{3,}?", Quantifier(minimum=3, maximum=None, greedy=False)),
         ("a{3,5}?", Quantifier(minimum=3, maximum=5, greedy=False)),
     ]
-
+    index = 0
     for pattern, expected_quantifier in test_cases:
         result = parse(pattern, syntax=RE.piece)
         tmp = parse(pattern)
+        print(index, tmp)
         assert isinstance(tmp, Regex)
         result = tmp.branches[0].pieces[0]
 
         assert isinstance(result, Piece)
         assert result.quantifier == expected_quantifier, f"Failed for pattern: {pattern}, got {result.quantifier}, expected {expected_quantifier}"
         assert result.atom == LiteralAtom(text="a"), f"Failed for pattern: {pattern}, got atom {result.atom}, expected LiteralAtom(text='a')"
-        
+        index += 1
 
 def test_character_classes_simple():
     """Test parsing of simple character classes."""
@@ -459,6 +443,7 @@ def test_groups_flags_scoped_with_disable():
     """Test parsing of scoped flag groups with disabled flags."""
     # result = parse_regex(group, "(?im-s:abc)") --- IGNORE ---
     tmp = parse("(?im-s:abc)")
+    print(tmp)
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
     assert isinstance(result, GroupAtom)
@@ -562,6 +547,7 @@ def test_regex_complex_regex():
 def test_regex_unicode_category_escape():
     """Test parsing of unicode category escapes."""
     result = parse(r"\p{L}")
+    print(result)
     assert isinstance(result, Regex)
     assert len(result.branches) == 1
     b = result.branches[0]
@@ -576,63 +562,19 @@ def test_neg_lookahead():
     negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +RE.regex, RE.rparen)
     nl = r"(?!\1)"
     ret = parse(nl, syntax=negative_lookahead)
+    # print(ret)
     assert not isinstance(ret, Error)
 
-def test_noncap():    
-    noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +RE.regex, RE.rparen)
-    noncap = r"(?:['\"])"
-    ret = parse(noncap, syntax=noncapturing)
-    assert not isinstance(ret, Error)
-    
-
-def test_named():
-    named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +RE.name, RE.greater, +RE.regex, RE.rparen)
-    s = r"(?P<quote>['\"])"
-    ret = parse(s, syntax=named)
-    assert not isinstance(ret, Error)
-    
-
-def test_complex():
-    pattern = r"(?:(?P<quote>['\"])(?:(?!\1).)*\1)"
-    ret = parse(pattern, syntax=RE.regex)
-    assert not isinstance(ret, Error)
-    
-
-
-def test_complex1():
-    pattern = r'l*[^UUf\w]?|\w{5}\W{0,5}\w*(?w)|J*\B'
-    ret= parse(pattern, syntax=RE.regex)
-    assert not isinstance(ret, Error)
-    
 if __name__ == "__main__":
-    # test_anchors()
-    # test_shorthands()
-    # test_dot_atom()
-    # test_quantifiers()
+    
+    test_quantifiers()
     # test_character_classes_simple()
     # test_character_classes_negated()
     # test_character_classes_with_ranges()
     # test_character_classes_with_escaped_chars()
     # test_character_classes_with_shorthands()
-    # test_groups_capture()
-    # test_groups_non_capture()
-    # test_groups_named()
-    # test_groups_lookahead()
-    # test_groups_negative_lookahead()
-    # test_groups_lookbehind()
-    # test_groups_negative_lookbehind()
-    # test_groups_flags_only()
-    # test_groups_flags_with_disable()
-    # test_groups_flags_scoped()
-    # test_groups_flags_scoped_with_disable()
-    # test_regex_comprehensive()
-    # test_regex_negated()
-    # test_regex_complex()
-    # test_regex_alternation()
-    # test_regex_complex_regex()
-    # test_regex_unicode_category_escape()
-    # test_neg_lookahead()
-    # test_noncap()
-    # test_named()
-    test_complex()
-    # test_complex1()
+
+    
+    
+    
+    

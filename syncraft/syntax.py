@@ -22,10 +22,13 @@ from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
 import threading
-from rich import print
 
 
 
+
+GREEN = "\033[92m"
+RESET = "\033[0m"
+RED = "\033[91m"
 
 
 def valid_name(name: str) -> bool:
@@ -303,7 +306,7 @@ class SeqSpec(SyntaxSpec):
     def iso(self) -> Iso[Seq, Tuple[Any, ...]]:
         def inv(v: Tuple[Any, ...], ctx: Any) -> Seq:
             if not isinstance(v, tuple):
-                raise DataError(f"Expected a tuple for SeqSpec value, got {v}")
+                raise DataError(f"Expected a tuple for SeqSpec value, got {v}", soft_failure=True)
             
             new_elements = []
             v_index = 0
@@ -342,7 +345,13 @@ class SeqSpec(SyntaxSpec):
             if self.name:
                 ret = self.name
             else:
-                inner = " \u25b6 ".join(str(s[0]) for s in self.steps)
+                def format_step(s: Tuple[SyntaxSpec, bool]) -> str:
+                    step_str = str(s[0])
+                    if s[1]:
+                        step_str = f"{GREEN}{step_str}{RESET}"
+                    return step_str
+                
+                inner = " \u25b6 ".join(format_step(s) for s in self.steps)
                 ret = self.format("({steps})", steps=inner)
             object.__setattr__(self, 'str_cache', ret)
             return ret
@@ -807,7 +816,7 @@ class Syntax(Generic[A, S]):
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success)) 
     
     def debug(self, 
-              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = None,
+              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int| None]]], None] | Any = None,
               *,
               show_stack: bool = True,
               only_fail: bool = False,
@@ -816,15 +825,12 @@ class Syntax(Generic[A, S]):
               level:int = 0) -> Syntax[A, S]:
         file=get_file(level+1)
         line=get_line(level+1)
-        def default_dbg(syn: Syntax[A, S], state: S, new_state: Optional[S], value: A | Any, stack: List[Tuple[Syntax[Any, S], int]])->None:
+        def default_dbg(syn: Syntax[A, S], state: S, new_state: Optional[S], value: A | Any, stack: List[Tuple[Syntax[Any, S], int, int| None]])->None:
             if new_state is not None and only_fail:
                 return
             if new_state is None and only_success:
                 return
             null = new_state is not None and new_state.cache_key == state.cache_key
-            GREEN = "\033[92m"
-            RESET = "\033[0m"
-            RED = "\033[91m"
 
             sign = f"{RED}\u2718{RESET}" if new_state is None else f"{GREEN}\u2714{RESET}"
             print('=' * 20, "DEBUG", sign, dbg if dbg is not None else "@", f"{file}:{line}", '=' * 20)
@@ -855,7 +861,7 @@ class Syntax(Generic[A, S]):
                 input("Press Enter to continue...")
 
 
-        xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None] | Any = dbg if callable(dbg) else default_dbg
+        xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int| None]]], None] | Any = dbg if callable(dbg) else default_dbg
         return replace(self, alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg))
             
     ############################################################### facility combinators ############################################################
@@ -1017,7 +1023,7 @@ class Syntax(Generic[A, S]):
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(**f)) 
     
     def to(self, a: Callable[..., A], b: Callable[..., B]) -> Syntax[B, S]:
-        return self.iso(Iso.derive(a, b))
+        return self.iso(Iso.derive(a, b)) 
 
     def check(self, pred: Callable[..., bool], forward: bool = True, level:int = 0) -> Syntax[A, S]:
         file = get_file(level+1)        
@@ -1027,7 +1033,7 @@ class Syntax(Generic[A, S]):
         def check_preds(value: Any, ctx: FrozenDict[str, Any]) -> Any:
             vars = [ctx.get(name, ...) for name in names]
             if not pred(value, *vars):
-                raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}")
+                raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}", soft_failure=True)
             return value
         return self.map(check_preds) if forward else self.imap(check_preds)
         

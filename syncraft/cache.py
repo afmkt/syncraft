@@ -228,7 +228,33 @@ class Cache(Generic[S]):
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
     tracer: Optional[Tracer] = None
-            
+    choice_index: List[Tuple[Any, int]] = field(default_factory=list)
+
+    def push_choice(self, rule: Rule, choice_index: int) -> Cache[S]:
+        s = syntax_of(rule)
+        self.choice_index.append((s, choice_index))
+        return self
+
+    def pop_choice(self) -> Cache[S]:
+        self.choice_index.pop()
+        return self
+
+    def choice_of(self, rule: Rule) -> Optional[int]:
+        s = syntax_of(rule)
+        for r, idx in reversed(self.choice_index):
+            # print('check', r, s, idx)
+            # print('check', str(r), str(s), idx)
+            if r == s:
+                return idx
+        return None
+
+
+    def normalized_stack(self)->List[Tuple[Callable[..., Any], int, int | None]]:
+        normalized = []
+        for rule, pos in self.stack:
+            c = self.choice_of(rule)
+            normalized.append((rule, pos, c))
+        return normalized
 
     def with_tracer(self, tracer: Tracer | None = None) -> Cache[S]:
         if self.tracer is None:

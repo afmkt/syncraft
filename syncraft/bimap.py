@@ -19,9 +19,21 @@ from abc import ABC, abstractmethod
     
 
 class DataError(Exception):
-    def __init__(self, message: str, reason: list[Any] | None = None):
+    def __init__(self, message: str, reason: list[Any] | None = None, *, soft_failure: bool = False):
         super().__init__(message)
         self.reason = reason
+        self.soft_failure = soft_failure
+        self.rule: str | None = None
+        self.file: str | None = None
+        self.line: int | None = None
+
+    def __str__(self) -> str:
+        base = super().__str__()
+        if self.reason:
+            reason_str = "\nReason:\n" + "\n".join(f"- {r}" for r in self.reason)
+            return f"{base}\n{reason_str}\nAt: {self.file}:{self.line}\nRule: {self.rule}"
+        return f"{base}\nAt: {self.file}:{self.line}\nRule: {self.rule}"
+        
 
 @dataclass(frozen=True, slots=True) 
 class Bindable(ABC):

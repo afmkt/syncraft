@@ -35,8 +35,10 @@ class Error:
     error: Optional[Any] = None    
     state: Optional[Any] = None
     committed: bool = field(default=False, compare=False, repr=False, hash=False)
-    stack: List[Tuple[Callable[..., Any], int]] = field(default_factory=list, compare=False, repr=False, hash=False)
+    stack: List[Tuple[Callable[..., Any], int, int | None]] = field(default_factory=list, compare=False, repr=False, hash=False)
     depth: Optional[int] = field(default=None, compare=False, repr=False, hash=False)
+    file: str | None = field(default=None, compare=False, repr=False, hash=False)
+    line: int | None = field(default=None, compare=False, repr=False, hash=False)
 
     @classmethod
     def new(cls, 
@@ -48,7 +50,8 @@ class Error:
             committed: bool = False,
             depth: Optional[int] = None,
             stack: List[Any] = [],
-            # previous: Optional[Error] = None
+            file: str | None = None,
+            line: int | None = None
             ) -> Error:
         obj = cls.__new__(cls)
         object.__setattr__(obj, 'this', this)
@@ -58,6 +61,8 @@ class Error:
         object.__setattr__(obj, 'committed', committed)
         object.__setattr__(obj, 'stack', stack)
         object.__setattr__(obj, 'depth', depth)
+        object.__setattr__(obj, 'file', file)
+        object.__setattr__(obj, 'line', line)
         return obj
 
     
@@ -118,14 +123,14 @@ class Error:
         return "\n".join(lines)
 
     @staticmethod
-    def fmt_stack(stack: List[Tuple[Any, int]], indent: str="") -> List[str]:
+    def fmt_stack(stack: List[Tuple[Any, int, int | None]], indent: str="") -> List[str]:
         
-        def str_rule(rule: Callable[..., Any]) -> str:
+        def str_rule(rule: Callable[..., Any], choice: int | None) -> str:
             syn = syntax_of(rule)
             orelse = syn.is_orelse if syn else is_orelse(rule)
             lazy = syn.is_lazy if syn else is_lazy(rule)
             spec = syn.spec if syn else None
-            orelse_mark = f"{ORELSE_MARKER} " if orelse else ""
+            orelse_mark = f"{ORELSE_MARKER} {choice} " if orelse else ""
             lazy_mark = (f"{LAZY_MARKER} " if lazy else "")
             if spec and hasattr(spec, 'location'):
                 if spec.location is not None:
@@ -139,8 +144,8 @@ class Error:
             rule_counts: Dict[str, int] = {}
             rule_order: List[str] = []
             for entry in stack[::-1]:  # Reverse to show root->leaf progression
-                r, pos = entry
-                rule = str_rule(r)
+                r, pos, c = entry
+                rule = str_rule(r, c)
                 if rule not in rule_counts:
                     rule_counts[rule] = 0
                     rule_order.append(rule)
@@ -284,7 +289,7 @@ class Algebra(Generic[A, S]):
                 if isinstance(result, Left):
                     if isinstance(result.value, Error):
                         if not result.value.stack:
-                            result.value.stack = cache.stack + [(self.run_f, input.cache_key)]
+                            result.value.stack = cache.normalized_stack() + [(self.run_f, input.cache_key, cache.choice_of(self.run_f))]
                             
                 return result
             
@@ -345,10 +350,7 @@ class Algebra(Generic[A, S]):
     
     @classmethod
     def fail(cls, error: Any) -> Algebra[Any, S]:
-        def fail_run(input: S, 
-                     cache:Cache[S] | None) -> Generator[YieldChannelType, 
-                                                S, 
-                                                Either[Any, Tuple[A, S]]]:
+        def fail_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             yield from ()
             return Left.new(Error.new(
                 error=error,
@@ -359,10 +361,7 @@ class Algebra(Generic[A, S]):
     
     @classmethod
     def success(cls, value: Any) -> Algebra[Any, S]:
-        def success_run(input: S, 
-                        cache:Cache[S] | None) -> Generator[YieldChannelType, 
-                                                    S, 
-                                                    Either[Any, Tuple[A, S]]]:
+        def success_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             yield from ()
             return Right.new((value, input))
         return cls(success_run)
@@ -379,7 +378,7 @@ class Algebra(Generic[A, S]):
         return self.map_error(commit_error)
 
     def debug(self, 
-              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int]]], None]
+              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int | None]]], None]
               ) -> Algebra[A, S]:
         syn1 = self.syntax
         def debug_run(input: S,
@@ -391,10 +390,10 @@ class Algebra(Generic[A, S]):
             assert syn is syn1, f"{syn} != {syn1}"
             stack = []
             if cache is not None:
-                for rule, pos in cache.stack:
+                for rule, pos, opt in cache.normalized_stack():
                     s = syntax_of(rule)
                     if s is not None:
-                        stack.append((s, pos))
+                        stack.append((s, pos, opt))
             result = yield from self.run(input, cache)
             error = None
             value = None
@@ -439,11 +438,7 @@ class Algebra(Generic[A, S]):
         
 ######################################################## fundamental combinators ############################################    
 
-
-
-
     def iso(self, iso: Iso[A, B]) -> Algebra[B, S]:
-        # print(iso)
         return self.bimap(iso.forward, iso.inverse)
 
 
@@ -451,10 +446,7 @@ class Algebra(Generic[A, S]):
         raise NotImplementedError("Algebra.bimap_all is abstract, concrete subclasses must implement it")
     
     def bind(self, **f: Callable[[Any, Any], Any])-> Algebra[A, S]:
-        def bind_run(input: S, 
-                     cache:Cache[S]) -> Generator[YieldChannelType, 
-                                                S, 
-                                                Either[Any, Tuple[A, S]]]:
+        def bind_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Right):
                 value, state = result.value
@@ -465,10 +457,7 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=bind_run).flag(syntax=self.syntax) # type: ignore
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
-        def map_error_run(input: S, 
-                          cache:Cache[S] | None) -> Generator[YieldChannelType, 
-                                                    S, 
-                                                    Either[Any, Tuple[A, S]]]:
+        def map_error_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Left):
                 new_error = f(parsed.value)
@@ -500,12 +489,29 @@ class Algebra(Generic[A, S]):
                     data = ff(value, state)
                     return Right.new((data, state))
                 except DataError as e:
-                    return Left.new(Error.new(
-                        message=str(e),
-                        error=e,
-                        this=self,
-                        state=state
-                    ))
+                    assert self.syntax is not None, "Syntax information is required for soft failure errors"
+                    if e.soft_failure:
+                        return Left.new(Error.new(
+                            message=str(e),
+                            error=e,
+                            this=self,
+                            state=state,
+                            file = self.syntax.spec.file,
+                            line = self.syntax.spec.line
+                        ))
+                    else:
+                        e.file = self.syntax.spec.file
+                        e.line = self.syntax.spec.line
+                        e.rule = str(self.syntax)
+                        raise e
+                except (TypeError, ValueError) as e:
+                    assert self.syntax is not None, "Syntax information is required for error reporting"
+                    err = DataError(f"Error applying transformation: {type(e).__name__}: {e}")
+                    err.soft_failure = False  # Always hard fail for type/value errors
+                    err.file = self.syntax.spec.file
+                    err.line = self.syntax.spec.line
+                    err.rule = str(self.syntax)
+                    raise err from e
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
         return replace(self, run_f=map_run).flag(syntax=self.syntax) # type: ignore
@@ -515,12 +521,30 @@ class Algebra(Generic[A, S]):
             try:
                 new_state = f(state)
             except DataError as e:
-                return Left.new(Error.new(
-                    message=str(e),
-                    error=e,
-                    this=self,
-                    state=state
-                ))
+                assert self.syntax is not None, "Syntax information is required for soft failure errors"
+                if e.soft_failure:
+                    return Left.new(Error.new(
+                        message=str(e),
+                        error=e,
+                        this=self,
+                        state=state,
+                        file = self.syntax.spec.file,
+                        line = self.syntax.spec.line
+                    ))
+                else:
+                    e.file = self.syntax.spec.file
+                    e.line = self.syntax.spec.line
+                    e.rule = str(self.syntax)
+                    raise e
+            except (TypeError, ValueError) as e:
+                assert self.syntax is not None, "Syntax information is required for error reporting"
+                err = DataError(f"Error applying transformation: {type(e).__name__}: {e}")
+                err.soft_failure = False  # Always hard fail for type/value errors
+                err.file = self.syntax.spec.file
+                err.line = self.syntax.spec.line
+                err.rule = str(self.syntax)
+                raise err from e
+            
             result = yield from self.run(new_state, cache)
             return result
         return replace(self, run_f=map_state_run).flag(syntax=self.syntax)
@@ -543,7 +567,11 @@ class Algebra(Generic[A, S]):
             inp = input.enter()
             last_error: Optional[Left[Any]] = None
             for i, option in enumerate(options):
-                result = yield from option.run(inp, cache)
+                cache.push_choice(alt_run, i)
+                try:
+                    result = yield from option.run(inp, cache)
+                finally:
+                    cache.pop_choice()
                 match result:
                     case Right((value, state)):
 

@@ -280,8 +280,8 @@ class RE(Grammar):
     control_escape = S.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"]))
     shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).bimap(ShorthandKind.from_literal, ShorthandKind.to_literal).to(lambda env, X: X, lambda env, X: ShorthandAtom(X))
     category_name = unicode_category.many()
-    positive_unicode_category = S.seq(+escaped_p, +category_name, rbrace).to(lambda env: (env.negated, env.categories), lambda env: UnicodeCategoryAtom(env.negated, env.categories))
-    negative_unicode_category = S.seq(+escaped_P, +category_name, rbrace).to(lambda env: (env.negated, env.categories), lambda env: UnicodeCategoryAtom(env.negated, env.categories))
+    positive_unicode_category = S.seq(+escaped_p, +category_name, rbrace).to(lambda env: (env.negated, env.categories), lambda env: UnicodeCategoryAtom(env.categories, False))
+    negative_unicode_category = S.seq(+escaped_P, +category_name, rbrace).to(lambda env: (env.negated, env.categories), lambda env: UnicodeCategoryAtom(env.categories, True))
 
     unicode_category_escape = S.alt(positive_unicode_category, negative_unicode_category)
         
@@ -298,7 +298,7 @@ class RE(Grammar):
     octal_digit = S.lex(B.range("0", "7"))
     octal_escape = S.alt(
         (escaped_0 >> octal_digit + octal_digit).bimap(lambda x: chr(int(x[0] + x[1], 8)), lambda c: (tuple(format(ord(c), '02o')),)),
-        (backslash >> octal_digit.many(at_least=1)).bimap(lambda x: chr(int(''.join(x), 8)), lambda c: (tuple(digit for digit in format(ord(c), 'o')),))
+        (backslash >> octal_digit.many(at_least=1)).bimap(lambda x: chr(int(''.join(x[0]), 8)), lambda c: (tuple(digit for digit in format(ord(c), 'o')),))
     )
     escaped_literal = octal_escape | control_escape | unicode_escape | escaped_metachar
     literal = escaped_literal | literal_char
@@ -317,27 +317,28 @@ class RE(Grammar):
     irange = S.seq(+class_atom, minus, +class_atom).to(lambda env: (env.start, env.end), lambda env: CharRange(env.start, env.end))
     class_item = irange | class_atom
     
-    class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda x: x[1] + x[0] if x[0] else x[1])
+    class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda x: x[1] + (x[0],) if x[0] else x[1])
     char_class = S.seq(lsquare, +(~caret), +class_class_items, rsquare).to(lambda env: (env.negated, env.items) ,lambda env: CharClassAtom(env.negated, env.items))
 
     flag = S.lex(B.oneof("iLmsuaxw"))
-    flag_seq = flag.many()
+    enabled_flags = flag.many()
+    disabled_flags = (~(minus >> flag.many())).map(lambda x: x[0] if x else None)
     
-    inline_flags = S.seq(+flag_seq, (~(minus >> flag_seq)).map(lambda x: x[0] if x else None)).to(lambda env: (env.enabled, env.disabled), lambda env: InlineFlags(env.enabled, env.disabled))
+    inline_flags = S.seq(+enabled_flags, +disabled_flags).to(lambda env: (env.enabled_flags, env.disabled_flags), lambda env: InlineFlags(env.enabled_flags, env.disabled_flags))
     comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
     @lazy(S)
     def group(): # type: ignore
         return S.alt(
-            S.seq(RE.lparen, +RE.regex, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),
-            S.seq(RE.lparen, RE.question, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NON_CAPTURE)),
-            S.seq(S.lex(B.lit("(?=")), +RE.regex, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
-            S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
-            S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
-            S.seq(S.lex(B.lit("(?<!")), +RE.regex, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
-            S.seq(S.lex(B.lit("(?")), +RE.inline_flags, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.FLAGS)),
+            S.seq(RE.lparen, +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),
+            S.seq(RE.lparen, RE.question, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NON_CAPTURE)),
+            S.seq(S.lex(B.lit("(?=")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
+            S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
+            S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
+            S.seq(S.lex(B.lit("(?<!")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
+            S.seq(S.lex(B.lit("(?")), +RE.inline_flags, RE.rparen).to(lambda env: (env.inline_flags,), lambda env: GroupAtom(inline_flags=env.inline_flags, kind=GroupKind.FLAGS)),
             S.seq(S.lex(B.lit("(?P<")), +RE.name, RE.greater, +RE.regex, RE.rparen).to(lambda env: (env.name, env.regex), lambda env: GroupAtom(name=env.name, regex=env.regex, kind=GroupKind.CAPTURE)),
-            S.seq( S.lex(B.lit("(?")), +RE.inline_flags, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.X), lambda env: GroupAtom(regex=env.X, kind=GroupKind.FLAGS_SCOPED)),
+            S.seq( S.lex(B.lit("(?")), +RE.inline_flags, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.inline_flags, env.regex), lambda env: GroupAtom(inline_flags=env.inline_flags, regex=env.regex, kind=GroupKind.FLAGS_SCOPED)),
 
             S.seq(S.lex(B.lit("(?")), 
                         S.alt(
@@ -349,7 +350,7 @@ class RE(Grammar):
                         +RE.regex, 
                         RE.rparen).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="lookaround assertion group")),
 
-            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: (env.regex), lambda env:  UnsupportedFeature(regex=env.regex, feature="group existence test")),
+            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: (env.regex,), lambda env:  UnsupportedFeature(regex=env.regex, feature="group existence test")),
 
             S.alt(      S.seq(S.lex(B.lit("(?&")), +RE.name, RE.rparen),
                         S.seq(S.lex(B.lit("(?")), +RE.number, RE.rparen),
@@ -394,7 +395,7 @@ class RE(Grammar):
 
     atom = S.alt(        
             backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and group_counter >= v)),
-            S.seq(+literal).to(lambda env: (env.text), lambda env: LiteralAtom(env.text)),
+            S.seq(+literal).to(lambda env: (env.text,), lambda env: LiteralAtom(env.text)),
             char_class,
             anchor,
             dot,
@@ -408,7 +409,7 @@ class RE(Grammar):
     branch = S.seq(+(piece.many())).to(lambda env: (env.piece,), lambda env: Branch(env.piece))
 
     regex = S.seq(+(branch.sep_by(or_))).to(lambda env: (env.branch,), lambda env: Regex(env.branch))
-    regex_full = rule((regex // S.eof()).to(lambda env: (env.X), lambda env: env.X), is_root=True)
+    regex_full = rule((regex // S.eof()).to(lambda env: (env.X,), lambda env: env.X), is_root=True)
 
 
 
