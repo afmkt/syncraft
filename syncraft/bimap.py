@@ -366,6 +366,7 @@ class Expr:
 @dataclass(frozen=True, slots=True, eq=False)
 class Var(Expr):
     name: str | None = None
+    debug_f: Callable[..., Any] = field(default=lambda *arg, **kwargs: None, compare=False, hash=False, repr=False)
     def __post_init__(self):
         def expr_f(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
             if self.is_bound(env):
@@ -387,12 +388,16 @@ class Var(Expr):
     def bind(self, env: Env, value: Any) -> Tuple[bool, List[Any]]:
         success, reason = env.bind(self, value)
         if success:
+            self.debug_f(self.name, value)
             return True, []
         return False, reason + [(self, "Variable binding conflict")]
 
     def unify(self, other: Any, env: Env) -> Tuple[bool, List[Any]]:
         return self.bind(env, other)
-            
+
+    def debug(self, f: Callable[..., Any]) -> Var:
+        object.__setattr__(self, 'debug_f', f)
+        return self
 
 @dataclass(slots=True)
 class Scope:
@@ -649,7 +654,11 @@ def evaluate(expr: Any, env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
                 if not fully_resolved:
                     return False, expr
                 all_fields[field.name] = v
-            return True, type(expr)(**all_fields) # type: ignore
+            try:
+                return True, type(expr)(**all_fields) # type: ignore
+            except Exception as e:
+                print(f"Failed to construct dataclass {type(expr)} with fields {all_fields}: {e}")
+                raise DataError(f"Failed to construct dataclass {type(expr)} with fields {all_fields}: {e}")
     return True, expr
     
 def unify(pattern: Any, value: Any, env: Env) -> Tuple[bool, List[Any]]:

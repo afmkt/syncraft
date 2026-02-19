@@ -110,6 +110,8 @@ def test_shorthands():
 
 
 def test_dot_atom():
+    """Test parsing of dot (.) atom."""
+    # result = parse_regex(atom, ".")
     tmp = parse(".")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
@@ -571,20 +573,20 @@ def test_regex_unicode_category_escape():
 
 
 def test_neg_lookahead():
-    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +RE.regex.mark('pattern'), RE.rparen)
+    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +RE.regex, RE.rparen)
     nl = r"(?!\1)"
     ret = parse(nl, syntax=negative_lookahead)
     assert not isinstance(ret, Error)
 
 def test_noncap():    
-    noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +RE.regex.mark('pattern'), RE.rparen)
+    noncapturing = S.seq(S.lex(B.lit("(?:")).named('"(?:"'), +RE.regex, RE.rparen)
     noncap = r"(?:['\"])"
     ret = parse(noncap, syntax=noncapturing)
     assert not isinstance(ret, Error)
     
 
 def test_named():
-    named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +RE.name.mark('name'), RE.greater, +RE.regex.mark('pattern'), RE.rparen)
+    named = S.seq(S.lex(B.lit("(?P<")).named('"(?P<"'), +RE.name, RE.greater, +RE.regex, RE.rparen)
     s = r"(?P<quote>['\"])"
     ret = parse(s, syntax=named)
     assert not isinstance(ret, Error)
@@ -602,32 +604,27 @@ def test_complex1():
     ret= parse(pattern, syntax=RE.regex)
     assert not isinstance(ret, Error)
     
-
 if __name__ == "__main__":
     # test_anchors()
-    # test_control_escapes()
-    test_dot_atom()
-    # test_groups_capture()
-    # test_groups_flags_only()
-    # test_groups_flags_scoped()
-    # test_groups_named()
-    # test_groups_non_capture()
-    # test_groups_lookahead()
-    # test_groups_negative_lookahead()
-    # test_groups_lookbehind()
-    # test_groups_negative_lookbehind()
-    # test_groups_flags_with_disable()
-    # test_groups_flags_scoped_with_disable()
-    # test_literal_characters()
-    # test_literal_digits()
-    # test_literal_special_chars()
     # test_shorthands()
+    # test_dot_atom()
     # test_quantifiers()
     # test_character_classes_simple()
     # test_character_classes_negated()
     # test_character_classes_with_ranges()
     # test_character_classes_with_escaped_chars()
     # test_character_classes_with_shorthands()
+    # test_groups_capture()
+    # test_groups_non_capture()
+    # test_groups_named()
+    # test_groups_lookahead()
+    # test_groups_negative_lookahead()
+    # test_groups_lookbehind()
+    # test_groups_negative_lookbehind()
+    # test_groups_flags_only()
+    # test_groups_flags_with_disable()
+    # test_groups_flags_scoped()
+    # test_groups_flags_scoped_with_disable()
     # test_regex_comprehensive()
     # test_regex_negated()
     # test_regex_complex()
@@ -637,5 +634,5 @@ if __name__ == "__main__":
     # test_neg_lookahead()
     # test_noncap()
     # test_named()
-    # test_complex()
+    test_complex()
     # test_complex1()

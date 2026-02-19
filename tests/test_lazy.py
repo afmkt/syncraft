@@ -114,7 +114,7 @@ def test_mutual_recursion()->None:
     B = lazy(lambda: (literal('b') + A) | (literal('c')))
     v = parse_word(A, 'a b a b a c')
     # print(v)
-    assert v == (Token(text='a'), (Token(text='b'), Token(text='a'), (Token(text='b'), Token(text='a'), Token(text='c')))) 
+    assert v == (Token(text='a'), (Token(text='b'), (Token(text='a'), (Token(text='b'), (Token(text='a'), Token(text='c'))))))
 
     vv = generate_with(A, v)
     # print(vv)
@@ -176,7 +176,7 @@ def test_recursion() -> None:
     LL = parens() | L
     
     v = parse_word(LL, p_code)
-    assert v == (Token(text='a'), (Token(text='a'), Nothing, Token(text='b')), Token(text='b'))
+    assert v == ((Token(text='a'), ((Token(text='a'), Nothing), Token(text='b'))), Token(text='b'))
     
     vv = generate_with(LL, v)
     
@@ -254,7 +254,7 @@ def test_indirect_left_recursion_2()->None:
 
     v1 = parse_word(Expr, '1 + 2 * 3')
     # a1, _ = v1.bimap
-    assert isinstance(v1, tuple) and len(v1) == 3, f"Expected structured AST triple, got {v1!r}"
+    assert isinstance(v1, tuple) and len(v1) == 2, f"Expected structured AST triple, got {v1!r}"
     def leaf(x):
         try:
             return int(str(x)[2:]) if str(x).startswith('t.') and str(x)[2:].isdigit() else (str(x)[2:] if str(x).startswith('t.') else x)
@@ -265,7 +265,7 @@ def test_indirect_left_recursion_2()->None:
             return (norm(ast[0]), leaf(ast[1] if not isinstance(ast[1], tuple) else ast[1]), norm(ast[2]))
         return leaf(ast)
     normalized = norm(v1)
-    assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
+    assert normalized == ((1, Token(text='+')), ((2, Token(text='*')), 3)), f"Unexpected normalized AST: {normalized}"
 
     v_42 = parse_word(Expr, '42')
     # a_42, _ = v_42.bimap
@@ -291,13 +291,7 @@ def test_indirect_left_recursion_structured_plus()->None:
     v = parse_word(Expr,'1 + 2 * 3')
     # ast,_ = v.bimap
     # Basic structural checks
-    assert isinstance(v, tuple) and len(v) == 3
-    assert str(v[0]) == 't.1'
-    assert str(v[1]) == 't.+'
-    assert isinstance(v[2], tuple) and len(v[2]) == 3
-    assert str(v[2][0]) == 't.2'
-    assert str(v[2][1]) == 't.*'
-    assert str(v[2][2]) == 't.3'
+    assert v == ((Token(text='1'), Token(text='+')), ((Token(text='2'), Token(text='*')), Token(text='3')))
 
 
 def test_mutual_left_recursive_map_preserves_shape()->None:
@@ -332,14 +326,7 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     # raw, _ = v_raw.bimap
     # Raw structural assertions
     print(v_raw)
-    assert isinstance(v_raw, tuple) and len(v_raw) == 3
-    left_num, plus_tok, right_term = v_raw
-    assert str(left_num) == 't.1'
-    assert str(plus_tok) == 't.+'
-    assert isinstance(right_term, tuple) and len(right_term) == 3
-    assert str(right_term[0]) == 't.2'
-    assert str(right_term[1]) == 't.*'
-    assert str(right_term[2]) == 't.3'
+    assert v_raw == ((Token(text='1'), Token(text='+')), ((Token(text='2'), Token(text='*')), Token(text='3')))
 
     # Mapped variant
     NUMBER_M = NUMBER.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  # type: ignore[name-defined]
@@ -347,15 +334,10 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     TermM = lazy(lambda: (TermM + STAR + FactorM) | FactorM)  # type: ignore[name-defined]
     FactorM = lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
     v_mapped = parse_word(ExprM, '1 + 2 * 3')
-    # mapped, _ = v_mapped.bimap
-    assert isinstance(v_mapped, tuple) and len(v_mapped) == 3
-    l_val, plus_tok2, right_term_m = v_mapped
-    assert l_val == 1
-    assert plus_tok2.text == '+'
-    assert isinstance(right_term_m, tuple) and len(right_term_m) == 3
-    assert right_term_m[0] == 2
-    assert right_term_m[1].text == '*'
-    assert right_term_m[2] == 3
+    
+
+    assert v_mapped == ((1, Token(text='+')), ((2, Token(text='*')), 3))
+    
 
     # Shape parity: replace ints with placeholder to compare tuple/operator skeletons.
     def shape(x):
@@ -405,8 +387,8 @@ def test_non_recursive_map_preserves_shape()->None:
     Pair = NUM + PLUS + NUM
     v = parse_word(Pair, '12 + 34')
     # ast,_ = v.bimap
-    assert isinstance(v, tuple) and len(v) == 3
-    left_tok, plus_tok, right_tok = v
+    assert isinstance(v, tuple) and len(v) == 2
+    ((left_tok, plus_tok), right_tok) = v
     assert str(plus_tok) == 't.+'
     assert str(left_tok) == 't.12'
     assert str(right_tok) == 't.34'
@@ -416,11 +398,7 @@ def test_non_recursive_map_preserves_shape()->None:
     PairM = NUM_M + PLUS + NUM_M
     v2  = parse_word(PairM, '12 + 34')
     # ast2,_ = v2.bimap
-    assert isinstance(v2, tuple) and len(v2) == 3
-    l2, plus2, r2 = v2
-    # Leaves transformed to int but shape preserved.
-    assert l2 == 12 and r2 == 34
-    assert str(plus2) == 't.+'
+    assert v2 == ((12, Token(text='+')), 34)
 
 
 
@@ -432,7 +410,7 @@ def test_direct_left_recursive_map_preserves_shape()->None:
     Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
     v = parse_word(Expr, '1 + 2 + 3')
     generated = gen.generate_with(Expr, v)
-    assert v == ((Token(text='1'), Token(text='+'), Token(text='2')), Token(text='+'), Token(text='3'))
+    assert v == ((((Token(text='1'), Token(text='+')), Token(text='2')), Token(text='+')), Token(text='3'))
     # print(generated)
     assert generated == Lazy(
         value=Alt(
@@ -465,20 +443,14 @@ def test_direct_left_recursive_map_preserves_shape()->None:
     )
 
 
-    # raw,_ = v.bimap
-    # Raw structure assertions
-    assert isinstance(v, tuple) and len(v) == 3
-    assert isinstance(v[0], tuple) and len(v[0]) == 3  # left nested
-    
-    assert v[1] == Token(text='+')
-    assert v[2] == Token(text='3')
+    assert v == ((((Token(text='1'), Token(text='+')), Token(text='2')), Token(text='+')), Token(text='3'))
 
     # Mapped version
     NUM_M = NUM.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  
     ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
     v2 = parse_word(ExprM, '1 + 2 + 3')
     generated = gen.generate_with(ExprM, v2)
-    assert v2 == ((1, Token(text='+'), 2), Token(text='+'), 3)
+    assert v2 == ((((1, Token(text='+')), 2), Token(text='+')), 3)
     # print(generated)
     assert generated == Lazy(
         value=Alt(
@@ -511,15 +483,7 @@ def test_direct_left_recursive_map_preserves_shape()->None:
     )
 
     # mapped,_ = v2.bimap
-    assert isinstance(v2, tuple) and len(v2) == 3
-    left_nested, mid_op, right_leaf = v2
-    assert isinstance(left_nested, tuple) and len(left_nested) == 3
-    assert mid_op.text == '+'
-    assert right_leaf == 3
-    # Check leaves inside nested left part transformed properly
-    assert left_nested[0] == 1
-    assert left_nested[1].text == '+'
-    assert left_nested[2] == 2
+    assert v2 == ((((1, Token(text='+')), 2), Token(text='+')), 3)
 
 
 def test_direct_left_recursion_collapse()->None:
@@ -577,7 +541,7 @@ def test_multi_head_identity_in_error()->None:
 
     v = parse_word(Expr, 'n + n + n')
     generated = gen.generate_with(Expr, v)
-    assert v == ((Token(text='n'), Token(text='+'), Token(text='n')), Token(text='+'), Token(text='n'))
+    assert v == ((((Token(text='n'), Token(text='+')), Token(text='n')), Token(text='+')), Token(text='n'))
     # print(generated)
     assert generated ==Lazy(
         value=Alt(
@@ -621,7 +585,7 @@ def test_indirect_left_recursion_3()->None:
     print(v)
     generated = gen.generate_with(List, v)
     
-    assert v == ((Token(text='a'), Token(text=','), Token(text='b')), Token(text=','), Token(text='a'))
+    assert v == ((((Token(text='a'), Token(text=',')), Token(text='b')), Token(text=',')), Token(text='a'))
     print(generated)
     assert generated == Lazy(
         value=Alt(
@@ -751,7 +715,7 @@ def test_multi_recursion()->None:
 
     v1 = parse_word(Expr, '1 + 2 * 3')
     # a1, _ = v1.bimap
-    assert isinstance(v1, tuple) and len(v1) == 3, f"Expected structured AST triple, got {v1!r}"
+    assert isinstance(v1, tuple) and len(v1) == 2, f"Expected structured AST triple, got {v1!r}"
     def leaf(x):
         try:
             return int(str(x)[2:]) if str(x).startswith('t.') and str(x)[2:].isdigit() else (str(x)[2:] if str(x).startswith('t.') else x)
@@ -762,7 +726,7 @@ def test_multi_recursion()->None:
             return (norm(ast[0]), leaf(ast[1] if not isinstance(ast[1], tuple) else ast[1]), norm(ast[2]))
         return leaf(ast)
     normalized = norm(v1)
-    assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
+    assert normalized == ((1, Token(text='+')), ((2, Token(text='*')), 3)), f"Unexpected normalized AST: {normalized}"
 
     v_42 = parse_word(Expr, '42')
     # a_42, _ = v_42.bimap
@@ -777,7 +741,7 @@ def test_indirect_left_recursion_5()->None:
     v = parse_word(Chain, 'a -> b -> c')
     generated = gen.generate_with(Chain, v)
     # print(v)
-    assert v == ((Token(text='a'), Token(text='->'), Token(text='b')), Token(text='->'), Token(text='c'))
+    assert v == ((((Token(text='a'), Token(text='->')), Token(text='b')), Token(text='->')), Token(text='c'))
     # print(generated)
     assert generated == Lazy(
         value=Alt(

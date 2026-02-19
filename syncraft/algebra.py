@@ -7,7 +7,7 @@ from syncraft.ast import Nothing
 from dataclasses import dataclass, replace, field
 from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
-from syncraft.bimap import Bindable, Iso
+from syncraft.bimap import Bindable, Iso, DataError
 from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER, CallWith
 from rich import print
 if TYPE_CHECKING:
@@ -496,8 +496,16 @@ class Algebra(Generic[A, S]):
             parsed = yield from self.run(input, cache)
             if isinstance(parsed, Right):
                 value, state = parsed.value
-                data = ff(value, state)
-                return Right.new((data, state))
+                try:
+                    data = ff(value, state)
+                    return Right.new((data, state))
+                except DataError as e:
+                    return Left.new(Error.new(
+                        message=str(e),
+                        error=e,
+                        this=self,
+                        state=state
+                    ))
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
         return replace(self, run_f=map_run).flag(syntax=self.syntax) # type: ignore
@@ -506,9 +514,9 @@ class Algebra(Generic[A, S]):
         def map_state_run(state: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             try:
                 new_state = f(state)
-            except Exception as e:
+            except DataError as e:
                 return Left.new(Error.new(
-                    message="Error in map_state function",
+                    message=str(e),
                     error=e,
                     this=self,
                     state=state

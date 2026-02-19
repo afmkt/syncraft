@@ -288,7 +288,7 @@ class RE(Grammar):
     unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).bimap(lambda x: ''.join([x[0]] + x[1]), lambda s: (s[0], list(s[1:])))
     name_continue = unicode_letter | underscore
     name_start = unicode_letter | underscore
-    name = (name_start + name_continue.many()).bimap(lambda x: ''.join([x[0]] + x[1]), lambda s: (s[0], list(s[1:])))
+    name = (name_start + name_continue.many()).bimap(lambda x: ''.join([x[0]] + list(x[1])), lambda s: (s[0], list(s[1:])))
     unicode_escape = S.alt((escaped_x >> hex_pair).bimap(lambda x: chr(int(x[0], 16)), lambda x: (format(ord(x), '02x'),)), 
                     (escaped_u >> hex_quad).bimap(lambda x: chr(int(x[0], 16)), lambda x: (format(ord(x), '04x'),)),
                     (escaped_U >> hex_octa).bimap(lambda x: chr(int(x[0], 16)), lambda x: (format(ord(x), '08x'),)), 
@@ -388,12 +388,12 @@ class RE(Grammar):
 
 
     backreference = S.alt(
-        (backslash >> number).to(lambda env: (env.X), lambda env: env.X),
-        (S.lex(B.lit("\\g<")) >> name // greater).to(lambda env: (env.X), lambda env: env.X)
+        (backslash >> number).to(lambda env: (env.X,), lambda env: env.X),
+        (S.lex(B.lit("\\g<")) >> name // greater).to(lambda env: (env.X,), lambda env: env.X)
     )
 
     atom = S.alt(        
-            backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and len(group_counter) >= v)),
+            backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and group_counter >= v)),
             S.seq(+literal).to(lambda env: (env.text), lambda env: LiteralAtom(env.text)),
             char_class,
             anchor,

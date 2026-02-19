@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
-from syncraft.bimap import Bindable, Iso
+from syncraft.bimap import Bindable, Iso, DataError
 from syncraft.ast import Many, Nothing, SyncraftError, Seq, Alt, Lazy, Unknown
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
@@ -130,15 +130,6 @@ class SyntaxSpec:
     line: Optional[int] = field(compare=False, hash=False)
     func: Optional[str] = field(compare=False, hash=False)
 
-    @property
-    def is_then(self) -> bool:
-        return False
-
-
-    @property
-    def arity(self)->int:
-        return 1
-
 
     def iso(self, *args: Any, **kwargs: Any) -> Iso[Any, Any]:
         return Iso()
@@ -246,22 +237,13 @@ class LazySpec(SyntaxSpec):
     creation_site: str = field(compare=False, hash=False, init=False)
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
-    @property
-    def arity(self)->int:
-        return self.inner_spec.arity
-    
-    @property
-    def is_then(self) -> bool:
-        return self.inner_spec.is_then
-    
+
     def iso(self) -> Iso[Lazy, Any]:
         def fwd(lz: Lazy, ctx: Any) -> Any:
             ret = lz.value
-            # print(f"LazySpec.iso.fwd: {lz}: {id(lz)} => {ret}: {id(ret)}")
             return ret
         def inv(v: Any, ctx: Any) -> Lazy:
             ret = Lazy(value=v)
-            # print(f"LazySpec.iso.inv: {ret}: {id(ret)} <= {v}: {id(v)}")
             return ret
         return Iso(fwd, inv)
 
@@ -317,51 +299,33 @@ class LazySpec(SyntaxSpec):
 class SeqSpec(SyntaxSpec):
     steps: Tuple[Tuple[SyntaxSpec, bool], ...]
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
-
-    @property
-    def arity(self)->int:
-        count = 0
-        for data, include in self.steps:
-            if include:
-                count += data.arity
-        return count
-    @property
-    def is_then(self) -> bool:
-        return True
-
-
+    
     def iso(self) -> Iso[Seq, Tuple[Any, ...]]:
         def inv(v: Tuple[Any, ...], ctx: Any) -> Seq:
             if not isinstance(v, tuple):
-                raise SyncraftError(f"Expected a tuple for SeqSpec value, got {v}", offender=v, expect="tuple")
-            if len(v) != self.arity:
-                raise SyncraftError("Length of provided values does not match Seq inclusion pattern",
-                                     offender=v,
-                                     expect=f"length {self.arity}")
+                raise DataError(f"Expected a tuple for SeqSpec value, got {v}")
+            
             new_elements = []
             v_index = 0
             for spec, include in self.steps:
                 if include:
-                    data = v[v_index: v_index + spec.arity]
-                    new_elements.append((data if spec.arity > 1 else data[0], True))
-                    v_index += spec.arity
+                    data = v[v_index]
+                    new_elements.append((data, True)) 
+                    v_index += 1
                 else:
                     new_elements.append((Unknown(), False))
             ret = Seq(value=tuple(new_elements))
-            # print(f"SeqSpec.iso.inv: {ret}: {id(ret)} <= {v}: {id(v)}")
+            
             return ret
         def fwd(s: Seq, ctx: Any) -> Tuple[Any, ...]:
             vs = []
             index = 0
             for spec, include in self.steps:
                 if include:
-                    if spec.is_then:
-                        vs.extend(s.value[index][0])
-                    else:
-                        vs.append(s.value[index][0])
+                    vs.append(s.value[index][0])
                 index += 1
             ret = tuple(vs)
-            # print(f"SeqSpec.iso.fwd: {s}: {id(s)} => {ret}: {id(ret)}")
+            
             return ret
         return Iso(fwd, inv)
 
@@ -401,11 +365,11 @@ class AltSpec(SyntaxSpec):
     def iso(self, index: Optional[int] = None) -> Iso[Alt, Any]:
         def fwd(o: Alt, ctx: Any) -> Any:
             ret = o.value
-            # print(f"AltSpec.iso.fwd: {o}: {id(o)} => {ret}: {id(ret)}")
+            
             return ret
         def inv(v: Any, ctx: Any) -> Alt:
             ret = Alt(index=index, value=v)
-            # print(f"AltSpec.iso.inv: {ret}: {id(ret)} <= {v}: {id(v)}")
+            
             return ret
         return Iso(fwd, inv)
 
@@ -449,11 +413,11 @@ class ManySpec(SyntaxSpec):
     def iso(self) -> Iso[Many, Tuple[Any, ...]]:
         def fwd(m: Many, ctx: Any) -> Tuple[Any, ...]:
             ret = m.value
-            # print(f"ManySpec.iso.fwd: {m}: {id(m)} => {ret}: {id(ret)}")
+            
             return ret
         def inv(v: Tuple[Any, ...], ctx: Any) -> Many:
             ret = Many(value=v if v is not None else tuple([]))
-            # print(f"ManySpec.iso.inv: {ret}: {id(ret)} <= {v}: {id(v)}")
+            
             return ret
         return Iso(fwd, inv)
 
@@ -1063,7 +1027,7 @@ class Syntax(Generic[A, S]):
         def check_preds(value: Any, ctx: FrozenDict[str, Any]) -> Any:
             vars = [ctx.get(name, ...) for name in names]
             if not pred(value, *vars):
-                raise ValueError(f"Predicate failed for value {value} with context {ctx}, at {file}:{line}")
+                raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}")
             return value
         return self.map(check_preds) if forward else self.imap(check_preds)
         

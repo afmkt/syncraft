@@ -46,7 +46,7 @@ class MetaNothing(type):
         return "Nothing"
     def __bool__(cls)->bool:
         return False
-@dataclass(frozen=True, slots=True)
+
 class Nothing(metaclass=MetaNothing):
     """Singleton sentinel representing the absence of a value in the AST."""
     def __call__(self)-> Nothing:
