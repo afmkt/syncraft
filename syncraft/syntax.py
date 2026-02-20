@@ -29,6 +29,8 @@ import threading
 GREEN = "\033[92m"
 RESET = "\033[0m"
 RED = "\033[91m"
+UNDERLINE = "\033[4m"
+ITALIC = "\033[3m"
 
 
 def valid_name(name: str) -> bool:
@@ -132,6 +134,9 @@ class SyntaxSpec:
     file: Optional[str] = field(compare=False, hash=False) 
     line: Optional[int] = field(compare=False, hash=False)
     func: Optional[str] = field(compare=False, hash=False)
+
+    def to_str(self, highlight:int) -> str:
+        return str(self)
 
 
     def iso(self, *args: Any, **kwargs: Any) -> Iso[Any, Any]:
@@ -263,7 +268,7 @@ class LazySpec(SyntaxSpec):
         cache[self] = ret = replace(ret, spec=self)
         return ret
 
-    def __str__(self) -> str:
+    def to_str(self, highlight: int) -> str:
         if RecursionCtx.is_visiting(self):
             name = self.name or "lazy(UNSOLVED)"
             return self.format("{0}", name)
@@ -275,7 +280,8 @@ class LazySpec(SyntaxSpec):
                 return ret
             else:
                 return self.str_cache
-            
+    def __str__(self) -> str:
+        return self.to_str(highlight=-1)
 
     @property    
     def complexity(self) -> float:
@@ -340,23 +346,28 @@ class SeqSpec(SyntaxSpec):
         cache[self] = ret = replace(ret, spec=self)
         return ret
 
-    def __str__(self) -> str:
+    def to_str(self, highlight: int) -> str:
         if self.str_cache is None:
             if self.name:
                 ret = self.name
             else:
-                def format_step(s: Tuple[SyntaxSpec, bool]) -> str:
+                def format_step(s: Tuple[SyntaxSpec, bool], index: int) -> str:
                     step_str = str(s[0])
                     if s[1]:
                         step_str = f"{GREEN}{step_str}{RESET}"
+                    if index == highlight:
+                        step_str = f"{ITALIC}{step_str}{RESET}"
                     return step_str
                 
-                inner = " \u25b6 ".join(format_step(s) for s in self.steps)
+                inner = " \u25b6 ".join(format_step(s, i) for i, s in enumerate(self.steps))
                 ret = self.format("({steps})", steps=inner)
             object.__setattr__(self, 'str_cache', ret)
             return ret
         else:
             return self.str_cache
+
+    def __str__(self) -> str:
+        return self.to_str(highlight=-1)
         
     @property
     def complexity(self) -> float:
@@ -392,18 +403,21 @@ class AltSpec(SyntaxSpec):
         cache[self] = ret = replace(ret, spec=self)
         return ret
 
-    def __str__(self) -> str:
+    def to_str(self, highlight: int) -> str:
         if self.str_cache is None:
             if self.name:
                 ret = self.name
             else:
-                choices = [str(opt) for opt in self.options]
+                choices = [str(opt) if i != highlight else f"{ITALIC}{str(opt)}{RESET}" for i, opt in enumerate(self.options)]
                 inner = " | ".join(str(c) for c in choices)
                 ret = self.format("({choices})", choices=inner)
             object.__setattr__(self, 'str_cache', ret)
             return ret
         else:
             return self.str_cache
+
+    def __str__(self) -> str:
+        return self.to_str(highlight=-1)
 
     @property
     def complexity(self) -> float:
@@ -439,7 +453,7 @@ class ManySpec(SyntaxSpec):
         cache[self] = ret = replace(ret, spec=self)
         return ret
 
-    def __str__(self) -> str:
+    def to_str(self, highlight: int) -> str:
         if self.str_cache is None:
             if self.name:
                 ret = self.name
@@ -450,6 +464,10 @@ class ManySpec(SyntaxSpec):
         else:
             return self.str_cache
         
+    def __str__(self) -> str:
+        return self.to_str(highlight=-1)
+    
+
     @property
     def complexity(self) -> float:
         if self.at_most is None:
@@ -478,7 +496,7 @@ class LexSpec(SyntaxSpec):
         cache[self] = ret = replace(ret, spec=self)
         return ret
     
-    def __str__(self) -> str:
+    def to_str(self, highlight: int) -> str:
         if self.str_cache is None:
             if self.name or not (self.kwargs or self.args):
                 ret = self.name or self.fname
@@ -510,6 +528,9 @@ class LexSpec(SyntaxSpec):
             return ret
         else:
             return self.str_cache
+
+    def __str__(self)->str:
+        return self.to_str(highlight=-1)
 
     @property
     def complexity(self) -> float:
