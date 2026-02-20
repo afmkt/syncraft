@@ -20,6 +20,7 @@ plugins:
             filters: []
 nav:
   - Quickstart: quickstart.md
+  - AI Ready: ai-ready.md
   - Tutorials:
       - SQLite CREATE TRIGGER Parser Tutorial: tutorials/trigger.ipynb
   - Concepts: concept.md
