@@ -8,7 +8,7 @@ from syncraft.generator import generator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
-from syncraft.bimap import Scope
+
 
 
 NO_NAME = "<no_name>"
@@ -133,7 +133,7 @@ def grammar(cls: type) -> type:
         >>> result = SimpleGrammar.parse("123")
     """
     locations = class_field_location(cls)
-    rules = {}
+    rules = dict()
     root = None
     for name, value in list(cls.__dict__.items()):
         if isinstance(value, Syntax):
@@ -161,7 +161,8 @@ def grammar(cls: type) -> type:
             setattr(cls, name, value)
     setattr(cls, '_rules', rules)
     setattr(cls, '_root_rule', root)
-    setattr(cls, 'vars', Scope())
+    setattr(cls, '_parser', dict())
+    setattr(cls, '_generator', dict())
     return cls
 
         
@@ -194,11 +195,17 @@ class Grammar:
         >>> result = MyGrammar.parse("123")
         >>> text = MyGrammar.generate(result)
     """
-    vars: Scope # Scope for variable bindings in the grammar, @grammar will initialize this to an empty Scope for each subclass
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
-    _parser: Dict[Syntax, Algebra] = {}
-    _generator: Dict[Syntax, Algebra] = {}
+    _parser: Dict[Syntax, Algebra]
+    _generator: Dict[Syntax, Algebra]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._rules = dict()
+        cls._root_rule = None
+        cls._parser = dict()
+        cls._generator = dict()
     
 
     @classmethod
