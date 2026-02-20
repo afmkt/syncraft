@@ -380,18 +380,18 @@ class Lexer(LexerBase[C]):
         lexer = self
         for index, char in enumerate(txt):
             match lexer.match(tag, char, index):  # type: ignore[arg-type]
-                case Left(_):
-                    return False
-                case Right(None):
+                case None:
                     continue
-                case Right(LexerResult(tag=t, start=s, end=e)):
+                case LexerResult(tag=t, start=s, end=e):
                     if len(tag) > 0 and t not in tag:
                         return False
-                    if s != 0 or e != len(txt) - 1:
+                    if s != 0 or e != len(txt):
                         return False
                     if index != len(txt) - 1:
                         return False
                     return True
+                case _:
+                    return False                
         return False
 
     def candidate(self) -> LexerError | LexerResult[C]:
@@ -479,7 +479,7 @@ class ExtLexer(LexerBase[T]):
         return frozenset(self.rules.keys())
 
     @classmethod
-    def create(cls, tkspec: TokenSpec[T]) -> Optional[ExtLexer[T]]:
+    def create(cls, tkspec: TokenSpec) -> Optional[ExtLexer[T]]:
         if isinstance(tkspec, TokenSpec):
             ret = cls()
             for t in tkspec.tags():

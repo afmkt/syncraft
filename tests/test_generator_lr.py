@@ -72,7 +72,17 @@ def test_generate_with_infers_from_fabuilder_literal() -> None:
     ast = generate_with(lex_syntax, seed=321)
     print(ast)
     assert isinstance(ast, Token)
-    assert ast.token_type == "WORD"
+    assert ast.token_type == "WORD" 
     assert ast.text == "go"
+
+
+def test_validate_lex_token_uses_varify_full_match() -> None:
+    S = Syntax.set(terminal_cls=Token)
+    lex_syntax = S.factory("lex", Builder.lit("ab").tagged("AB"))
+
+    ast = validate(lex_syntax, Token(text="ab", token_type="AB"))
+    assert isinstance(ast, Token)
+    assert ast.token_type == "AB"
+    assert ast.text == "ab"
     
     

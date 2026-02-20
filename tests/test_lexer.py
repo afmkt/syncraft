@@ -153,3 +153,10 @@ def test_default_lexer_still_prefers_maximal_munch() -> None:
     lexer = Lexer.from_builders(long_rule, short_rule)
     tokens = _collect_tokens(lexer, "ab")
     assert [tok.tag for tok in tokens] == ["LONG"]
+
+
+def test_varify_accepts_full_match() -> None:
+    rule: Builder[str] = Builder.lit("ab").tagged("AB")
+    lexer = Lexer.from_builders(rule)
+
+    assert lexer.varify(frozenset({"AB"}), "ab") is True
