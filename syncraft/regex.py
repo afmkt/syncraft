@@ -372,10 +372,10 @@ class RE(Grammar):
 
 
     braced_quantifier = S.alt(
-        S.seq(lbrace, +number, rbrace).to(lambda env: (env.minimum,), lambda env: Quantifier(minimum=env.minimum, maximum=env.minimum)),
-        S.seq(lbrace, +number, comma, rbrace).to(lambda env: (env.minimum,), lambda env: Quantifier(minimum=env.mininum, maximum=None)),
-        S.seq(lbrace, comma, +number, rbrace).to(lambda env: (env.minimum,), lambda env: Quantifier(minimum=0, maximum=env.minimum)),
-        S.seq(lbrace, +number, comma, +number, rbrace).to(lambda env: (env.minimum, env.maximum), lambda env: Quantifier(env.minimum, env.maximum))
+        S.seq(lbrace, +number, rbrace).to(lambda env: (env.M,), lambda env: Quantifier(minimum=env.M, maximum=env.M)),
+        S.seq(lbrace, +number, comma, rbrace).to(lambda env: (env.M,), lambda env: Quantifier(minimum=env.M, maximum=None)),
+        S.seq(lbrace, comma, +number, rbrace).to(lambda env: (env.M,), lambda env: Quantifier(minimum=0, maximum=env.M)),
+        S.seq(lbrace, +number, comma, +number, rbrace).to(lambda env: (env.M, env.N), lambda env: Quantifier(env.M, env.N))
     )
 
 
@@ -384,8 +384,8 @@ class RE(Grammar):
             question.to(lambda env: "?", lambda env: Quantifier(minimum=0, maximum=1)),
             star.to(lambda env: "*", lambda env: Quantifier(minimum=0, maximum=None)),
             plus.to(lambda env: "+", lambda env: Quantifier(minimum=1, maximum=None)),
-        ) + ~question).to(lambda env: (Quantifier(minimum=env.minimum, maximum=env.maximum), env.greedy), 
-                          lambda env: Quantifier(minimum=env.minimum, maximum=env.maximum, greedy=Not(env.greedy)) )
+        ) + ~question).to(lambda env: (Quantifier(minimum=env.M, maximum=env.N), env.greedy), 
+                          lambda env: Quantifier(minimum=env.M, maximum=env.N, greedy=Not(env.greedy)) )
 
 
     backreference = S.alt(

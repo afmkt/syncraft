@@ -312,7 +312,7 @@ class Algebra(Generic[A, S]):
                     return Right.new((value, input)) 
                 case _:
                     return result
-        return replace(self, run_f=present_run).flag(syntax=self.syntax)
+        return replace(self, run_f=present_run)
         
     @property
     def absent(self) -> Algebra[type[Nothing], S]:
@@ -330,7 +330,7 @@ class Algebra(Generic[A, S]):
                         this=self,
                         state=input
                     ))
-        return replace(self, run_f=absent_run).flag(syntax=self.syntax) # type: ignore
+        return replace(self, run_f=absent_run) # type: ignore
         
     @classmethod
     def lazy(cls, thunk: Callable[[], Algebra[A, S]]) -> Algebra[A, S]:
@@ -454,7 +454,7 @@ class Algebra(Generic[A, S]):
                 return Right.new((value, state))
             else:
                 return result
-        return replace(self, run_f=bind_run).flag(syntax=self.syntax) # type: ignore
+        return replace(self, run_f=bind_run) # type: ignore
 
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Algebra[A, S]:
         def map_error_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
@@ -514,7 +514,7 @@ class Algebra(Generic[A, S]):
                     raise err from e
             else:
                 return cast(Either[Any, Tuple[B, S]], parsed)
-        return replace(self, run_f=map_run).flag(syntax=self.syntax) # type: ignore
+        return replace(self, run_f=map_run) # type: ignore
 
     def map_state(self, f: Callable[[S], S]) -> Algebra[A, S]:
         def map_state_run(state: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
@@ -547,7 +547,7 @@ class Algebra(Generic[A, S]):
             
             result = yield from self.run(new_state, cache)
             return result
-        return replace(self, run_f=map_state_run).flag(syntax=self.syntax)
+        return replace(self, run_f=map_state_run) # type: ignore
         
 
     def imap(self, f: Callable[..., A]) -> Algebra[A, S]:
