@@ -33,6 +33,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install uv hatchling
 
+      - name: Install deps
+        run: |
+          uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest
+
       - name: Build package
         run: uv build
 

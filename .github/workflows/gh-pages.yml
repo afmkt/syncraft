@@ -46,6 +46,9 @@ jobs:
           # Make sure the package is available in the environment
           uv run python -c "import syncraft; print(f'Syncraft version: {syncraft.__version__ if hasattr(syncraft, \"__version__\") else \"installed\"}')"
 
+      - name: Run tests
+        run: uv run pytest
+
       - name: Build site (clean)
         run: uv run mkdocs build --clean --site-dir ./site
 

@@ -13,6 +13,11 @@ dependencies = [
 ]
 
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.1",
@@ -40,4 +45,4 @@ dev = [
 packages = ["syncraft"]
 
 [tool.setuptools.package-data]
-syncraft = ["cache/**/*"]
+syncraft = ["cache/**/*", "py.typed"]
