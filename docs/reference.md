@@ -10,8 +10,6 @@
 
 ::: syncraft.ast
 
-::: syncraft.finder
-
-::: syncraft.constraint
+::: syncraft.bimap
 
 ::: syncraft.algebra

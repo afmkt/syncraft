@@ -2319,7 +2319,7 @@ wheels = [
 [[package]]
 name = "syncraft"
 version = "0.3.2"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "rstr" },
 ]
