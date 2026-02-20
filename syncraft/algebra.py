@@ -506,7 +506,7 @@ class Algebra(Generic[A, S]):
                         raise e
                 except (TypeError, ValueError) as e:
                     assert self.syntax is not None, "Syntax information is required for error reporting"
-                    err = DataError(f"Error applying transformation: {type(e).__name__}: {e}")
+                    err = DataError(f"Error applying {f} to {value}: {type(e).__name__}: {e}")
                     err.soft_failure = False  # Always hard fail for type/value errors
                     err.file = self.syntax.spec.file
                     err.line = self.syntax.spec.line
@@ -538,7 +538,7 @@ class Algebra(Generic[A, S]):
                     raise e
             except (TypeError, ValueError) as e:
                 assert self.syntax is not None, "Syntax information is required for error reporting"
-                err = DataError(f"Error applying transformation: {type(e).__name__}: {e}")
+                err = DataError(f"Error applying {f} to {state}: {type(e).__name__}: {e}")
                 err.soft_failure = False  # Always hard fail for type/value errors
                 err.file = self.syntax.spec.file
                 err.line = self.syntax.spec.line

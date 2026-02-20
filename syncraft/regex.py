@@ -285,15 +285,15 @@ class RE(Grammar):
 
     unicode_category_escape = S.alt(positive_unicode_category, negative_unicode_category)
         
-    unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).bimap(lambda x: ''.join([x[0]] + x[1]), lambda s: (s[0], list(s[1:])))
+    unicode_name = (unicode_letter + S.alt(unicode_letter, underscore, space, hyphen).many()).bimap(lambda x: ''.join([x[0]] + list(x[1])), lambda s: (s[0], list(s[1:])))
     name_continue = unicode_letter | underscore
     name_start = unicode_letter | underscore
     name = (name_start + name_continue.many()).bimap(lambda x: ''.join([x[0]] + list(x[1])), lambda s: (s[0], list(s[1:])))
     unicode_escape = S.alt((escaped_x >> hex_pair).bimap(lambda x: chr(int(x[0], 16)), lambda x: (format(ord(x), '02x'),)), 
                     (escaped_u >> hex_quad).bimap(lambda x: chr(int(x[0], 16)), lambda x: (format(ord(x), '04x'),)),
                     (escaped_U >> hex_octa).bimap(lambda x: chr(int(x[0], 16)), lambda x: (format(ord(x), '08x'),)), 
-                    ((escaped_N >> unicode_name) // rbrace).bimap(lambda x: unicodedata.lookup(x[0]), lambda x: ((unicodedata.name(x),),)))
-    escaped_metachar = (backslash >> meta_char).to(lambda env: (env.X), lambda env: env.X)
+                    ((escaped_N >> unicode_name) // rbrace).bimap(lambda x: unicodedata.lookup(x[0][0]), lambda x: ((unicodedata.name(x),),)))
+    escaped_metachar = (backslash >> meta_char).to(lambda env: (env.X,), lambda env: env.X)
     escaped_0 = S.lex(B.lit("\\0"))
     octal_digit = S.lex(B.range("0", "7"))
     octal_escape = S.alt(
@@ -303,7 +303,7 @@ class RE(Grammar):
     escaped_literal = octal_escape | control_escape | unicode_escape | escaped_metachar
     literal = escaped_literal | literal_char
     class_meta_char = minus | rsquare | backslash
-    escaped_class_meta= (backslash >> class_meta_char).to(lambda env: (env.X), lambda env: env.X)
+    escaped_class_meta= (backslash >> class_meta_char).to(lambda env: (env.X,), lambda env: env.X)
     class_atom = S.alt(
                         class_literal,
                         shorthand,
@@ -318,7 +318,7 @@ class RE(Grammar):
     class_item = irange | class_atom
     
     class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda x: x[1] + (x[0],) if x[0] else x[1])
-    char_class = S.seq(lsquare, +(~caret), +class_class_items, rsquare).to(lambda env: (env.negated, env.items) ,lambda env: CharClassAtom(env.negated, env.items))
+    char_class = S.seq(lsquare, +(~caret), +class_class_items, rsquare).to(lambda env: (env.negated, env.items), lambda env: CharClassAtom(negated=env.negated, items=env.items))
 
     flag = S.lex(B.oneof("iLmsuaxw"))
     enabled_flags = flag.many()

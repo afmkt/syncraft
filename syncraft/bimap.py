@@ -31,8 +31,10 @@ class DataError(Exception):
         base = super().__str__()
         if self.reason:
             reason_str = "\nReason:\n" + "\n".join(f"- {r}" for r in self.reason)
-            return f"{base}\n{reason_str}\nAt: {self.file}:{self.line}\nRule: {self.rule}"
-        return f"{base}\nAt: {self.file}:{self.line}\nRule: {self.rule}"
+            location_str = f"({self.file}:{self.line})" if self.file and self.line else "(Unknown)"
+            return f"{base}\n{reason_str}\n{location_str}\nRule: {self.rule}"
+        location_str = f"({self.file}:{self.line})" if self.file and self.line else "(Unknown)"
+        return f"{base}\nRule: {self.rule} {location_str}"
         
 
 @dataclass(frozen=True, slots=True) 

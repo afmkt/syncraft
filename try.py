@@ -56,7 +56,6 @@ def test_unicode_escapes():
         (r"\U00000041", "A"),  # \U00000041 = 'A'
         (r"\N{LATIN CAPITAL LETTER A}", "A"),  # Unicode name
     ]
-
     for pattern, expected in test_cases:
         result = parse(pattern, syntax=RE.literal)
         assert result == expected
@@ -66,6 +65,7 @@ def test_escaped_metacharacters():
     """Test parsing of escaped metacharacters."""
     metachars = r"\\\.\[\]\(\)\{\}\|\+\*\?\^\$"
     result = parse(metachars, syntax=RE.literal.many())
+    print(result)
     assert len(result) == len(metachars) // 2  # Each escape sequence becomes one piece
     expected_chars = r"\.[](){}|+*?^$"
     for i, expected in enumerate(expected_chars):
@@ -138,7 +138,7 @@ def test_character_classes_simple():
     tmp = parse("[]abc]")
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
-
+    print(tmp)
     assert isinstance(result, CharClassAtom)
     assert not result.negated
     assert set(result.items) == {"]", "a", "b", "c"}
@@ -215,6 +215,7 @@ def test_character_classes_with_escaped_chars():
     """Test parsing of character classes with escaped characters."""
     # result = parse_regex(atom, r"[\[\]\-\.\\]")
     tmp = parse(r"[\[\]\-\.\\]")
+    
     assert isinstance(tmp, Regex)
     result = tmp.branches[0].pieces[0].atom
 
@@ -567,12 +568,13 @@ def test_neg_lookahead():
 
 if __name__ == "__main__":
     
-    test_quantifiers()
+    
+    # test_escaped_metacharacters()
     # test_character_classes_simple()
     # test_character_classes_negated()
     # test_character_classes_with_ranges()
     # test_character_classes_with_escaped_chars()
-    # test_character_classes_with_shorthands()
+    test_character_classes_with_shorthands()
 
     
     
