@@ -83,3 +83,8 @@ def test_regex_builder_unicode_category() -> None:
 def test_regex_builder_class_escaped_chars() -> None:
     builder = _build(r"[\[\]\\-]+")
     _assert_matches(builder, ["[]", "[\\-]"], ["a", "[]a"])
+
+
+def test_regex_builder_class_shorthand_items() -> None:
+    builder = _build(r"[\w\d]+")
+    _assert_matches(builder, ["abc_123"], ["-", " "])
