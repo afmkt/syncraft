@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any
 import unicodedata
@@ -21,25 +21,29 @@ except ImportError:
 
 
 
+class RegexError(SyncraftError):
+    pass
 
-class UnsupportedFeature:
-    def __init__(self, feature: str, *args, **kwargs) -> None:
-        self.feature = feature
-        self.args = args
-        self.kwargs = kwargs
+
+
+@dataclass(frozen=True, slots=True)
+class RegexNode:
+    def builder(self) -> Builder[str]:
+        raise RegexError("Unsupported regex feature in lexer", offender=self)
+
+
+@dataclass(frozen=True, slots=True)
+class UnsupportedFeature(RegexNode):
+    feature: str
+    args: Tuple[Any, ...] = field(default_factory=tuple)
+    kwargs: dict = field(default_factory=dict)
 
     def __str__(self) -> str:
         return f"Unsupported feature: {self.feature}" + (f" with args: {self.args}" if self.args else "") + (f" and kwargs: {self.kwargs}" if self.kwargs else "")
     
-    def builder(self) -> Builder[str]:
-        raise NotImplementedError(f"Cannot build UnsupportedFeature: {self.feature}")
-    
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
-        _validate_error(f"Unsupported regex feature in lexer: {self.feature}", offender=self)
 
-
-def _validate_error(message: str, offender: Any, expect: Any | None = None) -> None:
-    raise SyncraftError(message, offender=offender, expect=expect)
+def unsuppoerted(feature: str, *args: Any, **kwargs: Any) -> UnsupportedFeature:
+    return UnsupportedFeature(feature=feature, args=args, kwargs=kwargs)
     
 
 
@@ -62,10 +66,11 @@ class ShorthandKind(Enum):
         return kind.value    
 
 @dataclass(frozen=True, slots=True)
-class ShorthandAtom:
+class ShorthandAtom(RegexNode):
     kind: ShorthandKind
 
     def builder(self) -> Builder[str]:
+        self.validate()
         if self.kind == ShorthandKind.DIGIT:
             return Builder.unicode_category(["Nd"])
         elif self.kind == ShorthandKind.NOT_DIGIT:
@@ -79,18 +84,19 @@ class ShorthandAtom:
         elif self.kind == ShorthandKind.NOT_SPACE:
             return Builder.any(Alphabet(str)) - (Builder.unicode_category(["Zs"]) | Builder.oneof("\t\n\r\f\v"))
         else:
-            raise ValueError(f"Unknown shorthand kind: {self.kind}")
+            return super().builder()  # will raise RegexError for unsupported features
 
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
+    def validate(self) -> None:
         if self.kind not in ShorthandKind:
-            _validate_error("Unknown shorthand kind", offender=self)
+            raise RegexError(f"Unsupported shorthand kind: {self.kind}", offender=self)
 
 
 @dataclass(frozen=True, slots=True)
-class UnicodeCategoryAtom:
+class UnicodeCategoryAtom(RegexNode):
     categories: Tuple[str, ...]
     negated: bool = False   
     def builder(self) -> Builder[str]:
+        self.validate()
         b = Builder.none(Alphabet(str))
         for category in self.categories:
             b = b | Builder.unicode_category([category])
@@ -98,19 +104,23 @@ class UnicodeCategoryAtom:
             b = Builder.any(Alphabet(str)) - b
         return b
     
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
+    def validate(self) -> None:
         for category in self.categories:
             if category not in ["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"]:
-                _validate_error("Unknown Unicode category in \\p{}", offender=category, expect="One of Lu, Ll, Lt, Lm, Lo, L, M, N, Nd, Nl, No, P, Pd, Ps, Pe, S, Sm, Sc, Z, Zs, C")
+                raise RegexError("Unknown Unicode category in \\p{}", offender=category, expect="One of Lu, Ll, Lt, Lm, Lo, L, M, N, Nd, Nl, No, P, Pd, Ps, Pe, S, Sm, Sc, Z, Zs, C")
 
 
 @dataclass(frozen=True, slots=True)
-class CharRange:
+class CharRange(RegexNode):
     start: str
     end: str
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
+    def builder(self) -> Builder[str]:
+        self.validate()
+        return Builder.range(self.start, self.end)
+    
+    def validate(self) -> None:
         if self.start > self.end:
-            _validate_error(
+            raise RegexError(
                 "Reversed range in character class",
                 offender=self,
                 expect="start <= end")
@@ -122,11 +132,10 @@ class CharClassAtom:
     items: Tuple[Union[str, CharRange, ShorthandAtom, UnicodeCategoryAtom], ...]
     negated: bool = False
     def builder(self) -> Builder[str]:
+        self.validate()
         b = Builder.none(Alphabet(str))
         for item in self.items:
-            if isinstance(item, CharRange):
-                b = b | Builder.range(item.start, item.end)
-            elif isinstance(item, (ShorthandAtom, UnicodeCategoryAtom)):
+            if isinstance(item, (CharRange, ShorthandAtom, UnicodeCategoryAtom)):
                 b = b | item.builder()
             else:
                 b = b | Builder.lit(item)
@@ -134,17 +143,13 @@ class CharClassAtom:
             b = Builder.any(Alphabet(str)) - b
         return b
 
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
+    def validate(self) -> None:
         for item in self.items:
-            if isinstance(item, CharRange):
-                item.validate(allow_captures=allow_captures, allow_inline_flags=allow_inline_flags)
-            elif isinstance(item, (ShorthandAtom, UnicodeCategoryAtom)):
-                item.validate(allow_captures=allow_captures, allow_inline_flags=allow_inline_flags)
-            elif isinstance(item, str):
+            if isinstance(item, str):
                 if item == "":
-                    _validate_error("Empty character in class", offender=item)
-            else:
-                _validate_error("Unsupported character class item", offender=item)
+                    raise RegexError("Empty character in class", offender=item)
+            elif not isinstance(item, (CharRange, ShorthandAtom, UnicodeCategoryAtom)):
+                raise RegexError("Unsupported item in character class", offender=item)
 
 
 
@@ -168,12 +173,13 @@ class InlineFlags:
 
 
 @dataclass(frozen=True, slots=True)
-class GroupAtom:
+class GroupAtom(RegexNode):
     kind: GroupKind
     regex: Optional[Regex] = None
     name: Optional[str] = None
     inline_flags: Optional[InlineFlags] = None
     def builder(self) -> Builder[str]:
+        self.validate()
         if self.kind in (GroupKind.CAPTURE, GroupKind.NON_CAPTURE):
             if self.regex is not None:
                 inner = self.regex.builder()
@@ -186,58 +192,23 @@ class GroupAtom:
         elif self.kind == GroupKind.COMMENT:
             return Builder.none(Alphabet(str))
         else:
-            raise NotImplementedError(f"Cannot build GroupAtom of kind: {self.kind}")
+            return super().builder()  # will raise RegexError for unsupported features
         
-    def validate(
-        self,
-        *,
-        allow_captures: bool,
-        allow_inline_flags: bool,
-    ) -> None:
-        if self.kind == GroupKind.NON_CAPTURE:
-            if self.regex is None:
-                _validate_error("Empty group is not allowed", offender=self)
-            else:
-                self.regex.validate(
-                    allow_captures=allow_captures,
-                    allow_inline_flags=allow_inline_flags,
-                )
-                return
-
-        if self.kind == GroupKind.CAPTURE:
-            if not allow_captures:
-                _validate_error("Capturing groups are not supported in lexer regex", offender=self)
-            if self.regex is None:
-                _validate_error("Empty group is not allowed", offender=self)
-            else:
-                self.regex.validate(
-                    allow_captures=allow_captures,
-                    allow_inline_flags=allow_inline_flags,
-                )
-                return
-
-        if self.kind in (GroupKind.FLAGS, GroupKind.FLAGS_SCOPED):
-            if not allow_inline_flags:
-                _validate_error("Inline flags are not supported in lexer regex", offender=self)
-            if self.regex is not None:
-                self.regex.validate(
-                    allow_captures=allow_captures,
-                    allow_inline_flags=allow_inline_flags,
-                )
-            return
-
-        _validate_error("Unsupported group type in lexer regex", offender=self)
+    def validate(self) -> None:
+        if self.kind not in (GroupKind.CAPTURE, GroupKind.COMMENT, GroupKind.NON_CAPTURE):
+            raise RegexError("Unsupported group type in lexer regex", offender=self)
         
 
 @dataclass(frozen=True, slots=True)
-class LiteralAtom:
+class LiteralAtom(RegexNode):
     text: str
     def builder(self) -> Builder[str]:
+        self.validate()
         return Builder.lit(self.text)
     
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
+    def validate(self) -> None:
         if self.text == "":
-            _validate_error("Empty literal is not allowed", offender=self)
+            raise RegexError("Empty literal is not allowed", offender=self)
 
 
 
@@ -260,20 +231,14 @@ class AnchorKind(Enum):
         }[literal]
 
 @dataclass(frozen=True, slots=True)
-class AnchorAtom:
-    kind: AnchorKind
-    def builder(self) -> Builder[str]:
-        raise NotImplementedError(f"Cannot build AnchorAtom of kind: {self.kind}")
+class AnchorAtom(RegexNode):
+    kind: AnchorKind    
     
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
-        _validate_error("Anchors are not supported in lexer regex", offender=self)
 
 @dataclass(frozen=True, slots=True)
-class DotAtom:
+class DotAtom(RegexNode):
     def builder(self) -> Builder[str]:
         return Builder.any(Alphabet(str))
-    def validate(self, *, allow_captures: bool, allow_inline_flags: bool) -> None:
-        return
 
 @dataclass(frozen=True, slots=True)
 class Quantifier:
@@ -282,7 +247,7 @@ class Quantifier:
     greedy: bool = True
 
 @dataclass(frozen=True, slots=True)
-class Piece:
+class Piece(RegexNode):
     atom: Union[LiteralAtom,
                 DotAtom,
                 AnchorAtom,
@@ -298,55 +263,27 @@ class Piece:
             b = b.many(at_least=q.minimum, at_most=q.maximum).with_non_greedy(not q.greedy)        
         return b
 
-    def validate(
-        self,
-        *,
-        allow_captures: bool,
-        allow_inline_flags: bool,
-    ) -> None:
-        self.atom.validate(allow_captures=allow_captures, allow_inline_flags=allow_inline_flags)
 
 
 @dataclass(frozen=True, slots=True)
-class Branch:
+class Branch(RegexNode):
     pieces: Tuple[Piece, ...]
     def builder(self) -> Builder[str]:
         ret = [p.builder() for p in self.pieces]
         return reduce(lambda a, b: a + b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
     
-    def validate(
-        self,
-        *,
-        allow_captures: bool,
-        allow_inline_flags: bool,
-    ) -> None:
-        for piece in self.pieces:
-            piece.validate(
-                allow_captures=allow_captures,
-                allow_inline_flags=allow_inline_flags,
-            )
 
-    
 
 
 @dataclass(frozen=True, slots=True)
-class Regex:
+class Regex(RegexNode):
     branches: Tuple[Branch, ...]
     def builder(self) -> Builder[str]:
         ret = [b.builder() for b in self.branches]
         return reduce(lambda a, b: a | b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
 
-    def validate(
-        self,
-        *,
-        allow_captures: bool = False,
-        allow_inline_flags: bool = False,
-    ) -> None:
-        for branch in self.branches:
-            branch.validate(
-                allow_captures=allow_captures,
-                allow_inline_flags=allow_inline_flags,
-            )
+
+
 
 
 
@@ -486,7 +423,7 @@ class RE(Grammar):
                         S.seq(S.lex(B.lit("(?P")), RE.rparen),            
                         S.seq(S.lex(B.lit("(?p")), RE.rparen),
                         S.seq(S.lex(B.lit("(?0")), RE.rparen),   
-                    ).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="recursive group")),
+                    ).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="recursive group")),
 
             S.seq(S.lex(B.lit("(?P<")), +RE.name, RE.greater, +RE.regex, RE.rparen).to(lambda env: (env.name, env.regex), lambda env: GroupAtom(name=env.name, regex=env.regex, kind=GroupKind.CAPTURE)),
             S.seq(S.lex(B.lit("(?")), +RE.inline_flags_strict, RE.rparen).to(lambda env: (env.inline_flags,), lambda env: GroupAtom(inline_flags=env.inline_flags, kind=GroupKind.FLAGS)),
@@ -500,18 +437,18 @@ class RE(Grammar):
                             S.seq(S.lex(B.lit("(?<!" )), +RE.regex, RE.rparen),
                         ), 
                         +RE.regex, 
-                        RE.rparen).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="lookaround assertion group")),
+                        RE.rparen).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="lookaround assertion group")),
 
-            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: (env.regex,), lambda env:  UnsupportedFeature(regex=env.regex, feature="group existence test")),
+            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: (env.regex,), lambda env:  unsuppoerted(regex=env.regex, feature="group existence test")),
 
             S.seq(S.lex(B.lit("(?#")), 
                   +RE.comment,
-                  RE.rparen).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="comment group")),
+                  RE.rparen).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="comment group")),
                   
                 ).named("group_alternatives").bind(group_counter = lambda _, c: c + 1 if c is not ... else 1)
 
 
-    anchor = S.alt(caret, dollar, boundary_escape).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="group existence test"))
+    anchor = S.alt(caret, dollar, boundary_escape).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="group existence test"))
 
 
     braced_quantifier = S.alt(
