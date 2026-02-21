@@ -13,6 +13,7 @@ from syncraft.alphabet import Alphabet
 from syncraft.grammar import Grammar, lazy, rule, grammar
 from functools import reduce
 from syncraft.bimap import DataError, Not
+from syncraft.ast import Nothing
 try:
     import regex as re
 except ImportError:
@@ -206,7 +207,7 @@ class Piece:
     quantifier: Optional[Quantifier] = None
     def builder(self) -> Builder[str]:
         b = self.atom.builder()
-        if self.quantifier is not None:
+        if self.quantifier is not None and self.quantifier is not Nothing:
             q = self.quantifier
             b = b.many(at_least=q.minimum, at_most=q.maximum).with_non_greedy(not q.greedy)        
         return b

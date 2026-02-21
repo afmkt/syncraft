@@ -5,12 +5,11 @@ from typing import Iterable
 from syncraft.alphabet import Alphabet
 from syncraft.fa import DFA, NFA
 from syncraft.regex import Regex, parse
-from rich import print
+
 
 def _build(pattern: str):
     parsed = parse(pattern)
     assert isinstance(parsed, Regex), f"Parse failed for {pattern!r}: {parsed!r}"
-    print(parsed)
     return parsed.builder()
 
 
@@ -31,13 +30,36 @@ def _assert_matches(builder, good: Iterable[str], bad: Iterable[str]) -> None:
         assert not _match(builder, text), f"Expected no match: {text!r}"
 
 
+def test_regex_builder_literals_and_concat() -> None:
+    builder = _build("abc")
+    _assert_matches(builder, ["abc"], ["", "ab", "abcd", "xbc"])
+
+
+def test_regex_builder_alternation_and_grouping() -> None:
+    builder = _build("(ab|cd)+")
+    _assert_matches(builder, ["ab", "cd", "abcd"], ["", "a", "ac", "abccd"])
+
+
+def test_regex_builder_quantifiers() -> None:
+    builder = _build("ab{2,3}")
+    _assert_matches(builder, ["abb", "abbb"], ["ab", "abbbb", "a"])
+
+
 def test_regex_builder_char_class_ranges() -> None:
     builder = _build("[a-c]+")
     _assert_matches(builder, ["a", "abc", "cba"], ["", "d", "abxd"])
 
 
+def test_regex_builder_negated_char_class() -> None:
+    builder = _build("[^a]+")
+    _assert_matches(builder, ["b", "xyz"], ["", "a", "ba"])
 
 
-if __name__ == "__main__":
-    test_regex_builder_char_class_ranges()
-    print("All tests passed!")
+def test_regex_builder_dot() -> None:
+    builder = _build("a.c")
+    _assert_matches(builder, ["abc", "a c"], ["ac", "abdc"])
+
+
+def test_regex_builder_shorthand_digit() -> None:
+    builder = _build(r"\d+")
+    _assert_matches(builder, ["0", "123"], ["", "a1", "x"])
