@@ -9,7 +9,7 @@ from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.bimap import Bindable, Iso, DataError
 from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER, CallWith
-from rich import print
+
 if TYPE_CHECKING:
     from syncraft.syntax import Syntax, SyntaxSpec
 
@@ -572,10 +572,9 @@ class Algebra(Generic[A, S]):
     def alt(cls, *options: Algebra[Any, S]) -> Algebra[Alt, S]:
         assert options, "At least one option is required for alternatives"
 
-        def alt_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[Alt, S]]]:
-            
+        def alt_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[Alt, S]]]:            
             inp = input.enter()
-            last_error: Optional[Left[Any]] = None
+            errors: list[tuple[int, Error]] = []
             for i, option in enumerate(options):
                 cache.push_choice(alt_run, i)
                 try:
@@ -587,19 +586,28 @@ class Algebra(Generic[A, S]):
 
                         return Right.new((Alt(value=value, index=i), state.leave()))
                     case Left(err) as ERROR:
-
                         if isinstance(err, Error) and err.committed:
                             return ERROR
-                        last_error = ERROR
-
-            if last_error is not None:
-                return last_error
-            else:
-                return Left.new(Error.new(
-                    message="No options provided",
-                    this=cls,
-                    state=input
-                ))
+                        if isinstance(err, Error):
+                            errors.append((i, err))
+            details: list[str] = []
+            if errors:
+                seen: set[str] = set()
+                for _, err in errors:
+                    if err.message:
+                        summary = err.message
+                    elif err.error is not None:
+                        summary = err._format_error(err.error)
+                    else:
+                        summary = str(err)
+                    if summary and summary not in seen:
+                        seen.add(summary)
+                        details.append(summary)
+            return Left.new(Error.new(
+                message="\n".join(details) if details else "No options matched",
+                this=alt_run,
+                state=input,
+            ))
         return cls(run_f=alt_run).flag(intrinsic=True) # type: ignore
 
     @classmethod

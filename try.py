@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import re
 from typing import Any
 
@@ -8,6 +9,7 @@ from syncraft import Error, Grammar, Syntax, Token, grammar, lazy, rule
 
 
 # -- step-1 --
+
 S = Syntax.set(terminal_cls=Token)
 
 
@@ -21,23 +23,27 @@ class ExprGrammar(Grammar):
 
     @lazy(S)
     def expr():  # type: ignore
-        return (ExprGrammar.term + ExprGrammar.plus + ExprGrammar.expr) | ExprGrammar.term
+        return ((ExprGrammar.term + ExprGrammar.plus + ExprGrammar.expr) | ExprGrammar.term)
 
     @lazy(S)
     def term():  # type: ignore
-        return (ExprGrammar.factor + ExprGrammar.star + ExprGrammar.term) | ExprGrammar.factor
+        return ((ExprGrammar.factor + ExprGrammar.star + ExprGrammar.term) | ExprGrammar.factor)
 
     @lazy(S)
     def factor():  # type: ignore
-        return ExprGrammar.number | ExprGrammar.expr.between(ExprGrammar.lparen, ExprGrammar.rparen)
+        return (ExprGrammar.number | ExprGrammar.expr.between(ExprGrammar.lparen, ExprGrammar.rparen))
 
-    root = rule(expr, is_root=True)
+    root = rule(
+        expr,
+        is_root=True,
+    )
 # -- step-1-end --
 
 
 # -- step-2 --
 def test_quickstart_step_2() -> None:
     ast = ExprGrammar.parse("1 + 2 * 3")
+    print(ast)
     assert ast == (
         (Token(text="1"), Token(text="+")),
         ((Token(text="2"), Token(text="*")), Token(text="3")),
