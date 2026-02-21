@@ -788,6 +788,22 @@ class NFA(Generic[C]):
     def many(self, at_least: int = 0, at_most: Optional[int] = None) -> NFA[C]:
         assert at_least >= 0, "at_least must be non-negative"
         assert at_most is None or at_least <= at_most, "at_least must <= at_most"
+        if at_most == 0:
+            init = FAStateFactory.next()
+            return NFA(
+                cs_factory=self.cs_factory,
+                init=init,
+                accept=FrozenDict({init: frozenset()}),
+                transitions=FrozenDict(),
+                epsilon=FrozenDict(),
+            )
+        if at_least == 0:
+            if at_most is None:
+                return self.star
+            nfa = self.optional
+            for _ in range(at_most - 1):
+                nfa = nfa.then(self.optional)
+            return nfa
         if at_least == 1 and at_most is None:
             return self.plus
         nfa = self
@@ -1415,7 +1431,7 @@ class Builder(Generic[C]):
                 for (start, end) in self.intervals:
                     code_start = alphabet.encode(start) # type: ignore
                     code_end = alphabet.encode(end) # type: ignore
-                    if code_start < code_end:
+                    if code_start <= code_end:
                         codes.append((code_start, code_end))
                 charset = cs_factory.from_interval(codes) # type: ignore
                 return NFA.from_raw_charset(cs_factory=cs_factory, c=charset, tag=self.tag)
@@ -1444,7 +1460,7 @@ class Builder(Generic[C]):
                 return inner.many(at_least=self.at_least, at_most=self.at_most)
             case _NodeKind.PLUS:
                 inner = self.children[0].compile(alphabet).nfa
-                return inner.star
+                return inner.plus
             case _NodeKind.COMPLEMENT:
                 # Require DFA planning for these operations
                 inner1 = self.children[0].compile(alphabet).dfa

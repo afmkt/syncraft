@@ -31,13 +31,16 @@ def _assert_matches(builder, good: Iterable[str], bad: Iterable[str]) -> None:
         assert not _match(builder, text), f"Expected no match: {text!r}"
 
 
-def test_regex_builder_char_class_ranges() -> None:
-    builder = _build("[a-c]+")
-    _assert_matches(builder, ["a", "abc", "cba"], ["", "d", "abxd"])
 
 
+
+def test_regex_builder_word_and_space_shorthands() -> None:
+    builder = _build(r"\w+\s+\w+")
+    _assert_matches(builder, ["a b", "foo\tbar"], ["a", "a  ", "- -"])
 
 
 if __name__ == "__main__":
-    test_regex_builder_char_class_ranges()
+    
+    
+    test_regex_builder_word_and_space_shorthands()
     print("All tests passed!")

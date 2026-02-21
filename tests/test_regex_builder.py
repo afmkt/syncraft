@@ -63,3 +63,23 @@ def test_regex_builder_dot() -> None:
 def test_regex_builder_shorthand_digit() -> None:
     builder = _build(r"\d+")
     _assert_matches(builder, ["0", "123"], ["", "a1", "x"])
+
+
+def test_regex_builder_optional_and_star() -> None:
+    builder = _build("ab?c*")
+    _assert_matches(builder, ["a", "ab", "ac", "abccc"], ["", "b", "abb"])
+
+
+def test_regex_builder_word_and_space_shorthands() -> None:
+    builder = _build(r"\w+\s+\w+")
+    _assert_matches(builder, ["a b", "foo\tbar"], ["a", "a  ", "- -"])
+
+
+def test_regex_builder_unicode_category() -> None:
+    builder = _build(r"\p{Lu}+")
+    _assert_matches(builder, ["A", "AZ"], ["", "a", "Aa"])
+
+
+def test_regex_builder_class_escaped_chars() -> None:
+    builder = _build(r"[\[\]\\-]+")
+    _assert_matches(builder, ["[]", "[\\-]"], ["a", "[]a"])

@@ -177,7 +177,7 @@ def test_many():
     cs_factory = CharSetFactory(alphabet=Alphabet(str))
     nfa = NFA.oneof(s="a", cs_factory=cs_factory).many()
     dfa = DFA.from_nfa(nfa)
-    assert_both(nfa, dfa, '', False)
+    assert_both(nfa, dfa, '', True)
     assert_both(nfa, dfa, "a", True)
     assert_both(nfa, dfa, "aa", True)
     assert_both(nfa, dfa, "aaa", True)
