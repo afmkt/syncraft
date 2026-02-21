@@ -1055,7 +1055,7 @@ class Syntax(Generic[A, S]):
             vars = [ctx.get(name, ...) for name in names]
             if not pred(value, *vars):
                 if message is None:
-                    raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}\n{message}")                    
+                    raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}\n{message}", soft_failure=True)                    
                 else:
                     raise DataError(message.format(value, ctx), soft_failure=False)
             return value

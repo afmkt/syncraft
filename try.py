@@ -3,6 +3,15 @@ from typing import Type
 import pytest
 
 from syncraft.regex import parse
+from syncraft.syntax import Syntax as S
+from syncraft.fa import Builder as B
+from syncraft.algebra import Error
+from syncraft.regex import (
+    parse, RE, 
+    UnsupportedFeature,
+    LiteralAtom, AnchorKind, ShorthandAtom, ShorthandKind, DotAtom, Quantifier, 
+    CharClassAtom, CharRange, GroupAtom, GroupKind, UnicodeCategoryAtom, Regex, Piece, Branch
+)
 
 
 def test():
@@ -10,6 +19,14 @@ def test():
     print(x)
 
 
+def test_neg_lookahead():
+    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +RE.regex, RE.rparen)
+    nl = r"(?!\1)"
+    ret = parse(nl, syntax=negative_lookahead)
+    assert not isinstance(ret, Error)
+
+
 
 if __name__ == "__main__":
-    test()
+    # test()
+    test_neg_lookahead()
