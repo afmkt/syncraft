@@ -1046,7 +1046,7 @@ class Syntax(Generic[A, S]):
     def to(self, a: Callable[..., A], b: Callable[..., B]) -> Syntax[B, S]:
         return self.iso(Iso.derive(a, b)) 
 
-    def check(self, pred: Callable[..., bool], forward: bool = True, level:int = 0) -> Syntax[A, S]:
+    def check(self, pred: Callable[..., bool], *, forward: bool = True, level:int = 0, message: str | None = None) -> Syntax[A, S]:
         file = get_file(level+1)        
         line = get_line(level+1)
         f = CallWith(pred)
@@ -1054,7 +1054,10 @@ class Syntax(Generic[A, S]):
         def check_preds(value: Any, ctx: FrozenDict[str, Any]) -> Any:
             vars = [ctx.get(name, ...) for name in names]
             if not pred(value, *vars):
-                raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}", soft_failure=True)
+                if message is None:
+                    raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}\n{message}")                    
+                else:
+                    raise DataError(message.format(value, ctx), soft_failure=False)
             return value
         return self.map(check_preds) if forward else self.imap(check_preds)
         

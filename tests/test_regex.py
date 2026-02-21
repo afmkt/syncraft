@@ -257,10 +257,10 @@ def test_fuzzing():
     seed = random.randint(0, 2**32 - 1)
     print("Fuzzing seed:", seed)
     TEST_CASES = generate_random_regex_tests(400, seed=seed)
-
+    # ('fuzzing', '\\d{2,}\\U000F44C9{2}\\U000AA4AB{1,5}[Av]*|(?b)|$', True)
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
-        pattern = ("fuzzing",pattern, should_pass)
+        pattern = ("fuzzing", pattern, should_pass)
         assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 
