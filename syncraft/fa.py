@@ -1096,6 +1096,7 @@ class _NodeKind(str, Enum):
     RANGE = "RANGE"
     LITERAL = "LITERAL"
     ONEOF = "ONEOF"
+    EMPTY = "EMPTY"
     CONCAT = "CONCAT"
     UNION = "UNION"
     INTERSECT = "INTERSECT"  # DFA-only
@@ -1162,6 +1163,8 @@ class Builder(Generic[C]):
                 return f"{self.text!r}"
             case _NodeKind.ONEOF:
                 return f"[{self.text!r}]"
+            case _NodeKind.EMPTY:
+                return "∅"
             case _NodeKind.STAR:
                 return f"({self.children[0]})*"
             case _NodeKind.OPTIONAL:
@@ -1256,8 +1259,14 @@ class Builder(Generic[C]):
              non_greedy: bool = False,
              action: Optional[ModeAction] = None,
              ) -> Builder[C]:
-        any = cls.any(alphabet, tag=tag, skip=skip, priority=priority, non_greedy=non_greedy, action=action)
-        return -any
+        return cls(
+            kind=_NodeKind.EMPTY,
+            tag=tag,
+            action=action,
+            skip=skip,
+            priority=priority,
+            non_greedy=non_greedy,
+        )
     
     @classmethod
     def unicode_category(cls, 
@@ -1391,6 +1400,15 @@ class Builder(Generic[C]):
     def compile(self, alphabet: AlphabetProtocol[C]) -> NFA[C] | DFA[C]: 
         cs_factory = CharSetFactory(alphabet=alphabet)
         match self.kind:
+            case _NodeKind.EMPTY:
+                init = FAStateFactory.next()
+                return NFA(
+                    cs_factory=cs_factory,
+                    init=init,
+                    accept=FrozenDict(),
+                    transitions=FrozenDict(),
+                    epsilon=FrozenDict(),
+                )
             case _NodeKind.RANGE:
                 assert self.intervals, "Range can not be empty"
                 codes = []
