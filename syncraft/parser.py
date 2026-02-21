@@ -439,20 +439,4 @@ def parse_bytes(syntax: Syntax,
     v, s = parse(syntax, input)
     return v
 
-def parse_file(syntax: Syntax,
-               filepath: str | Path,
-               *,
-               mode: Literal['text', 'binary'] = 'text'
-               ) -> Any:
-    input : StreamCursor[Any] = StreamCursor.from_path(filepath, mode=mode)
-    v, s = parse(syntax, input)
-    return v
 
-def parse_stream(syntax: Syntax,
-                 stream: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader],
-                 *,
-                 mode: Literal['text', 'binary'] = 'text'
-                 ) -> Any:
-    input : StreamCursor[Any] = StreamCursor.from_stream(stream, mode=mode) # type: ignore
-    v, s = parse(syntax, input)
-    return v

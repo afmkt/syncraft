@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Any, Dict
+from typing import Callable, Any, Dict, Union, Literal, Iterator, overload
 from syncraft.ast import SyncraftError
 from syncraft.syntax import Syntax
 from syncraft.algebra import Algebra
@@ -8,6 +8,8 @@ from syncraft.generator import generator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
+import io
+import asyncio
 
 
 
@@ -253,14 +255,65 @@ class Grammar:
         raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
 
     @classmethod
-    def stream_parse(cls, 
-                     data: StreamCursor[Any], 
-                     syntax: Syntax | None = None) -> Any:
+    def parse_file(cls, 
+                   file_path: str,
+                   mode: Literal['text', 'binary'] = 'text',
+                   encoding: str = 'utf-8',
+                   syntax: Syntax | None = None) -> Iterator[Any]:
+        """Parse a file using the grammar, yielding all matches."""
+        if mode == 'text':
+            with open(file_path, "r", encoding=encoding) as f:
+                yield from cls.parse_stream(f, mode=mode, syntax=syntax)
+        elif mode == 'binary':
+            with open(file_path, "rb") as f:
+                yield from cls.parse_stream(f, mode=mode, syntax=syntax)
+        else:
+            raise ValueError(f"Unsupported mode: {mode}")
+        
+
+    @classmethod
+    @overload
+    def parse_stream(cls,
+                     data: io.TextIOBase,
+                     mode: Literal['text'] = 'text',
+                     syntax: Syntax | None = None) -> Iterator[Any]: ...
+
+    @classmethod
+    @overload
+    def parse_stream(cls,
+                     data: io.BufferedIOBase,
+                     mode: Literal['binary'] = 'binary',
+                     syntax: Syntax | None = None) -> Iterator[Any]: ...
+
+    @classmethod
+    @overload
+    def parse_stream(cls,
+                     data: asyncio.StreamReader,
+                     mode: Literal['text', 'binary'] = 'text',
+                     syntax: Syntax | None = None) -> Iterator[Any]: ...
+
+    @classmethod
+    def parse_stream(cls, 
+                     data: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader], 
+                     mode: Literal['text', 'binary'] = 'text',
+                     syntax: Syntax | None = None) -> Iterator[Any]:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
         runner: Runner = Runner()
-        for result, s in runner.run(parser, state=None, cursor=data, once=False, cache=Cache()):
+        if isinstance(data, io.TextIOBase):
+            if mode != "text":
+                raise ValueError("TextIOBase requires mode='text'")
+            cursor: StreamCursor[Any] = StreamCursor.from_stream(data, mode="text")
+        elif isinstance(data, io.BufferedIOBase):
+            if mode != "binary":
+                raise ValueError("BufferedIOBase requires mode='binary'")
+            cursor = StreamCursor.from_stream(data, mode="binary")
+        elif isinstance(data, asyncio.StreamReader):
+            cursor = StreamCursor.from_stream(data, mode=mode)
+        else:
+            raise TypeError(f"Unsupported stream type: {type(data)}")
+        for result, s in runner.run(parser, state=None, cursor=cursor, once=False, cache=Cache()):
             yield result
                 
     @classmethod
