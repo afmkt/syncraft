@@ -116,10 +116,20 @@ class Error:
             lines.append("Error")
         
         # Show the actual error
-        if deepest.message:
-            lines.append(f"  Message: {deepest.message}")
-        if deepest.error:
-            lines.append(f"    Cause: {self._format_error(deepest.error)}")
+        if deepest.message and deepest.error:
+            msg = deepest.message
+            err = self._format_error(deepest.error)
+            if msg != err:
+                lines.append(f"  Message: {msg}")
+                lines.append(f"    Cause: {err}")
+            else:
+                lines.append(f"  Message: {msg}")
+        elif deepest.message:
+            msg = deepest.message
+            lines.append(f"  Message: {msg}")
+        elif deepest.error:
+            err = self._format_error(deepest.error)
+            lines.append(f"    Cause: {err}")
         return "\n".join(lines)
 
     @staticmethod

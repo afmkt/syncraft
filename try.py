@@ -19,14 +19,9 @@ def test():
     print(x)
 
 
-def test_neg_lookahead():
-    negative_lookahead = S.seq(S.lex(B.lit("(?!")).named('"(?!"'), +RE.regex, RE.rparen)
-    nl = r"(?!\1)"
-    ret = parse(nl, syntax=negative_lookahead)
-    assert not isinstance(ret, Error)
 
 
 
 if __name__ == "__main__":
-    # test()
-    test_neg_lookahead()
+    test()
+    

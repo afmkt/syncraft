@@ -12,7 +12,7 @@ from syncraft.fa import Builder
 from syncraft.alphabet import Alphabet
 from syncraft.grammar import Grammar, lazy, rule, grammar
 from functools import reduce
-from syncraft.bimap import Not
+from syncraft.bimap import DataError, Not
 try:
     import regex as re
 except ImportError:
@@ -231,6 +231,9 @@ class Regex:
 
 B = Builder[str]
 S = Syntax.set(builtin=True)
+
+INLINE_FLAGS = "iLmsuaxw"
+INLINE_FLAG_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 @grammar
 class RE(Grammar):
     dollar = S.lex(B.lit("$"))
@@ -320,11 +323,25 @@ class RE(Grammar):
     class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda x: x[1] + (x[0],) if x[0] else x[1])
     char_class = S.seq(lsquare, +(~caret), +class_class_items, rsquare).to(lambda env: (env.negated, env.items), lambda env: CharClassAtom(negated=env.negated, items=env.items))
 
-    flag = S.lex(B.oneof("iLmsuaxw"))
-    enabled_flags = flag.many()
-    disabled_flags = (~(minus >> flag.many())).map(lambda x: x[0] if x else None)
+    flag_text = S.lex(B.oneof(INLINE_FLAG_LETTERS))
+    flag_soft = flag_text.check(lambda v: v in INLINE_FLAGS)
+    flag_strict = flag_text.check(
+        lambda v: v in INLINE_FLAGS,
+        message=f"Unsupported inline flag: {{0}}. Supported flags: {INLINE_FLAGS}",
+    )
+    enabled_flags = flag_soft.many()
+    enabled_flags_strict = flag_strict.many()
+    disabled_flags = (~(minus >> flag_soft.many())).map(lambda x: x[0] if x else None)
+    disabled_flags_strict = (~(minus >> flag_strict.many())).map(lambda x: x[0] if x else None)
     
-    inline_flags = S.seq(+enabled_flags, +disabled_flags).to(lambda env: (env.enabled_flags, env.disabled_flags), lambda env: InlineFlags(env.enabled_flags, env.disabled_flags))
+    inline_flags = S.seq(+enabled_flags, +disabled_flags).to(
+        lambda env: (env.enabled_flags, env.disabled_flags),
+        lambda env: InlineFlags(env.enabled_flags, env.disabled_flags),
+    )
+    inline_flags_strict = S.seq(+enabled_flags_strict, +disabled_flags_strict).to(
+        lambda env: (env.enabled_flags, env.disabled_flags),
+        lambda env: InlineFlags(env.enabled_flags, env.disabled_flags),
+    )
     comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
     @lazy(S)
@@ -336,9 +353,18 @@ class RE(Grammar):
             S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
             S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
             S.seq(S.lex(B.lit("(?<!")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
-            S.seq(S.lex(B.lit("(?")), +RE.inline_flags, RE.rparen).to(lambda env: (env.inline_flags,), lambda env: GroupAtom(inline_flags=env.inline_flags, kind=GroupKind.FLAGS)),
+            S.alt(      S.seq(S.lex(B.lit("(?&")), +RE.name, RE.rparen),
+                        S.seq(S.lex(B.lit("(?")), +RE.number, RE.rparen),
+                        S.seq(S.lex(B.lit("(?R")), RE.rparen),
+                        S.seq(S.lex(B.lit("(?r")), RE.rparen),
+                        S.seq(S.lex(B.lit("(?P")), RE.rparen),            
+                        S.seq(S.lex(B.lit("(?p")), RE.rparen),
+                        S.seq(S.lex(B.lit("(?0")), RE.rparen),   
+                    ).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="recursive group")),
+
             S.seq(S.lex(B.lit("(?P<")), +RE.name, RE.greater, +RE.regex, RE.rparen).to(lambda env: (env.name, env.regex), lambda env: GroupAtom(name=env.name, regex=env.regex, kind=GroupKind.CAPTURE)),
-            S.seq( S.lex(B.lit("(?")), +RE.inline_flags, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.inline_flags, env.regex), lambda env: GroupAtom(inline_flags=env.inline_flags, regex=env.regex, kind=GroupKind.FLAGS_SCOPED)),
+            S.seq(S.lex(B.lit("(?")), +RE.inline_flags_strict, RE.rparen).to(lambda env: (env.inline_flags,), lambda env: GroupAtom(inline_flags=env.inline_flags, kind=GroupKind.FLAGS)),
+            S.seq( S.lex(B.lit("(?")), +RE.inline_flags_strict, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.inline_flags, env.regex), lambda env: GroupAtom(inline_flags=env.inline_flags, regex=env.regex, kind=GroupKind.FLAGS_SCOPED)),
 
             S.seq(S.lex(B.lit("(?")), 
                         S.alt(
@@ -351,15 +377,6 @@ class RE(Grammar):
                         RE.rparen).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="lookaround assertion group")),
 
             S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: (env.regex,), lambda env:  UnsupportedFeature(regex=env.regex, feature="group existence test")),
-
-            S.alt(      S.seq(S.lex(B.lit("(?&")), +RE.name, RE.rparen),
-                        S.seq(S.lex(B.lit("(?")), +RE.number, RE.rparen),
-                        S.seq(S.lex(B.lit("(?R")), RE.rparen),
-                        S.seq(S.lex(B.lit("(?r")), RE.rparen),
-                        S.seq(S.lex(B.lit("(?P")), RE.rparen),            
-                        S.seq(S.lex(B.lit("(?p")), RE.rparen),
-                        S.seq(S.lex(B.lit("(?0")), RE.rparen),   
-                    ).to(lambda env: env.regex, lambda env: UnsupportedFeature(regex=env.regex, feature="recursive group")),
 
             S.seq(S.lex(B.lit("(?#")), 
                   +RE.comment,
@@ -417,7 +434,10 @@ class RE(Grammar):
 
 
 def parse(data: str, *, syntax: Syntax | None = None) -> Any:
-    return RE.parse(data, syntax=syntax)
+    try:
+        return RE.parse(data, syntax=syntax)
+    except DataError as e:
+        return Error.new(this=syntax or RE.regex_full, message=str(e), error=e)
 
 
 @dataclass

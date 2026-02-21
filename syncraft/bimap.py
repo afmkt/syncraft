@@ -32,9 +32,9 @@ class DataError(Exception):
         if self.reason:
             reason_str = "\nReason:\n" + "\n".join(f"- {r}" for r in self.reason)
             location_str = f"({self.file}:{self.line})" if self.file and self.line else "(?)"
-            return f"{base}\n{reason_str}\n{location_str}\nRule: {self.rule}"
+            return f"{base}\n{reason_str}\n{location_str} at {self.rule}"
         location_str = f"({self.file}:{self.line})" if self.file and self.line else "(?)"
-        return f"{base}\nRule: {self.rule} {location_str}"
+        return f"{base} at {self.rule} {location_str}"
         
 
 @dataclass(frozen=True, slots=True) 
