@@ -388,14 +388,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
             yield from ()
             
             if input.pruned:
-                concrete_tags = tuple(tag for tag in ntags if tag is not None)
-                if not concrete_tags:
-                    raise SyncraftError(
-                        "Lexer has no concrete tags to generate",
-                        offender=ntags,
-                        expect="at least one non-None tag",
-                    )
-                tag = input.rng("lex_tag").choice(concrete_tags)
+                tag = input.rng("lex_tag").choice(tuple(ntags))                
                 input = input.fork(tag=tag)
                 args, kwargs = lexer.gen(tag, input.rng())
                 generated = terminal_cls(*args, **kwargs)
