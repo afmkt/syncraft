@@ -1,4 +1,7 @@
 import random
+
+import pytest
+
 from syncraft.fa import NFA
 from syncraft.alphabet import Alphabet, AlphabetProtocol
 from syncraft.charset import CharSet, CharSetFactory
@@ -46,3 +49,11 @@ def test_dfa_reverse_invalid_tag():
         assert False, "Should raise for invalid tag"
     except Exception:
         pass
+
+
+def test_dfa_reverse_none_tag_rejected():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.seq(s='a', tag='A', cs_factory=cs_factory)
+    rev = nfa.dfa.reverse
+    with pytest.raises(AssertionError):
+        rev.gen(None, random.Random(0))

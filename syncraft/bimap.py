@@ -760,8 +760,8 @@ def transform(
 
     def transform_f(value: Any, ctx: Any) -> Any:
         # from rich import print
-        assert isinstance(ctx, FrozenDict), f"Context must be a FrozenDict, got {type(ctx)}"
-        env = Env(constants=ctx)
+        assert ctx is None or isinstance(ctx, FrozenDict), f"Context must be a FrozenDict, got {type(ctx)}"
+        env = Env(constants=ctx or FrozenDict())
         src = call_src(env)
 
         new_env = solve(src, value, env)
