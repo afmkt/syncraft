@@ -496,7 +496,7 @@ class Algebra(Generic[A, S]):
             if isinstance(parsed, Right):
                 value, state = parsed.value
                 try:
-                    data = ff(value, state)
+                    data = ff(value, state.ctx)
                     return Right.new((data, state))
                 except DataError as e:
                     assert self.syntax is not None, "Syntax information is required for soft failure errors"
