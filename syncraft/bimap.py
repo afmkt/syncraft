@@ -137,8 +137,8 @@ class Iso(Generic[A, B]):
     
     @classmethod
     def derive(cls, a: Callable[..., A], b: Callable[..., B]) -> Iso[A, B]:
-        forward = transform(a, b)
-        inverse = transform(b, a)   
+        forward = transform(a, b, soft_failure=False)
+        inverse = transform(b, a, soft_failure=True)
         return cls(forward, inverse)
 
 
@@ -739,7 +739,12 @@ def solve(pattern: Any, value: Any, env: Env) -> Env | List[Any]:
 
 
     
-def transform(source: Callable[..., Any], target: Callable[..., Any]) -> Callable[[Any, Any], Any]:
+def transform(
+    source: Callable[..., Any],
+    target: Callable[..., Any],
+    *,
+    soft_failure: bool,
+) -> Callable[[Any, Any], Any]:
     src_sig = CallWith(source)
     src_vars = src_sig.missing_args[1:]
     def call_src(env: Env) -> Any:
@@ -758,14 +763,13 @@ def transform(source: Callable[..., Any], target: Callable[..., Any]) -> Callabl
         assert isinstance(ctx, FrozenDict), f"Context must be a FrozenDict, got {type(ctx)}"
         env = Env(constants=ctx)
         src = call_src(env)
-        print('\n--- Transform Debug ---')
-        print('Source pattern:', src)
-        print('Target pattern:', value)
-        print('Environment:', env)
 
         new_env = solve(src, value, env)
         if isinstance(new_env, list):
-            raise DataError(f"Failed to unify source with value: {new_env}")
+            raise DataError(
+                f"Failed to unify source with value: {new_env}",
+                soft_failure=soft_failure,
+            )
         tgt = call_tgt(new_env)
         fully_resolved, result = evaluate(tgt, new_env, set())
         if not fully_resolved:
@@ -806,7 +810,7 @@ class Match:
             o, offender = Match.overlap(*(src for src, tgt in self.cases))
             if o:
                 raise DataError(f"Overlapping patterns detected in Match.forward: {offender[0]} VS. {offender[1]}")
-        transforms = [transform(src, tgt) for src, tgt in self.cases]
+        transforms = [transform(src, tgt, soft_failure=False) for src, tgt in self.cases]
         def transform_f(value: Any, ctx: Any) -> Any:
             for t in transforms:
                 try:
@@ -821,7 +825,7 @@ class Match:
             o, offender = Match.overlap(*(tgt for src, tgt in self.cases))
             if o:
                 raise DataError(f"Overlapping patterns detected in Match.inverse: {offender[0]} VS. {offender[1]}")
-        transforms = [transform(tgt, src) for src, tgt in self.cases]
+        transforms = [transform(tgt, src, soft_failure=True) for src, tgt in self.cases]
         def transform_f(value: Any, ctx: Any) -> Any:
             for t in transforms:
                 try:
