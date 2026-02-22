@@ -42,6 +42,15 @@ def _builder_char_case_insensitive(ch: str) -> Builder[str]:
     return Builder.oneof("".join(variants))
 
 
+def _builder_range_case_insensitive(start: str, end: str) -> Builder[str]:
+    b = Builder.none(Alphabet(str))
+    for codepoint in range(ord(start), ord(end) + 1):
+        ch = chr(codepoint)
+        for variant in _casefold_variants(ch):
+            b = b | Builder.lit(variant)
+    return b
+
+
 
 @dataclass(frozen=True, slots=True)
 class RegexNode:
@@ -159,9 +168,8 @@ class CharClassAtom:
                 else:
                     b = b | Builder.lit(item)
             elif isinstance(item, CharRange):
-                if case_insensitive and item.start == item.end:
-                    for variant in _casefold_variants(item.start):
-                        b = b | Builder.lit(variant)
+                if case_insensitive:
+                    b = b | _builder_range_case_insensitive(item.start, item.end)
                 else:
                     b = b | item.builder()
             else:

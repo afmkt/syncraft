@@ -88,3 +88,23 @@ def test_regex_builder_class_escaped_chars() -> None:
 def test_regex_builder_class_shorthand_items() -> None:
     builder = _build(r"[\w\d]+")
     _assert_matches(builder, ["abc_123"], ["-", " "])
+
+
+def test_regex_builder_case_insensitive_literals() -> None:
+    builder = _build(r"(?i:AbC)")
+    _assert_matches(builder, ["abc", "ABC", "aBc"], ["ab", "abcd", "abx"])
+
+
+def test_regex_builder_case_insensitive_char_class_range() -> None:
+    builder = _build(r"(?i:[a-c]+)")
+    _assert_matches(builder, ["A", "bC", "cBA"], ["", "d", "abx"])
+
+
+def test_regex_builder_case_insensitive_class_literal() -> None:
+    builder = _build(r"(?i:[xZ]+)")
+    _assert_matches(builder, ["x", "X", "z", "Z"], ["a", "xzA"])
+
+
+def test_regex_builder_case_insensitive_unicode_category_noop() -> None:
+    builder = _build(r"(?i:\p{Lu}+)")
+    _assert_matches(builder, ["A", "AZ"], ["", "a", "Aa"])
