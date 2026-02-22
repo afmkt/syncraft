@@ -13,8 +13,8 @@ def test_mutual_recursion_str():
     # expr := term ('+' expr)?
     # term := 'a'
     
-    expr = Syntax.lazy(lambda: term | (Syntax.lit('a') + expr)).named('expr')
-    term = Syntax.lit('a').named('term')
+    expr = Syntax.lazy(lambda: term | (Syntax.tok('a') + expr)).named('expr')
+    term = Syntax.tok('a').named('term')
     
     # This should not hang or raise RecursionError
     result = str(expr)
@@ -27,10 +27,10 @@ def test_mutual_recursion_str():
     # item := list | 'x'
     
     list_syntax = Syntax.lazy(
-        lambda: Syntax.lit('[') + (item.sep_by(Syntax.lit(','))).optional + Syntax.lit(']')
+        lambda: Syntax.tok('[') + (item.sep_by(Syntax.tok(','))).optional + Syntax.tok(']')
     ).named('list')
     
-    item = (list_syntax | Syntax.lit('x')).named('item')
+    item = (list_syntax | Syntax.tok('x')).named('item')
     
     result2 = str(list_syntax)
     print(f"list_syntax str: {result2}")
@@ -38,8 +38,8 @@ def test_mutual_recursion_str():
     assert len(result2) > 0
     
     # Try a more complex mutual recursion
-    a = Syntax.lazy(lambda: Syntax.lit('a') + b).named('a')
-    b = Syntax.lazy(lambda: Syntax.lit('b') + a).named('b')
+    a = Syntax.lazy(lambda: Syntax.tok('a') + b).named('a')
+    b = Syntax.lazy(lambda: Syntax.tok('b') + a).named('b')
     
     result3 = str(a)
     result4 = str(b)

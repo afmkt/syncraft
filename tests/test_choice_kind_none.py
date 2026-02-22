@@ -6,7 +6,7 @@ from syncraft.algebra import Error
 from syncraft.cache import Cache
 S = Syntax
 def tok(text: str):
-    return S.lit(text=text, case_sensitive=True)
+    return S.tok(text=text, case_sensitive=True)
 
 
 def test_validate_and_generate_with_after_bimap_resets_choice_kind():

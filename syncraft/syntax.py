@@ -1141,20 +1141,16 @@ class Syntax(Generic[A, S]):
     @classmethod
     def eof(cls) -> Syntax:
         return cls.factory('eof')
-
-    @classmethod
-    def token(cls, tkspec: TokenSpec) -> Syntax:
-        return cls.factory('lex', tkspec)
-
+    
     @classmethod
     def lex(cls, builder: Builder | TokenSpec) -> Syntax:
         return cls.factory('lex', builder)
     
     @classmethod
-    def lit(cls, *txt: str | re.Pattern[str] | bytes, case_sensitive: bool = True, **kwargs: Any) -> Syntax:
+    def tok(cls, *txt: str | re.Pattern[str] | bytes, case_sensitive: bool = True, **kwargs: Any) -> Syntax:
         tkspec: TokenSpec | None = TokenSpecBase.from_kwargs(*txt, case_sensitive=case_sensitive, **kwargs)
         assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
-        return cls.token(tkspec)
+        return cls.lex(tkspec)
 
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax:

@@ -13,11 +13,11 @@ S = Syntax.set(terminal_cls=Token)
 
 @grammar
 class ExprGrammar(Grammar):
-    number = S.lit(re.compile(r"\d+"))
-    plus = S.lit("+")
-    star = S.lit("*")
-    lparen = S.lit("(")
-    rparen = S.lit(")")
+    number = S.tok(re.compile(r"\d+"))
+    plus = S.tok("+")
+    star = S.tok("*")
+    lparen = S.tok("(")
+    rparen = S.tok(")")
 
     @lazy(S)
     def expr():  # type: ignore
@@ -63,14 +63,14 @@ class Binary:
 # -- step-4 --
 @grammar
 class ExprAstGrammar(Grammar):
-    number = S.lit(re.compile(r"\d+")).bimap(
+    number = S.tok(re.compile(r"\d+")).bimap(
         lambda t: Number(int(t.text)),
         lambda n: Token(text=str(n.value)),
     )
-    plus = S.lit("+").bimap(lambda t: t.text, lambda s: Token(text=s))
-    star = S.lit("*").bimap(lambda t: t.text, lambda s: Token(text=s))
-    lparen = S.lit("(")
-    rparen = S.lit(")")
+    plus = S.tok("+").bimap(lambda t: t.text, lambda s: Token(text=s))
+    star = S.tok("*").bimap(lambda t: t.text, lambda s: Token(text=s))
+    lparen = S.tok("(")
+    rparen = S.tok(")")
 
     @lazy(S)
     def expr():  # type: ignore[override]

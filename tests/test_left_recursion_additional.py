@@ -14,9 +14,9 @@ set_randomization(True)
 
 
 def lit(text: Any)->Syntax[Any, Any]:
-    return Syntax.lit(text=text)
+    return Syntax.tok(text=text)
 
-token = Syntax.token
+
 lazy = Syntax.lazy
 success = Syntax.success
 

@@ -8,7 +8,7 @@ from typing import Any
 
 S = Syntax.set(terminal_cls=Token)
 def literal(text: Any) -> Syntax[Any, Any]:
-    return S.lit(text=text)
+    return S.tok(text=text)
 
 
 IF = literal("if")
@@ -52,7 +52,7 @@ def test_sep_by()->None:
     
 
 def test_many_or()->None:
-    literal = Syntax.set(terminal_cls=Token).lit
+    literal = Syntax.set(terminal_cls=Token).tok
     
     IF = literal(text="if")
     THEN = literal(text="then")

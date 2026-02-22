@@ -9,13 +9,13 @@ S = Syntax.set(terminal_cls=Token)
 
 @grammar
 class GrammarA(Grammar):
-    a = S.lit("a")
+    a = S.tok("a")
     root = rule(a, is_root=True)
 
 
 @grammar
 class GrammarB(Grammar):
-    b = S.lit("b")
+    b = S.tok("b")
     root = rule(b, is_root=True)
 
 

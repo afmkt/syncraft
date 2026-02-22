@@ -11,7 +11,7 @@ from syncraft.cache import Cache
 
 
 def literal(text: Any) -> Syntax[Any, Any]:
-    return Syntax.lit(text=text)
+    return Syntax.tok(text=text)
 lazy = Syntax.lazy
 
 
@@ -104,7 +104,7 @@ def test7_edge_count_consistency() -> None:
 def test8_many_alternatives_edge_count() -> None:
     """Test edge count consistency with many alternatives."""
     # Create many alternatives to stress test the structural equivalence
-    literals = [Syntax.lit(c).named(f"lit_{c}") for c in "abcdefghij"]
+    literals = [Syntax.tok(c).named(f"lit_{c}") for c in "abcdefghij"]
     
     # Build a large choice: A | B | C | D | E | F | G | H | I | J
     syntax = literals[0]
@@ -130,13 +130,13 @@ def test9_recursive_lazy_pattern() -> None:
     # Create a recursive pattern similar to grammar structures
     def make_atom():
         """atom = literal | group | ..."""
-        literal_node = Syntax.lit("x").named('literal')
+        literal_node = Syntax.tok("x").named('literal')
         # Include the lazy group in atom choice (creates recursion)
         return Syntax.alt(literal_node, group).named('atom')
     
     def make_piece():
         """piece = atom [quantifier]"""
-        quantifier = Syntax.lit("?").named('quantifier')
+        quantifier = Syntax.tok("?").named('quantifier')
         return (atom + (~quantifier)).named('piece')
     
     def make_branch():
@@ -145,7 +145,7 @@ def test9_recursive_lazy_pattern() -> None:
     
     def make_group_body():
         """group body that refers back to branch"""
-        return (Syntax.lit("(") >> branch // Syntax.lit(")")).named('group_body')
+        return (Syntax.tok("(") >> branch // Syntax.tok(")")).named('group_body')
     
     # Create the recursive definitions
     group = Syntax.lazy(make_group_body).named('group')

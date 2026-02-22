@@ -12,7 +12,7 @@ from typing import Any
 class S:
     @staticmethod
     def lit(text: Any) -> Syntax[Any, Any]:
-        return Syntax.lit(text=text)
+        return Syntax.tok(text=text)
 
 def test_non_lazy_or_simple():
     """Test OrElse without Then: a | b"""

@@ -5,7 +5,7 @@ from syncraft.syntax import Syntax
 from syncraft.algebra import Error
 def test_syntax_run_returns_error_on_incomplete() -> None:
     
-    literal = Syntax.lit
+    literal = Syntax.tok
     syntax = literal("if")
     
     value = parse_data(syntax=syntax, data=[])

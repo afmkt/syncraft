@@ -47,9 +47,8 @@ set_randomization(True)
 S = Syntax.set(terminal_cls=Token)
 
 def literal(text:Any) -> Syntax[Any, Any]:
-    return S.lit(text=text)
+    return S.tok(text=text)
 
-token = S.token
 lazy = S.lazy
 
 def from_string(string: str) -> Token:

@@ -16,7 +16,7 @@ from syncraft.fa import Builder
 SS = Syntax.set(terminal_cls=Token)
 
 def tok(text: str):
-    return SS.lit(text=text, case_sensitive=True)
+    return SS.tok(text=text, case_sensitive=True)
 
 def test_generate_with_direct_left_recursion_with_base_succeeds():
     # A := A + 'a' | 'a'
@@ -61,7 +61,7 @@ def test_generate_with_mutual_left_recursion_without_base_raises():
 
 
 def test_generate_with_infers_text_lexer_without_config() -> None:
-    syntax = SS.lit("hi")
+    syntax = SS.tok("hi")
     ast = generate_with(syntax, seed=123)
     assert ast == Token(text="hi")
 
