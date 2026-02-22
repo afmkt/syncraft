@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import keyword
-import re
+
 import math
 
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
-    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING
+    Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING,
+    Pattern,
 )
 from dataclasses import dataclass, field, replace
 
@@ -1146,8 +1147,15 @@ class Syntax(Generic[A, S]):
     def lex(cls, builder: Builder | TokenSpec) -> Syntax:
         return cls.factory('lex', builder)
     
+
     @classmethod
-    def tok(cls, *txt: str | re.Pattern[str] | bytes, case_sensitive: bool = True, **kwargs: Any) -> Syntax:
+    def re(cls, pattern: str) -> Syntax:
+        from syncraft.regex import builder
+        b = builder(pattern)
+        return cls.lex(b)
+    
+    @classmethod
+    def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:
         tkspec: TokenSpec | None = TokenSpecBase.from_kwargs(*txt, case_sensitive=case_sensitive, **kwargs)
         assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
         return cls.lex(tkspec)
