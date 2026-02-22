@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict, Hashable
 from syncraft.bimap import Bindable
 from syncraft.ast import SyncraftError
-from rich import print
+
 from syncraft.utils import callable_str, is_lazy, is_orelse, syntax_of, is_intrinsic
 from syncraft.tracer import Tracer
 from collections import defaultdict

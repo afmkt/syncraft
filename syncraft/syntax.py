@@ -1155,6 +1155,10 @@ class Syntax(Generic[A, S]):
         return cls.lex(b)
     
     @classmethod
+    def lit(cls, txt: str | bytes) -> Syntax:
+        return cls.lex(Builder.lit(txt))
+
+    @classmethod
     def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:
         tkspec: TokenSpec | None = TokenSpecBase.from_kwargs(*txt, case_sensitive=case_sensitive, **kwargs)
         assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"

@@ -31,7 +31,7 @@ from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.bimap import Bindable
 from syncraft.input import StreamCursor
 
-from rich import print
+
 
 
 T = TypeVar('T', bound=Hashable)

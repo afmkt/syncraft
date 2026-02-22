@@ -1,23 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Any
 
-from syncraft import Error, Grammar, Syntax, Token, grammar, lazy, rule
-import pytest
+from syncraft import Error, Grammar, Syntax as S, grammar, lazy, rule
+
 
 # -- step-1 --
-S = Syntax.set(terminal_cls=Token)
+
 
 
 @grammar
 class ExprGrammar(Grammar):
-    number = S.tok(re.compile(r"\d+"))
-    plus = S.tok("+")
-    star = S.tok("*")
-    lparen = S.tok("(")
-    rparen = S.tok(")")
+    number = S.re(r"\d+")
+    plus = S.lit("+")
+    star = S.lit("*")
+    lparen = S.lit("(")
+    rparen = S.lit(")")
 
     @lazy(S)
     def expr():  # type: ignore
@@ -36,12 +35,12 @@ class ExprGrammar(Grammar):
 
 
 # -- step-2 --
-@pytest.mark.skip(reason="The library is not ready for this yet")
+# @pytest.mark.skip(reason="The library is not ready for this yet")
 def test_quickstart_step_2() -> None:
-    ast = ExprGrammar.parse("1 + 2 * 3")
+    ast = ExprGrammar.parse("1+2*3")
     assert ast == (
-        (Token(text="1"), Token(text="+")),
-        ((Token(text="2"), Token(text="*")), Token(text="3")),
+        ("1", "+"),
+        (("2", "*"), "3"),
     )
 # -- step-2-end --
 
@@ -63,14 +62,11 @@ class Binary:
 # -- step-4 --
 @grammar
 class ExprAstGrammar(Grammar):
-    number = S.tok(re.compile(r"\d+")).bimap(
-        lambda t: Number(int(t.text)),
-        lambda n: Token(text=str(n.value)),
-    )
-    plus = S.tok("+").bimap(lambda t: t.text, lambda s: Token(text=s))
-    star = S.tok("*").bimap(lambda t: t.text, lambda s: Token(text=s))
-    lparen = S.tok("(")
-    rparen = S.tok(")")
+    number = S.re(r"\d+").bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
+    plus = S.lit("+")
+    star = S.lit("*")
+    lparen = S.lit("(")
+    rparen = S.lit(")")
 
     @lazy(S)
     def expr():  # type: ignore[override]
@@ -94,15 +90,15 @@ class ExprAstGrammar(Grammar):
 
     root = rule(expr, is_root=True)
 
-@pytest.mark.skip(reason="The library is not ready for this yet")
+# @pytest.mark.skip(reason="The library is not ready for this yet")
 def test_quickstart_step_4() -> None:
-    ast = ExprAstGrammar.parse("1 + 2 * 3")
+    ast = ExprAstGrammar.parse("1+2*3")
     assert ast == Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
 # -- step-4-end --
 
 
 # -- step-5 --
-@pytest.mark.skip(reason="The library is not ready for this yet")
+# @pytest.mark.skip(reason="The library is not ready for this yet")
 def test_quickstart_step_5() -> None:
     expr = Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
     validated = ExprAstGrammar.validate(expr)
@@ -111,3 +107,5 @@ def test_quickstart_step_5() -> None:
     generated = ExprAstGrammar.generate(expr)
     assert not isinstance(generated, Error)
 # -- step-5-end --
+
+

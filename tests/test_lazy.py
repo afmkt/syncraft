@@ -1,16 +1,16 @@
 from __future__ import annotations
-from typing import Any, Tuple, Iterable, Callable
+from typing import Any, Iterable
 from syncraft.ast import Nothing, Token, Lazy, Seq, Alt
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
-from syncraft.cache import Cache, set_randomization
+from syncraft.cache import set_randomization
 import syncraft.generator as gen
 
 import re
 import pytest
-from rich import print
+
 
 def iter_tokens(ast: Any) -> Iterable[str]:
     if isinstance(ast, Token):

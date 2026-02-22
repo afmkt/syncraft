@@ -715,6 +715,8 @@ def unify(pattern: Any, value: Any, env: Env) -> Tuple[bool, List[Any]]:
                     return False, reason + [(pattern, value, "Failed to unify list/tuple items")]
             return True, []
         elif is_dataclass(pattern) and is_dataclass(value):
+            if type(pattern) is not type(value):
+                return False, [(pattern, value, "Dataclass type mismatch")]
             for field in fields(pattern):
                 p_item = getattr(pattern, field.name)
                 v_item = getattr(value, field.name)
@@ -752,8 +754,14 @@ def transform(source: Callable[..., Any], target: Callable[..., Any]) -> Callabl
         
 
     def transform_f(value: Any, ctx: Any) -> Any:
+        # from rich import print
         env = Env(constants=ctx)
         src = call_src(env)
+        print('\n--- Transform Debug ---')
+        print('Source pattern:', src)
+        print('Target pattern:', value)
+        print('Environment:', env)
+
         new_env = solve(src, value, env)
         if isinstance(new_env, list):
             raise DataError(f"Failed to unify source with value: {new_env}")
