@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Any, Dict, Union, Literal, Iterator, overload
+from typing import Callable, Any, Dict, Union, Literal, Iterator, Optional, overload, TYPE_CHECKING
 from syncraft.ast import SyncraftError
 from syncraft.syntax import Syntax
 from syncraft.algebra import Algebra
@@ -10,6 +10,9 @@ from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
 import io
 import asyncio
+
+if TYPE_CHECKING:
+    from syncraft.vis import SVGVisualization
 
 
 
@@ -171,7 +174,15 @@ def grammar(cls: type) -> type:
 
     
 
-class Grammar:
+class GrammarMeta(type):
+    def __str__(cls) -> str:
+        return type.__str__(cls)
+
+    def __repr__(cls) -> str:
+        return type.__repr__(cls)
+
+
+class Grammar(metaclass=GrammarMeta):
     """Base class for declarative grammar definitions.
     
     Grammar provides a high-level interface for defining, parsing, and generating
@@ -191,7 +202,7 @@ class Grammar:
     Example:
         >>> @grammar
         ... class MyGrammar(Grammar):
-        ...     digit = Syntax.lit("0-9")
+        ...     digit = Syntax.re("[0-9]+")
         ...     number = rule(digit.many(at_least=1), is_root=True)
         
         >>> result = MyGrammar.parse("123")
@@ -201,6 +212,15 @@ class Grammar:
     _root_rule: Syntax | None
     _parser: Dict[Syntax, Algebra]
     _generator: Dict[Syntax, Algebra]
+
+
+    @classmethod
+    def vis(cls, syntax: Syntax | None = None, depth: int = 3) -> Optional["SVGVisualization"]:
+        if syntax is None:
+            syntax = cls._root_rule
+        if syntax is None:
+            raise ValueError("No root rule defined for the grammar")
+        return syntax.vis(depth=depth)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
