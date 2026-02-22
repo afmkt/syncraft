@@ -25,10 +25,27 @@ class RegexError(SyncraftError):
     pass
 
 
+def _casefold_variants(ch: str) -> Tuple[str, ...]:
+    variants = []
+    for candidate in (ch, ch.casefold(), ch.lower(), ch.upper()):
+        if len(candidate) != 1:
+            continue
+        if candidate not in variants:
+            variants.append(candidate)
+    return tuple(variants)
+
+
+def _builder_char_case_insensitive(ch: str) -> Builder[str]:
+    variants = _casefold_variants(ch)
+    if len(variants) == 1:
+        return Builder.lit(variants[0])
+    return Builder.oneof("".join(variants))
+
+
 
 @dataclass(frozen=True, slots=True)
 class RegexNode:
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         raise RegexError("Unsupported regex feature in lexer", offender=self)
 
 
@@ -69,7 +86,7 @@ class ShorthandKind(Enum):
 class ShorthandAtom(RegexNode):
     kind: ShorthandKind
 
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
         if self.kind == ShorthandKind.DIGIT:
             return Builder.unicode_category(["Nd"])
@@ -95,7 +112,7 @@ class ShorthandAtom(RegexNode):
 class UnicodeCategoryAtom(RegexNode):
     categories: Tuple[str, ...]
     negated: bool = False   
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
         b = Builder.none(Alphabet(str))
         for category in self.categories:
@@ -114,7 +131,7 @@ class UnicodeCategoryAtom(RegexNode):
 class CharRange(RegexNode):
     start: str
     end: str
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
         return Builder.range(self.start, self.end)
     
@@ -131,14 +148,24 @@ class CharRange(RegexNode):
 class CharClassAtom:
     items: Tuple[Union[str, CharRange, ShorthandAtom, UnicodeCategoryAtom], ...]
     negated: bool = False
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
         b = Builder.none(Alphabet(str))
         for item in self.items:
-            if isinstance(item, (CharRange, ShorthandAtom, UnicodeCategoryAtom)):
-                b = b | item.builder()
+            if isinstance(item, str):
+                if case_insensitive:
+                    for variant in _casefold_variants(item):
+                        b = b | Builder.lit(variant)
+                else:
+                    b = b | Builder.lit(item)
+            elif isinstance(item, CharRange):
+                if case_insensitive and item.start == item.end:
+                    for variant in _casefold_variants(item.start):
+                        b = b | Builder.lit(variant)
+                else:
+                    b = b | item.builder()
             else:
-                b = b | Builder.lit(item)
+                b = b | item.builder(case_insensitive=case_insensitive)
         if self.negated:
             b = Builder.any(Alphabet(str)) - b
         return b
@@ -178,11 +205,11 @@ class GroupAtom(RegexNode):
     regex: Optional[Regex] = None
     name: Optional[str] = None
     inline_flags: Optional[InlineFlags] = None
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
         if self.kind in (GroupKind.CAPTURE, GroupKind.NON_CAPTURE):
             if self.regex is not None:
-                inner = self.regex.builder()
+                inner = self.regex.builder(case_insensitive=case_insensitive)
                 if self.name is not None:
                     return inner.tagged(self.name)
                 else:
@@ -191,20 +218,33 @@ class GroupAtom(RegexNode):
                 raise NotImplementedError(f"Cannot build GroupAtom of kind: {self.kind}")
         elif self.kind == GroupKind.COMMENT:
             return Builder.none(Alphabet(str))
+        elif self.kind == GroupKind.FLAGS_SCOPED:
+            if self.regex is None or self.inline_flags is None:
+                raise RegexError("Invalid inline flags group", offender=self)
+            flags = set(self.inline_flags.enabled)
+            disabled = set(self.inline_flags.disabled or ())
+            if disabled:
+                raise RegexError("Inline flag disabling is not supported", offender=self, expect="Only (?i:...) is supported")
+            if flags - {"i"}:
+                raise RegexError("Unsupported inline flags", offender=self, expect="Only (?i:...) is supported")
+            return self.regex.builder(case_insensitive=True)
         else:
             return super().builder()  # will raise RegexError for unsupported features
         
     def validate(self) -> None:
-        if self.kind not in (GroupKind.CAPTURE, GroupKind.COMMENT, GroupKind.NON_CAPTURE):
+        if self.kind not in (GroupKind.CAPTURE, GroupKind.COMMENT, GroupKind.NON_CAPTURE, GroupKind.FLAGS_SCOPED):
             raise RegexError("Unsupported group type in lexer regex", offender=self)
         
 
 @dataclass(frozen=True, slots=True)
 class LiteralAtom(RegexNode):
     text: str
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
-        return Builder.lit(self.text)
+        if not case_insensitive:
+            return Builder.lit(self.text)
+        pieces = [_builder_char_case_insensitive(ch) for ch in self.text]
+        return reduce(lambda a, b: a + b, pieces) if pieces else Builder.none(Alphabet(str))
     
     def validate(self) -> None:
         if self.text == "":
@@ -237,7 +277,7 @@ class AnchorAtom(RegexNode):
 
 @dataclass(frozen=True, slots=True)
 class DotAtom(RegexNode):
-    def builder(self) -> Builder[str]:
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         return Builder.any(Alphabet(str))
 
 @dataclass(frozen=True, slots=True)
@@ -256,8 +296,8 @@ class Piece(RegexNode):
                 CharClassAtom,
                 GroupAtom]
     quantifier: Optional[Quantifier] = None
-    def builder(self) -> Builder[str]:
-        b = self.atom.builder()
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
+        b = self.atom.builder(case_insensitive=case_insensitive)
         if self.quantifier is not None and self.quantifier is not Nothing:
             q = self.quantifier
             b = b.many(at_least=q.minimum, at_most=q.maximum).with_non_greedy(not q.greedy)        
@@ -268,8 +308,8 @@ class Piece(RegexNode):
 @dataclass(frozen=True, slots=True)
 class Branch(RegexNode):
     pieces: Tuple[Piece, ...]
-    def builder(self) -> Builder[str]:
-        ret = [p.builder() for p in self.pieces]
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
+        ret = [p.builder(case_insensitive=case_insensitive) for p in self.pieces]
         return reduce(lambda a, b: a + b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
     
 
@@ -278,8 +318,8 @@ class Branch(RegexNode):
 @dataclass(frozen=True, slots=True)
 class Regex(RegexNode):
     branches: Tuple[Branch, ...]
-    def builder(self) -> Builder[str]:
-        ret = [b.builder() for b in self.branches]
+    def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
+        ret = [b.builder(case_insensitive=case_insensitive) for b in self.branches]
         return reduce(lambda a, b: a | b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
 
 
@@ -501,6 +541,15 @@ def parse(data: str, *, syntax: Syntax | None = None) -> Any:
         return RE.parse(data, syntax=syntax)
     except DataError as e:
         return Error.new(this=syntax or RE.regex_full, message=str(e), error=e)
+
+
+def builder(pattern: str) -> Builder[str]:
+    parsed = parse(pattern)
+    if not isinstance(parsed, Regex):
+        if isinstance(parsed, Error):
+            raise SyncraftError("Regex parse failed", offender=parsed, expect=parsed.summary)
+        raise SyncraftError("Regex parse failed", offender=parsed)
+    return parsed.builder()
 
 
 @dataclass

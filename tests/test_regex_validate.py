@@ -40,7 +40,7 @@ def test_validate_allows_capturing_group_with_flag() -> None:
 
 
 def test_validate_rejects_inline_flags() -> None:
-    regex = _parse(r"(?i:ab)")
+    regex = _parse(r"(?i)ab")
     with pytest.raises(SyncraftError):
         regex.builder()
 
