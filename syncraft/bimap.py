@@ -715,7 +715,7 @@ def unify(pattern: Any, value: Any, env: Env) -> Tuple[bool, List[Any]]:
                     return False, reason + [(pattern, value, "Failed to unify list/tuple items")]
             return True, []
         elif is_dataclass(pattern) and is_dataclass(value):
-            if type(pattern) is not type(value):
+            if not isinstance(value, type(pattern)): # type: ignore
                 return False, [(pattern, value, "Dataclass type mismatch")]
             for field in fields(pattern):
                 p_item = getattr(pattern, field.name)

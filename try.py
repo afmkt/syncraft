@@ -110,6 +110,4 @@ def test_quickstart_step_5() -> None:
 
 
 if __name__ == "__main__":
-    test_quickstart_step_2()
-    test_quickstart_step_4()
     test_quickstart_step_5()
