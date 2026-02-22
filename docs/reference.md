@@ -1,15 +1,5 @@
 # API Reference
 
-::: syncraft.syntax
+The public API surface is defined by the symbols exported from `syncraft.__all__`.
 
-::: syncraft.grammar
-
-::: syncraft.parser
-
-::: syncraft.generator
-
-::: syncraft.ast
-
-::: syncraft.bimap
-
-::: syncraft.algebra
+::: syncraft

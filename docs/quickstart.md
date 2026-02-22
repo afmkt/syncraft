@@ -17,7 +17,9 @@ We’ll build a recursive expression grammar and parse `1 + 2 * 3` into the defa
 {{ include_code("tests/test_quickstart.py", "python", start="-- step-1 --", end="-- step-1-end --") }}
 
 {{ include_code("tests/test_quickstart.py", "python", start="-- step-2 --", end="-- step-2-end --") }}
-See also: `Syntax`, `@grammar`, `lazy`, and `parse_word` in the [API reference](reference.md).
+See also: `Syntax`, `@grammar`, `lazy`, and `Grammar.parse` in the [API reference](reference.md).
+
+If you want regex terminals directly on character input, use `Syntax.re(pattern)`.
 
 ## 3. Define dataclasses for the AST
 Create a small, explicit AST model for numbers and binary operators.

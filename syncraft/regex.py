@@ -14,10 +14,7 @@ from syncraft.grammar import Grammar, lazy, rule, grammar
 from functools import reduce
 from syncraft.bimap import DataError, Not
 from syncraft.ast import Nothing, SyncraftError
-try:
-    import regex as re
-except ImportError:
-    import re
+
 
 
 
@@ -573,6 +570,10 @@ class VerifyResult:
 
 
 def verify(pattern: str) -> VerifyResult:
+    try:
+        import regex as re
+    except ImportError:
+        import re # type: ignore
 
     myerr = None
     err = None
