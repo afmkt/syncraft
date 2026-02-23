@@ -34,7 +34,6 @@ Links:
 
 - Concepts: [concepts](concept.md)
 - Quickstart: [Quickstart](quickstart.md)
-- AI Ready: [AI readiness guide](ai-ready.md)
 - Reference: [API reference](reference.md)
 
 

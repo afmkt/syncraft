@@ -17,10 +17,10 @@ plugins:
             show_source: false
             show_root_heading: true
             inherited_members: false
-            filters: []
+            filters: 
+              - "!^_"
 nav:
   - Quickstart: quickstart.md
-  - AI Ready: ai-ready.md
   - Tutorials:
       - SQLite CREATE TRIGGER Parser Tutorial: tutorials/trigger.ipynb
   - Concepts: concept.md
