@@ -18,6 +18,13 @@ from functools import reduce
 import random
 
 Tag = str | Enum
+
+
+class DefaultTag(Enum):
+    DEFAULT = "__syncraft_default_tag__"
+
+
+DEFAULT_TAG: Tag = DefaultTag.DEFAULT
 C = TypeVar('C', bound=Hashable)
 FAState = int
 FAStateBuilder = Callable[[], FAState]
@@ -51,7 +58,15 @@ class ReverseDFA(Generic[C]):
 
     def gen(self, tag: Tag | None, rnd: random.Random) -> C | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
-        assert current_states, f"Tag '{tag}' not accepted by DFA"
+        if not current_states:
+            if tag:
+                raise ValueError(f"No states accept tag '{tag}'")
+            else:
+                tag = DEFAULT_TAG
+                current_states = self.accept.get(tag, frozenset())
+                if not current_states:
+                    raise ValueError("Empty accept states")
+        
         current = rnd.choice(list(current_states))
         result: List[C] = []
         sample_f = self.cs_factory.sample
@@ -71,6 +86,17 @@ class DFA(Generic[C]):
     init: FAState
     accept: FrozenDict[FAState, frozenset[Tag]] = field(default_factory=FrozenDict)
     transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = field(default_factory=FrozenDict)
+
+    def with_default_tag_invariant(self) -> "DFA[C]":
+        normalized_accept: Dict[FAState, frozenset[Tag]] = {}
+        for state, tags in self.accept.items():
+            tag_set = set(tags)
+            if not tag_set:
+                tag_set.add(DEFAULT_TAG)
+            elif DEFAULT_TAG in tag_set and len(tag_set) > 1:
+                tag_set.discard(DEFAULT_TAG)
+            normalized_accept[state] = frozenset(tag_set)
+        return replace(self, accept=FrozenDict(normalized_accept))
 
     @property
     def reverse(self) -> ReverseDFA[C]:
@@ -549,6 +575,8 @@ class DFA(Generic[C]):
                 is_accept = is_accept or (ns in nfa.accept)
                 tags.update(nfa.accept.get(ns, frozenset()))
             if is_accept:
+                if not tags:
+                    tags.add(DEFAULT_TAG)
                 accept[fa_state] = frozenset(tags)
 
         transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = FrozenDict({k: FrozenDict(v) for k, v in trans.items()})

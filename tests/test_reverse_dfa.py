@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from syncraft.fa import NFA
+from syncraft.fa import DEFAULT_TAG, NFA
 from syncraft.alphabet import Alphabet, AlphabetProtocol
 from syncraft.charset import CharSet, CharSetFactory
 
@@ -57,3 +57,10 @@ def test_dfa_reverse_none_tag_rejected():
     rev = nfa.dfa.reverse
     with pytest.raises(AssertionError):
         rev.gen(None, random.Random(0))
+
+
+def test_dfa_reverse_default_tag_for_untagged_accepts():
+    cs_factory = CharSetFactory(alphabet=Alphabet(str))
+    nfa = NFA.seq(s='a', cs_factory=cs_factory)
+    rev = nfa.dfa.reverse
+    assert rev.gen(DEFAULT_TAG, random.Random(0)) == 'a'

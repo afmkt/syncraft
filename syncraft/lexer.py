@@ -9,7 +9,7 @@ from typing import (
 from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.alphabet import AlphabetProtocol
-from syncraft.fa import NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum
+from syncraft.fa import DEFAULT_TAG, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum
 from syncraft.ast import SyncraftError, Token
 from syncraft.cache import Either, Left, Right
 from collections import deque, defaultdict
@@ -180,6 +180,9 @@ class LexerCache:
             else:
                 lexer = self._load(dir, key)
                 if lexer is not None:
+                    normalize = lexer._normalize_default_tags
+                    if callable(normalize) and normalize():
+                        self._save(dir, key, lexer)
                     self.dict[key] = lexer
                     return lexer, dir / f"{key}.lex"
                 lexer = factory()
@@ -201,6 +204,30 @@ class Lexer(LexerBase[C]):
     _stack: deque[Mode[C]] = field(default_factory=deque)
     cache: ClassVar[LexerCache] = LexerCache()
     filepath: Optional[Path] = None
+
+    def _normalize_default_tags(self) -> bool:
+        def needs_normalization(mode: Mode[C]) -> bool:
+            has_default_tag = False
+            for tags in mode.runner.dfa.accept.values():
+                if not tags:
+                    return True
+                if DEFAULT_TAG in tags:
+                    has_default_tag = True
+                    if len(tags) > 1:
+                        return True
+            if not has_default_tag:
+                return False
+            return False
+
+        changed = False
+        for mode in self.modes.values():
+            if not needs_normalization(mode):
+                continue
+            dfa = mode.runner.dfa.with_default_tag_invariant()
+            mode.runner = dfa.runner(non_greedy=mode.non_greedy)
+            mode.rdfa = dfa.reverse
+            changed = True
+        return changed
 
     
     def tags(self) -> frozenset[str|Enum|None]:
@@ -303,7 +330,7 @@ class Lexer(LexerBase[C]):
             combined = nfa if combined is None else combined.union(nfa)
 
         assert combined is not None
-        dfa = combined.dfa.normalized
+        dfa = combined.dfa.normalized.with_default_tag_invariant()
         non_greedy_set = frozenset(non_greedy)
         return Mode(
             runner=dfa.runner(non_greedy=non_greedy_set),
