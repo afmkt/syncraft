@@ -1,51 +1,79 @@
-from __future__ import annotations
+from typing import Type
 
-from syncraft.ast import Token
-from syncraft.grammar import Grammar, grammar, rule
+import pytest
+
 from syncraft.syntax import Syntax
+from syncraft.ast import Token, Seq, Alt, Lazy
 from syncraft.generator import (
+    generate_with,
+    generate,
     validate,
 )
+from syncraft.algebra import Error
+from syncraft.cache import LeftRecursionError
 from syncraft.fa import Builder
 
+SS = Syntax.set(terminal_cls=Token)
+
+def tok(text: str):
+    return SS.tok(text=text, case_sensitive=True)
+
+def test_generate_with_direct_left_recursion_with_base_succeeds():
+    # A := A + 'a' | 'a'
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = generate_with(A)
+    # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
+    assert not isinstance(ast, Error)
+    
 
 
-S = Syntax.set(terminal_cls=Token)
+def test_generate_direct_left_recursion_with_base_succeeds():
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = generate(A)
+    assert not isinstance(ast, Error)
+    
 
 
-@grammar
-class SimpleTokenGrammar(Grammar):
-    word = S.re(r"[a-z]+")
-    root = rule(word, is_root=True)
+
+def test_validate_direct_left_recursion_with_base_succeeds_single_token():
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = validate(A, (Token(text='a'), Token(text='a')))
+    assert not isinstance(ast, Error)
+    
 
 
-@grammar
-class WordNumberGrammar(Grammar):
-    word = S.re(r"[a-z]+")
-    number = S.re(r"\d+")
-    root = rule(word + number, is_root=True)
+def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = validate(A, Token(text='a'))
+    assert not isinstance(ast, Error)
+    
 
 
-@grammar
-class CaseInsensitiveKeywordGrammar(Grammar):
-    keyword = S.re(r"(?i:if)")
-    root = rule(keyword, is_root=True)
+# SS = S
+def test_generate_with_mutual_left_recursion_without_base_raises():
+    # Mutual recursion with no productive base: A := B ; B := A
+    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
+    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
+    with pytest.raises(LeftRecursionError):
+        generate_with(A)
 
 
-def test_regex_lexer_single_token() -> None:
-    result = SimpleTokenGrammar.parse("abc")
-    assert result == Token(text="abc")
 
 
-def test_regex_lexer_sequence() -> None:
-    result = WordNumberGrammar.parse("abc123")
-    assert result == (Token(text="abc"), Token(text="123"))
+def test_generate_with_infers_text_lexer_without_config() -> None:
+    syntax = SS.tok("hi")
+    ast = generate_with(syntax, seed=123)
+    assert ast == Token(text="hi")
 
 
-def test_regex_lexer_case_insensitive_scoped() -> None:
-    result = CaseInsensitiveKeywordGrammar.parse("IF")
-    print(result)
-    assert result == Token(text="IF")
+def test_generate_with_infers_from_fabuilder_literal() -> None:
+    S = Syntax.set(terminal_cls=Token)
+    lex_syntax = S.factory("lex", Builder.lit("go").tagged("WORD"))
+    ast = generate_with(lex_syntax, seed=321)
+    print(ast)
+    assert isinstance(ast, Token)
+    assert ast.token_type == "WORD" 
+    assert ast.text == "go"
 
 
 def test_validate_lex_token_uses_verify_full_match() -> None:
@@ -58,9 +86,7 @@ def test_validate_lex_token_uses_verify_full_match() -> None:
     assert ast.token_type == "AB"
     assert ast.text == "ab"
     
-    
+
 if __name__ == "__main__":
-    # test_validate_lex_token_uses_verify_full_match()
-    # test_regex_lexer_single_token()
-    # test_regex_lexer_sequence()
-    test_regex_lexer_case_insensitive_scoped()
+    test_validate_lex_token_uses_verify_full_match()
+    

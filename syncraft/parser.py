@@ -1,16 +1,16 @@
 from __future__ import annotations
 from typing import (
-    Optional, List, Any, Tuple, TypeVar,Hashable, Literal,
-    Generic, Generator, Type, Union, Callable, Self
+    Optional, List, Any, Tuple, TypeVar,Hashable, 
+    Generic, Generator, Callable
 )
 from syncraft.lexer import (
     LexerBase,
     LexerResult,
     LexerProtocol,
-    LexerError
+    LexerError,
+    DEFAULT_TAG
 )
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
-from syncraft.utils import FrozenDict
 from syncraft.algebra import (
      Algebra, YieldChannelType, Error
 )
@@ -21,13 +21,9 @@ from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.input import StreamCursor
 
-from syncraft.ast import Token, AST, SyncraftError
+from syncraft.ast import Token, SyncraftError
 from syncraft.bimap import Bindable
 import re
-
-from pathlib import Path
-import io
-import asyncio
 import os
 
 def get_tab_width() -> int:
@@ -342,7 +338,7 @@ class Parser(Algebra[T, ParserState[T]]):
                     match lexer.candidate():
                         case LexerResult(tag=tag, start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_cls(text=state.slice(start, end), token_type=tag)
+                                token = terminal_cls(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
                             else:
                                 token = lexeme
                             return Right.new((token, state)) # type: ignore
@@ -362,7 +358,7 @@ class Parser(Algebra[T, ParserState[T]]):
                             state = state.advance()
                         case LexerResult(tag=tag, start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_cls(text=state.slice(start, end), token_type=tag)
+                                token = terminal_cls(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
                             else:
                                 token = lexeme
                             if end > state.index:

@@ -391,10 +391,7 @@ class Lexer(LexerBase[C]):
                     self.pop_mode(mode_name)
                 case _:
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
-        if tag != DEFAULT_TAG:
-            return ((ret, tag), {})
-        else:
-            return ((ret, None), {})
+        return ((ret, tag), {})
 
     def verify(self, tag: frozenset[Tag | None], value: Any) -> bool:
         txt = value
@@ -420,7 +417,11 @@ class Lexer(LexerBase[C]):
                     return False
                 return candidate.start == 0 and candidate.end == len(txt)
         except TypeError:
-            pass
+            raise SyncraftError(
+                f"Value {value} is not valid for verification, expected an eenumerable object like string, bytes, or tuple",
+                offender=value,
+                expect="an enumerable object",
+            )
         return False
 
     def candidate(self) -> LexerError | LexerResult[C]:
