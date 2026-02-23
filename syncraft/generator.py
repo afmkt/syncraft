@@ -220,20 +220,47 @@ class Generator(Algebra[ParseResult[T], GenState]):
                                                             Either[Any, Tuple[Many, GenState]]]:
             if input.pruned:
                 ret: List[Any] = []
+                continuous_nothing = 0
+                tmp_input = input
                 while True:
-                    forked_input = input.fork(tag=len(ret))
+                    forked_input = tmp_input.fork(tag=len(ret))
                     match (yield from self.run(forked_input, cache)):
-                        case Right((value, _)):
+                        case Right((value, new_input)):
+                            tmp_input = new_input
+                            if at_most is not None and len(ret) >= at_most:
+                                break
+                            
                             if value is not Nothing:
                                 ret.append(value)
-                        case Left(_):
-                            pass
+                                continuous_nothing = 0
+                            else:
+                                if len(ret) >= at_least:
+                                    continuous_nothing += 1
+                                # We don't break on Nothing. This allows randomly deciding to continue or stop even after hitting a 
+                                # Nothing, which can help generate more varied structures.
+                                # But we will cap the how many continuous Nothings we allow to prevent infinite loops of generating Nothing.
+                                if continuous_nothing >= 5:
+                                    break
+                                if not forked_input.rng("many_continue").choice((True, False)):
+                                    break
+                                else:
+                                    continue
+                            
+                        case Left(err):
+                            raise SyncraftError(
+                                "Generator.many pruned path hit Left; generation cannot continue.",
+                                offender=err,
+                                expect="Right",
+                            )
+                    if at_most is not None and len(ret) >= at_most:
+                        break
+                    
                     if len(ret) >= at_least:
                         if (at_most is None or len(ret) < at_most):
                             if not forked_input.rng("many_continue").choice((True, False)):
                                 break
-                debug_print(f"\nCALLING MANY {callable_str(many_run)} with {input.ast} -> {Many(value=tuple(ret))}")
-                return Right.new((Many(value=tuple(ret)), input))
+                debug_print(f"\nCALLING MANY {callable_str(many_run)} with {tmp_input.ast} -> {Many(value=tuple(ret))}")
+                return Right.new((Many(value=tuple(ret)), tmp_input))
             else:
                 if not isinstance(input.ast, Many) or input.ast is Nothing:
                     debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED")
@@ -243,21 +270,30 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 ret = []
                 tmp_state = input
                 for x in input.ast.value:
-                    tmp_state = input.inject(x)
+                    tmp_state = tmp_state.inject(x)
                     self_result = yield from self.run(tmp_state, cache) 
                     match self_result:
-                        case Right((value, _)):
-                            if value is not Nothing:
-                                ret.append(value)
+                        case Right((value, new_state)):
+                            tmp_state = new_state
+                            if value is Nothing:
+                                break
+                            ret.append(value)
                             if at_most is not None and len(ret) > at_most:
                                 debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED with too many matches")
                                 return Left.new(Error.new(
                                         message=f"Expected at most {at_most} matches, got {len(ret)}",
                                         this=self,
                                         state=tmp_state
-                                    ))                             
+                                    ))
                         case Left(_):
-                            pass
+                            break
+                if len(ret) != len(input.ast.value):
+                    debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED with mismatch in number of matches")
+                    return Left.new(Error.new(
+                        message=f"Expected {len(input.ast.value)} matches, got {len(ret)}",
+                        this=self,
+                        state=tmp_state
+                    ))
                 if len(ret) < at_least:
                     debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED with too few matches")
                     return Left.new(Error.new(
@@ -266,7 +302,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                         state=tmp_state
                     )) 
                 debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> {Many(value=tuple(ret))}")
-                return Right.new((Many(value=tuple(ret)), input))
+                return Right.new((Many(value=tuple(ret)), tmp_state))
         return replace(self, run_f=many_run).flag(intrinsic=True)  # type: ignore
     
  
