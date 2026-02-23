@@ -4,7 +4,7 @@ from syncraft.ast import Token
 from syncraft.grammar import Grammar, grammar, rule
 from syncraft.syntax import Syntax
 
-S = Syntax.set(terminal_cls=Token)
+S = Syntax
 
 
 @grammar

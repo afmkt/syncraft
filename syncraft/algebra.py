@@ -699,6 +699,3 @@ class Algebra(Generic[A, S]):
             return next(iter(kwargs.values()))
         else:
             raise SyncraftError("No arguments provided to default_terminal_cls", offender=None)
-    
-
-

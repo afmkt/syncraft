@@ -77,16 +77,14 @@ def test_generate_with_infers_from_fabuilder_literal() -> None:
 
 
 def test_validate_lex_token_uses_verify_full_match() -> None:
-    S = Syntax.set(terminal_cls=Token)
+    S = Syntax.set(terminal_cls=Token, terminal_destructor=lambda token: token.text)
     lex_syntax = S.factory("lex", Builder.lit("ab").tagged("AB"))
 
     ast = validate(lex_syntax, Token(text="ab", token_type="AB"))
-    print(ast)
     assert isinstance(ast, Token)
     assert ast.token_type == "AB"
     assert ast.text == "ab"
     
-
+    
 if __name__ == "__main__":
     test_validate_lex_token_uses_verify_full_match()
-    
