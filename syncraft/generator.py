@@ -49,7 +49,8 @@ class GenState(Bindable):
     ast: Optional[ParseResult] = None
     restore_pruned: bool = False
     seed: int = 0
-    id_cache: Dict[Any, int] = field(default_factory=dict, compare=False, hash=False, repr=False)
+    id_cache: Dict[int, int] = field(default_factory=dict, compare=False, hash=False, repr=False)
+    id_counter: int = field(default=0, compare=False, hash=False, repr=False)
 
     def str_input(self, ul: bool) -> str:
         if not self.ast:
@@ -70,18 +71,24 @@ class GenState(Bindable):
             self.mark_id(self.ast)
 
     def mark_id(self, data: Any) -> Any:
-        if data not in self.id_cache:
-            self.id_cache[data] = id(data)
+        key = id(data)
+        if key not in self.id_cache:
+            next_id = self.id_counter + 1
+            self.id_cache[key] = next_id
+            object.__setattr__(self, "id_counter", next_id)
         return data
 
     def transfer_id(self, source: Any, target: Any) -> None:
-        if target not in self.id_cache and source in self.id_cache:
-            self.id_cache[target] = self.id_cache[source]
+        source_key = id(source)
+        target_key = id(target)
+        if target_key not in self.id_cache and source_key in self.id_cache:
+            self.id_cache[target_key] = self.id_cache[source_key]
             
 
     def get_id(self, data: Any) -> int:
-        assert data in self.id_cache, f"Data object {data} does not have a generator state position marker"
-        return self.id_cache[data]
+        key = id(data)
+        assert key in self.id_cache, f"Data object {data} does not have a generator state position marker"
+        return self.id_cache[key]
 
 
     def __str__(self) -> str:
@@ -396,12 +403,12 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 return Right.new((cast(ParseResult[T], generated), input))
             else:
                 current = input.ast
-                if not lexer.varify(ntags, current):
+                if not lexer.verify(ntags, current):
                     debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> FAILED")
                     return Left.new(
                             Error.new(
                                 this=lex_run,
-                                message=f"Expected token tag {name}, but got {current}.",
+                                message=f"Expected token tag {{ {name} }}, but got {current}: {type(current)}.",
                                 state=input,
                             )
                         )

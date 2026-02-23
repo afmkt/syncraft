@@ -76,7 +76,7 @@ def test_generate_with_infers_from_fabuilder_literal() -> None:
     assert ast.text == "go"
 
 
-def test_validate_lex_token_uses_varify_full_match() -> None:
+def test_validate_lex_token_uses_verify_full_match() -> None:
     S = Syntax.set(terminal_cls=Token)
     lex_syntax = S.factory("lex", Builder.lit("ab").tagged("AB"))
 

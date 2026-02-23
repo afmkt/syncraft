@@ -89,6 +89,7 @@ class LeftRecursionError(SyncraftError):
         super().__init__(message, offender, expect, **kwargs)
         self.stack: List[str] = []
         self.reason: str | None = kwargs.get('reason')
+        self.details: List[str] | None = kwargs.get('details')
 
     def push(self, name: str) -> LeftRecursionError:
         self.stack.append(name)
@@ -103,15 +104,18 @@ class LeftRecursionError(SyncraftError):
     def __str__(self) -> str:
         stack = "\n-> ".join(reversed(self.stack))
         metrics = self._format_metrics()
+        details_block = ""
+        if self.details:
+            details_lines = "\n".join(self.details)
+            details_block = f"Details:\n{details_lines}\n"
         hint_lines = [
             "Hint: Consider one of:",
             "  • Refactor the rule to be right-recursive (e.g. A -> term (op term)*)",
-            "  • Introduce an explicit repetition combinator instead of naive left recursion",
             "  • Ensure there's a non-empty base alternative (no nullable left recursion)",
             "  • Increase 'max_growth_iterations' if grammar is intentionally deep",
         ]
         metrics_line = ("[" + metrics + "]\n") if metrics else ""
-        return f"\n{stack}\n{metrics_line}" + "\n".join(hint_lines)
+        return f"\n{stack}\n{metrics_line}{details_block}" + "\n".join(hint_lines)
     
 @dataclass(slots=True)
 class InProgress(Generic[S]):
@@ -161,11 +165,13 @@ class InProgress(Generic[S]):
 class CacheEntry(Generic[S]):
     payload: Ret | InProgress[S]
     state: S
+    last_error: Any | None = None
     @classmethod
     def new(cls, payload: Ret | InProgress[S], state: S) -> CacheEntry[S]:
         obj = cls.__new__(cls)
         object.__setattr__(obj, 'payload', payload)
         object.__setattr__(obj, 'state', state)
+        object.__setattr__(obj, 'last_error', None)
         return obj
     @property
     def start_key(self) -> int:
@@ -423,6 +429,9 @@ class Cache(Generic[S]):
             new_payload = entry.payload.grow(entry.payload.rule, seed)
             if new_payload.growing:
                 entry.payload = new_payload
+            entry.last_error = None
+        elif isinstance(seed, Left):
+            entry.last_error = seed.value
 
     def post_process(self, rule: Rule, seed: Ret) -> Generator[Any, Any, Ret]:
         # Find the group where this rule is the leader
@@ -451,10 +460,12 @@ class Cache(Generic[S]):
                 for f, pos in randomized(current_group.members, self.enable_randomization):
                     entry = self.cache[f].get(pos)
                     assert entry is not None, f"No cache entry found for {callable_str(f)} at {pos} during group resolution"
-                    payload = entry.payload
+                    payload: Either | InProgress | None = entry.payload
                     assert isinstance(payload, InProgress), f"Cache entry payload is not InProgress for {callable_str(f)} at {pos} during group resolution"
                     assert payload.rule is f, f"Cache entry rule is not {callable_str(f)} for {callable_str(f)} at {pos} during group resolution"
                     new_result = yield from self.run_rule(f, entry.state)  # Use f, not rule
+                    if isinstance(new_result, Left):
+                        entry.last_error = new_result.value
                     new_payload = payload.grow(f, new_result)  # Use f, not rule
                     if new_payload.growing:
                         entry.payload = new_payload
@@ -484,10 +495,68 @@ class Cache(Generic[S]):
                             break
                 
                 if all_failed:
+                    details: List[str] = []
+                    primary_line: str | None = None
+                    primary_score: int = -1
+                    def format_last_error(err: Any) -> str:
+                        if err is None:
+                            return ""
+                        msg = None
+                        if hasattr(err, "message") and getattr(err, "message"):
+                            msg = getattr(err, "message")
+                        elif hasattr(err, "error") and getattr(err, "error") is not None and hasattr(err, "_format_error"):
+                            try:
+                                msg = err._format_error(getattr(err, "error"))
+                            except Exception:
+                                msg = None
+                        if msg is None:
+                            msg = str(err)
+                        return " ".join(str(msg).splitlines())
+
+                    def score_error(err_msg: str) -> int:
+                        if not err_msg:
+                            return 0
+                        if "Expected token tag" in err_msg:
+                            return 3
+                        if "Expected" in err_msg:
+                            return 2
+                        if "None of the choices matched" in err_msg:
+                            return 1
+                        return 0
+
+                    for f, pos in randomized(current_group.members, self.enable_randomization):
+                        entry = self.cache[f].get(pos)
+                        payload = entry.payload if entry else None
+                        if isinstance(payload, InProgress):
+                            result = payload.result
+                            if isinstance(result, Right) and result.state is not None:
+                                end_key = result.state.cache_key
+                                status = f"Right(end={end_key})"
+                            elif isinstance(result, Left):
+                                status = "Left"
+                            else:
+                                status = "None"
+                            err_msg = ""
+                            if entry and entry.last_error is not None:
+                                err_msg = format_last_error(entry.last_error)
+                                status = f"{status} err={err_msg}"
+                                score = score_error(err_msg)
+                                if err_msg and score > primary_score:
+                                    state_preview = entry.state.str_input(False) if hasattr(entry.state, "str_input") else ""
+                                    preview = f" input={state_preview}" if state_preview else ""
+                                    primary_line = f"Primary failure: {callable_str(f)}@{pos}: {err_msg}{preview}"
+                                    primary_score = score
+                        else:
+                            status = "<no-entry>" if payload is None else "<complete>"
+                        details.append(f"- {callable_str(f)}@{pos} result={status}")
+                    if primary_line is not None:
+                        details.insert(0, primary_line)
+                        details.insert(1, "Other member statuses:")
                     raise LeftRecursionError(
                         "Left recursion detected with non-productive choices",
                         rule,
-                        reason='no-progress'
+                        reason='no-progress',
+                        details=details
                     )
                 
             group_bak = current_group

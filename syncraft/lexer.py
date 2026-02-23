@@ -10,8 +10,8 @@ from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.alphabet import AlphabetProtocol
 from syncraft.fa import DEFAULT_TAG, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum
-from syncraft.ast import SyncraftError, Token
-from syncraft.cache import Either, Left, Right
+from syncraft.ast import SyncraftError
+from syncraft.cache import Either
 from collections import deque, defaultdict
 import random
 from pathlib import Path
@@ -110,7 +110,7 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def match(self, tag: frozenset[Tag | None], char: C, index: int) -> LexerError | None | LexerResult[C]: ...
 
-    def varify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
+    def verify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
 
     def tags(self) -> frozenset[str|Enum|None]: ...
 
@@ -393,32 +393,31 @@ class Lexer(LexerBase[C]):
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
         return ((), {'text': ret, 'token_type': tag})
 
-    def varify(self, tag: frozenset[Tag | None], value: Any) -> bool:
-        if isinstance(value, Token):
-            if len(tag) > 0 and value.token_type not in tag:
-                return False
-            txt = value.text
-        else:
-            txt = value
-
-        if not isinstance(txt, (str, bytes, tuple)):
-            return False
-
+    def verify(self, tag: frozenset[Tag | None], value: Any) -> bool:
+        txt = value
         lexer = self
-        for index, char in enumerate(txt):
-            match lexer.match(tag, char, index):  # type: ignore[arg-type]
-                case None:
-                    continue
-                case LexerResult(tag=t, start=s, end=e):
-                    if len(tag) > 0 and t not in tag:
-                        return False
-                    if s != 0 or e != len(txt):
-                        return False
-                    if index != len(txt) - 1:
-                        return False
-                    return True
-                case _:
-                    return False                
+        try:
+            for index, char in enumerate(txt):
+                match lexer.match(tag, char, index):  # type: ignore[arg-type]
+                    case None:
+                        continue
+                    case LexerResult(tag=t, start=s, end=e):
+                        if len(tag) > 0 and t not in tag:
+                            return False
+                        if s != 0 or e != len(txt):
+                            return False
+                        if index != len(txt) - 1:
+                            return False
+                        return True
+                    case _:
+                        return False                
+            candidate = lexer.candidate()
+            if isinstance(candidate, LexerResult):
+                if len(tag) > 0 and candidate.tag not in tag:
+                    return False
+                return candidate.start == 0 and candidate.end == len(txt)
+        except TypeError:
+            pass
         return False
 
     def candidate(self) -> LexerError | LexerResult[C]:
@@ -540,7 +539,7 @@ class ExtLexer(LexerBase[T]):
         )
         
 
-    def varify(self, tag: frozenset[Tag | None], value: Any) -> bool:
+    def verify(self, tag: frozenset[Tag | None], value: Any) -> bool:
         for t in tag:
             rule = self.rules.get(t)
             if rule is not None:

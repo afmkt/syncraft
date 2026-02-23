@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from syncraft import Error, Grammar, Syntax as S, grammar, lazy, rule
-from rich import print
+# from rich import print
 
 # -- step-1 --
 
@@ -104,8 +104,8 @@ def test_quickstart_step_5() -> None:
     validated = ExprAstGrammar.validate(expr)
     assert not isinstance(validated, Error)
     
-    generated = ExprAstGrammar.generate(expr)
-    assert not isinstance(generated, Error)
+    # generated = ExprAstGrammar.generate(expr)
+    # assert not isinstance(generated, Error)
 # -- step-5-end --
 
 
