@@ -51,7 +51,7 @@ def test_mode_actions_should_emit_mode_specific_tags() -> None:
 
     rng = random.Random(0)
     generated = _lexer_with_parentheses().gen("OPEN", rng)
-    assert generated == ((), {"text": "(", 'token_type': 'OPEN'})
+    assert generated == (("(", "OPEN"), {})
 
 
 def test_skip_rules_should_suppress_tokens() -> None:
@@ -106,12 +106,12 @@ def test_mode_actions_update_stack_in_generation() -> None:
     lexer = _lexer_with_modes()
     rng = random.Random(0)
 
-    assert lexer.gen("OPEN", rng) == ((), {"text": "(", 'token_type': 'OPEN'})
+    assert lexer.gen("OPEN", rng) == (("(", "OPEN"), {})
     assert lexer.current_mode is lexer.modes["paren"]
 
-    assert lexer.gen("INNER", rng) == ((), {"text": "b", 'token_type': 'INNER'})
+    assert lexer.gen("INNER", rng) == (("b", "INNER"), {})
 
-    assert lexer.gen("CLOSE", rng) == ((), {"text": ")", 'token_type': 'CLOSE'})
+    assert lexer.gen("CLOSE", rng) == ((")", "CLOSE"), {})
     assert lexer.current_mode is lexer.modes[None]
 
 

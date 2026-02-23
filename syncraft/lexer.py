@@ -380,7 +380,7 @@ class Lexer(LexerBase[C]):
         lexer.push_mode(default_mode)
         return lexer
 
-    def gen(self, tag: Tag | None, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    def gen(self, tag: Tag | None, rng: random.Random) -> Any:
         ret = self.current_mode.rdfa.gen(tag, rng)
         act = self.actions.get(tag)
         if act is not None:
@@ -391,7 +391,10 @@ class Lexer(LexerBase[C]):
                     self.pop_mode(mode_name)
                 case _:
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
-        return ((), {'text': ret, 'token_type': tag})
+        if tag != DEFAULT_TAG:
+            return ((ret, tag), {})
+        else:
+            return ((ret, None), {})
 
     def verify(self, tag: frozenset[Tag | None], value: Any) -> bool:
         txt = value

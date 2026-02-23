@@ -60,12 +60,12 @@ class ReverseDFA(Generic[C]):
         current_states = self.accept.get(tag, frozenset())
         if not current_states:
             if tag:
-                raise ValueError(f"No states accept tag '{tag}'")
+                raise ValueError(f"Empty accept states for tag '{tag}'")
             else:
                 tag = DEFAULT_TAG
                 current_states = self.accept.get(tag, frozenset())
                 if not current_states:
-                    raise ValueError("Empty accept states")
+                    raise ValueError(f"Empty accept states for tag '{tag}'")
         
         current = rnd.choice(list(current_states))
         result: List[C] = []

@@ -55,8 +55,9 @@ def test_dfa_reverse_none_tag_rejected():
     cs_factory = CharSetFactory(alphabet=Alphabet(str))
     nfa = NFA.seq(s='a', tag='A', cs_factory=cs_factory)
     rev = nfa.dfa.reverse
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         rev.gen(None, random.Random(0))
+
 
 
 def test_dfa_reverse_default_tag_for_untagged_accepts():
