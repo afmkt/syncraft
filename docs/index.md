@@ -9,10 +9,8 @@ You describe syntax once, parse text into a structured AST, transform or map it 
 ## Why Syncraft?
 
 - One grammar, two directions. Parse and generate from the same syntax.
-- Select pieces with marks and map them to dataclasses.
-- Transform data and regenerate text.
+- Transform data to the shape you need and back
 - Constraints to validate AST/data.
-- Search utilities to locate data in AST.
 
 
 
@@ -32,7 +30,6 @@ uv add syncraft
 
 Links:
 
-- Concepts: [concepts](concept.md)
 - Quickstart: [Quickstart](quickstart.md)
 - Reference: [API reference](reference.md)
 
