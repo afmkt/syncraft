@@ -40,7 +40,7 @@ def _builder_char_case_insensitive(ch: str) -> Builder[str]:
 
 
 def _builder_range_case_insensitive(start: str, end: str) -> Builder[str]:
-    b = Builder.none(Alphabet(str))
+    b: Builder[str] = Builder.none()
     for codepoint in range(ord(start), ord(end) + 1):
         ch = chr(codepoint)
         for variant in _casefold_variants(ch):
@@ -120,7 +120,7 @@ class UnicodeCategoryAtom(RegexNode):
     negated: bool = False   
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
-        b = Builder.none(Alphabet(str))
+        b: Builder[str] = Builder.none()
         for category in self.categories:
             b = b | Builder.unicode_category([category])
         if self.negated:
@@ -156,7 +156,7 @@ class CharClassAtom:
     negated: bool = False
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
-        b = Builder.none(Alphabet(str))
+        b: Builder[str] = Builder.none()
         for item in self.items:
             if isinstance(item, str):
                 if case_insensitive:
@@ -222,7 +222,7 @@ class GroupAtom(RegexNode):
             else:
                 raise NotImplementedError(f"Cannot build GroupAtom of kind: {self.kind}")
         elif self.kind == GroupKind.COMMENT:
-            return Builder.none(Alphabet(str))
+            return Builder.none()
         elif self.kind == GroupKind.FLAGS_SCOPED:
             if self.regex is None or self.inline_flags is None:
                 raise RegexError("Invalid inline flags group", offender=self)
@@ -249,7 +249,7 @@ class LiteralAtom(RegexNode):
         if not case_insensitive:
             return Builder.lit(self.text)
         pieces = [_builder_char_case_insensitive(ch) for ch in self.text]
-        return reduce(lambda a, b: a + b, pieces) if pieces else Builder.none(Alphabet(str))
+        return reduce(lambda a, b: a + b, pieces) if pieces else Builder.none()
     
     def validate(self) -> None:
         if self.text == "":
@@ -315,7 +315,7 @@ class Branch(RegexNode):
     pieces: Tuple[Piece, ...]
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         ret = [p.builder(case_insensitive=case_insensitive) for p in self.pieces]
-        return reduce(lambda a, b: a + b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
+        return reduce(lambda a, b: a + b, ret) if len(ret) > 0 else Builder.none()
     
 
 
@@ -325,7 +325,7 @@ class Regex(RegexNode):
     branches: Tuple[Branch, ...]
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         ret = [b.builder(case_insensitive=case_insensitive) for b in self.branches]
-        return reduce(lambda a, b: a | b, ret) if len(ret) > 0 else Builder.none(Alphabet(str))
+        return reduce(lambda a, b: a | b, ret) if len(ret) > 0 else Builder.none()
 
 
 

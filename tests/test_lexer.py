@@ -137,7 +137,7 @@ def test_match_reports_correct_span_boundaries() -> None:
 def test_greedy_rule_short_circuits_longer_match() -> None:
     
     long_rule: Builder[str] = Builder.lit("ab").tagged("LONG")
-    short_rule: Builder[str] = Builder.lit("a", tag="SHORT", non_greedy=True)
+    short_rule: Builder[str] = Builder.lit("a").tagged("SHORT").with_non_greedy()
     trailing: Builder[str] = Builder.lit("b").tagged("B")
 
     greedy_lexer = Lexer.from_builders(long_rule, short_rule, trailing)

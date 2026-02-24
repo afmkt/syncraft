@@ -4,13 +4,13 @@ from syncraft.fa import Builder, NFA, DFA, _NodeKind
 from syncraft.alphabet import Alphabet
 
 def test_literal_builder():
-    builder = Builder.lit("abc", tag="ID")
+    builder = Builder.lit("abc").tagged("ID")
     assert builder.kind.name == "LITERAL"
     assert builder.text == "abc"
     assert builder.tag == "ID"
 
 def test_oneof_builder():
-    builder = Builder.oneof("xyz", tag="CHARSET")
+    builder = Builder.oneof("xyz").tagged("CHARSET")
     assert builder.kind.name == "ONEOF"
     assert builder.text == "xyz"
     assert builder.tag == "CHARSET"
@@ -47,7 +47,7 @@ def test_tagging():
 
 def test_compile_to_nfa():
     alphabet = Alphabet(str)
-    builder = Builder.lit("abc", tag="ID")
+    builder = Builder.lit("abc").tagged("ID")
     nfa = builder.compile(alphabet)
     # Should be an NFA and accept 'abc'
     assert isinstance(nfa, (NFA, DFA))  

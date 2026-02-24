@@ -1178,6 +1178,30 @@ class Builder(Generic[C]):
     priority: int = 0  # higher number means higher priority
     non_greedy: bool = False  # when true, first match wins instead of maximal munch
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
+    # for any additional metadata that might be needed
+    extra_meta: FrozenDict[str, Any] = field(default_factory=FrozenDict, compare=False, hash=False)  
+    
+    def __getattr__(self, name: str) -> None:
+        if name not in self.extra_meta:
+            raise AttributeError(f"Builder object has no extra_meta '{name}'")
+        return self.extra_meta[name]
+
+    def set(self, 
+            *, 
+            tag: Optional[Tag] = None,
+            skip: bool = False, 
+            priority: int = 0,
+            non_greedy: bool = False,
+            action: Optional[ModeAction] = None,
+            **kwargs: Any) -> Builder[C]:
+        new_meta = {**self.extra_meta, **kwargs}
+        return replace(self, 
+                       tag=tag,
+                       action=action,
+                       skip=skip,
+                       priority=priority,
+                       non_greedy=non_greedy,                       
+                       extra_meta=FrozenDict(new_meta))
 
     # ---- Factory entry points ----
     def name(self) -> Optional[str]:
@@ -1257,71 +1281,19 @@ class Builder(Generic[C]):
 
 
     @classmethod
-    def lit(cls, 
-                text: Union[str, bytes], 
-                *, 
-                tag: Optional[Tag] = None,
-                skip: bool = False, 
-                priority: int = 0,
-                non_greedy: bool = False,
-                action: Optional[ModeAction] = None) -> Builder[C]:
-        return cls(
-            kind=_NodeKind.LITERAL,
-            text=text,
-            tag=tag,
-            action=action,
-            skip=skip,
-            priority=priority,
-            non_greedy=non_greedy,
-        )
+    def lit(cls, text: Union[str, bytes]) -> Builder[C]:
+        return cls(kind=_NodeKind.LITERAL, text=text)
 
     @classmethod
-    def any(cls, 
-            alphabet: AlphabetProtocol[C],
-            *,
-            tag: Optional[Tag] = None,
-            skip: bool = False, 
-            priority: int = 0,
-            non_greedy: bool = False,
-            action: Optional[ModeAction] = None,
-            ) -> Builder[C]:
-        return cls(kind=_NodeKind.RANGE, 
-                   intervals=alphabet.symbols, 
-                   tag=tag, 
-                   action=action, 
-                   skip=skip, 
-                   priority=priority, 
-                   non_greedy=non_greedy)
+    def any(cls, alphabet: AlphabetProtocol[C]) -> Builder[C]:
+        return cls(kind=_NodeKind.RANGE, intervals=alphabet.symbols)
 
     @classmethod
-    def none(cls, 
-             alphabet: AlphabetProtocol[C],
-             *,
-             tag: Optional[Tag] = None,
-             skip: bool = False, 
-             priority: int = 0,
-             non_greedy: bool = False,
-             action: Optional[ModeAction] = None,
-             ) -> Builder[C]:
-        return cls(
-            kind=_NodeKind.EMPTY,
-            tag=tag,
-            action=action,
-            skip=skip,
-            priority=priority,
-            non_greedy=non_greedy,
-        )
+    def none(cls) -> Builder[C]:
+        return cls(kind=_NodeKind.EMPTY)
     
     @classmethod
-    def unicode_category(cls, 
-                         cats: List[str], 
-                         *, 
-                         tag: Optional[Tag] = None,
-                         skip: bool = False, 
-                         priority: int = 0,
-                         non_greedy: bool = False,
-                         action: Optional[ModeAction] = None,
-                         ) -> Builder[C]:
+    def unicode_category(cls, cats: List[str]) -> Builder[C]:
         import unicodedata
         from itertools import groupby
         def unicode_category_ranges(*cats: str) -> list[tuple[str, str]]:
@@ -1337,58 +1309,24 @@ class Builder(Generic[C]):
             return ranges
 
         ranges = unicode_category_ranges(*cats)
-        return cls(kind=_NodeKind.RANGE, 
-                   intervals=tuple(ranges), 
-                   tag=tag, 
-                   action=action, 
-                   skip=skip, 
-                   priority=priority, 
-                   non_greedy=non_greedy)
+        return cls(kind=_NodeKind.RANGE, intervals=tuple(ranges))
 
     @classmethod
-    def range(cls, 
-              start: Union[str, bytes, C], 
-              end: Union[str, bytes, C], 
-              *, 
-              tag: Optional[Tag] = None,
-              skip: bool = False, 
-              priority: int = 0,
-              non_greedy: bool = False,
-              action: Optional[ModeAction] = None) -> Builder[Any]:
-        return cls(kind=_NodeKind.RANGE, 
-                   intervals=((start, end),), 
-                   tag=tag, 
-                   action=action, 
-                   skip=skip, 
-                   priority=priority, 
-                   non_greedy=non_greedy)
+    def range(cls, start: Union[str, bytes, C], end: Union[str, bytes, C]) -> Builder[Any]:
+        return cls(kind=_NodeKind.RANGE, intervals=((start, end),))
         
 
     @classmethod
-    def oneof(cls, 
-              chars: Union[str, bytes, Sequence[C]], 
-              *, 
-              tag: Optional[Tag] = None,
-              skip: bool = False, 
-              priority: int = 0,
-              non_greedy: bool = False,
-              action: Optional[ModeAction] = None) -> Builder[C]:
+    def oneof(cls, chars: Union[str, bytes, Sequence[C]]) -> Builder[C]:
         if not isinstance(chars, (str, bytes)):
             if len(chars) > 0:
                 if isinstance(chars[0], (str, bytes)):
                     if not all(len(c) == 1 for c in chars): # type: ignore
-                        return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars]).with_non_greedy(non_greedy).skipped(skip).tagged(tag).act(action).prioritized(priority) # type: ignore
+                        return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars])
+                        
                     else:
-                        return cls.oneof("".join(chars)).with_non_greedy(non_greedy).skipped(skip).tagged(tag).act(action).prioritized(priority) # type: ignore
-        return cls(
-            kind=_NodeKind.ONEOF,
-            text=chars,
-            tag=tag,
-            action=action,
-            skip=skip,
-            priority=priority,
-            non_greedy=non_greedy,
-        )
+                        return cls.oneof("".join(chars))
+        return cls(kind=_NodeKind.ONEOF, text=chars)
 
     # ---- DSL operators ----
     def __add__(self, other: Builder[C]) -> Builder[C]:

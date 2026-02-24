@@ -954,16 +954,16 @@ class Syntax(Generic[A, S]):
         """
         return (self | self.success(Nothing)).named(f"{str(self.spec)}?", _location=False)
         
-    @property
-    def cut(self) -> Syntax[A, S]:
-        """Commit this branch: on failure, prevent trying alternatives.
+    # @property
+    # def cut(self) -> Syntax[A, S]:
+    #     """Commit this branch: on failure, prevent trying alternatives.
 
-        Wraps the underlying algebra's cut.
+    #     Wraps the underlying algebra's cut.
 
-        Returns:
-            Syntax that marks downstream failures as committed.
-        """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).cut())
+    #     Returns:
+    #         Syntax that marks downstream failures as committed.
+    #     """
+    #     return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).cut())
 
 
     ###################################################### operator overloading #############################################
@@ -1149,9 +1149,10 @@ class Syntax(Generic[A, S]):
     
 
     @classmethod
-    def re(cls, pattern: str) -> Syntax:
+    def re(cls, pattern: str, builder_f: Callable[[Builder], Builder] = lambda b: b) -> Syntax:
         from syncraft.regex import builder
         b = builder(pattern)
+        b = builder_f(b)
         return cls.lex(b)
     
     @classmethod

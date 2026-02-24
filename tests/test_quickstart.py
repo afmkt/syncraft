@@ -12,6 +12,7 @@ from syncraft import Error, Grammar, Syntax as S, grammar, lazy, rule
 
 @grammar
 class ExprGrammar(Grammar):
+    ws = S.re(r"\s*")
     number = S.re(r"\d+")
     plus = S.lit("+")
     star = S.lit("*")
@@ -37,7 +38,7 @@ class ExprGrammar(Grammar):
 # -- step-2 --
 # @pytest.mark.skip(reason="The library is not ready for this yet")
 def test_quickstart_step_2() -> None:
-    ast = ExprGrammar.parse("1+2*3")
+    ast = ExprGrammar.parse("1 + 2*3")
     assert ast == (
         ("1", "+"),
         (("2", "*"), "3"),
@@ -62,7 +63,8 @@ class Binary:
 # -- step-4 --
 @grammar
 class ExprAstGrammar(Grammar):
-    number = S.re(r"\d+").bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
+    ws = S.re(r"\s*")
+    number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt[0][0])), lambda bin: ((str(bin.value), ),))
     plus = S.lit("+")
     star = S.lit("*")
     lparen = S.lit("(")
@@ -92,7 +94,7 @@ class ExprAstGrammar(Grammar):
 
 # @pytest.mark.skip(reason="The library is not ready for this yet")
 def test_quickstart_step_4() -> None:
-    ast = ExprAstGrammar.parse("1+2*3")
+    ast = ExprAstGrammar.parse("1 + 2*3")
     assert ast == Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
 # -- step-4-end --
 

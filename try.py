@@ -1,90 +1,116 @@
-from typing import Type
+from __future__ import annotations
 
-import pytest
+from dataclasses import dataclass
+from typing import Any
 
-from syncraft.syntax import Syntax
-from syncraft.ast import Token, Seq, Alt, Lazy
-from syncraft.generator import (
-    generate_with,
-    generate,
-    validate,
-)
-from syncraft.algebra import Error
-from syncraft.cache import LeftRecursionError
-from syncraft.fa import Builder
-
-SS = Syntax.set(terminal_cls=Token)
-
-def tok(text: str):
-    return SS.tok(text=text, case_sensitive=True)
-
-def test_generate_with_direct_left_recursion_with_base_succeeds():
-    # A := A + 'a' | 'a'
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = generate_with(A)
-    # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
-    assert not isinstance(ast, Error)
-    
+from syncraft import Error, Grammar, Syntax as S, grammar, lazy, rule
 
 
-def test_generate_direct_left_recursion_with_base_succeeds():
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = generate(A)
-    assert not isinstance(ast, Error)
-    
+# -- step-1 --
 
 
 
-def test_validate_direct_left_recursion_with_base_succeeds_single_token():
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = validate(A, (Token(text='a'), Token(text='a')))
-    assert not isinstance(ast, Error)
-    
+@grammar
+class ExprGrammar(Grammar):
+    number = S.re(r"\d+")
+    plus = S.lit("+")
+    star = S.lit("*")
+    lparen = S.lit("(")
+    rparen = S.lit(")")
+
+    @lazy(S)
+    def expr():  # type: ignore
+        return (ExprGrammar.term + ExprGrammar.plus + ExprGrammar.expr) | ExprGrammar.term
+
+    @lazy(S)
+    def term():  # type: ignore
+        return (ExprGrammar.factor + ExprGrammar.star + ExprGrammar.term) | ExprGrammar.factor
+
+    @lazy(S)
+    def factor():  # type: ignore
+        return ExprGrammar.number | ExprGrammar.expr.between(ExprGrammar.lparen, ExprGrammar.rparen)
+
+    root = rule(expr, is_root=True)
+# -- step-1-end --
 
 
-def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = validate(A, Token(text='a'))
-    assert not isinstance(ast, Error)
-    
+# -- step-2 --
+# @pytest.mark.skip(reason="The library is not ready for this yet")
+def test_quickstart_step_2() -> None:
+    ast = ExprGrammar.parse("1+2*3")
+    assert ast == (
+        ("1", "+"),
+        (("2", "*"), "3"),
+    )
+# -- step-2-end --
 
 
-# SS = S
-def test_generate_with_mutual_left_recursion_without_base_raises():
-    # Mutual recursion with no productive base: A := B ; B := A
-    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
-    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
-    with pytest.raises(LeftRecursionError):
-        generate_with(A)
+# -- step-3 --
+@dataclass(frozen=True, slots=True)
+class Number:
+    value: int
 
 
+@dataclass(frozen=True, slots=True)
+class Binary:
+    left: Any
+    op: str
+    right: Any
+# -- step-3-end --
 
 
-def test_generate_with_infers_text_lexer_without_config() -> None:
-    syntax = SS.tok("hi")
-    ast = generate_with(syntax, seed=123)
-    assert ast == Token(text="hi")
+# -- step-4 --
+@grammar
+class ExprAstGrammar(Grammar):
+    ws = S.re(r"\s*")
+    number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt[0][0])), lambda bin: ((str(bin.value), ),))
+    plus = S.lit("+")
+    star = S.lit("*")
+    lparen = S.lit("(")
+    rparen = S.lit(")")
+
+    @lazy(S)
+    def expr():  # type: ignore[override]
+        bin_expr = (ExprAstGrammar.term + ExprAstGrammar.plus + ExprAstGrammar.expr).to(
+            lambda env: ((env.left, env.op), env.right),
+            lambda env: Binary(env.left, env.op, env.right),
+        )
+        return bin_expr | ExprAstGrammar.term
+
+    @lazy(S)
+    def term():  # type: ignore[override]
+        bin_term = (ExprAstGrammar.factor + ExprAstGrammar.star + ExprAstGrammar.term).to(
+            lambda env: ((env.left, env.op), env.right),
+            lambda env: Binary(env.left, env.op, env.right),
+        )
+        return bin_term | ExprAstGrammar.factor
+
+    @lazy(S)
+    def factor():  # type: ignore[override]
+        return ExprAstGrammar.number | ExprAstGrammar.expr.between(ExprAstGrammar.lparen, ExprAstGrammar.rparen)
+
+    root = rule(expr, is_root=True)
+
+# @pytest.mark.skip(reason="The library is not ready for this yet")
+def test_quickstart_step_4() -> None:
+    ast = ExprAstGrammar.parse("1+2*3")
+    assert ast == Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
+# -- step-4-end --
 
 
-def test_generate_with_infers_from_fabuilder_literal() -> None:
-    S = Syntax.set(terminal_cls=Token)
-    lex_syntax = S.factory("lex", Builder.lit("go").tagged("WORD"))
-    ast = generate_with(lex_syntax, seed=321)
-    print(ast)
-    assert isinstance(ast, Token)
-    assert ast.token_type == "WORD" 
-    assert ast.text == "go"
+# -- step-5 --
+# @pytest.mark.skip(reason="The library is not ready for this yet")
+def test_quickstart_step_5() -> None:
+    expr = Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
+    validated = ExprAstGrammar.validate(expr)
+    assert not isinstance(validated, Error)
+
+    generated = ExprAstGrammar.generate(expr)
+    assert not isinstance(generated, Error)
+# -- step-5-end --
 
 
-def test_validate_lex_token_uses_verify_full_match() -> None:
-    S = Syntax.set(terminal_cls=Token, terminal_destructor=lambda token: token.text)
-    lex_syntax = S.factory("lex", Builder.lit("ab").tagged("AB"))
-
-    ast = validate(lex_syntax, Token(text="ab", token_type="AB"))
-    assert isinstance(ast, Token)
-    assert ast.token_type == "AB"
-    assert ast.text == "ab"
-    
-    
 if __name__ == "__main__":
-    test_validate_lex_token_uses_verify_full_match()
+    test_quickstart_step_2()
+    test_quickstart_step_4()
+    test_quickstart_step_5()
