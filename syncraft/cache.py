@@ -513,15 +513,11 @@ class Cache(Generic[S]):
                             msg = str(err)
                         return " ".join(str(msg).splitlines())
 
-                    def score_error(err_msg: str) -> int:
-                        if not err_msg:
-                            return 0
-                        if "Expected token tag" in err_msg:
-                            return 3
-                        if "Expected" in err_msg:
-                            return 2
-                        if "None of the choices matched" in err_msg:
-                            return 1
+                    def score_error(err: Any, err_msg: str) -> int:
+                        if err is not None:
+                            priority = getattr(err, "priority", None)
+                            if priority is not None:
+                                return int(priority)
                         return 0
 
                     for f, pos in randomized(current_group.members, self.enable_randomization):
@@ -540,7 +536,7 @@ class Cache(Generic[S]):
                             if entry and entry.last_error is not None:
                                 err_msg = format_last_error(entry.last_error)
                                 status = f"{status} err={err_msg}"
-                                score = score_error(err_msg)
+                                score = score_error(entry.last_error, err_msg)
                                 if err_msg and score > primary_score:
                                     state_preview = entry.state.str_input(False) if hasattr(entry.state, "str_input") else ""
                                     preview = f" input={state_preview}" if state_preview else ""

@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, YieldChannelType, Error
 )
+from syncraft.algebra import ErrorPriority
 
 from syncraft.lexer import LexerBase, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
@@ -179,16 +180,22 @@ class Generator(Algebra[ParseResult[T], GenState]):
             else:
                 if not input.pruned and not isinstance(input.ast, Seq):
                     debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> FAILED")
-                    return Left.new(Error.new(this=input.ast, 
-                                        message=f"Expect Seq got {input.ast}",
-                                        state=input))
+                    return Left.new(Error.new(
+                        this=input.ast,
+                        message=f"Expect Seq got {input.ast}",
+                        priority=ErrorPriority.EXPECTED,
+                        state=input,
+                    ))
                 result = []
                 ast_seq = cast(Seq, input.ast)
                 if len(ast_seq.value) != len(normaize_steps):
                     debug_print(f"\nCALLING SEQ {callable_str(seq_run)} with {input.ast} -> FAILED with wrong length")
-                    return Left.new(Error.new(this=input.ast, 
-                                        message=f"Expect Seq of length {len(normaize_steps)} got {len(ast_seq.value)}",
-                                        state=input))
+                    return Left.new(Error.new(
+                        this=input.ast,
+                        message=f"Expect Seq of length {len(normaize_steps)} got {len(ast_seq.value)}",
+                        priority=ErrorPriority.EXPECTED,
+                        state=input,
+                    ))
                 inp = input
                 for (step, keep), (ast_elem, _) in zip(normaize_steps, ast_seq.value):
                     if input.restore_pruned or keep:
@@ -264,9 +271,12 @@ class Generator(Algebra[ParseResult[T], GenState]):
             else:
                 if not isinstance(input.ast, Many) or input.ast is Nothing:
                     debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED")
-                    return Left.new(Error.new(this=self, 
-                                      message=f"Expect Many got {input.ast}",
-                                      state=input))
+                    return Left.new(Error.new(
+                        this=self,
+                        message=f"Expect Many got {input.ast}",
+                        priority=ErrorPriority.EXPECTED,
+                        state=input,
+                    ))
                 ret = []
                 tmp_state = input
                 for x in input.ast.value:
@@ -281,10 +291,11 @@ class Generator(Algebra[ParseResult[T], GenState]):
                             if at_most is not None and len(ret) > at_most:
                                 debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED with too many matches")
                                 return Left.new(Error.new(
-                                        message=f"Expected at most {at_most} matches, got {len(ret)}",
-                                        this=self,
-                                        state=tmp_state
-                                    ))
+                                    message=f"Expected at most {at_most} matches, got {len(ret)}",
+                                    this=self,
+                                    priority=ErrorPriority.EXPECTED,
+                                    state=tmp_state,
+                                ))
                         case Left(_):
                             break
                 if len(ret) != len(input.ast.value):
@@ -292,14 +303,16 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     return Left.new(Error.new(
                         message=f"Expected {len(input.ast.value)} matches, got {len(ret)}",
                         this=self,
-                        state=tmp_state
+                        priority=ErrorPriority.EXPECTED,
+                        state=tmp_state,
                     ))
                 if len(ret) < at_least:
                     debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> FAILED with too few matches")
                     return Left.new(Error.new(
                         message=f"Expected at least {at_least} matches, got {len(ret)}",
                         this=self,
-                        state=tmp_state
+                        priority=ErrorPriority.EXPECTED,
+                        state=tmp_state,
                     )) 
                 debug_print(f"\nCALLING {callable_str(many_run)} with {input.ast} -> {Many(value=tuple(ret))}")
                 return Right.new((Many(value=tuple(ret)), tmp_state))
@@ -333,14 +346,18 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     return Left.new(Error.new(
                         message="No options provided",
                         this=cls,
-                        state=input
+                        priority=ErrorPriority.ALT_NO_MATCH,
+                        state=input,
                     ))
             else:
                 if not isinstance(input.ast, Alt):
                     debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
-                    return Left.new(Error.new(this=input.ast, 
-                                      message=f"Expect Alt got {input.ast}",
-                                      state=input))
+                    return Left.new(Error.new(
+                        this=input.ast,
+                        message=f"Expect Alt got {input.ast}",
+                        priority=ErrorPriority.EXPECTED,
+                        state=input,
+                    ))
                 ast_choice = input.ast
                 if ast_choice.index is None:
                     for i, option in enumerate(options):
@@ -355,9 +372,12 @@ class Generator(Algebra[ParseResult[T], GenState]):
                                     debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED with committed error")
                                     return ERROR
                     debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
-                    return Left.new(Error.new(this=input.ast, 
-                                      message=f"None of the choices matched for {input.ast}",
-                                      state=input))
+                    return Left.new(Error.new(
+                        this=input.ast,
+                        message=f"None of the choices matched for {input.ast}",
+                        priority=ErrorPriority.ALT_NO_MATCH,
+                        state=input,
+                    ))
                 else:
                     selected = options[ast_choice.index]
                     tmp_state = input.inject(ast_choice.value)
@@ -442,15 +462,33 @@ class Generator(Algebra[ParseResult[T], GenState]):
             else:
                 current = input.ast
                 current_value = terminal_destructor(current)
-                if not lexer.verify(ntags, current_value):
+                try:
+                    verified = lexer.verify(ntags, current_value)
+                except SyncraftError as e:
                     debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> FAILED")
                     return Left.new(
-                            Error.new(
-                                this=lex_run,
-                                message=f"Expected token tag {{ {name} }}, but got {current}: {type(current)}.",
-                                state=input,
-                            )
+                        Error.new(
+                            this=lex_run,
+                            message=(
+                                f"{current_value} failed lexer verification. "
+                                "This usually means the grammar's inverse mapping returns a shape "
+                                "that does not match the lexer input type."
+                            ),
+                            error=e,
+                            priority=ErrorPriority.LEXER_VERIFICATION,
+                            state=input,
                         )
+                    )
+                if not verified:
+                    debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> FAILED")
+                    return Left.new(
+                        Error.new(
+                            this=lex_run,
+                            message=f"Expected token tag {{ {name} }}, but got {current}: {type(current)}.",
+                            priority=ErrorPriority.EXPECTED_TOKEN_TAG,
+                            state=input,
+                        )
+                    )
                 parsed_value = cast(ParseResult[T], current)
                 if isinstance(parsed_value, AST):
                     parsed_value = replace(parsed_value) # type: ignore

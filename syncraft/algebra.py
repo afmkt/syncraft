@@ -5,6 +5,7 @@ from typing import (
 )
 from syncraft.ast import Nothing
 from dataclasses import dataclass, replace, field
+from enum import IntEnum
 from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.bimap import Bindable, Iso, DataError
@@ -27,6 +28,12 @@ SYNCRAFT_CONFIG_KEY = "__syncraft_config__"
 YieldChannelType = Incomplete[S]
 
 
+class ErrorPriority(IntEnum):
+    LEXER_VERIFICATION = 40
+    EXPECTED_TOKEN_TAG = 30
+    EXPECTED = 20
+    ALT_NO_MATCH = 10
+
 
 @dataclass(slots=True)
 class Error:
@@ -34,6 +41,7 @@ class Error:
     message: Optional[str] = None
     error: Optional[Any] = None    
     state: Optional[Any] = None
+    priority: Optional[int] = field(default=None, compare=False, repr=False, hash=False)
     committed: bool = field(default=False, compare=False, repr=False, hash=False)
     stack: List[Tuple[Callable[..., Any], int, int | None]] = field(default_factory=list, compare=False, repr=False, hash=False)
     depth: Optional[int] = field(default=None, compare=False, repr=False, hash=False)
@@ -47,6 +55,7 @@ class Error:
             message: Optional[str] = None, 
             error: Optional[Any] = None, 
             state: Optional[Any] = None,
+            priority: Optional[int] = None,
             committed: bool = False,
             depth: Optional[int] = None,
             stack: List[Any] = [],
@@ -58,6 +67,7 @@ class Error:
         object.__setattr__(obj, 'message', message)
         object.__setattr__(obj, 'error', error)
         object.__setattr__(obj, 'state', state)
+        object.__setattr__(obj, 'priority', priority)
         object.__setattr__(obj, 'committed', committed)
         object.__setattr__(obj, 'stack', stack)
         object.__setattr__(obj, 'depth', depth)
@@ -338,6 +348,7 @@ class Algebra(Generic[A, S]):
                     return Left.new(Error.new(
                         message="Expected absence",
                         this=self,
+                        priority=ErrorPriority.EXPECTED,
                         state=input
                     ))
         return replace(self, run_f=absent_run) # type: ignore
@@ -606,6 +617,7 @@ class Algebra(Generic[A, S]):
             return Left.new(Error.new(
                 message="\n".join(details) if details else "No options matched",
                 this=alt_run,
+                priority=ErrorPriority.ALT_NO_MATCH,
                 state=input,
             ))
         return cls(run_f=alt_run).flag(intrinsic=True) # type: ignore
@@ -646,6 +658,7 @@ class Algebra(Generic[A, S]):
                 return Left.new(Error.new(
                     message="Expected end of input",
                     this=cls,
+                    priority=ErrorPriority.EXPECTED,
                     state=input,
                 ))
         return cls(run_f=eof_run).flag(intrinsic=True) # type: ignore        
@@ -677,6 +690,7 @@ class Algebra(Generic[A, S]):
                             return Left.new(Error.new(
                                     message=f"Expected at most {at_most} matches, got {len(ret)}",
                                     this=self,
+                                    priority=ErrorPriority.EXPECTED,
                                     state=current_input
                                 )) 
             if len(ret) < at_least:
@@ -686,6 +700,7 @@ class Algebra(Generic[A, S]):
                     return Left.new(Error.new(
                             message=f"Expected at least {at_least} matches, got {len(ret)}",
                             this=self,
+                            priority=ErrorPriority.EXPECTED,
                             state=current_input
                         )) 
             return Right.new((Many(value=tuple(ret)), current_input))

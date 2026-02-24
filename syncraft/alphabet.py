@@ -105,14 +105,14 @@ class TextAlphabet(AlphabetProtocol[str]):
     def encode(self, symbol: str) -> int:
         try:
             return ord(symbol)
-        except Exception:
-            raise CodepointError(f"Text symbol must be a single character, got {symbol!r}", offender=symbol, expect=str)
+        except Exception as e:
+            raise CodepointError(f"Text symbol must be a single character, got {symbol!r}", offender=symbol, expect=str) from e
 
     def decode(self, code: int) -> str:
         try:
             return chr(code)
-        except Exception:
-            raise CodepointError(f"Code {code!r} is not a valid Unicode code point", offender=code, expect=self.codes)
+        except Exception as e:
+            raise CodepointError(f"Code {code!r} is not a valid Unicode code point", offender=code, expect=self.codes) from e
 
     def concat(self, cs: Sequence[str]) -> str:
         return ''.join(cs)
@@ -134,14 +134,14 @@ class ByteAlphabet(AlphabetProtocol[bytes]):
             try:
                 assert len(symbol) == 1, f"Can not encode multiple codepoints {symbol!r}"
                 return symbol[0] # type: ignore
-            except Exception:
-                raise CodepointError(f"Byte symbol must be of type bytes, got {symbol!r}", offender=symbol, expect="bytes")
+            except Exception as e:
+                raise CodepointError(f"Byte symbol must be of type bytes, got {symbol!r}", offender=symbol, expect="bytes") from e
     
     def decode(self, code: int) -> bytes:
         try:
             return bytes([code])
-        except Exception:
-            raise CodepointError(f"Code {code!r} is not a valid byte", offender=code, expect=self.codes)
+        except Exception as e:
+            raise CodepointError(f"Code {code!r} is not a valid byte", offender=code, expect=self.codes) from e
 
     def concat(self, cs: Sequence[bytes]) -> bytes:
         return b''.join(cs)
