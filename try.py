@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from syncraft import Error, Grammar, Syntax as S, grammar, lazy, rule
+from syncraft import Error, Grammar, Syntax, grammar, lazy, rule, re
 
 
 # -- step-1 --
 
-
+S = Syntax.set_lexer_transformer(lambda b: re(r'\s*').skipped() + b + re(r'\s*').skipped())  
 
 @grammar
 class ExprGrammar(Grammar):
@@ -64,6 +64,7 @@ class Binary:
 class ExprAstGrammar(Grammar):
     ws = S.re(r"\s*")
     number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt[0][0])), lambda bin: ((str(bin.value),),))
+    # number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
     plus = S.lit("+")
     star = S.lit("*")
     lparen = S.lit("(")

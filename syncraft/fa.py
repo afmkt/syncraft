@@ -57,6 +57,25 @@ class ReverseDFA(Generic[C]):
     final: FAState
     accept: FrozenDict[Tag|None, frozenset[FAState]] = field(default_factory=FrozenDict)    
     transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = field(default_factory=FrozenDict)
+    _distances: FrozenDict[FAState, int] = field(default_factory=FrozenDict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        preds: Dict[FAState, Set[FAState]] = defaultdict(set)
+        for src, mapping in self.transitions.items():
+            for _, dst in mapping.items():
+                preds[dst].add(src)
+
+        distances: Dict[FAState, int] = {self.final: 0}
+        queue: deque[FAState] = deque([self.final])
+        while queue:
+            node = queue.popleft()
+            next_dist = distances[node] + 1
+            for prev in preds.get(node, set()):
+                if prev not in distances:
+                    distances[prev] = next_dist
+                    queue.append(prev)
+
+        object.__setattr__(self, "_distances", FrozenDict(distances))
 
     def gen(self, tag: Tag | None, rnd: random.Random) -> C | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
@@ -68,8 +87,15 @@ class ReverseDFA(Generic[C]):
                 current_states = self.accept.get(tag, frozenset())
                 if not current_states:
                     raise ValueError(f"Empty accept states for tag '{tag}'")
-        
-        current = rnd.choice(list(current_states))
+        candicates = list(current_states)
+        current = None
+        rnd.shuffle(candicates)
+        for s in candicates:
+            if s in self._distances:
+                current = s
+                break
+        if current is None:
+            raise ValueError(f"No path from any accept state for tag '{tag}': {candicates} to final state {self.final}")
         result: List[C] = []
         sample_f = self.cs_factory.sample
         while current != self.final:
@@ -77,7 +103,16 @@ class ReverseDFA(Generic[C]):
                 break
             char_set: CharSet
             next_state: FAState 
-            char_set, next_state = rnd.choice(list(self.transitions[current].items()))
+            if current not in self._distances:
+                raise ValueError(f"No path from state {current} to final state {self.final}")
+            options = [
+                (cs, dst)
+                for cs, dst in self.transitions[current].items()
+                if self._distances.get(dst) == self._distances[current] - 1
+            ]
+            if not options:
+                raise ValueError(f"No decreasing transition from state {current} to final state {self.final}")
+            char_set, next_state = rnd.choice(options)
             result.append(sample_f(char_set, rnd))
             current = next_state
         return self.cs_factory.alphabet.concat(result[::-1])
