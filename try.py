@@ -63,8 +63,7 @@ class Binary:
 @grammar
 class ExprAstGrammar(Grammar):
     ws = S.re(r"\s*")
-    number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt[0][0])), lambda bin: ((str(bin.value),),))
-    # number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
+    number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
     plus = S.lit("+")
     star = S.lit("*")
     lparen = S.lit("(")
