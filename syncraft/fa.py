@@ -83,9 +83,10 @@ class ReverseDFA(Generic[C]):
             if tag:
                 raise ValueError(f"Empty accept states for tag '{tag}'")
             else:
-                current_states = self.accept.get(DEFAULT_TAG, frozenset())
+                tag = DEFAULT_TAG
+                current_states = self.accept.get(tag, frozenset())
                 if not current_states:
-                    raise ValueError(f"Empty accept states for tag '{DEFAULT_TAG}'")
+                    raise ValueError(f"Empty accept states for tag '{tag}'")
         candicates = list(current_states)
         current = None
         rnd.shuffle(candicates)
@@ -94,7 +95,12 @@ class ReverseDFA(Generic[C]):
                 current = s
                 break
         if current is None:
-            raise ValueError(f"No path from any accept state for tag '{tag}': {candicates} to final state {self.final}")
+            reachable = [s for s in candicates if s in self._distances]
+            unreachable = [s for s in candicates if s not in self._distances]
+            raise ValueError(
+                "No path from any accept state for tag "
+                f"'{tag}': reachable={reachable}, unreachable={unreachable} to final state {self.final}"
+            )
         result: List[C] = []
         sample_f = self.cs_factory.sample
         while current != self.final:
@@ -152,6 +158,29 @@ class DFA(Generic[C]):
             final=self.init,
             accept=FrozenDict({t: frozenset(ss) for t, ss in acc_map.items()}),
             transitions=FrozenDict({s: FrozenDict({cs: frozenset(ss) for cs, ss in m.items()}) for s, m in trans.items()}))
+
+    def accept_reachability(self) -> Dict[Tag, Tuple[List[FAState], List[FAState]]]:
+        reachable: Set[FAState] = set()
+        queue: deque[FAState] = deque([self.init])
+        while queue:
+            state = queue.popleft()
+            if state in reachable:
+                continue
+            reachable.add(state)
+            for nxt in self.transitions.get(state, {}).values():
+                if nxt not in reachable:
+                    queue.append(nxt)
+
+        by_tag: Dict[Tag, Tuple[List[FAState], List[FAState]]] = {}
+        for state, tags in self.accept.items():
+            tag_set = tags if tags else frozenset({DEFAULT_TAG})
+            for tag in tag_set:
+                reach_list, unreach_list = by_tag.setdefault(tag, ([], []))
+                if state in reachable:
+                    reach_list.append(state)
+                else:
+                    unreach_list.append(state)
+        return by_tag
     
     
     @property

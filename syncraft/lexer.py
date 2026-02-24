@@ -9,7 +9,7 @@ from typing import (
 from syncraft.path import builtin_cache_path, user_cache_path
 from syncraft.utils import CallWith
 from syncraft.alphabet import AlphabetProtocol
-from syncraft.fa import DEFAULT_TAG, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum
+from syncraft.fa import DEFAULT_TAG, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum, DFA
 from syncraft.ast import SyncraftError
 from syncraft.cache import Either
 from collections import deque, defaultdict
@@ -224,10 +224,22 @@ class Lexer(LexerBase[C]):
             if not needs_normalization(mode):
                 continue
             dfa = mode.runner.dfa.with_default_tag_invariant()
+            self._raise_on_unreachable_accept(dfa)
             mode.runner = dfa.runner(non_greedy=mode.non_greedy)
             mode.rdfa = dfa.reverse
             changed = True
         return changed
+
+    @staticmethod
+    def _raise_on_unreachable_accept(dfa: DFA[Any]) -> None:
+        by_tag = dfa.accept_reachability()
+        for tag, (reachable, unreachable) in by_tag.items():
+            if unreachable:
+                raise SyncraftError(
+                    "Unreachable accept state(s) detected",
+                    offender={"tag": tag, "reachable": reachable, "unreachable": unreachable},
+                    expect="accept states reachable from init",
+                )
 
     
     def tags(self) -> frozenset[str|Enum|None]:
@@ -331,6 +343,7 @@ class Lexer(LexerBase[C]):
 
         assert combined is not None
         dfa = combined.dfa.normalized.with_default_tag_invariant()
+        Lexer._raise_on_unreachable_accept(dfa)
         non_greedy_set = frozenset(non_greedy)
         return Mode(
             runner=dfa.runner(non_greedy=non_greedy_set),
