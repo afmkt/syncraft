@@ -13,7 +13,7 @@ from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
 from syncraft.fa import Builder
 
-SS = Syntax.set(terminal_cls=Token)
+SS = Syntax.set(terminal_constructor=Token)
 
 def tok(text: str):
     return SS.tok(text=text, case_sensitive=True)
@@ -67,7 +67,7 @@ def test_generate_with_infers_text_lexer_without_config() -> None:
 
 
 def test_generate_with_infers_from_fabuilder_literal() -> None:
-    S = Syntax.set(terminal_cls=Token)
+    S = Syntax.set(terminal_constructor=Token)
     lex_syntax = S.factory("lex", Builder.lit("go").tagged("WORD"))
     ast = generate_with(lex_syntax, seed=321)
     print(ast)
@@ -77,7 +77,7 @@ def test_generate_with_infers_from_fabuilder_literal() -> None:
 
 
 def test_validate_lex_token_uses_verify_full_match() -> None:
-    S = Syntax.set(terminal_cls=Token, terminal_destructor=lambda token: token.text)
+    S = Syntax.set(terminal_constructor=Token, terminal_destructor=lambda token: token.text)
     lex_syntax = S.factory("lex", Builder.lit("ab").tagged("AB"))
 
     ast = validate(lex_syntax, Token(text="ab", token_type="AB"))

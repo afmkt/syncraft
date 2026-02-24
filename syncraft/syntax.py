@@ -1146,18 +1146,34 @@ class Syntax(Generic[A, S]):
     @classmethod
     def lex(cls, builder: Builder | TokenSpec) -> Syntax:
         return cls.factory('lex', builder)
-    
 
     @classmethod
-    def re(cls, pattern: str, builder_f: Callable[[Builder], Builder] = lambda b: b) -> Syntax:
+    def lexer_transformer(cls) -> Callable[[Builder], Builder] | None:
+        return cls.get('lexer_transformer')    
+    
+    @classmethod
+    def set_lexer_transformer(cls, transformer: Callable[[Builder], Builder]) -> Type[Syntax]:
+        return cls.set(lexer_transformer=transformer)
+
+    @classmethod
+    def re(cls, pattern: str, lexer_transformer: Callable[[Builder], Builder] | None = None, **kwargs: Any) -> Syntax:
+        # local import to avoid circular dependency
         from syncraft.regex import builder
-        b = builder(pattern)
-        b = builder_f(b)
+        b = builder(pattern).set(**kwargs)
+        if not callable(lexer_transformer):
+            lexer_transformer = cls.lexer_transformer()
+        if callable(lexer_transformer):
+            b = lexer_transformer(b)
         return cls.lex(b)
     
     @classmethod
-    def lit(cls, txt: str | bytes) -> Syntax:
-        return cls.lex(Builder.lit(txt))
+    def lit(cls, txt: str | bytes, lexer_transformer: Callable[[Builder], Builder] | None = None, **kwargs: Any) -> Syntax:
+        b: Builder[Any]= Builder.lit(txt).set(**kwargs)
+        if not callable(lexer_transformer):
+            lexer_transformer = cls.lexer_transformer()
+        if callable(lexer_transformer):
+            b = lexer_transformer(b)
+        return cls.lex(b)
 
     @classmethod
     def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:

@@ -435,10 +435,10 @@ class Generator(Algebra[ParseResult[T], GenState]):
 
         
     @classmethod
-    def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, terminal_destructor: Callable[..., Any] | None = None, **kwargs) -> Algebra[ParseResult[T], GenState]:
-        terminal_cls = terminal_cls or cls.default_terminal_cls
-        # default_terminal_cls can be used for both construction and deconstruction.
-        terminal_destructor = terminal_destructor or cls.default_terminal_cls
+    def lex(cls, args: Builder | TokenSpec, terminal_constructor: Callable[..., Any] | None = None, terminal_destructor: Callable[..., Any] | None = None, **kwargs) -> Algebra[ParseResult[T], GenState]:
+        terminal_constructor = terminal_constructor or cls.default_terminal_constructor
+        # default_terminal_constructor can be used for both construction and deconstruction.
+        terminal_destructor = terminal_destructor or cls.default_terminal_constructor
         lexer:LexerProtocol[Any] | None
         lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
         assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
@@ -456,7 +456,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 tag = input.rng("lex_tag").choice(tuple(ntags))                
                 input = input.fork(tag=tag)
                 args, kwargs = lexer.gen(tag, input.rng())
-                generated = terminal_cls(*args, **kwargs)
+                generated = terminal_constructor(*args, **kwargs)
                 debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> {generated}")
                 return Right.new((cast(ParseResult[T], generated), input))
             else:

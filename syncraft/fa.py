@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import (
     TypeVar, Optional, Generic, Tuple, ClassVar, Set, Any, List,
-    Callable, Dict, Sequence, Union, Iterator, Literal, Hashable
+    Callable, Dict, Sequence, Union, Iterator, Literal, Hashable, Ellipsis
 )
 
 from dataclasses import dataclass, field, replace
@@ -1165,6 +1165,16 @@ class ModeAction:
     mode: str
     belong: str | None = None  # only used for PUSH action
 
+
+def push(mode: str, belong_to: str | None = None) -> ModeAction:
+    return ModeAction(action=ModeActionEnum.PUSH, mode=mode, belong=belong_to)
+
+def pop(mode: str) -> ModeAction:
+    return ModeAction(action=ModeActionEnum.POP, mode=mode)
+
+def belong(mode: str) -> ModeAction:
+    return ModeAction(action=ModeActionEnum.BELONG, mode=mode)
+
 @dataclass(frozen=True, slots=True)
 class Builder(Generic[C]):
     kind: _NodeKind
@@ -1181,20 +1191,28 @@ class Builder(Generic[C]):
     # for any additional metadata that might be needed
     extra_meta: FrozenDict[str, Any] = field(default_factory=FrozenDict, compare=False, hash=False)  
     
-    def __getattr__(self, name: str) -> None:
+    def __getattr__(self, name: str) -> Any:
         if name not in self.extra_meta:
             raise AttributeError(f"Builder object has no extra_meta '{name}'")
         return self.extra_meta[name]
 
     def set(self, 
             *, 
-            tag: Optional[Tag] = None,
-            skip: bool = False, 
-            priority: int = 0,
-            non_greedy: bool = False,
-            action: Optional[ModeAction] = None,
+            tag: Tag | Ellipsis | None = ...,
+            skip: bool | Ellipsis = ...,
+            priority: int | Ellipsis = ...,
+            non_greedy: bool | Ellipsis = ...,
+            action: ModeAction | Ellipsis | None = ...,
             **kwargs: Any) -> Builder[C]:
+        """
+        ...(Ellipsis) means keep the existing value.
+        """
         new_meta = {**self.extra_meta, **kwargs}
+        skip = skip if skip is not ... else self.skip
+        priority = priority if priority is not ... else self.priority
+        non_greedy = non_greedy if non_greedy is not ... else self.non_greedy
+        tag = tag if tag is not ... else self.tag
+        action = action if action is not ... else self.action
         return replace(self, 
                        tag=tag,
                        action=action,
@@ -1322,10 +1340,14 @@ class Builder(Generic[C]):
             if len(chars) > 0:
                 if isinstance(chars[0], (str, bytes)):
                     if not all(len(c) == 1 for c in chars): # type: ignore
-                        return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars])
-                        
+                        return reduce(lambda a, b: a | b, [cls.lit(e) for e in chars]) # type: ignore
                     else:
-                        return cls.oneof("".join(chars))
+                        if isinstance(chars[0], str):
+                            return cls.oneof("".join(chars)) # type: ignore
+                        elif isinstance(chars[0], bytes):
+                            return cls.oneof(b"".join(chars)) # type: ignore
+                        else:
+                            assert False, "Unreachable"
         return cls(kind=_NodeKind.ONEOF, text=chars)
 
     # ---- DSL operators ----

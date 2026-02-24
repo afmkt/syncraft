@@ -317,8 +317,8 @@ class Parser(Algebra[T, ParserState[T]]):
         return self.map(f)
 
     @classmethod
-    def lex(cls, args: Builder | TokenSpec, terminal_cls: Callable[..., Any] | None = None, **kwargs) -> Algebra[T, ParserState[T]]:
-        terminal_cls = terminal_cls or cls.default_terminal_cls
+    def lex(cls, args: Builder | TokenSpec, terminal_constructor: Callable[..., Any] | None = None, **kwargs) -> Algebra[T, ParserState[T]]:
+        terminal_constructor = terminal_constructor or cls.default_terminal_constructor
         lexer:LexerProtocol[Any] | None
         lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
         assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
@@ -338,7 +338,7 @@ class Parser(Algebra[T, ParserState[T]]):
                     match lexer.candidate():
                         case LexerResult(tag=tag, start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_cls(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
+                                token = terminal_constructor(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
                             else:
                                 token = lexeme
                             return Right.new((token, state)) # type: ignore
@@ -358,7 +358,7 @@ class Parser(Algebra[T, ParserState[T]]):
                             state = state.advance()
                         case LexerResult(tag=tag, start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_cls(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
+                                token = terminal_constructor(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
                             else:
                                 token = lexeme
                             if end > state.index:

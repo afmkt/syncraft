@@ -44,7 +44,7 @@ def token_multiset(ast: Any) -> dict[str, int]:
 # Ensure randomization is enabled for these tests
 set_randomization(True)
 
-S = Syntax.set(terminal_cls=Token)
+S = Syntax.set(terminal_constructor=Token)
 
 def literal(text:Any) -> Syntax[Any, Any]:
     return S.tok(text=text)
