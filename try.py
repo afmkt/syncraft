@@ -37,7 +37,8 @@ class ExprGrammar(Grammar):
 # -- step-2 --
 # @pytest.mark.skip(reason="The library is not ready for this yet")
 def test_quickstart_step_2() -> None:
-    ast = ExprGrammar.parse("1+2*3")
+    ast = ExprGrammar.parse(" 1 +2*3")
+    print(ast)
     assert ast == (
         ("1", "+"),
         (("2", "*"), "3"),

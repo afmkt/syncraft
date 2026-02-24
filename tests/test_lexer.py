@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import random
 
-from syncraft.cache import Left, Right
-from syncraft.alphabet import Alphabet, AlphabetProtocol
 from syncraft.fa import Builder, ModeAction, ModeActionEnum
 from syncraft.lexer import Lexer, LexerResult
 import pytest
