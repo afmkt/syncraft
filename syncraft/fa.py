@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import (
     TypeVar, Optional, Generic, Tuple, ClassVar, Set, Any, List,
-    Callable, Dict, Sequence, Union, Iterator, Literal, Hashable, Ellipsis
+    Callable, Dict, Sequence, Union, Iterator, Literal, Hashable
 )
+
+from types import EllipsisType
 
 from dataclasses import dataclass, field, replace
 
@@ -1198,11 +1200,11 @@ class Builder(Generic[C]):
 
     def set(self, 
             *, 
-            tag: Tag | Ellipsis | None = ...,
-            skip: bool | Ellipsis = ...,
-            priority: int | Ellipsis = ...,
-            non_greedy: bool | Ellipsis = ...,
-            action: ModeAction | Ellipsis | None = ...,
+            tag: Tag | EllipsisType | None = ...,
+            skip: bool | EllipsisType = ...,
+            priority: int | EllipsisType = ...,
+            non_greedy: bool | EllipsisType = ...,
+            action: ModeAction | EllipsisType | None = ...,
             **kwargs: Any) -> Builder[C]:
         """
         ...(Ellipsis) means keep the existing value.

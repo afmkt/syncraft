@@ -1158,8 +1158,8 @@ class Syntax(Generic[A, S]):
     @classmethod
     def re(cls, pattern: str, lexer_transformer: Callable[[Builder], Builder] | None = None, **kwargs: Any) -> Syntax:
         # local import to avoid circular dependency
-        from syncraft.regex import builder
-        b = builder(pattern).set(**kwargs)
+        from syncraft.regex import re as regex_builder  
+        b = regex_builder(pattern).set(**kwargs)
         if not callable(lexer_transformer):
             lexer_transformer = cls.lexer_transformer()
         if callable(lexer_transformer):

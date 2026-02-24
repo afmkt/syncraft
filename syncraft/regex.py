@@ -548,7 +548,7 @@ def parse(data: str, *, syntax: Syntax | None = None) -> Any:
         return Error.new(this=syntax or RE.regex_full, message=str(e), error=e)
 
 
-def builder(pattern: str) -> Builder[str]:
+def re(pattern: str) -> Builder[str]:
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
