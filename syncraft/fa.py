@@ -56,14 +56,15 @@ class ReverseDFA(Generic[C]):
     cs_factory: CharSetFactory[C]
     final: FAState
     accept: FrozenDict[Tag|None, frozenset[FAState]] = field(default_factory=FrozenDict)    
-    transitions: FrozenDict[FAState, FrozenDict[CharSet, FAState]] = field(default_factory=FrozenDict)
+    transitions: FrozenDict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = field(default_factory=FrozenDict)
     _distances: FrozenDict[FAState, int] = field(default_factory=FrozenDict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         preds: Dict[FAState, Set[FAState]] = defaultdict(set)
         for src, mapping in self.transitions.items():
-            for _, dst in mapping.items():
-                preds[dst].add(src)
+            for _, dsts in mapping.items():
+                for dst in dsts:
+                    preds[dst].add(src)
 
         distances: Dict[FAState, int] = {self.final: 0}
         queue: deque[FAState] = deque([self.final])
@@ -74,7 +75,6 @@ class ReverseDFA(Generic[C]):
                 if prev not in distances:
                     distances[prev] = next_dist
                     queue.append(prev)
-
         object.__setattr__(self, "_distances", FrozenDict(distances))
 
     def gen(self, tag: Tag | None, rnd: random.Random) -> C | Tuple[C, ...]:
@@ -83,10 +83,9 @@ class ReverseDFA(Generic[C]):
             if tag:
                 raise ValueError(f"Empty accept states for tag '{tag}'")
             else:
-                tag = DEFAULT_TAG
-                current_states = self.accept.get(tag, frozenset())
+                current_states = self.accept.get(DEFAULT_TAG, frozenset())
                 if not current_states:
-                    raise ValueError(f"Empty accept states for tag '{tag}'")
+                    raise ValueError(f"Empty accept states for tag '{DEFAULT_TAG}'")
         candicates = list(current_states)
         current = None
         rnd.shuffle(candicates)
@@ -107,7 +106,8 @@ class ReverseDFA(Generic[C]):
                 raise ValueError(f"No path from state {current} to final state {self.final}")
             options = [
                 (cs, dst)
-                for cs, dst in self.transitions[current].items()
+                for cs, dsts in self.transitions[current].items()
+                for dst in dsts
                 if self._distances.get(dst) == self._distances[current] - 1
             ]
             if not options:
@@ -143,15 +143,15 @@ class DFA(Generic[C]):
             for t in tags:
                 acc_map[t].add(s)
 
-        trans: Dict[FAState, Dict[CharSet, FAState]] = defaultdict(dict)  
+        trans: Dict[FAState, Dict[CharSet, Set[FAState]]] = defaultdict(lambda: defaultdict(set))
         for s, mapping in self.transitions.items():
             for cs, tgt in mapping.items():
-                trans[tgt][cs] = s
+                trans[tgt][cs].add(s)
         return ReverseDFA(
             cs_factory=self.cs_factory,
             final=self.init,
             accept=FrozenDict({t: frozenset(ss) for t, ss in acc_map.items()}),
-            transitions=FrozenDict({s: FrozenDict(m) for s,m in trans.items()}))
+            transitions=FrozenDict({s: FrozenDict({cs: frozenset(ss) for cs, ss in m.items()}) for s, m in trans.items()}))
     
     
     @property
