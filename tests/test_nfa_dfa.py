@@ -24,7 +24,7 @@ class LegacyRun:
         return self._runner.is_accepted()
     def resumable(self, _fa):
         
-        return self._runner.resumable
+        return self._runner.resumable(self._runner.current)
 
 def run(fa: NFA | DFA, inp) -> LegacyRun:
     """Simulate legacy .run(). Returns object with:

@@ -1181,13 +1181,15 @@ class NFARunner(Generic[C]):
     def is_valid(self) -> bool:
         return bool(self.current)
 
-    def resumable(self, state: frozenset[FAState]) -> frozenset[CharSet]:
+    def resumable(self, state: frozenset[FAState] | None) -> frozenset[CharSet]:
+        if state is None:
+            state = self.current
         result: Set[CharSet] = set()
         for s in state:
             result.update(self.fa.transitions.get(s, {}).keys())
         return frozenset(result)
 
-    def resumable_str(self, state: frozenset[FAState]) -> frozenset[str]:
+    def resumable_str(self, state: frozenset[FAState] | None) -> frozenset[str]:
         return frozenset(self.fa.cs_factory.str(cs) for cs in self.resumable(state))
 
 
