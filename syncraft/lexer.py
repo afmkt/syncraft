@@ -122,12 +122,12 @@ class LexerCache:
             
 @dataclass(slots=True)
 class Lexer(LexerProtocol[C]):
-    modes: Dict[str | None, Mode[C]]     
-    actions: Dict[Tag | None, ModeAction]
-    default_mode: str | None 
+    modes: Dict[str | None, Mode[C]] = field(default_factory=dict)
+    actions: Dict[Tag | None, ModeAction] = field(default_factory=dict)
+    default_mode: str | None = field(default=None)
     _stack: deque[Mode[C]] = field(default_factory=deque)
     cache: ClassVar[LexerCache] = LexerCache()
-    filepath: Optional[Path] = None
+    filepath: Optional[Path] = field(default=None, compare=False, hash=False, repr=False)
 
     def _normalize_default_tags(self) -> bool:
         def needs_normalization(mode: Mode[C]) -> bool:
