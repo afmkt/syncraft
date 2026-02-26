@@ -1239,19 +1239,27 @@ class ModeActionEnum(Enum):
 
 @dataclass(frozen=True, slots=True)
 class ModeAction:
+    """
+    belong  is used to determine which mode(s) this rule belongs to.
+            All rules should have a belong. 
+            The default belong is None, which means it belongs to all modes. 
+            If a rule has a specific belong, it only belongs to that mode.
+    mode    is used for PUSH actions to specify which mode to push onto the stack.
+            For POP actions, mode should be the same as belong (the mode being popped).
+    """
     action: ModeActionEnum
-    mode: str
-    belong: str | None = None  # only used for PUSH action
+    mode: str | None = None
+    belong: str | None = None  
 
 
 def push(mode: str, belong_to: str | None = None) -> ModeAction:
     return ModeAction(action=ModeActionEnum.PUSH, mode=mode, belong=belong_to)
 
-def pop(mode: str) -> ModeAction:
-    return ModeAction(action=ModeActionEnum.POP, mode=mode)
+def pop(belong_to: str) -> ModeAction:
+    return ModeAction(action=ModeActionEnum.POP, mode=belong_to, belong=belong_to)
 
-def belong(mode: str) -> ModeAction:
-    return ModeAction(action=ModeActionEnum.BELONG, mode=mode)
+def belong(belong_to: str) -> ModeAction:
+    return ModeAction(action=ModeActionEnum.BELONG, mode=belong_to, belong=belong_to)
 
 @dataclass(frozen=True, slots=True)
 class Builder(Generic[C]):

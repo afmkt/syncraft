@@ -63,21 +63,6 @@ class Mode(Generic[C]):
         return filtered[0]
 
 
-
-
-
-
-class LexerBase(LexerProtocol[C]):
-    @classmethod
-    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]:
-        for sub in all_subclasses(cls):
-            c = CallWith(sub.create, *args, **kwargs)
-            if not c.missing_args and not c.missing_kwargs:
-                ret = c()
-                if ret is not None:
-                    return ret, c.unused_kwargs
-        return None, kwargs
-
 @dataclass(slots=True)
 class LexerCache:
 
@@ -136,7 +121,7 @@ class LexerCache:
                 )
             
 @dataclass(slots=True)
-class Lexer(LexerBase[C]):
+class Lexer(LexerProtocol[C]):
     modes: Dict[str | None, Mode[C]]     
     actions: Dict[Tag | None, ModeAction]
     default_mode: str | None 
@@ -453,7 +438,7 @@ class ExtRule(Generic[T]):
     generator: Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]
 
 @dataclass(slots=True)
-class ExtLexer(LexerBase[T]):
+class ExtLexer(LexerProtocol[T]):
     rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)
 
     def reset(self) -> None:
