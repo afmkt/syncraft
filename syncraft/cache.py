@@ -314,19 +314,23 @@ class Cache(Generic[S]):
         frame_id = trace_push(rule=syntax_of(rule), 
                                     parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, 
                                     state=key)
-        assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
-        result = yield from rule(key, self) 
-        if isinstance(result, Right):
-            trace_pop(frame_id, 
-                      state = result.state,
-                      result = result.value[0])
-        elif isinstance(result, Left):
-            trace_pop(frame_id, 
-                      state = None,
-                      result = result.value)
-        else:
-            raise SyncraftError("Unexpected result type", offender=result, expect=(Left, Right))
-        return result
+        try:
+            assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
+            result = yield from rule(key, self) 
+            if isinstance(result, Right):
+                trace_pop(frame_id, 
+                        state = result.state,
+                        result = result.value[0])
+            elif isinstance(result, Left):
+                trace_pop(frame_id, 
+                        state = None,
+                        result = result.value)
+            else:
+                raise SyncraftError("Unexpected result type", offender=result, expect=(Left, Right))
+            return result
+        except Exception as e:
+            trace_pop(frame_id, state=None, result=e)
+            raise e
     
     def __str__(self) -> str:
 

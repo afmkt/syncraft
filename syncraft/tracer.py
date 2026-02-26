@@ -1,6 +1,8 @@
 from __future__ import annotations
-from typing import  Any, Literal
+from typing import Any, Literal, Optional, Iterator
 from dataclasses import dataclass, field
+from contextlib import contextmanager
+import contextvars
 import time
 from syncraft.bimap import Bindable
 
@@ -143,7 +145,29 @@ class Tracer:
 
 
 def trace_push(rule: Any, parent: Any | None, state: Bindable) -> int:
-    return 0
+    tracer = _CURRENT_TRACER.get()
+    if tracer is None:
+        return 0
+    return tracer.push(rule=rule, parent=parent, state=state)
 
 def trace_pop(which: int, state: Bindable | None, result: Any) -> None:
-    pass
+    tracer = _CURRENT_TRACER.get()
+    if tracer is None:
+        return
+    tracer.pop(which=which, state=state, result=result)
+
+
+_CURRENT_TRACER: contextvars.ContextVar[Optional[Tracer]] = contextvars.ContextVar(
+    "syncraft_current_tracer",
+    default=None,
+)
+
+
+@contextmanager
+def tracer() -> Iterator[Tracer]:
+    tracer = Tracer()
+    token = _CURRENT_TRACER.set(tracer)
+    try:
+        yield tracer
+    finally:
+        _CURRENT_TRACER.reset(token)
