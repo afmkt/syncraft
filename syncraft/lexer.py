@@ -2,8 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import (
-    Any, Dict, Set, Optional, TypeVar, Generic, Tuple, Protocol, ClassVar,
-    runtime_checkable, Callable, Hashable
+    Any, Dict, Set, Optional, TypeVar, Generic, Tuple, ClassVar,
+    Callable, Hashable, List
 )
 
 from syncraft.path import builtin_cache_path, user_cache_path
@@ -20,8 +20,9 @@ import threading
 from syncraft.token import TokenSpec, all_subclasses
 from functools import cached_property
 import pickle
+from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder
 
-
+Tag = str | Enum
 
 C = TypeVar('C', bound=Hashable)
 A = TypeVar('A')
@@ -29,30 +30,6 @@ Ret = TypeVar('Ret', bound=Either[Any, Tuple])
 T = TypeVar('T', bound=Hashable)
 
 
-
-
-
-
-Tag = str | Enum
-
-@dataclass(frozen=True, slots=True)
-class LexerError:
-    message: str
-    index: int
-    offender: Hashable
-    expect: frozenset[Hashable]
-    @classmethod
-    def new(cls, message: str, index: int, offender: Hashable, expect: frozenset[Hashable]) -> LexerError:
-        obj = cls.__new__(cls)
-        object.__setattr__(obj, 'message', message)
-        object.__setattr__(obj, 'index', index)
-        object.__setattr__(obj, 'offender', offender)
-        object.__setattr__(obj, 'expect', expect)
-        return obj
-
-    @classmethod
-    def message_only(cls, message: str) -> "LexerError":
-        return cls(message=message, index=-1, offender=None, expect=frozenset())
 
 @dataclass
 class Mode(Generic[C]):
@@ -87,46 +64,8 @@ class Mode(Generic[C]):
 
 
 
-@dataclass(frozen=True, slots=True)
-class LexerResult(Generic[C]):
-    tag: Tag | None
-    start: int
-    end: int
-    value: Any | None = None
-
-    @classmethod
-    def new(cls, tag: Tag | None, start: int, end: int, value: Any | None = None) -> "LexerResult[C]":
-        obj = cls.__new__(cls)
-        object.__setattr__(obj, 'tag', tag)
-        object.__setattr__(obj, 'start', start)
-        object.__setattr__(obj, 'end', end)
-        object.__setattr__(obj, 'value', value)
-        return obj
 
 
-@runtime_checkable
-class LexerProtocol(Protocol, Generic[C]):
-    def reset(self) -> None: ...
-
-    def match(self, tag: frozenset[Tag | None], char: C, index: int) -> LexerError | None | LexerResult[C]: ...
-
-    def verify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
-
-    def tags(self) -> frozenset[str|Enum|None]: ...
-
-    def gen(self, tag: Tag | None, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]: ...
-
-    def candidate(self) -> LexerError | LexerResult[C]: ...
-    
-    @classmethod
-    def create(cls, *args: Any, **kwargs: Any) -> Optional[LexerProtocol[C]]: ...
-
-
-    @classmethod
-    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]: ...
-
-    @property
-    def filepath(self) -> Optional[Path]: ...
 
 class LexerBase(LexerProtocol[C]):
     @classmethod
@@ -457,15 +396,17 @@ class Lexer(LexerBase[C]):
         mode = self.current_mode
         if mode.start_index is None:
             mode.start_index = index
+        old_state = mode.runner.current
         rr = mode.runner.step(char, index)
         if rr.error:
-            expecting = mode.runner.resumable
+            expecting = mode.runner.resumable_str(old_state)
             mode.runner = mode.runner.reset()
+            exp = expecting or tags
             return LexerError(
-                message="Lexing mismatch",
+                message=f"Lexing mismatch '{char}' at index {index}, expect {exp}",
                 index=index,
                 offender=char,
-                expect=frozenset(str(e) for e in expecting) if expecting else tags,
+                expect=exp,
             )
 
         if rr.final and rr.accepted is None:
@@ -578,4 +519,54 @@ class ExtLexer(LexerBase[T]):
 
 
 
+@dataclass(frozen=True, slots=True)
+class LocalLexerBuilder(LexerBuilder[C]):
+    lexer: LexerProtocol[C] | None = field(default=None, compare=False, hash=False, repr=False)
+    def __call__(self, arg: TokenSpec | Builder, **kwargs: Any) -> LocalLexerBuilder[C]:
+        if isinstance(arg, TokenSpec):
+            tlexer: ExtLexer[C] | None = ExtLexer.create(arg)
+            if tlexer is not None:
+                return LocalLexerBuilder(lexer=tlexer)
+        elif isinstance(arg, Builder):
+            lexer: LexerProtocol[C] | None = Lexer.create(arg, **kwargs)
+            if lexer is not None:
+                return LocalLexerBuilder(lexer=lexer)
+        raise SyncraftError(
+            f"LocalLexerBuilder cannot create a lexer from argument of type {type(arg)}",
+            offender=(arg, kwargs),
+            expect="a TokenSpec or Builder instance",
+        )
 
+    def resolve(self) -> LexerProtocol[C]:
+        assert self.lexer is not None, "LocalLexerBuilder has not been called with valid arguments to create a lexer"
+        return self.lexer
+    
+
+@dataclass(frozen=True, slots=True)
+class GlobalLexerBuilder(LexerBuilder[C]):
+    args: Tuple[Builder, ...] = field(default_factory=tuple)
+    default_mode: str | None = None
+    builtin: bool = False
+    cache_path: str | Path | None = None 
+    lexer: LexerProtocol[C] | None = field(default=None, compare=False, hash=False, repr=False)
+    def __call__(self, arg: Builder, **kwargs: Any) -> GlobalLexerBuilder[C]:
+        assert isinstance(arg, Builder), "GlobalLexerBuilder can only be called with Builder instances"
+        new_args = self.args + (arg,)
+        new_default_mode = kwargs.get("default_mode", self.default_mode)
+        new_builtin = kwargs.get("builtin", self.builtin)
+        new_cache_path = kwargs.get("cache_path", self.cache_path)
+        return GlobalLexerBuilder(args=new_args, default_mode=new_default_mode, builtin=new_builtin, cache_path=new_cache_path)
+    
+    def resolve(self) -> LexerProtocol[C]:
+        if self.lexer is None:
+            lexer: LexerProtocol[C] | None = Lexer.create(*self.args, default_mode=self.default_mode, builtin=self.builtin, cache_path=self.cache_path)
+            object.__setattr__(self, 'lexer', lexer)
+            if self.lexer is None:
+                raise SyncraftError(
+                    "GlobalLexerBuilder could not create a lexer from the provided builders",
+                    offender=(self.args, self.default_mode, self.builtin, self.cache_path),
+                    expect="at least one valid Builder instance",
+                )
+            return self.lexer
+        else:
+            return self.lexer

@@ -10,7 +10,7 @@ from typing import (
     Pattern,
 )
 from dataclasses import dataclass, field, replace
-
+from syncraft.lexerprotocol import LexerBuilder
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
 
@@ -38,6 +38,8 @@ def valid_name(name: str) -> bool:
     return (name.isidentifier() 
             and not keyword.iskeyword(name)
             and not (name.startswith('__') and name.endswith('__')))
+
+
 
 
 class RecursionCtx:
@@ -677,6 +679,10 @@ class Syntax(Generic[A, S]):
         return type(cls.__name__, (cls,), {SYNCRAFT_CONFIG_KEY: attrs})
 
     @classmethod
+    def get_all(cls) -> Dict[str, Any]:
+        return getattr(cls, SYNCRAFT_CONFIG_KEY, {})
+
+    @classmethod
     def get(cls, key: str) -> Any:
         cfg = getattr(cls, SYNCRAFT_CONFIG_KEY, {})
         return cfg.get(key, None)
@@ -1085,6 +1091,12 @@ class Syntax(Generic[A, S]):
     @classmethod
     def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Tuple[Any, ...], S]:
         def infer_default_keep(steps: Tuple[Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str], ...]) -> bool:
+            """
+            Since the input could be a mix of Syntax and (Syntax, bool), we need to infer the default keep value for the Syntax that are not in a tuple.
+             - If all tuples have the same bool value, we can infer the default keep value as the opposite of that value.
+             - If there are conflicting bool values in the tuples, we cannot infer a default and must require explicit bools for all steps.
+             - If there are no tuples, we can default to keep=True.
+            """
             infered_default: Optional[bool] = None
             for X in steps:
                 if isinstance(X, tuple):
@@ -1144,42 +1156,42 @@ class Syntax(Generic[A, S]):
         return cls.factory('eof')
     
     @classmethod
-    def lex(cls, builder: Builder | TokenSpec) -> Syntax:
-        return cls.factory('lex', builder)
+    def lex(cls, builder: Builder | TokenSpec, **kwargs: Any) -> Syntax:
+        lexer_builder = cls.lexer_builder()
+        lb = lexer_builder(builder, **kwargs)
+        return cls.factory('lex', builder=lb)
 
-    @classmethod
-    def lexer_transformer(cls) -> Callable[[Builder], Builder] | None:
-        return cls.get('lexer_transformer')    
     
     @classmethod
-    def set_lexer_transformer(cls, transformer: Callable[[Builder], Builder]) -> Type[Syntax]:
-        return cls.set(lexer_transformer=transformer)
+    def set_lexer_builder(cls, builder: LexerBuilder) -> Type[Syntax]:
+        return cls.set(lexer_builder=builder)
 
     @classmethod
-    def re(cls, pattern: str, lexer_transformer: Callable[[Builder], Builder] | None = None, **kwargs: Any) -> Syntax:
+    def lexer_builder(cls) -> LexerBuilder:
+        ret = cls.get('lexer_builder')    
+        if ret is None:
+            from syncraft.lexer import LocalLexerBuilder
+            return LocalLexerBuilder()
+        return ret
+
+
+    @classmethod
+    def re(cls, pattern: str, **kwargs: Any) -> Syntax:
         # local import to avoid circular dependency
-        from syncraft.regex import re as regex_builder  
-        b = regex_builder(pattern).set(**kwargs)
-        if not callable(lexer_transformer):
-            lexer_transformer = cls.lexer_transformer()
-        if callable(lexer_transformer):
-            b = lexer_transformer(b)
-        return cls.lex(b)
+        import syncraft.regex as regex  
+        b = regex.re(pattern)
+        return cls.lex(b, **kwargs)
     
     @classmethod
-    def lit(cls, txt: str | bytes, lexer_transformer: Callable[[Builder], Builder] | None = None, **kwargs: Any) -> Syntax:
-        b: Builder[Any]= Builder.lit(txt).set(**kwargs)
-        if not callable(lexer_transformer):
-            lexer_transformer = cls.lexer_transformer()
-        if callable(lexer_transformer):
-            b = lexer_transformer(b)
-        return cls.lex(b)
+    def lit(cls, txt: str | bytes, **kwargs: Any) -> Syntax:
+        b: Builder[Any]= Builder.lit(txt)
+        return cls.lex(b, **kwargs)
 
     @classmethod
     def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:
         tkspec: TokenSpec | None = TokenSpecBase.from_kwargs(*txt, case_sensitive=case_sensitive, **kwargs)
         assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
-        return cls.lex(tkspec)
+        return cls.lex(tkspec, **kwargs)
 
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax:

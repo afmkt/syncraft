@@ -150,7 +150,7 @@ class Error:
             orelse = syn.is_orelse if syn else is_orelse(rule)
             lazy = syn.is_lazy if syn else is_lazy(rule)
             spec = syn.spec if syn else None
-            orelse_mark = f"{ORELSE_MARKER} {choice} " if orelse else ""
+            orelse_mark = f"{ORELSE_MARKER} {choice if choice is not None else 'UnkownBranch'} " if orelse else ""
             lazy_mark = (f"{LAZY_MARKER} " if lazy else "")
             if spec and hasattr(spec, 'location'):
                 if spec.location is not None:

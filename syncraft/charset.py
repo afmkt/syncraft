@@ -238,6 +238,9 @@ class CharSetFactory(Generic[C]):
         return tuple(self.difference_interval(list(self.alphabet.codes), list(cs)))
     
     def str(self, cs: CharSet) -> str:
+        """
+        Convert a CharSet to a human-readable string, showing character ranges and special anchors.
+        """
         parts = []
         START_CP = self.START_CP
         END_CP = self.END_CP
@@ -257,5 +260,4 @@ class CharSetFactory(Generic[C]):
             else:
                 parts.append(f"{fmt(start)}-{fmt(end)}")
         return f"{', '.join(parts)}"
-    
     

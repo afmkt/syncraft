@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from syncraft import Error, Grammar, Syntax, grammar, lazy, rule, re
-
+from syncraft.lexer import LocalLexerBuilder
 
 # -- step-1 --
 
-S = Syntax.set_lexer_transformer(lambda b: re(r'\s*').skipped() + b + re(r'\s*').skipped())  
+S = Syntax.set_lexer_builder(LocalLexerBuilder())  
 
 @grammar
 class ExprGrammar(Grammar):
@@ -35,9 +35,10 @@ class ExprGrammar(Grammar):
 
 
 # -- step-2 --
-# @pytest.mark.skip(reason="The library is not ready for this yet")
+
 def test_quickstart_step_2() -> None:
     ast = ExprGrammar.parse(" 1 +2*3")
+    print('///////////////////////')
     print(ast)
     assert ast == (
         ("1", "+"),
@@ -92,7 +93,7 @@ class ExprAstGrammar(Grammar):
 
     root = rule(expr, is_root=True)
 
-# @pytest.mark.skip(reason="The library is not ready for this yet")
+
 def test_quickstart_step_4() -> None:
     ast = ExprAstGrammar.parse("1+2*3")
     assert ast == Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
@@ -100,7 +101,7 @@ def test_quickstart_step_4() -> None:
 
 
 # -- step-5 --
-# @pytest.mark.skip(reason="The library is not ready for this yet")
+
 def test_quickstart_step_5() -> None:
     expr = Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
     validated = ExprAstGrammar.validate(expr)

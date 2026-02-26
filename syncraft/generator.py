@@ -14,7 +14,8 @@ from syncraft.algebra import (
 )
 from syncraft.algebra import ErrorPriority
 
-from syncraft.lexer import LexerBase, LexerProtocol
+
+from syncraft.lexerprotocol import LexerBuilder, LexerProtocol
 from syncraft.cache import Cache, Either, Left, Right
 
 from syncraft.ast import (
@@ -25,8 +26,6 @@ from syncraft.ast import (
 )
 from syncraft.utils import callable_str
 
-from syncraft.fa import Builder
-from syncraft.token import TokenSpec
 from syncraft.syntax import Syntax, RunnerProtocol
 
 from syncraft.bimap import Bindable
@@ -435,21 +434,23 @@ class Generator(Algebra[ParseResult[T], GenState]):
 
         
     @classmethod
-    def lex(cls, args: Builder | TokenSpec, terminal_constructor: Callable[..., Any] | None = None, terminal_destructor: Callable[..., Any] | None = None, **kwargs) -> Algebra[ParseResult[T], GenState]:
+    def lex(cls, 
+            builder: LexerBuilder[Any], 
+            terminal_constructor: Callable[..., Any] | None = None, 
+            terminal_destructor: Callable[..., Any] | None = None) -> Algebra[ParseResult[T], GenState]:
         terminal_constructor = terminal_constructor or cls.default_terminal_constructor
         # default_terminal_constructor can be used for both construction and deconstruction.
         terminal_destructor = terminal_destructor or cls.default_terminal_constructor
-        lexer:LexerProtocol[Any] | None
-        lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
-        assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
-        ntags = lexer.tags()
-        name = ','.join(str(tag) for tag in ntags)
+        assert builder, "LexerBuilder could not be None"
         def lex_run(input: GenState, 
                     cache: Cache[GenState] | None) -> PyGenerator[
                               YieldChannelType, 
                               GenState, 
                               Either[Any, Tuple[ParseResult[T], GenState]]]:
+            
+            lexer: LexerProtocol[Any] = builder.resolve()
             lexer.reset()
+            ntags = lexer.tags()
             yield from ()
             
             if input.pruned:
@@ -484,7 +485,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     return Left.new(
                         Error.new(
                             this=lex_run,
-                            message=f"Expected token tag {{ {name} }}, but got {current}: {type(current)}.",
+                            message=f"Expected token tag {{ {ntags} }}, but got {current}: {type(current)}.",
                             priority=ErrorPriority.EXPECTED_TOKEN_TAG,
                             state=input,
                         )

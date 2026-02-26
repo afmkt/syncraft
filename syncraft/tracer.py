@@ -3,7 +3,7 @@ from typing import  Any, Literal
 from dataclasses import dataclass, field
 import time
 from syncraft.bimap import Bindable
-from syncraft.ast import AST
+
 
 
 @dataclass
@@ -138,3 +138,12 @@ class Tracer:
                     parent.children.append(node)
         
         return roots
+
+
+
+
+def trace_push(rule: Any, parent: Any | None, state: Bindable) -> int:
+    return 0
+
+def trace_pop(which: int, state: Bindable | None, result: Any) -> None:
+    pass

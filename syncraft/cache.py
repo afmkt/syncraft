@@ -7,7 +7,7 @@ from syncraft.bimap import Bindable
 from syncraft.ast import SyncraftError
 
 from syncraft.utils import callable_str, is_lazy, is_orelse, syntax_of, is_intrinsic
-from syncraft.tracer import Tracer
+from syncraft.tracer import trace_pop, trace_push
 from collections import defaultdict
 import copy
 import random
@@ -233,7 +233,7 @@ class Cache(Generic[S]):
     max_revision: int = 512  # Protection against runaway single-head growth
     max_agenda_size: int = 1000  # Protection against agenda explosion
     max_agenda_depth: int = 50   # Protection against deep agenda recursion
-    tracer: Optional[Tracer] = None
+
     choice_index: List[Tuple[Any, int]] = field(default_factory=list)
 
     def push_choice(self, rule: Rule, choice_index: int) -> Cache[S]:
@@ -248,8 +248,6 @@ class Cache(Generic[S]):
     def choice_of(self, rule: Rule) -> Optional[int]:
         s = syntax_of(rule)
         for r, idx in reversed(self.choice_index):
-            # print('check', r, s, idx)
-            # print('check', str(r), str(s), idx)
             if r == s:
                 return idx
         return None
@@ -261,11 +259,6 @@ class Cache(Generic[S]):
             c = self.choice_of(rule)
             normalized.append((rule, pos, c))
         return normalized
-
-    def with_tracer(self, tracer: Tracer | None = None) -> Cache[S]:
-        if self.tracer is None:
-            self.tracer = tracer or Tracer()
-        return self
 
     def clone(self) -> Cache[S]:
         return copy.deepcopy(self)
@@ -318,24 +311,21 @@ class Cache(Generic[S]):
             print("[Cache]    ", *args, **kwargs)
     
     def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
-        if self.tracer is not None:
-            frame_id = self.tracer.push(rule=syntax_of(rule), 
-                                        parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, 
-                                        state=key)
-            assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
-            result = yield from rule(key, self) 
-            if isinstance(result, Right):
-                self.tracer.pop(frame_id, 
-                                state = result.state,
-                                result = result.value[0])
-            elif isinstance(result, Left):
-                self.tracer.pop(frame_id, 
-                                state = None,
-                                result = result.value)
-            else:
-                raise SyncraftError("Unexpected result type in tracer", offender=result, expect=(Left, Right))
-            return result
-        result = yield from rule(key, self)
+        frame_id = trace_push(rule=syntax_of(rule), 
+                                    parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, 
+                                    state=key)
+        assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
+        result = yield from rule(key, self) 
+        if isinstance(result, Right):
+            trace_pop(frame_id, 
+                      state = result.state,
+                      result = result.value[0])
+        elif isinstance(result, Left):
+            trace_pop(frame_id, 
+                      state = None,
+                      result = result.value)
+        else:
+            raise SyncraftError("Unexpected result type", offender=result, expect=(Left, Right))
         return result
     
     def __str__(self) -> str:

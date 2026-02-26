@@ -23,7 +23,12 @@ Tag = str | Enum
 
 
 class DefaultTag(Enum):
-    DEFAULT = "__syncraft_default_tag__"
+    DEFAULT = "DEFAULT_TAG"
+    def __str__(self) -> str:
+        return self.value
+    
+    def __repr__(self) -> str:
+        return self.value
 
 
 DEFAULT_TAG: Tag = DefaultTag.DEFAULT
@@ -1059,13 +1064,16 @@ class Runner(Generic[C]):
     def is_valid(self) -> bool:
         return bool(self.current)
     
-    @property
-    def resumable(self) -> frozenset[CharSet]:
-        entry = self.dfa.transitions.get(self.current, {}) 
+    def resumable_str(self, state: FAState | None) -> frozenset[str]:
+        return frozenset(self.fa.cs_factory.str(cs) for cs in self.resumable(state))
+    
+    def resumable(self, state: FAState | None) -> frozenset[CharSet]:
+        if state is None:
+            state = self.fa.init
+        entry = self.dfa.transitions.get(state, {}) 
         keys = entry.keys()
-        filtered = [cs for cs in keys if not any(lo < 0 or hi < 0 for (lo, hi) in cs)]
-        return frozenset(filtered)
-
+        return frozenset(keys)
+    
 
     def tags(self) -> frozenset[Tag]:
         return self.dfa.accept.get(self.current, frozenset())
@@ -1173,13 +1181,15 @@ class NFARunner(Generic[C]):
     def is_valid(self) -> bool:
         return bool(self.current)
 
-    @property
-    def resumable(self) -> frozenset[CharSet]:
+    def resumable(self, state: frozenset[FAState]) -> frozenset[CharSet]:
         result: Set[CharSet] = set()
-        for s in self.current:
+        for s in state:
             result.update(self.fa.transitions.get(s, {}).keys())
-        filtered = [cs for cs in result if not any(lo < 0 or hi < 0 for (lo, hi) in cs)]
-        return frozenset(filtered)
+        return frozenset(result)
+
+    def resumable_str(self, state: frozenset[FAState]) -> frozenset[str]:
+        return frozenset(self.fa.cs_factory.str(cs) for cs in self.resumable(state))
+
 
     def tags(self) -> frozenset[Tag]:
         tags: Set[Tag] = set()

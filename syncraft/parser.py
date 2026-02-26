@@ -3,19 +3,14 @@ from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable, 
     Generic, Generator, Callable
 )
-from syncraft.lexer import (
-    LexerBase,
-    LexerResult,
-    LexerProtocol,
-    LexerError,
+from syncraft.fa import (
     DEFAULT_TAG
 )
+from syncraft.lexerprotocol import LexerProtocol, LexerBuilder, LexerError, LexerResult
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.algebra import (
      Algebra, YieldChannelType, Error
 )
-from syncraft.fa import Builder
-from syncraft.token import TokenSpec
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol
@@ -317,21 +312,20 @@ class Parser(Algebra[T, ParserState[T]]):
         return self.map(f)
 
     @classmethod
-    def lex(cls, args: Builder | TokenSpec, terminal_constructor: Callable[..., Any] | None = None, **kwargs) -> Algebra[T, ParserState[T]]:
+    def lex(cls, 
+            builder: LexerBuilder[Any], 
+            terminal_constructor: Callable[..., Any] | None = None) -> Algebra[T, ParserState[T]]:
         terminal_constructor = terminal_constructor or cls.default_terminal_constructor
-        lexer:LexerProtocol[Any] | None
-        lexer, remaining_kwargs = LexerBase.from_kwargs(args, **kwargs)
-        assert lexer, f"Lexer could not be created with the given parameters, {args}, {kwargs}"
-
-        ntags = lexer.tags()
+        assert builder, "LexerBuilder could not be None"
         
         def lex_run(state: ParserState[T], 
                     cache: Cache[ParserState[T]] | None) -> Generator[
                               YieldChannelType, 
                               ParserState[T], 
                               Either[Any, Tuple[T, ParserState[T]]]]:
-            
+            lexer: LexerProtocol[Any] = builder.resolve()
             lexer.reset()
+            ntags = lexer.tags()
             yield from ()
             while True:
                 if state.ended:
