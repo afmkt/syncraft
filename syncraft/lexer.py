@@ -540,6 +540,14 @@ class LocalLexerBuilder(LexerBuilder[C]):
     def resolve(self) -> LexerProtocol[C]:
         assert self.lexer is not None, "LocalLexerBuilder has not been called with valid arguments to create a lexer"
         return self.lexer
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, LocalLexerBuilder):
+            return False
+        return self.lexer is other.lexer
+
+    def __hash__(self) -> int:
+        return hash(id(self.lexer))
     
 
 @dataclass(frozen=True, slots=True)
