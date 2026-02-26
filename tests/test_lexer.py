@@ -11,13 +11,16 @@ def _lexer_with_parentheses() -> Lexer[str]:
     
     base: Builder[str] = Builder.lit("a").tagged("IDENT")
     open_paren: Builder[str] = Builder.lit("(").tagged("OPEN").act(
-        ModeAction(ModeActionEnum.PUSH, mode="paren")
+        ModeAction.push(mode="paren")
+        
     )
     close_paren: Builder[str] = Builder.lit(")").tagged("CLOSE").act(
-        ModeAction(ModeActionEnum.POP, mode="paren")
+        ModeAction.pop("paren")
+        
     )
     inner: Builder[str] = Builder.lit("b").tagged("INNER").act(
-        ModeAction(ModeActionEnum.BELONG, mode="paren")
+        ModeAction.of("paren")
+        
     )
     return Lexer.from_builders(
         base,
@@ -73,13 +76,13 @@ def _lexer_with_skip() -> Lexer[str]:
 def _lexer_with_modes() -> Lexer[str]:
     base: Builder[str] = Builder.lit("a").tagged("IDENT")
     open_paren: Builder[str] = Builder.lit("(").tagged("OPEN").act(
-        ModeAction(ModeActionEnum.PUSH, mode="paren")
+        ModeAction.push(mode="paren")
     )
     close_paren: Builder[str] = Builder.lit(")").tagged("CLOSE").act(
-        ModeAction(ModeActionEnum.POP, mode="paren")
+        ModeAction.pop("paren")
     )
     inner: Builder[str] = Builder.lit("b").tagged("INNER").act(
-        ModeAction(ModeActionEnum.BELONG, mode="paren")
+        ModeAction.of("paren")
     )
     return Lexer.from_builders(base, open_paren, close_paren, inner)
 

@@ -124,7 +124,7 @@ class LexerCache:
 class Lexer(LexerProtocol[C]):
     modes: Dict[str | None, Mode[C]] = field(default_factory=dict)
     actions: Dict[Tag | None, ModeAction] = field(default_factory=dict)
-    default_mode: str | None = field(default=None)
+
     _stack: deque[Mode[C]] = field(default_factory=deque)
     cache: ClassVar[LexerCache] = LexerCache()
     filepath: Optional[Path] = field(default=None, compare=False, hash=False, repr=False)
@@ -179,7 +179,7 @@ class Lexer(LexerProtocol[C]):
     @classmethod
     def create(cls, 
                *args: Builder,
-               default_mode:str|None=None,
+               
                builtin: bool = False,
                cache_path: str | Path | None = None,
                ) -> Optional["Lexer[C]"]:
@@ -199,7 +199,7 @@ class Lexer(LexerProtocol[C]):
         if not builders:
             return None
         lexer, path = cls.cache.load(builders=builders, 
-                              factory=lambda: cls.from_builders(*builders, default_mode=default_mode),
+                              factory=lambda: cls.from_builders(*builders),
                               dir=dir)
         lexer.filepath = path
         return lexer
@@ -278,43 +278,44 @@ class Lexer(LexerProtocol[C]):
         )
 
     @classmethod
-    def from_builders(cls, *rules: Builder[C], default_mode: str | None = None) -> Lexer[C]:
+    def from_builders(cls, *rules: Builder[C]) -> Lexer[C]:
         if len(rules) == 0:
             raise SyncraftError("Cannot build a Lexer with no rules", offender=rules, expect="at least one rule")
         modes: Dict[str | None, Set[Builder[C]]] = defaultdict(set)
+        universal_rules: Set[Builder[C]] = set()
         actions: Dict[Tag | None, ModeAction] = {}
+        def add_rule_to_mode(rule: Builder[C], belong_name: str | None) -> None:
+            if belong_name == '*':
+                universal_rules.add(rule)
+            else:
+                modes[belong_name].add(rule)
+
         for rule in rules:
             match rule.action:
                 case None:
                     modes[None].add(rule)
-                case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name, belong=belong_name):
-                    assert mode_name is not None, "PUSH actions must have a mode"
-                    if belong_name is not None:
-                        modes[belong_name].add(rule)
-                    else:
-                        for mode, fas in modes.items():
-                            if mode != mode_name:
-                                fas.add(rule)
+                case ModeAction(action=ModeActionEnum.PUSH, belong=belong_name):
+                    add_rule_to_mode(rule, belong_name)
                     assert rule.tag is not None, "PUSH actions must have a tag"
                     actions[rule.tag] = rule.action
-                case ModeAction(action=ModeActionEnum.BELONG, mode=mode_name, belong=belong_name):
-                    assert mode_name is not None, "BELONG actions must have a mode"
-                    assert belong_name is None, "BELONG actions cannot have a belong"
-                    modes[mode_name].add(rule)
-                case ModeAction(action=ModeActionEnum.POP, mode=mode_name, belong=belong_name):
-                    assert mode_name is not None, "POP actions must have a mode"
-                    assert belong_name is None, "POP actions cannot have a belong"
+                case ModeAction(action=ModeActionEnum.BELONG, belong=belong_name):
+                    add_rule_to_mode(rule, belong_name)
+                case ModeAction(action=ModeActionEnum.POP, belong=belong_name):
+                    add_rule_to_mode(rule, belong_name)
                     assert rule.tag is not None, "POP actions must have a tag"
                     actions[rule.tag] = rule.action
-                    modes[mode_name].add(rule)
+        
+        for r in universal_rules:
+            for mode_rules in modes.values():
+                mode_rules.add(r)
 
 
         lexer_modes: Dict[str | None, Mode[C]] = {}
         for mname, mode_rules in modes.items():
             lexer_modes[mname] = cls.one_mode(*mode_rules)
 
-        lexer = cls(modes=lexer_modes, actions=actions, default_mode=default_mode)
-        lexer.push_mode(default_mode)
+        lexer = cls(modes=lexer_modes, actions=actions)
+        lexer.push_mode(None)
         return lexer
 
     def gen(self, tag: Tag | None, rng: random.Random) -> Any:
@@ -324,7 +325,7 @@ class Lexer(LexerProtocol[C]):
             match act:
                 case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name):
                     self.push_mode(mode_name)
-                case ModeAction(action=ModeActionEnum.POP, mode=mode_name):
+                case ModeAction(action=ModeActionEnum.POP, belong=mode_name):
                     self.pop_mode(mode_name)
                 case _:
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
@@ -538,26 +539,26 @@ class LocalLexerBuilder(LexerBuilder[C]):
 @dataclass(frozen=True, slots=True)
 class GlobalLexerBuilder(LexerBuilder[C]):
     args: Tuple[Builder, ...] = field(default_factory=tuple)
-    default_mode: str | None = None
+
     builtin: bool = False
     cache_path: str | Path | None = None 
     lexer: LexerProtocol[C] | None = field(default=None, compare=False, hash=False, repr=False)
     def __call__(self, arg: Builder, **kwargs: Any) -> GlobalLexerBuilder[C]:
         assert isinstance(arg, Builder), "GlobalLexerBuilder can only be called with Builder instances"
         new_args = self.args + (arg,)
-        new_default_mode = kwargs.get("default_mode", self.default_mode)
+
         new_builtin = kwargs.get("builtin", self.builtin)
         new_cache_path = kwargs.get("cache_path", self.cache_path)
-        return GlobalLexerBuilder(args=new_args, default_mode=new_default_mode, builtin=new_builtin, cache_path=new_cache_path)
+        return GlobalLexerBuilder(args=new_args, builtin=new_builtin, cache_path=new_cache_path)
     
     def resolve(self) -> LexerProtocol[C]:
         if self.lexer is None:
-            lexer: LexerProtocol[C] | None = Lexer.create(*self.args, default_mode=self.default_mode, builtin=self.builtin, cache_path=self.cache_path)
+            lexer: LexerProtocol[C] | None = Lexer.create(*self.args, builtin=self.builtin, cache_path=self.cache_path)
             object.__setattr__(self, 'lexer', lexer)
             if self.lexer is None:
                 raise SyncraftError(
                     "GlobalLexerBuilder could not create a lexer from the provided builders",
-                    offender=(self.args, self.default_mode, self.builtin, self.cache_path),
+                    offender=(self.args, self.builtin, self.cache_path),
                     expect="at least one valid Builder instance",
                 )
             return self.lexer
