@@ -48,6 +48,9 @@ class Error:
     file: str | None = field(default=None, compare=False, repr=False, hash=False)
     line: int | None = field(default=None, compare=False, repr=False, hash=False)
 
+    def __bool__(self) -> bool:
+        return False
+
     @classmethod
     def new(cls, 
             *, 
