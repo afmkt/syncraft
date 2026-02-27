@@ -20,15 +20,15 @@ class ExprGrammar(Grammar):
     rparen = S.lit(")")
 
     @lazy(S)
-    def expr():  # type: ignore
+    def expr():  
         return (ExprGrammar.term + ExprGrammar.plus + ExprGrammar.expr) | ExprGrammar.term
 
     @lazy(S)
-    def term():  # type: ignore
+    def term():  
         return (ExprGrammar.factor + ExprGrammar.star + ExprGrammar.term) | ExprGrammar.factor
 
     @lazy(S)
-    def factor():  # type: ignore
+    def factor():  
         return ExprGrammar.number | ExprGrammar.expr.between(ExprGrammar.lparen, ExprGrammar.rparen)
 
     root = rule(expr, is_root=True)
@@ -71,7 +71,7 @@ class ExprAstGrammar(Grammar):
     rparen = S.lit(")")
 
     @lazy(S)
-    def expr():  # type: ignore[override]
+    def expr():  
         bin_expr = (ExprAstGrammar.term + ExprAstGrammar.plus + ExprAstGrammar.expr).to(
             lambda env: ((env.left, env.op), env.right),
             lambda env: Binary(env.left, env.op, env.right),
@@ -79,7 +79,7 @@ class ExprAstGrammar(Grammar):
         return bin_expr | ExprAstGrammar.term
 
     @lazy(S)
-    def term():  # type: ignore[override]
+    def term():  
         bin_term = (ExprAstGrammar.factor + ExprAstGrammar.star + ExprAstGrammar.term).to(
             lambda env: ((env.left, env.op), env.right),
             lambda env: Binary(env.left, env.op, env.right),
@@ -87,7 +87,7 @@ class ExprAstGrammar(Grammar):
         return bin_term | ExprAstGrammar.factor
 
     @lazy(S)
-    def factor():  # type: ignore[override]
+    def factor():  
         return ExprAstGrammar.number | ExprAstGrammar.expr.between(ExprAstGrammar.lparen, ExprAstGrammar.rparen)
 
     root = rule(expr, is_root=True)
