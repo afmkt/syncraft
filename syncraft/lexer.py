@@ -3,11 +3,11 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import (
     Any, Dict, Set, Optional, TypeVar, Generic, Tuple, ClassVar,
-    Callable, Hashable, List
+    Callable, Hashable
 )
 
 from syncraft.path import builtin_cache_path, user_cache_path
-from syncraft.utils import CallWith
+
 from syncraft.alphabet import AlphabetProtocol
 from syncraft.fa import DEFAULT_TAG, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum, DFA
 from syncraft.ast import SyncraftError
@@ -17,7 +17,7 @@ import random
 from pathlib import Path
 import hashlib
 import threading
-from syncraft.token import TokenSpec, all_subclasses
+from syncraft.token import TokenSpec
 from functools import cached_property
 import pickle
 from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder
@@ -179,7 +179,7 @@ class Lexer(LexerProtocol[C]):
     @classmethod
     def create(cls, 
                *args: Builder,
-               
+
                builtin: bool = False,
                cache_path: str | Path | None = None,
                ) -> Optional["Lexer[C]"]:
@@ -536,20 +536,30 @@ class LocalLexerBuilder(LexerBuilder[C]):
         return hash(id(self.lexer))
     
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GlobalLexerBuilder(LexerBuilder[C]):
-    args: Tuple[Builder, ...] = field(default_factory=tuple)
+    args: Set[Builder] = field(default_factory=set)
 
     builtin: bool = False
     cache_path: str | Path | None = None 
     lexer: LexerProtocol[C] | None = field(default=None, compare=False, hash=False, repr=False)
-    def __call__(self, arg: Builder, **kwargs: Any) -> GlobalLexerBuilder[C]:
-        assert isinstance(arg, Builder), "GlobalLexerBuilder can only be called with Builder instances"
-        new_args = self.args + (arg,)
-
-        new_builtin = kwargs.get("builtin", self.builtin)
-        new_cache_path = kwargs.get("cache_path", self.cache_path)
-        return GlobalLexerBuilder(args=new_args, builtin=new_builtin, cache_path=new_cache_path)
+    def __call__(self, arg: TokenSpec | Builder, **kwargs: Any) -> GlobalLexerBuilder[C]:
+        if isinstance(arg, Builder):
+            # Set automatically handles deduplication
+            self.args.add(arg)
+            self.builtin = kwargs.get("builtin", self.builtin)
+            self.cache_path = kwargs.get("cache_path", self.cache_path)
+            return self
+        elif isinstance(arg, TokenSpec):
+            assert not self.args, "Cannot mix Syntax.lit with Syntax.re/Syntax.lit"
+            lexer: ExtLexer[C] | None = ExtLexer.create(arg)
+            if lexer is not None:
+                return GlobalLexerBuilder(args=self.args, builtin=self.builtin, cache_path=self.cache_path, lexer=lexer)
+        raise SyncraftError(
+            f"GlobalLexerBuilder cannot create a lexer from argument of type {type(arg)}",
+            offender=(arg, kwargs),
+            expect="a TokenSpec or Builder instance",
+        )
     
     def resolve(self) -> LexerProtocol[C]:
         if self.lexer is None:
@@ -564,3 +574,13 @@ class GlobalLexerBuilder(LexerBuilder[C]):
             return self.lexer
         else:
             return self.lexer
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, GlobalLexerBuilder):
+            return False
+        return self.args == other.args
+        
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.args))
+        

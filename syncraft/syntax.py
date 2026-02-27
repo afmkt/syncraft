@@ -3,12 +3,13 @@ from __future__ import annotations
 import keyword
 
 import math
-
+from enum import Enum
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING,
-    Pattern,
+    Pattern, Literal
 )
+
 from dataclasses import dataclass, field, replace
 from syncraft.lexerprotocol import LexerBuilder
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ from syncraft.token import TokenSpec, TokenSpecBase
 import threading
 
 
-
+Tag = str | Enum
 
 GREEN = "\033[92m"
 RESET = "\033[0m"
@@ -489,6 +490,7 @@ class LexSpec(SyntaxSpec):
     MAX_NAME_LENGTH: Optional[int] = field(compare=False, hash=False, repr=False)
     args: Tuple[Any, ...] = field(default_factory=tuple)
     kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
+    extra_info: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
     
@@ -1148,8 +1150,7 @@ class Syntax(Generic[A, S]):
             result = CallWith(method, *args, **(global_kwargs | kwargs))()
             return cast(Algebra, result)
         spec = LexSpec(fname=name, args=args, kwargs=FrozenDict(kwargs), MAX_NAME_LENGTH=cls.get('MAX_NAME_LENGTH'), name=None, file=None, line=None, func=None)
-        iso = Iso() if cls.get('no_iso') else spec.iso()
-        return cls(factory_run, spec=spec).iso(iso) # type: ignore
+        return cls(factory_run, spec=spec)
     
     @classmethod
     def eof(cls) -> Syntax:
@@ -1157,35 +1158,73 @@ class Syntax(Generic[A, S]):
     
     @classmethod
     def lex(cls, builder: Builder | TokenSpec, **kwargs: Any) -> Syntax:
-        lexer_builder = cls.lexer_builder()
+        lexer_builder = cls.lexer()
         lb = lexer_builder(builder, **kwargs)
         return cls.factory('lex', builder=lb)
 
-    
     @classmethod
-    def set_lexer_builder(cls, builder: LexerBuilder) -> Type[Syntax]:
+    def set_lexer(cls, builder: LexerBuilder) -> Type[Syntax]:
         return cls.set(lexer_builder=builder)
 
     @classmethod
-    def lexer_builder(cls) -> LexerBuilder:
-        ret = cls.get('lexer_builder')    
-        if ret is None:
-            from syncraft.lexer import LocalLexerBuilder
-            return LocalLexerBuilder()
-        return ret
+    def lexer(cls) -> LexerBuilder:
+        from syncraft.lexer import LocalLexerBuilder
+        tmp = cls.get('lexer_builder')
+        if tmp is None:
+            tmp = LocalLexerBuilder()
+            cls.set_lexer(tmp)
+            return tmp
+        return tmp
 
 
     @classmethod
-    def re(cls, pattern: str, **kwargs: Any) -> Syntax:
+    def re(cls, 
+           pattern: str, 
+           *,
+           skip: bool = False, 
+           tag: Tag | None = None, 
+           push: str | None = None, 
+           pop: str | Literal[True] | None = None,  
+           of: str | None = None) -> Syntax:
         # local import to avoid circular dependency
         import syncraft.regex as regex  
-        b = regex.re(pattern)
-        return cls.lex(b, **kwargs)
+        b = regex.re(pattern).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
+        ret = cls.lex(b)
+        extra: FrozenDict[str, Any] = FrozenDict({
+            'type': 'regex',
+            'pattern': pattern,
+            'skip': skip,
+            'tag': tag,
+            'push': push,
+            'pop': pop,
+            'of': of
+        })
+        assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
+        return replace(ret, spec=replace(ret.spec, extra_info = extra))
+        
     
     @classmethod
-    def lit(cls, txt: str | bytes, **kwargs: Any) -> Syntax:
-        b: Builder[Any]= Builder.lit(txt)
-        return cls.lex(b, **kwargs)
+    def lit(cls, 
+            txt: str | bytes,
+            *,
+            skip: bool = False, 
+            tag: Tag | None = None, 
+            push: str | None = None, 
+            pop: str | Literal[True] | None = None,  
+            of: str | None = None) -> Syntax:
+        b: Builder[Any]= Builder.lit(txt).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
+        ret = cls.lex(b)
+        extra: FrozenDict[str, Any] = FrozenDict({
+            'type': 'lit',
+            'text': txt,
+            'skip': skip,
+            'tag': tag,
+            'push': push,
+            'pop': pop,
+            'of': of
+        })
+        assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
+        return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
     @classmethod
     def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:

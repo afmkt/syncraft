@@ -103,6 +103,7 @@ def test_skip_rules_return_none_when_selected() -> None:
     assert tags == ["A", "A"]
 
 
+
 def test_mode_actions_update_stack_in_generation() -> None:
     lexer = _lexer_with_modes()
     rng = random.Random(0)

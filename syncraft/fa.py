@@ -1309,6 +1309,35 @@ class Builder(Generic[C]):
                        non_greedy=non_greedy,                       
                        extra_meta=FrozenDict(new_meta))
 
+    def apply(self,            
+              *,
+              skip: bool = False, 
+              tag: Tag | None = None, 
+              push: str | None = None, 
+              pop: str | Literal[True] | None = None,  
+              of: str | None = None) -> Builder[C]:
+        assert not (push is not None and pop is not None), "Cannot specify both push and pop in apply()"
+        b = self
+        if skip:
+            b = b.skipped()
+        if tag is not None:
+            b = b.tagged(tag)
+        if push is not None:
+            a = ModeAction.push(push, of)
+            b = b.act(a)
+        elif pop is not None:
+            if pop is True:
+                assert of is not None, "When pop is True, 'of' must be specified to indicate which mode to pop"
+                pop = of 
+            a = ModeAction.pop(pop)
+            b = b.act(a)
+        elif of is not None:
+            a = ModeAction.of(of)
+            b = b.act(a)
+        return b
+        
+
+
     # ---- Factory entry points ----
     def name(self) -> Optional[str]:
         match self.kind:
