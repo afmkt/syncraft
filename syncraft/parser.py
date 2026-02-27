@@ -16,7 +16,7 @@ from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.input import StreamCursor
 
-from syncraft.ast import Token, SyncraftError
+from syncraft.ast import Token, SyncraftError, EOF
 from syncraft.bimap import Bindable
 import re
 import os
@@ -325,18 +325,21 @@ class Parser(Algebra[T, ParserState[T]]):
                               Either[Any, Tuple[T, ParserState[T]]]]:
             lexer: LexerProtocol[Any] = builder.resolve()
             lexer.reset()
-            ntags = lexer.tags()
             yield from ()
             while True:
                 if state.ended:
                     match lexer.candidate():
-                        case LexerResult(tag=tag, start=start, end=end, value=lexeme):
+                        case LexerResult(tag=tag, start=start, end=end, value=lexeme, skip=skip):
+                            if skip:
+                                # Trailing skip tokens are fine, return EOF
+                                return Right.new((EOF, state)) # type: ignore
                             if lexeme is None:
                                 token = terminal_constructor(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
                             else:
                                 token = lexeme
                             return Right.new((token, state)) # type: ignore
                         case LexerError(message=err_msg) as lexerError:
+                            # No valid token at EOF when grammar expected one - this is an error
                             return Left.new(Error.new(message="Cannot match token at end of input", this=lex_run, state=state, error=lexerError))
                         case e:
                             raise SyncraftError("Unknown result from lexer", offender=e, expect="LexerResult or LexerError")
@@ -345,18 +348,20 @@ class Parser(Algebra[T, ParserState[T]]):
                     assert isinstance(tmp, ParserState), "Incomplete must yield a ParserState"
                     state = tmp
                 else:
-                    match lexer.match(ntags, state.current, state.cache_key):
+                    match lexer.match(state.current, state.cache_key):
                         case LexerError(message=err_msg) as lexerError:
                             return Left.new(Error.new(message=err_msg, this=lex_run, state=state, error=lexerError))
                         case None:
                             state = state.advance()
-                        case LexerResult(tag=tag, start=start, end=end, value=lexeme):
+                        case LexerResult(tag=tag, start=start, end=end, value=lexeme, skip=skip):
+                            if end > state.index:
+                                state = state.advance()
+                            if skip:
+                                continue  # Skip this token and get next one
                             if lexeme is None:
                                 token = terminal_constructor(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
                             else:
                                 token = lexeme
-                            if end > state.index:
-                                state = state.advance()
                             return Right.new((token, state)) # type: ignore
                         case x:
                             raise SyncraftError("Unknown result from lexer", offender=x, expect="LexerResult or None or LexerError")

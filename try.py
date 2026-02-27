@@ -38,7 +38,7 @@ class ExprGrammar(Grammar):
 # -- step-2 --
 
 def test_quickstart_step_2() -> None:
-    ast = ExprGrammar.parse(" 1 +2*3")
+    ast = ExprGrammar.parse(" 1 +2*3 ")
     print('///////////////////////')
     print(ast)
     assert ast == (
@@ -49,71 +49,71 @@ def test_quickstart_step_2() -> None:
 
 
 # -- step-3 --
-# @dataclass(frozen=True, slots=True)
-# class Number:
-#     value: int
+@dataclass(frozen=True, slots=True)
+class Number:
+    value: int
 
 
-# @dataclass(frozen=True, slots=True)
-# class Binary:
-#     left: Any
-#     op: str
-#     right: Any
-# # -- step-3-end --
+@dataclass(frozen=True, slots=True)
+class Binary:
+    left: Any
+    op: str
+    right: Any
+# -- step-3-end --
 
 
-# # -- step-4 --
-# @grammar
-# class ExprAstGrammar(Grammar):
-#     ws = S.re(r"\s*")
-#     number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
-#     plus = S.lit("+")
-#     star = S.lit("*")
-#     lparen = S.lit("(")
-#     rparen = S.lit(")")
+# -- step-4 --
+@grammar
+class ExprAstGrammar(Grammar):
+    ws = S.re(r"\s*", skip=True)
+    number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
+    plus = S.lit("+")
+    star = S.lit("*")
+    lparen = S.lit("(")
+    rparen = S.lit(")")
 
-#     @lazy(S)
-#     def expr():  # type: ignore[override]
-#         bin_expr = (ExprAstGrammar.term + ExprAstGrammar.plus + ExprAstGrammar.expr).to(
-#             lambda env: ((env.left, env.op), env.right),
-#             lambda env: Binary(env.left, env.op, env.right),
-#         )
-#         return bin_expr | ExprAstGrammar.term
+    @lazy(S)
+    def expr():  # type: ignore[override]
+        bin_expr = (ExprAstGrammar.term + ExprAstGrammar.plus + ExprAstGrammar.expr).to(
+            lambda env: ((env.left, env.op), env.right),
+            lambda env: Binary(env.left, env.op, env.right),
+        )
+        return bin_expr | ExprAstGrammar.term
 
-#     @lazy(S)
-#     def term():  # type: ignore[override]
-#         bin_term = (ExprAstGrammar.factor + ExprAstGrammar.star + ExprAstGrammar.term).to(
-#             lambda env: ((env.left, env.op), env.right),
-#             lambda env: Binary(env.left, env.op, env.right),
-#         )
-#         return bin_term | ExprAstGrammar.factor
+    @lazy(S)
+    def term():  # type: ignore[override]
+        bin_term = (ExprAstGrammar.factor + ExprAstGrammar.star + ExprAstGrammar.term).to(
+            lambda env: ((env.left, env.op), env.right),
+            lambda env: Binary(env.left, env.op, env.right),
+        )
+        return bin_term | ExprAstGrammar.factor
 
-#     @lazy(S)
-#     def factor():  # type: ignore[override]
-#         return ExprAstGrammar.number | ExprAstGrammar.expr.between(ExprAstGrammar.lparen, ExprAstGrammar.rparen)
+    @lazy(S)
+    def factor():  # type: ignore[override]
+        return ExprAstGrammar.number | ExprAstGrammar.expr.between(ExprAstGrammar.lparen, ExprAstGrammar.rparen)
 
-#     root = rule(expr, is_root=True)
-
-
-# def test_quickstart_step_4() -> None:
-#     ast = ExprAstGrammar.parse("1+2*3")
-#     assert ast == Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
-# # -- step-4-end --
+    root = rule(expr, is_root=True)
 
 
-# # -- step-5 --
+def test_quickstart_step_4() -> None:
+    ast = ExprAstGrammar.parse(" 1+ 2 * 3 ")
+    assert ast == Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
+# -- step-4-end --
 
-# def test_quickstart_step_5() -> None:
-#     expr = Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
-#     validated = ExprAstGrammar.validate(expr)
-#     assert not isinstance(validated, Error)
 
-#     generated = ExprAstGrammar.generate(expr)
-#     assert not isinstance(generated, Error)
-# # -- step-5-end --
+# -- step-5 --
+
+def test_quickstart_step_5() -> None:
+    expr = Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
+    validated = ExprAstGrammar.validate(expr)
+    assert not isinstance(validated, Error)
+
+    generated = ExprAstGrammar.generate(expr)
+    assert not isinstance(generated, Error)
+# -- step-5-end --
 
 
 if __name__ == "__main__":
     test_quickstart_step_2()
-    # test_quickstart_step_4()
-    # test_quickstart_step_5()
+    test_quickstart_step_4()
+    test_quickstart_step_5()

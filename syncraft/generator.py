@@ -450,10 +450,19 @@ class Generator(Algebra[ParseResult[T], GenState]):
             
             lexer: LexerProtocol[Any] = builder.resolve()
             lexer.reset()
-            ntags = lexer.tags()
+            all_tags = lexer.tags()
             yield from ()
             
             if input.pruned:
+                # Filter out skip tags during generation
+                skip_tags: frozenset[Any] = frozenset()
+                if hasattr(lexer, 'current_mode'):
+                    # For DFA/NFA lexer, get skip tags from current mode
+                    current_mode = lexer.current_mode  # type: ignore
+                    skip_tags = current_mode.skip
+                ntags = all_tags - skip_tags
+                if not ntags:
+                    ntags = all_tags  # Fallback if all tags are skip
                 tag = input.rng("lex_tag").choice(tuple(ntags))                
                 input = input.fork(tag=tag)
                 args, kwargs = lexer.gen(tag, input.rng())
@@ -464,7 +473,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 current = input.ast
                 current_value = terminal_destructor(current)
                 try:
-                    verified = lexer.verify(ntags, current_value)
+                    verified = lexer.verify(all_tags, current_value)
                 except SyncraftError as e:
                     debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> FAILED")
                     return Left.new(
@@ -485,7 +494,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     return Left.new(
                         Error.new(
                             this=lex_run,
-                            message=f"Expected token tag {{ {ntags} }}, but got {current}: {type(current)}.",
+                            message=f"Expected token tag {{ {all_tags} }}, but got {current}: {type(current)}.",
                             priority=ErrorPriority.EXPECTED_TOKEN_TAG,
                             state=input,
                         )

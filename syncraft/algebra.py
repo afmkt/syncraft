@@ -3,7 +3,7 @@ from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
     Generator, Hashable, TYPE_CHECKING, Dict
 )
-from syncraft.ast import Nothing
+from syncraft.ast import Nothing, EOF
 from dataclasses import dataclass, replace, field
 from enum import IntEnum
 from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq
@@ -646,14 +646,14 @@ class Algebra(Generic[A, S]):
 
 
     @classmethod
-    def eof(cls) -> Algebra[type[Nothing], S]:
+    def eof(cls) -> Algebra[type[EOF], S]:
         def eof_run(input: S, 
                     cache:Cache[S]) -> Generator[YieldChannelType, 
                                                S, 
-                                               Either[Any, Tuple[type[Nothing], S]]]:
+                                               Either[Any, Tuple[type[EOF], S]]]:
             if input.ended:
                 yield from ()
-                return Right.new((Nothing, input))
+                return Right.new((EOF, input))
             else:
                 return Left.new(Error.new(
                     message="Expected end of input",

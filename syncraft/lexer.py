@@ -55,8 +55,7 @@ class Mode(Generic[C]):
         if not tags:
             
             return None
-        if self.priority:
-            sortted_tags = sorted(tags, key=lambda tag: (-self.priority.get(tag, -1), str(tag)))
+        sortted_tags = sorted(tags, key=lambda tag: (-self.priority.get(tag, -1), str(tag)))
         return sortted_tags[0]
 
 
@@ -250,13 +249,13 @@ class Lexer(LexerProtocol[C]):
         combined: Optional[NFA[C]] = None 
         for rule in rules:
             if rule.skip:
-                assert rule.tag is not None, "Skip rules must have a tag"
+                # assert rule.tag is not None, "Skip rules must have a tag"
                 skip.add(rule.tag)
             if rule.priority != 0:
-                assert rule.tag is not None, "Priority rules must have a tag"
+                # assert rule.tag is not None, "Priority rules must have a tag"
                 priority[rule.tag] = rule.priority
             if rule.non_greedy:
-                assert rule.tag is not None, "Greedy rules must have a tag"
+                # assert rule.tag is not None, "Greedy rules must have a tag"
                 non_greedy.add(rule.tag)
             nfa = rule.compile(alphabet).nfa
             nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
@@ -333,7 +332,7 @@ class Lexer(LexerProtocol[C]):
         lexer = self
         try:
             for index, char in enumerate(txt):
-                match lexer.match(tag, char, index):  # type: ignore[arg-type]
+                match lexer.match(char, index):  # type: ignore[arg-type]
 
                     case LexerResult(tag=t, start=s, end=e):
                         if len(tag) > 0 and t not in tag:
@@ -343,8 +342,10 @@ class Lexer(LexerProtocol[C]):
                         if index != len(txt) - 1:
                             return False
                         return True
-                    case _:
-                        return False                
+                    case None:
+                        continue  # Intermediate character, keep going
+                    case LexerError():
+                        return False  # Matching failed
             candidate = lexer.candidate()
             if isinstance(candidate, LexerResult):
                 if len(tag) > 0 and candidate.tag not in tag:
@@ -367,15 +368,16 @@ class Lexer(LexerProtocol[C]):
         if not candidate_:
             return LexerError.message_only("No candidate available")
         latest = candidate_[-1]
+        tag = mode.select_tag(latest[1])
         return LexerResult(
-                tag=mode.select_tag(latest[1]),
+                tag=tag,
                 start=mode.start_index,
                 end=latest[0] + 1,
-                skip=False
+                skip=tag in mode.skip
             )
         
 
-    def match(self, tags:frozenset[Tag], char: C, index: int) -> LexerError | None | LexerResult[C]:
+    def match(self, char: C, index: int) -> LexerError | None | LexerResult[C]:
         mode = self.current_mode
         if mode.start_index is None:
             mode.start_index = index
@@ -384,7 +386,7 @@ class Lexer(LexerProtocol[C]):
         if rr.error:
             expecting = mode.runner.resumable_str(old_state)
             mode.runner = mode.runner.reset()
-            exp = expecting or tags
+            exp = expecting or frozenset()
             return LexerError(
                 message=f"Lexing mismatch '{char}' at index {index}, expect {exp}",
                 index=index,
@@ -466,16 +468,16 @@ class ExtLexer(LexerProtocol[T]):
     def candidate(self) -> LexerError | LexerResult[T]:
         return LexerError.message_only("External lexer cannot provide candidates")
 
-    def match(self, tags: frozenset[Tag], item: T, index: int) -> LexerError | None | LexerResult[T]:
-        for tag in tags:
+    def match(self, item: T, index: int) -> LexerError | None | LexerResult[T]:
+        for tag in self.tags():
             if tag in self.rules and self.rules[tag].predicate(item):
                 return LexerResult(tag=tag, start=index, end=index + 1, value=item, skip=False)
                 
         return LexerError.new(
-            message=f"External lexer token mismatch, {tags} did not match item '{item}'",
+            message=f"External lexer token mismatch, no tag matched item '{item}'",
             index=index,
             offender=item,
-            expect=frozenset(tags)
+            expect=self.tags()
         )
         
 

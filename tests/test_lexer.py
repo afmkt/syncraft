@@ -33,11 +33,12 @@ def _lexer_with_parentheses() -> Lexer[str]:
 def _collect_tokens(lexer: Lexer[str], text: str) -> list[LexerResult[str]]:
     tokens: list[LexerResult[str]] = []
     for idx, ch in enumerate(text):
-        result = lexer.match(frozenset(),ch, idx)
+        result = lexer.match(ch, idx)
         if result is None:
             continue
         if isinstance(result, LexerResult):
-            tokens.append(result)
+            if not result.skip:  # Filter out skip tokens
+                tokens.append(result)
         else:
             assert False, f"Lexing failed on {ch!r}: {result}"
     return tokens
@@ -91,11 +92,12 @@ def test_skip_rules_return_none_when_selected() -> None:
     lexer = _lexer_with_skip()
     results: list[LexerResult[str]] = []
     for idx, ch in enumerate(" a a"):
-        out = lexer.match(frozenset(), ch, idx)
+        out = lexer.match(ch, idx)
         if out is None:
             continue
         if isinstance(out, LexerResult):
-            results.append(out)
+            if not out.skip:  # Filter out skip tokens
+                results.append(out)
         else:
             assert False, f"Lexing failed on {ch!r}: {out}"
 

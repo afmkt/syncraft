@@ -61,6 +61,30 @@ class Nothing(metaclass=MetaNothing):
         return "Nothing"
 
 
+class MetaEOF(type):
+    def __instancecheck__(cls, instance: Any) -> bool:
+        return instance is cls or super().__instancecheck__(instance)
+    def __str__(cls)->str:
+        return "EOF"
+    def __repr__(cls)->str:
+        return "EOF"
+    def __bool__(cls)->bool:
+        return False
+
+class EOF(metaclass=MetaEOF):
+    """Singleton sentinel representing end of input."""
+    def __call__(self)-> EOF:
+        return self
+    def __new__(cls):
+        return cls
+    def __bool__(self)->bool:
+        return False
+    def __str__(self)->str:
+        return "EOF"
+    def __repr__(self)->str:
+        return "EOF"
+
+
 @dataclass(frozen=True, slots=True)
 class Unknown(AST):
     pass
@@ -150,6 +174,7 @@ ParseResult = Union[
     Alt,
     Seq,
     Nothing,
+    EOF,
     Token,
     Unknown,
     T,
