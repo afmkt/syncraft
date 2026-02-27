@@ -10,6 +10,7 @@ from syncraft.lexer import GlobalLexerBuilder
 
 S = Syntax.set_lexer(GlobalLexerBuilder())  
 
+
 @grammar
 class ExprGrammar(Grammar):
     ws = S.re(r"\s*", skip=True, tag="WS")
@@ -18,6 +19,7 @@ class ExprGrammar(Grammar):
     star = S.lit("*")
     lparen = S.lit("(")
     rparen = S.lit(")")
+    
 
     @lazy(S)
     def expr():  
@@ -39,8 +41,6 @@ class ExprGrammar(Grammar):
 
 def test_quickstart_step_2() -> None:
     ast = ExprGrammar.parse(" 1 +2*3 ")
-    print('///////////////////////')
-    print(ast)
     assert ast == (
         ("1", "+"),
         (("2", "*"), "3"),
@@ -113,7 +113,19 @@ def test_quickstart_step_5() -> None:
 # -- step-5-end --
 
 
+@grammar
+class TestG(Grammar):
+    A = S.lit('A')
+    B = S.lit('B')
+    C = S.lit('C')
+    D = rule(S.seq(~(A | B), C.many()), is_root=True)
+
+def test():
+    d = TestG.parse('ACC')
+    print(d)
+    
 if __name__ == "__main__":
+    test()
     test_quickstart_step_2()
     test_quickstart_step_4()
     test_quickstart_step_5()

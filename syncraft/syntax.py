@@ -745,7 +745,8 @@ class Syntax(Generic[A, S]):
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f)) # type: ignore
 
     def iso(self, iso: Iso[A, B]) -> Syntax[B, S]:
-        """Isomorphically map values, preserving round-trip info.
+        """
+        Isomorphically map values, preserving round-trip info.
 
         Args:
             iso: Iso mapping A <-> B.
@@ -756,14 +757,12 @@ class Syntax(Generic[A, S]):
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(iso)) # type: ignore
 
     def bimap(self, f: Callable[..., B], i: Callable[..., A]) -> Syntax[B, S]:
-        """Bidirectionally map values with an inverse, keeping round-trip info.
-
-        Applies f to the value and adjusts internal state via inverse i so
-        generation/parsing stay in sync.
+        """
+        Bidirectionally map values with an inverse, keeping round-trip info.
 
         Args:
             f: Forward mapping A -> B.
-            i: Inverse mapping B -> A applied to the state.
+            i: Inverse mapping B -> A.
 
         Returns:
             Syntax yielding B with state alignment preserved.
@@ -771,7 +770,8 @@ class Syntax(Generic[A, S]):
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(f, i)) # type: ignore
     
     def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
-        """Transform the error payload when this syntax fails.
+        """
+        Transform the error payload when this syntax fails.
 
         Args:
             f: Function applied to the error payload of Left.
@@ -782,7 +782,8 @@ class Syntax(Generic[A, S]):
         return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_error(f))         
     
     def many(self, *, at_least: int = 0, at_most: Optional[int] = None) -> Syntax[Tuple[A, ...], S]:
-        """Repeat this syntax and collect results into Many.
+        """
+        Repeat this syntax and collect results into Many.
 
         Repeats greedily until failure or no progress. Enforces bounds.
 
@@ -952,7 +953,7 @@ class Syntax(Generic[A, S]):
         return self.sep_by(sep=sep).between(left=open, right=close)
 
     @property
-    def optional(self) -> Syntax[Alt, S]:
+    def optional(self) -> Syntax[Any, S]:
         """Make this syntax optional.
 
         Returns a OrElse of the value or Nothing when absent.
@@ -1029,10 +1030,10 @@ class Syntax(Generic[A, S]):
 
         return other.__rshift__(self)
 
-    def __or__(self, other: Syntax[B, S]) -> Syntax[Alt, S]:
+    def __or__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
         return self.alt(self, other)
         
-    def __ror__(self, other: Syntax[Any, S]) -> Syntax[Alt, S]:
+    def __ror__(self, other: Syntax[Any, S]) -> Syntax[Any, S]:
 
         return self.__or__(other)
 
@@ -1043,7 +1044,7 @@ class Syntax(Generic[A, S]):
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
         return (self, False)
     
-    def __invert__(self) -> Syntax[Alt, S]:
+    def __invert__(self) -> Syntax[Any, S]:
         """Syntactic sugar for optional() (tilde operator)."""
         return self.optional
 
@@ -1081,7 +1082,7 @@ class Syntax(Generic[A, S]):
 
 
     @classmethod
-    def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Alt, S]:
+    def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
         all_parsers = parsers
         def alt_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [p(acls, **global_kwargs) for p in all_parsers]

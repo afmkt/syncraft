@@ -428,7 +428,8 @@ class RE(Grammar):
     irange = S.seq(+class_atom, minus, +class_atom).to(lambda env: (env.start, env.end), lambda env: CharRange(env.start, env.end))
     class_item = irange | class_atom
     
-    class_class_items = (~(rsquare | minus) + class_item.many()).map(lambda x: x[1] + (x[0],) if x[0] else x[1])
+    class_class_items = (~(rsquare | minus) + class_item.many()).bimap(lambda x: (x[0],) + x[1] if x[0] else x[1], 
+                                                                       lambda items: (items[0], tuple(items[1:])) if items and isinstance(items[0], str) and items[0] in '-]' else tuple(items))
     char_class = S.seq(lsquare, +(~caret), +class_class_items, rsquare).to(lambda env: (env.negated, env.items), lambda env: CharClassAtom(negated=env.negated, items=env.items))
 
     flag_text = S.lex(B.oneof(INLINE_FLAG_LETTERS))
@@ -439,8 +440,8 @@ class RE(Grammar):
     )
     enabled_flags = flag_soft.many()
     enabled_flags_strict = flag_strict.many()
-    disabled_flags = (~(minus >> flag_soft.many())).map(lambda x: x[0] if x else None)
-    disabled_flags_strict = (~(minus >> flag_strict.many())).map(lambda x: x[0] if x else None)
+    disabled_flags = (~(minus >> flag_soft.many())).bimap(lambda x: x[0] if x else None, lambda flags: (flags,) if flags is not None else Nothing)
+    disabled_flags_strict = (~(minus >> flag_strict.many())).bimap(lambda x: x[0] if x else None, lambda flags: (flags,) if flags is not None else Nothing)
     
     inline_flags = S.seq(+enabled_flags, +disabled_flags).to(
         lambda env: (env.enabled_flags, env.disabled_flags),
