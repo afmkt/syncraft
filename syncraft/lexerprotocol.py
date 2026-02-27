@@ -7,7 +7,7 @@ import random
 from pathlib import Path
 from abc import ABC, abstractmethod
 
-Tag = str | Enum
+Tag = str | Enum | None
 C = TypeVar('C', bound=Hashable)
 
 
@@ -33,17 +33,20 @@ class LexerError:
 
 @dataclass(frozen=True, slots=True)
 class LexerResult(Generic[C]):
-    tag: Tag | None
+    tag: Tag
     start: int
     end: int
+    skip: bool 
     value: Any | None = None
+    
 
     @classmethod
-    def new(cls, tag: Tag | None, start: int, end: int, value: Any | None = None) -> "LexerResult[C]":
+    def new(cls, tag: Tag, start: int, end: int, skip: bool, value: Any | None = None) -> "LexerResult[C]":
         obj = cls.__new__(cls)
         object.__setattr__(obj, 'tag', tag)
         object.__setattr__(obj, 'start', start)
         object.__setattr__(obj, 'end', end)
+        object.__setattr__(obj, 'skip', skip)
         object.__setattr__(obj, 'value', value)
         return obj
 
@@ -53,13 +56,13 @@ class LexerResult(Generic[C]):
 class LexerProtocol(Protocol, Generic[C]):
     def reset(self) -> None: ...
 
-    def match(self, tag: frozenset[Tag | None], char: C, index: int) -> LexerError | None | LexerResult[C]: ...
+    def match(self, tag: frozenset[Tag], char: C, index: int) -> LexerError | None | LexerResult[C]: ...
 
-    def verify(self, tag: frozenset[Tag | None], value: Any) -> bool: ...
+    def verify(self, tag: frozenset[Tag], value: Any) -> bool: ...
 
     def tags(self) -> frozenset[str|Enum|None]: ...
 
-    def gen(self, tag: Tag | None, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]: ...
+    def gen(self, tag: Tag, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]: ...
 
     def candidate(self) -> LexerError | LexerResult[C]: ...
     

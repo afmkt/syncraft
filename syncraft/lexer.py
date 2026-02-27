@@ -22,7 +22,7 @@ from functools import cached_property
 import pickle
 from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder
 
-Tag = str | Enum
+Tag = str | Enum | None
 
 C = TypeVar('C', bound=Hashable)
 A = TypeVar('A')
@@ -53,14 +53,11 @@ class Mode(Generic[C]):
     
     def select_tag(self, tags: frozenset[Tag]) -> Optional[Tag]:
         if not tags:
-            return None
-        ordered = sorted(tags, key=str)
-        filtered = [tag for tag in ordered if tag not in self.skip]
-        if not filtered:
+            
             return None
         if self.priority:
-            filtered.sort(key=lambda tag: (-self.priority.get(tag, -1), str(tag)))
-        return filtered[0]
+            sortted_tags = sorted(tags, key=lambda tag: (-self.priority.get(tag, -1), str(tag)))
+        return sortted_tags[0]
 
 
 @dataclass(slots=True)
@@ -123,7 +120,7 @@ class LexerCache:
 @dataclass(slots=True)
 class Lexer(LexerProtocol[C]):
     modes: Dict[str | None, Mode[C]] = field(default_factory=dict)
-    actions: Dict[Tag | None, ModeAction] = field(default_factory=dict)
+    actions: Dict[Tag, ModeAction] = field(default_factory=dict)
 
     _stack: deque[Mode[C]] = field(default_factory=deque)
     cache: ClassVar[LexerCache] = LexerCache()
@@ -166,8 +163,8 @@ class Lexer(LexerProtocol[C]):
                 )
 
     
-    def tags(self) -> frozenset[str|Enum|None]:
-        all_tags: Set[Tag|None] = set()
+    def tags(self) -> frozenset[Tag]:
+        all_tags: Set[Tag] = set()
         for mode in self.modes.values():
             for tags in mode.runner.dfa.accept.values():
                 if tags:
@@ -283,7 +280,7 @@ class Lexer(LexerProtocol[C]):
             raise SyncraftError("Cannot build a Lexer with no rules", offender=rules, expect="at least one rule")
         modes: Dict[str | None, Set[Builder[C]]] = defaultdict(set)
         universal_rules: Set[Builder[C]] = set()
-        actions: Dict[Tag | None, ModeAction] = {}
+        actions: Dict[Tag, ModeAction] = {}
         def add_rule_to_mode(rule: Builder[C], belong_name: str | None) -> None:
             if belong_name == '*':
                 universal_rules.add(rule)
@@ -318,7 +315,7 @@ class Lexer(LexerProtocol[C]):
         lexer.push_mode(None)
         return lexer
 
-    def gen(self, tag: Tag | None, rng: random.Random) -> Any:
+    def gen(self, tag: Tag, rng: random.Random) -> Any:
         ret = self.current_mode.rdfa.gen(tag, rng)
         act = self.actions.get(tag)
         if act is not None:
@@ -331,14 +328,13 @@ class Lexer(LexerProtocol[C]):
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
         return ((ret, tag), {})
 
-    def verify(self, tag: frozenset[Tag | None], value: Any) -> bool:
+    def verify(self, tag: frozenset[Tag], value: Any) -> bool:
         txt = value
         lexer = self
         try:
             for index, char in enumerate(txt):
                 match lexer.match(tag, char, index):  # type: ignore[arg-type]
-                    case None:
-                        continue
+
                     case LexerResult(tag=t, start=s, end=e):
                         if len(tag) > 0 and t not in tag:
                             return False
@@ -374,11 +370,12 @@ class Lexer(LexerProtocol[C]):
         return LexerResult(
                 tag=mode.select_tag(latest[1]),
                 start=mode.start_index,
-                end=latest[0] + 1
+                end=latest[0] + 1,
+                skip=False
             )
         
 
-    def match(self, tags:frozenset[Tag|None], char: C, index: int) -> LexerError | None | LexerResult[C]:
+    def match(self, tags:frozenset[Tag], char: C, index: int) -> LexerError | None | LexerResult[C]:
         mode = self.current_mode
         if mode.start_index is None:
             mode.start_index = index
@@ -407,16 +404,14 @@ class Lexer(LexerProtocol[C]):
         if rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
             tag = mode.select_tag(accepted_tags)
-            if tag is None and mode.has_skip:
-                mode.reset()
-                return None
             act = self.actions.get(tag)
             if act is not None:
                 match act:
                     case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name):
                         self.push_mode(mode_name)
                     case ModeAction(action=ModeActionEnum.POP, mode=mode_name):
-                        self.pop_mode(mode_name)
+                        new_mode = self.pop_mode(mode_name)
+                        new_mode.reset()
                     case _:
                         raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
             mode.runner = mode.runner.reset()
@@ -426,7 +421,8 @@ class Lexer(LexerProtocol[C]):
             return LexerResult(
                     tag=tag,
                     start=start,
-                    end=end
+                    end=end,
+                    skip=tag in mode.skip
                 )
             
         return None
@@ -440,7 +436,7 @@ class ExtRule(Generic[T]):
 
 @dataclass(slots=True)
 class ExtLexer(LexerProtocol[T]):
-    rules: Dict[Tag|None, ExtRule[T]] = field(default_factory=dict)
+    rules: Dict[Tag, ExtRule[T]] = field(default_factory=dict)
 
     def reset(self) -> None:
         pass
@@ -470,10 +466,10 @@ class ExtLexer(LexerProtocol[T]):
     def candidate(self) -> LexerError | LexerResult[T]:
         return LexerError.message_only("External lexer cannot provide candidates")
 
-    def match(self, tags: frozenset[Tag|None], item: T, index: int) -> LexerError | None | LexerResult[T]:
+    def match(self, tags: frozenset[Tag], item: T, index: int) -> LexerError | None | LexerResult[T]:
         for tag in tags:
             if tag in self.rules and self.rules[tag].predicate(item):
-                return LexerResult(tag=tag, start=index, end=index + 1, value=item)
+                return LexerResult(tag=tag, start=index, end=index + 1, value=item, skip=False)
                 
         return LexerError.new(
             message=f"External lexer token mismatch, {tags} did not match item '{item}'",
@@ -483,7 +479,7 @@ class ExtLexer(LexerProtocol[T]):
         )
         
 
-    def verify(self, tag: frozenset[Tag | None], value: Any) -> bool:
+    def verify(self, tag: frozenset[Tag], value: Any) -> bool:
         for t in tag:
             rule = self.rules.get(t)
             if rule is not None:
@@ -491,7 +487,7 @@ class ExtLexer(LexerProtocol[T]):
                     return True
         return False
 
-    def gen(self, tag: Tag | None, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    def gen(self, tag: Tag, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
         rule = self.rules.get(tag)
         if rule is None or rule.generator is None:
             raise SyncraftError(

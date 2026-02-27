@@ -19,7 +19,7 @@ from collections import defaultdict
 from functools import reduce
 import random
 
-Tag = str | Enum
+Tag = str | Enum | None
 
 
 class DefaultTag(Enum):
@@ -60,7 +60,7 @@ class FAStateFactory:
 class ReverseDFA(Generic[C]):
     cs_factory: CharSetFactory[C]
     final: FAState
-    accept: FrozenDict[Tag|None, frozenset[FAState]] = field(default_factory=FrozenDict)    
+    accept: FrozenDict[Tag, frozenset[FAState]] = field(default_factory=FrozenDict)    
     transitions: FrozenDict[FAState, FrozenDict[CharSet, frozenset[FAState]]] = field(default_factory=FrozenDict)
     _distances: FrozenDict[FAState, int] = field(default_factory=FrozenDict, init=False, repr=False)
 
@@ -82,7 +82,7 @@ class ReverseDFA(Generic[C]):
                     queue.append(prev)
         object.__setattr__(self, "_distances", FrozenDict(distances))
 
-    def gen(self, tag: Tag | None, rnd: random.Random) -> C | Tuple[C, ...]:
+    def gen(self, tag: Tag, rnd: random.Random) -> C | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
         if not current_states:
             if tag:
@@ -940,6 +940,7 @@ class RunnerResult:
 @dataclass(slots=True)
 class Runner(Generic[C]):
     fa: DFA[C]
+    # a sequence of (position, tags) for each accepted state we've been in so far; the last one is the most recent acceptance
     accepted: Tuple[Tuple[int, frozenset[Tag]], ...] = field(default_factory=tuple)
     non_greedy: frozenset[Tag] = field(default_factory=frozenset)
 
@@ -1006,7 +1007,10 @@ class Runner(Generic[C]):
         self.current = next_state
         if next_state is None:
             if self.accepted:
-                result = (self.accepted[-1][0], self.accepted[-1][1])
+                # we have accepted at least once on the way here, but now we can't continue; 
+                # this means we return the last accepted position/tags as the final result, and reset the accepted list for future runs
+                # the last accepted position/tags is the result, and we reset the accepted list for future runs
+                result = self.accepted[-1]
                 self.accepted = tuple()
                 return RunnerResult.new(
                     error=False,
@@ -1014,6 +1018,7 @@ class Runner(Generic[C]):
                     accepted=result,
                 )
             else:
+                # we have never accepted and now we can't continue, so this is a failure with no result
                 return RunnerResult.new(
                     error=True,
                     final=True,
@@ -1022,6 +1027,7 @@ class Runner(Generic[C]):
         else:
             has_future = self._has_future_non_anchor(next_state)
             if self.is_accepted() and next_state is not None:
+                # self.current is an accepting state, so we add this position and its tags to the accepted list;
                 accepted_tags = self.tags()
                 new_accepted = self.accepted + ((pos, accepted_tags),)
                 self.accepted = new_accepted
@@ -1077,6 +1083,12 @@ class Runner(Generic[C]):
 
     def tags(self) -> frozenset[Tag]:
         return self.dfa.accept.get(self.current, frozenset())
+    
+    def all_tags(self) -> frozenset[Tag]:
+        tags: Set[Tag] = set()
+        for s in self.dfa.transitions.keys():
+            tags.update(self.dfa.accept.get(s, frozenset()))
+        return frozenset(tags)
 
 
 
@@ -1199,6 +1211,12 @@ class NFARunner(Generic[C]):
             tags.update(self.fa.accept.get(s, frozenset()))
         return frozenset(tags)
     
+    def all_tags(self) -> frozenset[Tag]:
+        tags: Set[Tag] = set()
+        for s in self.fa.transitions.keys():
+            tags.update(self.fa.accept.get(s, frozenset()))
+        return frozenset(tags)
+
     def finalize(self) -> RunnerResult:
         next_states: set[FAState] = set()
         END = self.fa.cs_factory.end()
@@ -1266,7 +1284,7 @@ class ModeAction:
 @dataclass(frozen=True, slots=True)
 class Builder(Generic[C]):
     kind: _NodeKind
-    tag: Tag | None = None
+    tag: Tag = None
     children: Tuple[Builder[C], ...] = field(default_factory=tuple)
     intervals: Tuple[Tuple[str | bytes | C, str | bytes | C], ...] = field(default_factory=tuple)
     text: Optional[Union[str, bytes, Sequence[C]]] = None
@@ -1312,7 +1330,7 @@ class Builder(Generic[C]):
     def apply(self,            
               *,
               skip: bool = False, 
-              tag: Tag | None = None, 
+              tag: Tag = None, 
               push: str | None = None, 
               pop: str | Literal[True] | None = None,  
               of: str | None = None) -> Builder[C]:

@@ -26,7 +26,7 @@ from syncraft.token import TokenSpec, TokenSpecBase
 import threading
 
 
-Tag = str | Enum
+Tag = str | Enum | None
 
 GREEN = "\033[92m"
 RESET = "\033[0m"
@@ -1182,7 +1182,7 @@ class Syntax(Generic[A, S]):
            pattern: str, 
            *,
            skip: bool = False, 
-           tag: Tag | None = None, 
+           tag: Tag = None, 
            push: str | None = None, 
            pop: str | Literal[True] | None = None,  
            of: str | None = None) -> Syntax:
@@ -1208,7 +1208,7 @@ class Syntax(Generic[A, S]):
             txt: str | bytes,
             *,
             skip: bool = False, 
-            tag: Tag | None = None, 
+            tag: Tag = None, 
             push: str | None = None, 
             pop: str | Literal[True] | None = None,  
             of: str | None = None) -> Syntax:
