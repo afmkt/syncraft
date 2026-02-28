@@ -1202,6 +1202,11 @@ class Syntax(Generic[A, S]):
         })
         assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
         return replace(ret, spec=replace(ret.spec, extra_info = extra))
+
+    @classmethod
+    def rp(cls, pattern: str) -> Syntax:
+        import syncraft.regex as regex
+        return regex.rp(pattern, syntax_cls=cls)
         
     
     @classmethod

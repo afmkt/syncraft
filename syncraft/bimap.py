@@ -16,7 +16,7 @@ from typing import (
 from dataclasses import dataclass, field, is_dataclass, fields, replace
 from syncraft.utils import FrozenDict, CallWith
 from abc import ABC, abstractmethod
-    
+
 
 class DataError(Exception):
     def __init__(self, message: str, reason: list[Any] | None = None, *, soft_failure: bool = False):

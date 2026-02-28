@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Tuple, Union, Any
+from typing import Optional, Tuple, Union, Any, Type
 import unicodedata
 
 from syncraft.algebra import Error
@@ -14,6 +14,7 @@ from syncraft.grammar import Grammar, lazy, rule, grammar
 from functools import reduce
 from syncraft.bimap import DataError, Not
 from syncraft.ast import Nothing, SyncraftError
+from functools import cached_property
 
 
 
@@ -22,40 +23,92 @@ class RegexError(SyncraftError):
     pass
 
 
-def _casefold_variants(ch: str) -> Tuple[str, ...]:
-    variants = []
-    for candidate in (ch, ch.casefold(), ch.lower(), ch.upper()):
-        if len(candidate) != 1:
-            continue
-        if candidate not in variants:
-            variants.append(candidate)
-    return tuple(variants)
+# @dataclass(frozen=True)
+# class RPMatch:
+#     text: str
+#     captures: Tuple[Any, ...] = field(default_factory=tuple)
+#     payload: Any = Nothing
 
 
-def _builder_char_case_insensitive(ch: str) -> Builder[str]:
-    variants = _casefold_variants(ch)
-    if len(variants) == 1:
-        return Builder.lit(variants[0])
-    return Builder.oneof("".join(variants))
+# def _textify(value: Any) -> str:
+#     if value is Nothing:
+#         return ""
+#     if hasattr(value, "text"):
+#         text = getattr(value, "text", None)
+#         if isinstance(text, str):
+#             return text
+#     if isinstance(value, str):
+#         return value
+#     if isinstance(value, bytes):
+#         return value.decode("utf-8", errors="ignore")
+#     if isinstance(value, tuple):
+#         return "".join(_textify(v) for v in value)
+#     return str(value)
 
 
-def _builder_range_case_insensitive(start: str, end: str) -> Builder[str]:
-    b: Builder[str] = Builder.none()
-    for codepoint in range(ord(start), ord(end) + 1):
-        ch = chr(codepoint)
-        for variant in _casefold_variants(ch):
-            b = b | Builder.lit(variant)
-    return b
+# def _join_rp_matches(parts: Tuple[RPMatch, ...]) -> RPMatch:
+#     normalized = tuple(_as_rp_match(p) for p in parts)
+#     text = "".join(p.text for p in normalized)
+#     captures: Tuple[Any, ...] = tuple(c for p in normalized for c in p.captures)
+#     payload = tuple(p.payload for p in normalized)
+#     return RPMatch(text=text, captures=captures, payload=payload)
+
+
+# def _as_rp_match(value: Any) -> RPMatch:
+#     if isinstance(value, RPMatch):
+#         return value
+#     return RPMatch(text=_textify(value), captures=tuple(), payload=value)
+
+
+# def _rp_forward(value: Any, _: Any) -> RPMatch:
+#     return _as_rp_match(value)
+
+
+# def _rp_inverse(value: Any, _: Any) -> Any:
+#     m = _as_rp_match(value)
+#     if m.payload is not Nothing:
+#         return m.payload
+#     return m.text
 
 
 
-@dataclass(frozen=True, slots=True)
+
+
+
+
+
+
+@dataclass(frozen=True)
 class RegexNode:
+    @staticmethod
+    def _casefold_variants(ch: str) -> Tuple[str, ...]:
+        variants = []
+        for candidate in (ch, ch.casefold(), ch.lower(), ch.upper()):
+            if len(candidate) != 1:
+                continue
+            if candidate not in variants:
+                variants.append(candidate)
+        return tuple(variants)
+
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         raise RegexError("Unsupported regex feature in lexer", offender=self)
 
+    @cached_property
+    def has_group(self) -> bool:
+        return False
 
-@dataclass(frozen=True, slots=True)
+    @cached_property
+    def effective(self) -> bool:
+        """Whether this node can match any empty or non-empty string."""
+        return True
+
+    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+        b = self.builder(case_insensitive=case_insensitive)
+        # return syntax_cls.lex(b).bimap(_rp_forward, _rp_inverse)
+        return syntax_cls.lex(b)
+
+
+@dataclass(frozen=True)
 class UnsupportedFeature(RegexNode):
     feature: str
     args: Tuple[Any, ...] = field(default_factory=tuple)
@@ -64,6 +117,7 @@ class UnsupportedFeature(RegexNode):
     def __str__(self) -> str:
         return f"Unsupported feature: {self.feature}" + (f" with args: {self.args}" if self.args else "") + (f" and kwargs: {self.kwargs}" if self.kwargs else "")
     
+
 
 def unsuppoerted(feature: str, *args: Any, **kwargs: Any) -> UnsupportedFeature:
     return UnsupportedFeature(feature=feature, args=args, kwargs=kwargs)
@@ -88,7 +142,7 @@ class ShorthandKind(Enum):
     def to_literal(cls, kind: ShorthandKind) -> str:
         return kind.value    
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ShorthandAtom(RegexNode):
     kind: ShorthandKind
 
@@ -114,7 +168,7 @@ class ShorthandAtom(RegexNode):
             raise RegexError(f"Unsupported shorthand kind: {self.kind}", offender=self)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class UnicodeCategoryAtom(RegexNode):
     categories: Tuple[str, ...]
     negated: bool = False   
@@ -133,7 +187,7 @@ class UnicodeCategoryAtom(RegexNode):
                 raise RegexError("Unknown Unicode category in \\p{}", offender=category, expect="One of Lu, Ll, Lt, Lm, Lo, L, M, N, Nd, Nl, No, P, Pd, Ps, Pe, S, Sm, Sc, Z, Zs, C")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CharRange(RegexNode):
     start: str
     end: str
@@ -150,23 +204,32 @@ class CharRange(RegexNode):
 
 
 
-@dataclass(frozen=True, slots=True)
-class CharClassAtom:
+@dataclass(frozen=True)
+class CharClassAtom(RegexNode):
     items: Tuple[Union[str, CharRange, ShorthandAtom, UnicodeCategoryAtom], ...]
     negated: bool = False
+    @staticmethod
+    def _builder_range_case_insensitive(start: str, end: str) -> Builder[str]:
+        b: Builder[str] = Builder.none()
+        for codepoint in range(ord(start), ord(end) + 1):
+            ch = chr(codepoint)
+            for variant in RegexNode._casefold_variants(ch):
+                b = b | Builder.lit(variant)
+        return b
+
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
         b: Builder[str] = Builder.none()
         for item in self.items:
             if isinstance(item, str):
                 if case_insensitive:
-                    for variant in _casefold_variants(item):
+                    for variant in RegexNode._casefold_variants(item):
                         b = b | Builder.lit(variant)
                 else:
                     b = b | Builder.lit(item)
             elif isinstance(item, CharRange):
                 if case_insensitive:
-                    b = b | _builder_range_case_insensitive(item.start, item.end)
+                    b = b | self._builder_range_case_insensitive(item.start, item.end)
                 else:
                     b = b | item.builder()
             else:
@@ -185,6 +248,13 @@ class CharClassAtom:
 
 
 
+    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+        b = self.builder(case_insensitive=case_insensitive)
+        # return syntax_cls.lex(b).bimap(_rp_forward, _rp_inverse)
+        return syntax_cls.lex(b)
+
+
+
 class GroupKind(Enum):
     CAPTURE = auto()
     NON_CAPTURE = auto()
@@ -198,13 +268,13 @@ class GroupKind(Enum):
     CONDITION_GROUP = auto()
     COMMENT= auto()
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class InlineFlags:
     enabled: Tuple[str, ...]
     disabled: Optional[Tuple[str, ...]] = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GroupAtom(RegexNode):
     kind: GroupKind
     regex: Optional[Regex] = None
@@ -239,16 +309,75 @@ class GroupAtom(RegexNode):
     def validate(self) -> None:
         if self.kind not in (GroupKind.CAPTURE, GroupKind.COMMENT, GroupKind.NON_CAPTURE, GroupKind.FLAGS_SCOPED):
             raise RegexError("Unsupported group type in lexer regex", offender=self)
+
+    @cached_property
+    def has_group(self) -> bool:
+        return True
+
+    @cached_property
+    def effective(self) -> bool:
+        return self.regex.effective if self.regex is not None else False
+
+    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+        self.validate()
+        if self.kind == GroupKind.FLAGS_SCOPED:
+            if self.regex is None or self.inline_flags is None:
+                raise RegexError("Invalid inline flags group", offender=self)
+            enabled = set(self.inline_flags.enabled)
+            disabled = set(self.inline_flags.disabled or ())
+            if disabled:
+                raise RegexError("Inline flag disabling is not supported", offender=self, expect="Only (?i:...) is supported")
+            if enabled - {"i"}:
+                raise RegexError("Unsupported inline flags", offender=self, expect="Only (?i:...) is supported")
+            return self.regex.syntax(syntax_cls=syntax_cls, case_insensitive=True)
+
+        if self.kind == GroupKind.COMMENT:
+            raise RegexError("Comments are not supported in Syntax.rp yet", offender=self)
+            
+
+        if self.regex is None:
+            raise RegexError("Group has no inner regex", offender=self)
+
+        inner = self.regex.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+        if self.kind == GroupKind.NON_CAPTURE:
+            return inner
+
+        if self.kind == GroupKind.CAPTURE:
+            # def fwd(value: Any, _: Any) -> RPMatch:
+            #     m = _as_rp_match(value)
+            #     return RPMatch(text=m.text, captures=m.captures + (m.text,), payload=m.payload)
+
+            # def inv(value: Any, _: Any) -> RPMatch:
+            #     m = _as_rp_match(value)
+            #     captures = m.captures
+            #     if captures and captures[-1] == m.text:
+            #         captures = captures[:-1]
+            #     return RPMatch(text=m.text, captures=captures, payload=m.payload)
+
+            # captured = inner.bimap(fwd, inv)
+            captured = inner
+            if self.name:
+                return captured.bind(**{self.name: lambda m, _: m})
+            return captured
+
+        raise RegexError("Unsupported group type in parser regex", offender=self)
         
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LiteralAtom(RegexNode):
     text: str
+    @staticmethod
+    def _builder_char_case_insensitive(ch: str) -> Builder[str]:
+        variants = RegexNode._casefold_variants(ch)
+        if len(variants) == 1:
+            return Builder.lit(variants[0])
+        return Builder.oneof("".join(variants))
+
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         self.validate()
         if not case_insensitive:
             return Builder.lit(self.text)
-        pieces = [_builder_char_case_insensitive(ch) for ch in self.text]
+        pieces = [self._builder_char_case_insensitive(ch) for ch in self.text]
         return reduce(lambda a, b: a + b, pieces) if pieces else Builder.none()
     
     def validate(self) -> None:
@@ -275,23 +404,29 @@ class AnchorKind(Enum):
             r"\B": cls.NOT_WORD_BOUNDARY,
         }[literal]
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AnchorAtom(RegexNode):
-    kind: AnchorKind    
+    kind: AnchorKind
+
+    def builder(self, case_insensitive:bool = False) -> Builder[str]:
+        raise RegexError("Anchors are not supported in Syntax.rp yet", offender=self)
+    
+    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+        raise RegexError("Anchors are not supported in Syntax.rp yet", offender=self)
     
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DotAtom(RegexNode):
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         return Builder.any(Alphabet(str))
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Quantifier:
     minimum: int
     maximum: Optional[int]     # None → unbounded
     greedy: bool = True
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Piece(RegexNode):
     atom: Union[LiteralAtom,
                 DotAtom,
@@ -307,26 +442,136 @@ class Piece(RegexNode):
             q = self.quantifier
             b = b.many(at_least=q.minimum, at_most=q.maximum).with_non_greedy(not q.greedy)        
         return b
+    @cached_property
+    def effective(self) -> bool:
+        return self.atom.effective
+
+    @cached_property
+    def has_group(self) -> bool:
+        return self.atom.has_group
+
+    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+        if not self.has_group:
+            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+
+        atom_syntax = self.atom.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+        if self.quantifier is None or self.quantifier is Nothing:
+            return atom_syntax
+
+        q = self.quantifier
+        repeated = atom_syntax.many(at_least=q.minimum, at_most=q.maximum)
+        return repeated
+        # def fwd(values: Tuple[Any, ...], _: Any) -> RPMatch:
+        #     return _join_rp_matches(tuple(_as_rp_match(v) for v in values))
+
+        # def inv(value: Any, _: Any) -> Tuple[Any, ...]:
+        #     m = _as_rp_match(value)
+        #     payload = m.payload
+        #     if isinstance(payload, tuple):
+        #         return payload
+        #     if m.text == "" and q.minimum == 0:
+        #         return tuple()
+        #     seed = payload if payload is not Nothing else m.text
+        #     return (seed,)
+
+        # return repeated.bimap(fwd, inv)
 
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Branch(RegexNode):
     pieces: Tuple[Piece, ...]
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
         ret = [p.builder(case_insensitive=case_insensitive) for p in self.pieces]
         return reduce(lambda a, b: a + b, ret) if len(ret) > 0 else Builder.none()
     
+    @cached_property
+    def effective(self) -> bool:
+        return any(piece.effective for piece in self.pieces)
+
+    @cached_property
+    def has_group(self) -> bool:
+        return any(piece.has_group for piece in self.pieces)
+
+    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+        if not self.has_group:
+            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+        
+        pieces = [p for p in self.pieces if p.effective]
+        parts_list: list[Tuple[Syntax[Any, Any], bool]] = []
+        i = 0
+        while i < len(pieces):
+            piece = pieces[i]
+            if piece.has_group:
+                parts_list.append(+piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive))
+                i += 1
+            else:
+                j = i
+                builders: list[Builder[str]] = []
+                while j < len(pieces) and not pieces[j].has_group:
+                    builders.append(pieces[j].builder(case_insensitive=case_insensitive))
+                    j += 1
+                merged = reduce(lambda a, b: a + b, builders) if len(builders) > 0 else Builder.none()
+                # parts_list.append(syntax_cls.lex(merged).bimap(_rp_forward, _rp_inverse))
+                parts_list.append(-syntax_cls.lex(merged))
+                i = j
+
+        parts = tuple(parts_list)
+        if len(parts) == 1:
+            return parts[0][0]
+        seq = syntax_cls.seq(*parts)
+        return seq
+        # def fwd(values: Tuple[Any, ...], _: Any) -> RPMatch:
+        #     return _join_rp_matches(tuple(_as_rp_match(v) for v in values))
+
+        # def inv(value: Any, _: Any) -> Tuple[Any, ...]:
+        #     m = _as_rp_match(value)
+        #     payload = m.payload
+        #     if isinstance(payload, tuple):
+        #         return payload
+        #     seed = payload if payload is not Nothing else m.text
+        #     return (seed,)
+
+        # return seq.bimap(fwd, inv)
+    
 
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Regex(RegexNode):
     branches: Tuple[Branch, ...]
     def builder(self, *, case_insensitive: bool = False) -> Builder[str]:
-        ret = [b.builder(case_insensitive=case_insensitive) for b in self.branches]
+        ret = [b.builder(case_insensitive=case_insensitive) for b in self.branches if b.effective]
         return reduce(lambda a, b: a | b, ret) if len(ret) > 0 else Builder.none()
+    @cached_property
+    def effective(self) -> bool:
+        return any(branch.effective for branch in self.branches)
 
+    @cached_property    
+    def has_group(self) -> bool:
+        return any(branch.has_group for branch in self.branches if branch.effective)
+
+    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+
+        if not self.has_group:
+            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+
+        group_branches = [branch for branch in self.branches if branch.has_group and branch.effective]
+        plain_branches = [branch for branch in self.branches if not branch.has_group and branch.effective]
+
+        alternatives: list[Syntax[Any, Any]] = []
+        if plain_branches:
+            plain_builders = [branch.builder(case_insensitive=case_insensitive) for branch in plain_branches]
+            plain_merged = reduce(lambda a, b: a | b, plain_builders) if len(plain_builders) > 0 else Builder.none()
+            # alternatives.append(syntax_cls.lex(plain_merged).bimap(_rp_forward, _rp_inverse))
+            alternatives.append(syntax_cls.lex(plain_merged))
+
+        alternatives.extend(branch.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive) for branch in group_branches)
+
+        if len(alternatives) == 1:
+            return alternatives[0]
+        return syntax_cls.alt(*alternatives)
+    
 
 
 
@@ -341,42 +586,42 @@ B = Builder[str]
 S = Syntax.set(builtin=True)
 
 INLINE_FLAGS = "iLmsuaxw"
-INLINE_FLAG_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 @grammar
 class RE(Grammar):
-    dollar = S.lex(B.lit("$"))
+    dollar = S.lit("$")
     number = S.lex(B.oneof("0123456789").many(at_least=1)).bimap(int, str)
-    dot = S.lex(B.lit(".")).to(lambda env, x: x, lambda env, x: DotAtom())
-    or_ = S.lex(B.lit("|"))
+    dot = S.lit(".").to(lambda env, x: x, lambda env, x: DotAtom())
+    or_ = S.lit("|")
     whitespace = S.lex(B.oneof(" \t\n\r\f\v"))
-    question = S.lex(B.lit("?"))
-    star = S.lex(B.lit("*"))
-    plus = S.lex(B.lit("+"))
-    lbrace = S.lex(B.lit("{"))
-    rbrace = S.lex(B.lit("}"))
-    comma = S.lex(B.lit(","))
-    lparen = S.lex(B.lit("("))
-    rparen = S.lex(B.lit(")"))
-    lsquare = S.lex(B.lit("["))
-    rsquare = S.lex(B.lit("]"))
-    colon = S.lex(B.lit(":"))
-    less = S.lex(B.lit("<"))
-    greater = S.lex(B.lit(">"))
-    equal = S.lex(B.lit("="))
-    bang = S.lex(B.lit("!"))
-    caret = S.lex(B.lit("^"))
-    backslash = S.lex(B.lit("\\"))
-    minus = S.lex(B.lit("-"))
-    boundary_escape = S.lex(B.oneof(["\\A", "\\Z", "\\b", "\\B"]))
-    escaped_x = S.lex(B.lit("\\x"))
-    escaped_u = S.lex(B.lit("\\u"))
-    escaped_U = S.lex(B.lit("\\U"))
-    escaped_N = S.lex(B.lit("\\N{"))
-    escaped_p = S.lex(B.lit("\\p{"))
-    escaped_P = S.lex(B.lit("\\P{"))
-    underscore = S.lex(B.lit("_"))
-    space = S.lex(B.lit(" "))
-    hyphen = S.lex(B.lit("-"))
+    question = S.lit("?")
+    star = S.lit("*")
+    plus = S.lit("+")
+    lbrace = S.lit("{")
+    rbrace = S.lit("}")
+    comma = S.lit(",")
+    lparen = S.lit("(")
+    rparen = S.lit(")")
+    lsquare = S.lit("[")
+    rsquare = S.lit("]")
+    colon = S.lit(":")
+    less = S.lit("<")
+    greater = S.lit(">")
+    equal = S.lit("=")
+    bang = S.lit("!")
+    caret = S.lit("^")
+    backslash = S.lit("\\")
+    minus = S.lit("-")
+    boundary_escape = S.alt(S.lit("\\A"), S.lit("\\Z"), S.lit("\\b"), S.lit("\\B"))
+    escaped_x = S.lit("\\x")
+    escaped_u = S.lit("\\u")
+    escaped_U = S.lit("\\U")
+    escaped_N = S.lit("\\N{")
+    escaped_p = S.lit("\\p{")
+    escaped_P = S.lit("\\P{")
+    underscore = S.lit("_")
+    space = S.lit(" ")
+    hyphen = S.lit("-")
     unicode_scalar = S.lex(B.range("\u0000", "\U0010FFFF"))
     unicode_category = S.lex(B.oneof(["Lu", "Ll", "Lt", "Lm", "Lo", "L", "M", "N", "Nd", "Nl", "No", "P", "Pd", "Ps", "Pe", "S", "Sm", "Sc", "Z", "Zs", "C"]))
     unicode_letter = S.lex(B.unicode_category(["Lu", "Ll", "Lt", "Lm", "Lo"]))
@@ -405,7 +650,7 @@ class RE(Grammar):
                     (escaped_U >> hex_octa).bimap(lambda x: chr(int(x[0], 16)), lambda x: (format(ord(x), '08x'),)), 
                     ((escaped_N >> unicode_name) // rbrace).bimap(lambda x: unicodedata.lookup(x[0][0]), lambda x: ((unicodedata.name(x),),)))
     escaped_metachar = (backslash >> meta_char).to(lambda env: (env.X,), lambda env: env.X)
-    escaped_0 = S.lex(B.lit("\\0"))
+    escaped_0 = S.lit("\\0")
     octal_digit = S.lex(B.range("0", "7"))
     octal_escape = S.alt(
         (escaped_0 >> octal_digit + octal_digit).bimap(lambda x: chr(int(x[0] + x[1], 8)), lambda c: (tuple(format(ord(c), '02o')),)),
@@ -432,7 +677,7 @@ class RE(Grammar):
                                                                        lambda items: (items[0], tuple(items[1:])) if items and isinstance(items[0], str) and items[0] in '-]' else tuple(items))
     char_class = S.seq(lsquare, +(~caret), +class_class_items, rsquare).to(lambda env: (env.negated, env.items), lambda env: CharClassAtom(negated=env.negated, items=env.items))
 
-    flag_text = S.lex(B.oneof(INLINE_FLAG_LETTERS))
+    flag_text = S.lex(B.oneof("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
     flag_soft = flag_text.check(lambda v: v in INLINE_FLAGS)
     flag_strict = flag_text.check(
         lambda v: v in INLINE_FLAGS,
@@ -458,36 +703,36 @@ class RE(Grammar):
         return S.alt(
             S.seq(RE.lparen, +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),
             S.seq(RE.lparen, RE.question, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NON_CAPTURE)),
-            S.seq(S.lex(B.lit("(?=")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
-            S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
-            S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
-            S.seq(S.lex(B.lit("(?<!")), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
-            S.alt(      S.seq(S.lex(B.lit("(?&")), +RE.name, RE.rparen),
-                        S.seq(S.lex(B.lit("(?")), +RE.number, RE.rparen),
-                        S.seq(S.lex(B.lit("(?R")), RE.rparen),
-                        S.seq(S.lex(B.lit("(?r")), RE.rparen),
-                        S.seq(S.lex(B.lit("(?P")), RE.rparen),            
-                        S.seq(S.lex(B.lit("(?p")), RE.rparen),
-                        S.seq(S.lex(B.lit("(?0")), RE.rparen),   
+            S.seq(S.lit("(?="), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
+            S.seq(S.lit("(?!"), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
+            S.seq(S.lit("(?<="), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
+            S.seq(S.lit("(?<!"), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
+            S.alt(      S.seq(S.lit("(?&"), +RE.name, RE.rparen),
+                        S.seq(S.lit("(?"), +RE.number, RE.rparen),
+                        S.seq(S.lit("(?R"), RE.rparen),
+                        S.seq(S.lit("(?r"), RE.rparen),
+                        S.seq(S.lit("(?P"), RE.rparen),            
+                        S.seq(S.lit("(?p"), RE.rparen),
+                        S.seq(S.lit("(?0"), RE.rparen),   
                     ).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="recursive group")),
 
-            S.seq(S.lex(B.lit("(?P<")), +RE.name, RE.greater, +RE.regex, RE.rparen).to(lambda env: (env.name, env.regex), lambda env: GroupAtom(name=env.name, regex=env.regex, kind=GroupKind.CAPTURE)),
-            S.seq(S.lex(B.lit("(?")), +RE.inline_flags_strict, RE.rparen).to(lambda env: (env.inline_flags,), lambda env: GroupAtom(inline_flags=env.inline_flags, kind=GroupKind.FLAGS)),
-            S.seq( S.lex(B.lit("(?")), +RE.inline_flags_strict, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.inline_flags, env.regex), lambda env: GroupAtom(inline_flags=env.inline_flags, regex=env.regex, kind=GroupKind.FLAGS_SCOPED)),
+            S.seq(S.lit("(?P<"), +RE.name, RE.greater, +RE.regex, RE.rparen).to(lambda env: (env.name, env.regex), lambda env: GroupAtom(name=env.name, regex=env.regex, kind=GroupKind.CAPTURE)),
+            S.seq(S.lit("(?"), +RE.inline_flags_strict, RE.rparen).to(lambda env: (env.inline_flags,), lambda env: GroupAtom(inline_flags=env.inline_flags, kind=GroupKind.FLAGS)),
+            S.seq( S.lit("(?"), +RE.inline_flags_strict, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.inline_flags, env.regex), lambda env: GroupAtom(inline_flags=env.inline_flags, regex=env.regex, kind=GroupKind.FLAGS_SCOPED)),
 
-            S.seq(S.lex(B.lit("(?")), 
+            S.seq(S.lit("(?"), 
                         S.alt(
-                            S.seq(S.lex(B.lit("(?=")), +RE.regex, RE.rparen),
-                            S.seq(S.lex(B.lit("(?!")), +RE.regex, RE.rparen),
-                            S.seq(S.lex(B.lit("(?<=")), +RE.regex, RE.rparen),
-                            S.seq(S.lex(B.lit("(?<!" )), +RE.regex, RE.rparen),
+                            S.seq(S.lit("(?="), +RE.regex, RE.rparen),
+                            S.seq(S.lit("(?!"), +RE.regex, RE.rparen),
+                            S.seq(S.lit("(?<="), +RE.regex, RE.rparen),
+                            S.seq(S.lit("(?<!" ), +RE.regex, RE.rparen),
                         ), 
                         +RE.regex, 
                         RE.rparen).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="lookaround assertion group")),
 
-            S.seq(S.lex(B.lit("(?(")), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: (env.regex,), lambda env:  unsuppoerted(regex=env.regex, feature="group existence test")),
+            S.seq(S.lit("(?("), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: (env.regex,), lambda env:  unsuppoerted(regex=env.regex, feature="group existence test")),
 
-            S.seq(S.lex(B.lit("(?#")), 
+            S.seq(S.lit("(?#"), 
                   +RE.comment,
                   RE.rparen).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="comment group")),
                   
@@ -516,7 +761,7 @@ class RE(Grammar):
 
     backreference = S.alt(
         (backslash >> number).to(lambda env: (env.X,), lambda env: env.X),
-        (S.lex(B.lit("\\g<")) >> name // greater).to(lambda env: (env.X,), lambda env: env.X)
+        (S.lit("\\g<") >> name // greater).to(lambda env: (env.X,), lambda env: env.X)
     )
 
     atom = S.alt(        
@@ -557,6 +802,28 @@ def re(pattern: str) -> Builder[str]:
         raise SyncraftError("Regex parse failed", offender=parsed)
     return parsed.builder()
 
+
+def rp(pattern: str, *, syntax_cls: Type[Syntax] = Syntax) -> Syntax[Any, Any]:
+    parsed = parse(pattern)
+    if not isinstance(parsed, Regex):
+        if isinstance(parsed, Error):
+            raise SyncraftError("Regex parse failed", offender=parsed, expect=parsed.summary)
+        raise SyncraftError("Regex parse failed", offender=parsed)
+    converted = parsed.syntax(syntax_cls=syntax_cls)
+    return converted
+    # def fwd(value: Any, _: Any) -> Any:
+    #     m = _as_rp_match(value)
+    #     return m.captures if len(m.captures) > 0 else m.text
+
+    # def inv(value: Any, _: Any) -> RPMatch:
+    #     if isinstance(value, tuple):
+    #         text = "".join(_textify(v) for v in value)
+    #         return RPMatch(text=text, captures=tuple(value), payload=value)
+    #     text = _textify(value)
+    #     return RPMatch(text=text, captures=tuple(), payload=value)
+
+    # return converted.bimap(fwd, inv)
+    
 
 @dataclass
 class VerifyResult:
