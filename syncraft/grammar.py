@@ -10,6 +10,7 @@ from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
 import io
 import asyncio
+import textwrap
 
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
@@ -94,7 +95,7 @@ def lazy(S: type[Syntax], name: str | None | Callable[..., Syntax] = None, *, is
 def class_field_location(cls):
     import inspect
     import ast
-    source = inspect.getsource(cls)
+    source = textwrap.dedent(inspect.getsource(cls))
     filename = inspect.getsourcefile(cls)
     start_line = inspect.getsourcelines(cls)[1]
     tree = ast.parse(source)

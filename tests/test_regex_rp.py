@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 
+from syncraft.algebra import Error
 from syncraft.grammar import Grammar, grammar, rule
 from syncraft.syntax import Syntax
 
@@ -32,6 +33,24 @@ class RPRepeatedCaptureGrammar(Grammar):
     root = rule(repeated, is_root=True)
 
 
+@grammar
+class RPTrailingEmptyAltGrammar(Grammar):
+    value = S.rp(r"a|")
+    root = rule(value, is_root=True)
+
+
+@grammar
+class RPLeadingEmptyAltGrammar(Grammar):
+    value = S.rp(r"|a")
+    root = rule(value, is_root=True)
+
+
+@grammar
+class RPMixedGroupEmptyAltGrammar(Grammar):
+    value = S.rp(r"(ab)|")
+    root = rule(value, is_root=True)
+
+
 def test_rp_no_capture_returns_full_text() -> None:
     result = RPNoCaptureGrammar.parse("abc")
     assert result == "abc"
@@ -50,3 +69,18 @@ def test_rp_named_capture_binds_global_pool() -> None:
 def test_rp_repeated_capture_flattens_in_order() -> None:
     result = RPRepeatedCaptureGrammar.parse("abcabca")
     assert result == ("a", "bc", "a", "bc", "a")
+
+
+def test_rp_trailing_empty_alternative_supports_empty_input() -> None:
+    assert RPTrailingEmptyAltGrammar.parse("a") == "a"
+    assert isinstance(RPTrailingEmptyAltGrammar.parse(""), Error)
+
+
+def test_rp_leading_empty_alternative_supports_empty_input() -> None:
+    assert RPLeadingEmptyAltGrammar.parse("a") == "a"
+    assert isinstance(RPLeadingEmptyAltGrammar.parse(""), Error)
+
+
+def test_rp_mixed_group_and_empty_alternative() -> None:
+    assert RPMixedGroupEmptyAltGrammar.parse("ab") == "ab"
+    assert RPMixedGroupEmptyAltGrammar.parse("") == ""

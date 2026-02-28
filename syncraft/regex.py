@@ -444,6 +444,8 @@ class Piece(RegexNode):
         return b
     @cached_property
     def effective(self) -> bool:
+        if self.quantifier is not None and self.quantifier is not Nothing and self.quantifier.minimum == 0:
+            return True
         return self.atom.effective
 
     @cached_property
@@ -487,6 +489,8 @@ class Branch(RegexNode):
     
     @cached_property
     def effective(self) -> bool:
+        if len(self.pieces) == 0:
+            return True
         return any(piece.effective for piece in self.pieces)
 
     @cached_property
@@ -560,13 +564,19 @@ class Regex(RegexNode):
         plain_branches = [branch for branch in self.branches if not branch.has_group and branch.effective]
 
         alternatives: list[Syntax[Any, Any]] = []
-        if plain_branches:
-            plain_builders = [branch.builder(case_insensitive=case_insensitive) for branch in plain_branches]
-            plain_merged = reduce(lambda a, b: a | b, plain_builders) if len(plain_builders) > 0 else Builder.none()
-            # alternatives.append(syntax_cls.lex(plain_merged).bimap(_rp_forward, _rp_inverse))
-            alternatives.append(syntax_cls.lex(plain_merged))
-
         alternatives.extend(branch.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive) for branch in group_branches)
+
+        if plain_branches:
+            has_plain_empty = any(len(branch.pieces) == 0 for branch in plain_branches)
+            plain_non_empty = [branch for branch in plain_branches if len(branch.pieces) > 0]
+
+            if plain_non_empty:
+                plain_builders = [branch.builder(case_insensitive=case_insensitive) for branch in plain_non_empty]
+                plain_merged = reduce(lambda a, b: a | b, plain_builders)
+                alternatives.append(syntax_cls.lex(plain_merged))
+
+            if has_plain_empty:
+                alternatives.append(syntax_cls.success(""))
 
         if len(alternatives) == 1:
             return alternatives[0]
