@@ -144,6 +144,70 @@ class Iso(Generic[A, B]):
 
 
 
+
+class Match:
+    def __init__(self, source: Callable[..., Any], target: Callable[..., Any]):
+        self.cases = [(source, target)]
+
+    def case(self, source: Callable[..., Any], target: Callable[..., Any]) -> Match:
+        self.cases.append((source, target))   
+        return self
+
+    @staticmethod
+    def overlap(*ptns: Callable[..., Any]) -> Tuple[bool, List[Any]]:
+        def build(env: Env, ptn: Callable[..., Any]) -> Any:
+            sig = CallWith(ptn)
+            vars = [env.create_var(name) for name in sig.missing_args[1:]]
+            return ptn(env, *vars)
+
+        n = len(ptns)
+        for i in range(n):
+            for j in range(i + 1, n):
+                env = Env()  # fresh env per pair
+                a = build(env, ptns[i])
+                b = build(env, ptns[j])
+                success, _ = unify(a, b, env)
+                if not success:
+                    continue
+                else:
+                    return True, [a, b]
+        return False, []
+    
+    def forward(self, overlap: bool) -> Callable[[Any, Any], Any]:
+        if not overlap:
+            o, offender = Match.overlap(*(src for src, tgt in self.cases))
+            if o:
+                raise DataError(f"Overlapping patterns detected in Match.forward: {offender[0]} VS. {offender[1]}")
+        transforms = [transform(src, tgt, soft_failure=False) for src, tgt in self.cases]
+        def transform_f(value: Any, ctx: Any) -> Any:
+            for t in transforms:
+                try:
+                    return t(value, ctx)
+                except DataError:
+                    continue
+            raise DataError(f"No matching case found for value: {value}")
+        return transform_f
+    
+    def inverse(self, overlap: bool) -> Callable[[Any, Any], Any]:
+        if not overlap:
+            o, offender = Match.overlap(*(tgt for src, tgt in self.cases))
+            if o:
+                raise DataError(f"Overlapping patterns detected in Match.inverse: {offender[0]} VS. {offender[1]}")
+        transforms = [transform(tgt, src, soft_failure=True) for src, tgt in self.cases]
+        def transform_f(value: Any, ctx: Any) -> Any:
+            for t in transforms:
+                try:
+                    return t(value, ctx)
+                except DataError:
+                    continue
+            raise DataError(f"No matching case found for value: {value}")
+        return transform_f
+    
+    def iso(self, overlap: bool) -> Iso:
+        return Iso(self.forward(overlap=overlap), self.inverse(overlap=overlap))
+
+
+
 def default_eval(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
     """
     Docstring for default_eval
@@ -777,69 +841,20 @@ def transform(
         return result
     return transform_f
 
-class Match:
-    def __init__(self, source: Callable[..., Any], target: Callable[..., Any]):
-        self.cases = [(source, target)]
 
-    def case(self, source: Callable[..., Any], target: Callable[..., Any]) -> Match:
-        self.cases.append((source, target))   
-        return self
 
-    @staticmethod
-    def overlap(*ptns: Callable[..., Any]) -> Tuple[bool, List[Any]]:
-        def build(env: Env, ptn: Callable[..., Any]) -> Any:
-            sig = CallWith(ptn)
-            vars = [env.create_var(name) for name in sig.missing_args[1:]]
-            return ptn(env, *vars)
-
-        n = len(ptns)
-        for i in range(n):
-            for j in range(i + 1, n):
-                env = Env()  # fresh env per pair
-                a = build(env, ptns[i])
-                b = build(env, ptns[j])
-                success, _ = unify(a, b, env)
-                if not success:
-                    continue
-                else:
-                    return True, [a, b]
-        return False, []
-    
-    def forward(self, overlap: bool) -> Callable[[Any, Any], Any]:
-        if not overlap:
-            o, offender = Match.overlap(*(src for src, tgt in self.cases))
-            if o:
-                raise DataError(f"Overlapping patterns detected in Match.forward: {offender[0]} VS. {offender[1]}")
-        transforms = [transform(src, tgt, soft_failure=False) for src, tgt in self.cases]
-        def transform_f(value: Any, ctx: Any) -> Any:
-            for t in transforms:
-                try:
-                    return t(value, ctx)
-                except DataError:
-                    continue
-            raise DataError(f"No matching case found for value: {value}")
-        return transform_f
-    
-    def inverse(self, overlap: bool) -> Callable[[Any, Any], Any]:
-        if not overlap:
-            o, offender = Match.overlap(*(tgt for src, tgt in self.cases))
-            if o:
-                raise DataError(f"Overlapping patterns detected in Match.inverse: {offender[0]} VS. {offender[1]}")
-        transforms = [transform(tgt, src, soft_failure=True) for src, tgt in self.cases]
-        def transform_f(value: Any, ctx: Any) -> Any:
-            for t in transforms:
-                try:
-                    return t(value, ctx)
-                except DataError:
-                    continue
-            raise DataError(f"No matching case found for value: {value}")
-        return transform_f
-    
-    def iso(self, overlap: bool = True) -> Iso:
-        return Iso(self.forward(overlap=overlap), self.inverse(overlap=overlap))
         
 
 def Not(expr: Any) -> Any:
+    """Logical negation of an expression. The inference rules for Not are as follows:
+        - If Not(expr) is True, then expr must be False. Therefore, we can infer that any child expressions of expr should be resolved to False.
+        - If Not(expr) is False, then expr must be True. Therefore, we can infer that any child expressions of expr should be resolved to True.
+        - If Not(expr) is not fully resolved, we cannot make any inferences about the child expressions of expr.
+        TODO: We need a mechanism to generalize this to other logical operators. 
+        - Unary operators like Not
+        - Binary operators like And, Or, etc.
+        - Multiary operators like And, Or, etc.
+    """
     def infer_not(value: Any, child: List[Tuple[bool, int|str, Expr, Any]], env: Env, visited: Set[Any]) -> Generator[Tuple[Tuple[Var, Any], ...], None, None]:
         if value is True:
             for fully_resolved, i, child_expr, child_value in child:

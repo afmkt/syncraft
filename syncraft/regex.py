@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Tuple, Union, Any, Type
+from typing import Optional, Tuple, Union, Any, Type, Mapping
 import unicodedata
 
 from syncraft.algebra import Error
@@ -21,61 +21,6 @@ from functools import cached_property
 
 class RegexError(SyncraftError):
     pass
-
-
-# @dataclass(frozen=True)
-# class RPMatch:
-#     text: str
-#     captures: Tuple[Any, ...] = field(default_factory=tuple)
-#     payload: Any = Nothing
-
-
-# def _textify(value: Any) -> str:
-#     if value is Nothing:
-#         return ""
-#     if hasattr(value, "text"):
-#         text = getattr(value, "text", None)
-#         if isinstance(text, str):
-#             return text
-#     if isinstance(value, str):
-#         return value
-#     if isinstance(value, bytes):
-#         return value.decode("utf-8", errors="ignore")
-#     if isinstance(value, tuple):
-#         return "".join(_textify(v) for v in value)
-#     return str(value)
-
-
-# def _join_rp_matches(parts: Tuple[RPMatch, ...]) -> RPMatch:
-#     normalized = tuple(_as_rp_match(p) for p in parts)
-#     text = "".join(p.text for p in normalized)
-#     captures: Tuple[Any, ...] = tuple(c for p in normalized for c in p.captures)
-#     payload = tuple(p.payload for p in normalized)
-#     return RPMatch(text=text, captures=captures, payload=payload)
-
-
-# def _as_rp_match(value: Any) -> RPMatch:
-#     if isinstance(value, RPMatch):
-#         return value
-#     return RPMatch(text=_textify(value), captures=tuple(), payload=value)
-
-
-# def _rp_forward(value: Any, _: Any) -> RPMatch:
-#     return _as_rp_match(value)
-
-
-# def _rp_inverse(value: Any, _: Any) -> Any:
-#     m = _as_rp_match(value)
-#     if m.payload is not Nothing:
-#         return m.payload
-#     return m.text
-
-
-
-
-
-
-
 
 
 @dataclass(frozen=True)
@@ -102,7 +47,13 @@ class RegexNode:
         """Whether this node can match any empty or non-empty string."""
         return True
 
-    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+    def syntax(
+        self,
+        *,
+        syntax_cls: Type[Syntax],
+        case_insensitive: bool = False,
+        references: Mapping[str, Syntax[Any, Any]] | None = None,
+    ) -> Syntax[Any, Any]:
         b = self.builder(case_insensitive=case_insensitive)
         # return syntax_cls.lex(b).bimap(_rp_forward, _rp_inverse)
         return syntax_cls.lex(b)
@@ -248,7 +199,13 @@ class CharClassAtom(RegexNode):
 
 
 
-    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+    def syntax(
+        self,
+        *,
+        syntax_cls: Type[Syntax],
+        case_insensitive: bool = False,
+        references: Mapping[str, Syntax[Any, Any]] | None = None,
+    ) -> Syntax[Any, Any]:
         b = self.builder(case_insensitive=case_insensitive)
         # return syntax_cls.lex(b).bimap(_rp_forward, _rp_inverse)
         return syntax_cls.lex(b)
@@ -258,6 +215,7 @@ class CharClassAtom(RegexNode):
 class GroupKind(Enum):
     CAPTURE = auto()
     NON_CAPTURE = auto()
+    SYNTAX_REF = auto()
     LOOKAHEAD = auto()
     NEG_LOOKAHEAD = auto()
     LOOKBEHIND = auto()
@@ -293,6 +251,8 @@ class GroupAtom(RegexNode):
                 raise NotImplementedError(f"Cannot build GroupAtom of kind: {self.kind}")
         elif self.kind == GroupKind.COMMENT:
             return Builder.none()
+        elif self.kind == GroupKind.SYNTAX_REF:
+            raise RegexError("Syntax references are only supported in Syntax.rp", offender=self)
         elif self.kind == GroupKind.FLAGS_SCOPED:
             if self.regex is None or self.inline_flags is None:
                 raise RegexError("Invalid inline flags group", offender=self)
@@ -307,7 +267,7 @@ class GroupAtom(RegexNode):
             return super().builder()  # will raise RegexError for unsupported features
         
     def validate(self) -> None:
-        if self.kind not in (GroupKind.CAPTURE, GroupKind.COMMENT, GroupKind.NON_CAPTURE, GroupKind.FLAGS_SCOPED):
+        if self.kind not in (GroupKind.CAPTURE, GroupKind.COMMENT, GroupKind.NON_CAPTURE, GroupKind.FLAGS_SCOPED, GroupKind.SYNTAX_REF):
             raise RegexError("Unsupported group type in lexer regex", offender=self)
 
     @cached_property
@@ -316,9 +276,17 @@ class GroupAtom(RegexNode):
 
     @cached_property
     def effective(self) -> bool:
+        if self.kind == GroupKind.SYNTAX_REF:
+            return True
         return self.regex.effective if self.regex is not None else False
 
-    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+    def syntax(
+        self,
+        *,
+        syntax_cls: Type[Syntax],
+        case_insensitive: bool = False,
+        references: Mapping[str, Syntax[Any, Any]] | None = None,
+    ) -> Syntax[Any, Any]:
         self.validate()
         if self.kind == GroupKind.FLAGS_SCOPED:
             if self.regex is None or self.inline_flags is None:
@@ -329,7 +297,17 @@ class GroupAtom(RegexNode):
                 raise RegexError("Inline flag disabling is not supported", offender=self, expect="Only (?i:...) is supported")
             if enabled - {"i"}:
                 raise RegexError("Unsupported inline flags", offender=self, expect="Only (?i:...) is supported")
-            return self.regex.syntax(syntax_cls=syntax_cls, case_insensitive=True)
+            return self.regex.syntax(syntax_cls=syntax_cls, case_insensitive=True, references=references)
+
+        if self.kind == GroupKind.SYNTAX_REF:
+            if self.name is None:
+                raise RegexError("Syntax reference group is missing a name", offender=self)
+            if references is None or self.name not in references:
+                raise RegexError("Unknown syntax reference in Syntax.rp", offender=self.name, expect="Provide refs={'name': Syntax(...)}")
+            referenced = references[self.name]
+            if not isinstance(referenced, Syntax):
+                raise RegexError("Invalid syntax reference in Syntax.rp", offender=referenced, expect="Syntax instance")
+            return syntax_cls.from_spec(referenced.spec)
 
         if self.kind == GroupKind.COMMENT:
             raise RegexError("Comments are not supported in Syntax.rp yet", offender=self)
@@ -338,23 +316,11 @@ class GroupAtom(RegexNode):
         if self.regex is None:
             raise RegexError("Group has no inner regex", offender=self)
 
-        inner = self.regex.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+        inner = self.regex.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
         if self.kind == GroupKind.NON_CAPTURE:
             return inner
 
         if self.kind == GroupKind.CAPTURE:
-            # def fwd(value: Any, _: Any) -> RPMatch:
-            #     m = _as_rp_match(value)
-            #     return RPMatch(text=m.text, captures=m.captures + (m.text,), payload=m.payload)
-
-            # def inv(value: Any, _: Any) -> RPMatch:
-            #     m = _as_rp_match(value)
-            #     captures = m.captures
-            #     if captures and captures[-1] == m.text:
-            #         captures = captures[:-1]
-            #     return RPMatch(text=m.text, captures=captures, payload=m.payload)
-
-            # captured = inner.bimap(fwd, inv)
             captured = inner
             if self.name:
                 return captured.bind(**{self.name: lambda m, _: m})
@@ -411,7 +377,13 @@ class AnchorAtom(RegexNode):
     def builder(self, case_insensitive:bool = False) -> Builder[str]:
         raise RegexError("Anchors are not supported in Syntax.rp yet", offender=self)
     
-    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+    def syntax(
+        self,
+        *,
+        syntax_cls: Type[Syntax],
+        case_insensitive: bool = False,
+        references: Mapping[str, Syntax[Any, Any]] | None = None,
+    ) -> Syntax[Any, Any]:
         raise RegexError("Anchors are not supported in Syntax.rp yet", offender=self)
     
 
@@ -452,31 +424,23 @@ class Piece(RegexNode):
     def has_group(self) -> bool:
         return self.atom.has_group
 
-    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+    def syntax(
+        self,
+        *,
+        syntax_cls: Type[Syntax],
+        case_insensitive: bool = False,
+        references: Mapping[str, Syntax[Any, Any]] | None = None,
+    ) -> Syntax[Any, Any]:
         if not self.has_group:
-            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
 
-        atom_syntax = self.atom.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+        atom_syntax = self.atom.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
         if self.quantifier is None or self.quantifier is Nothing:
             return atom_syntax
 
         q = self.quantifier
         repeated = atom_syntax.many(at_least=q.minimum, at_most=q.maximum)
         return repeated
-        # def fwd(values: Tuple[Any, ...], _: Any) -> RPMatch:
-        #     return _join_rp_matches(tuple(_as_rp_match(v) for v in values))
-
-        # def inv(value: Any, _: Any) -> Tuple[Any, ...]:
-        #     m = _as_rp_match(value)
-        #     payload = m.payload
-        #     if isinstance(payload, tuple):
-        #         return payload
-        #     if m.text == "" and q.minimum == 0:
-        #         return tuple()
-        #     seed = payload if payload is not Nothing else m.text
-        #     return (seed,)
-
-        # return repeated.bimap(fwd, inv)
 
 
 
@@ -497,9 +461,15 @@ class Branch(RegexNode):
     def has_group(self) -> bool:
         return any(piece.has_group for piece in self.pieces)
 
-    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+    def syntax(
+        self,
+        *,
+        syntax_cls: Type[Syntax],
+        case_insensitive: bool = False,
+        references: Mapping[str, Syntax[Any, Any]] | None = None,
+    ) -> Syntax[Any, Any]:
         if not self.has_group:
-            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
         
         pieces = [p for p in self.pieces if p.effective]
         parts_list: list[Tuple[Syntax[Any, Any], bool]] = []
@@ -507,7 +477,7 @@ class Branch(RegexNode):
         while i < len(pieces):
             piece = pieces[i]
             if piece.has_group:
-                parts_list.append(+piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive))
+                parts_list.append(+piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references))
                 i += 1
             else:
                 j = i
@@ -525,18 +495,6 @@ class Branch(RegexNode):
             return parts[0][0]
         seq = syntax_cls.seq(*parts)
         return seq
-        # def fwd(values: Tuple[Any, ...], _: Any) -> RPMatch:
-        #     return _join_rp_matches(tuple(_as_rp_match(v) for v in values))
-
-        # def inv(value: Any, _: Any) -> Tuple[Any, ...]:
-        #     m = _as_rp_match(value)
-        #     payload = m.payload
-        #     if isinstance(payload, tuple):
-        #         return payload
-        #     seed = payload if payload is not Nothing else m.text
-        #     return (seed,)
-
-        # return seq.bimap(fwd, inv)
     
 
 
@@ -555,16 +513,22 @@ class Regex(RegexNode):
     def has_group(self) -> bool:
         return any(branch.has_group for branch in self.branches if branch.effective)
 
-    def syntax(self, *, syntax_cls: Type[Syntax], case_insensitive: bool = False) -> Syntax[Any, Any]:
+    def syntax(
+        self,
+        *,
+        syntax_cls: Type[Syntax],
+        case_insensitive: bool = False,
+        references: Mapping[str, Syntax[Any, Any]] | None = None,
+    ) -> Syntax[Any, Any]:
 
         if not self.has_group:
-            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive)
+            return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
 
         group_branches = [branch for branch in self.branches if branch.has_group and branch.effective]
         plain_branches = [branch for branch in self.branches if not branch.has_group and branch.effective]
 
         alternatives: list[Syntax[Any, Any]] = []
-        alternatives.extend(branch.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive) for branch in group_branches)
+        alternatives.extend(branch.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references) for branch in group_branches)
 
         if plain_branches:
             has_plain_empty = any(len(branch.pieces) == 0 for branch in plain_branches)
@@ -713,12 +677,12 @@ class RE(Grammar):
         return S.alt(
             S.seq(RE.lparen, +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),
             S.seq(RE.lparen, RE.question, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NON_CAPTURE)),
+            S.seq(S.lit("(?&"), +RE.name, RE.rparen).to(lambda env: (env.name,), lambda env: GroupAtom(name=env.name, kind=GroupKind.SYNTAX_REF)),
             S.seq(S.lit("(?="), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
             S.seq(S.lit("(?!"), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
             S.seq(S.lit("(?<="), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
             S.seq(S.lit("(?<!"), +RE.regex, RE.rparen).to(lambda env: (env.X,), lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
-            S.alt(      S.seq(S.lit("(?&"), +RE.name, RE.rparen),
-                        S.seq(S.lit("(?"), +RE.number, RE.rparen),
+            S.alt(      S.seq(S.lit("(?"), +RE.number, RE.rparen),
                         S.seq(S.lit("(?R"), RE.rparen),
                         S.seq(S.lit("(?r"), RE.rparen),
                         S.seq(S.lit("(?P"), RE.rparen),            
@@ -813,26 +777,24 @@ def re(pattern: str) -> Builder[str]:
     return parsed.builder()
 
 
-def rp(pattern: str, *, syntax_cls: Type[Syntax] = Syntax) -> Syntax[Any, Any]:
+def rp(
+    pattern: str,
+    *,
+    syntax_cls: Type[Syntax] | None = None,
+    **refs: Syntax[Any, Any]
+) -> Syntax[Any, Any]:
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
             raise SyncraftError("Regex parse failed", offender=parsed, expect=parsed.summary)
         raise SyncraftError("Regex parse failed", offender=parsed)
-    converted = parsed.syntax(syntax_cls=syntax_cls)
+    if syntax_cls is None:
+        if len(refs) > 0:
+            syntax_cls = type(next(iter(refs.values())))
+        else:
+            syntax_cls = Syntax
+    converted = parsed.syntax(syntax_cls=syntax_cls, references=refs)
     return converted
-    # def fwd(value: Any, _: Any) -> Any:
-    #     m = _as_rp_match(value)
-    #     return m.captures if len(m.captures) > 0 else m.text
-
-    # def inv(value: Any, _: Any) -> RPMatch:
-    #     if isinstance(value, tuple):
-    #         text = "".join(_textify(v) for v in value)
-    #         return RPMatch(text=text, captures=tuple(value), payload=value)
-    #     text = _textify(value)
-    #     return RPMatch(text=text, captures=tuple(), payload=value)
-
-    # return converted.bimap(fwd, inv)
     
 
 @dataclass

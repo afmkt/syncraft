@@ -3,6 +3,7 @@ from syncraft.syntax import Syntax
 from syncraft.regex import verify
 import random
 import string
+import os
 
 
 
@@ -42,9 +43,26 @@ def random_group(depth=0):
     """Recursively generate nested group structure."""
     if depth > 2:
         return random_atom(depth)
-    group_type = random.choice(["()", "(?:)", "(?=)", "(?!)", "(?<=)", "(?<!)"])
+    group_type = random.choice([
+        "capture",
+        "non_capture",
+        "lookahead_pos",
+        "lookahead_neg",
+        "lookbehind_pos",
+        "lookbehind_neg",
+    ])
     inner = "".join(random_atom(depth + 1) for _ in range(random.randint(1, 3)))
-    return group_type[:2] + inner + group_type[-1]
+    if group_type == "capture":
+        return f"({inner})"
+    if group_type == "non_capture":
+        return f"(?:{inner})"
+    if group_type == "lookahead_pos":
+        return f"(?={inner})"
+    if group_type == "lookahead_neg":
+        return f"(?!{inner})"
+    if group_type == "lookbehind_pos":
+        return f"(?<={inner})"
+    return f"(?<!{inner})"
 
 def random_atom(depth=0) -> str:
     atom_type = random.choice(["literal", "shorthand", "class", "unicode", "group", "anchor", "dot"])
@@ -254,14 +272,17 @@ def test_fuzzing_collection():
         assert vr.ok, f"Pattern failed to parse: {pattern} {should_pass}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 def test_fuzzing():
-    seed = random.randint(0, 2**32 - 1)
-    print("Fuzzing seed:", seed)
+    seed_env = os.getenv("SYNCRAFT_REGEX_FUZZ_SEED")
+    if seed_env is None:
+        seed = random.randint(0, 2**32 - 1)
+    else:
+        seed = int(seed_env)
     TEST_CASES = generate_random_regex_tests(400, seed=seed)
     # ('fuzzing', '\\d{2,}\\U000F44C9{2}\\U000AA4AB{1,5}[Av]*|(?b)|$', True)
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
         pattern = ("fuzzing", pattern, should_pass)
-        assert vr.ok, f"Pattern failed to parse: {pattern}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
+        assert vr.ok, f"Pattern failed to parse: {pattern}\nSeed: {seed}\nSyncraft Error: {vr.err_syncraft}\nRe Error: {vr.err_re}"
 
 
 

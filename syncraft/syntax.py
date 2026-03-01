@@ -379,6 +379,10 @@ class SeqSpec(SyntaxSpec):
     
     def _children(self,*, lazy_cache: MutableMapping[int, SyntaxSpec]) -> Tuple[SyntaxSpec, ...]:
         return tuple(step for step, keep in self.steps)
+
+    @property
+    def arity(self) -> int:
+        return sum(1 for _, keep in self.steps if keep)
     
 @dataclass(frozen=True, slots=True)
 class AltSpec(SyntaxSpec):
@@ -1083,7 +1087,17 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
-        all_parsers = parsers
+        all_parsers: Tuple[Syntax[Any, S], ...]
+        if bool(cls.get('normalize_alt')):
+            flattened: List[Syntax[Any, S]] = []
+            for parser in parsers:
+                if isinstance(parser.spec, AltSpec):
+                    flattened.extend(cls.from_spec(option_spec) for option_spec in parser.spec.options)
+                else:
+                    flattened.append(parser)
+            all_parsers = tuple(flattened)
+        else:
+            all_parsers = parsers
         def alt_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [p(acls, **global_kwargs) for p in all_parsers]
             return acls.alt(*algs)
@@ -1117,11 +1131,36 @@ class Syntax(Generic[A, S]):
             
         default:bool = infer_default_keep(steps)
         syntaxes = [X if isinstance(X, tuple) else (X, default) for X in steps]
+
+        runtime_steps: List[Tuple[Syntax[Any, S], bool]]
+        if bool(cls.get('normalize_seq')):
+            normalized_steps: List[Tuple[Syntax[Any, S], bool]] = []
+            for step, keep in syntaxes:
+                if isinstance(step.spec, SeqSpec):
+                    for child_spec, child_keep in step.spec.steps:
+                        normalized_keep = child_keep if keep else False
+                        normalized_steps.append((cls.from_spec(child_spec), normalized_keep))
+                else:
+                    normalized_steps.append((step, keep))
+            runtime_steps = normalized_steps
+        else:
+            runtime_steps = syntaxes
+
         def seq_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
-            algs = [(step(acls, **global_kwargs), keep) for step, keep in syntaxes]
+            algs = [(step(acls, **global_kwargs), keep) for step, keep in runtime_steps]
             return acls.seq(*algs)
-        spec = SeqSpec(steps=tuple((step.spec, keep) for step, keep in syntaxes), name=None, file=None, line=None, func=None)
-        iso = Iso() if cls.get('no_iso') else spec.iso()
+        spec = SeqSpec(steps=tuple((step.spec, keep) for step, keep in runtime_steps), name=None, file=None, line=None, func=None)
+        iso: Iso[Any, Any]
+        if cls.get('no_iso'):
+            iso = Iso()
+        else:
+            iso = spec.iso()
+            if bool(cls.get('unwrap_unary_seq')) and spec.arity == 1:
+                unary_iso = Iso(
+                    lambda value, _: value[0],
+                    lambda value, _: (value,),
+                )
+                iso = iso >> unary_iso
         return cls(alg_f=seq_f, spec=spec).iso(iso) # type: ignore
 
     @classmethod
@@ -1204,9 +1243,9 @@ class Syntax(Generic[A, S]):
         return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
     @classmethod
-    def rp(cls, pattern: str) -> Syntax:
+    def rp(cls, pattern: str, **refs: Syntax[Any, Any]) -> Syntax:
         import syncraft.regex as regex
-        return regex.rp(pattern, syntax_cls=cls)
+        return regex.rp(pattern, syntax_cls=cls, **refs)
         
     
     @classmethod
