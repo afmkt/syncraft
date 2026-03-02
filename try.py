@@ -1,116 +1,43 @@
-from __future__ import annotations
+"""
+Test cases demonstrating Syntax.rp() in inline, immediate, REPL-style usage.
 
-from dataclasses import dataclass
-from typing import Any
+"CFG in regex flavor" — using regex notation to compose CFG rules inline,
+without @grammar classes or explicit rule fields. Everything is immediate.
+"""
 
-from syncraft import Error, Grammar, Syntax, grammar, lazy, rule, re
-from syncraft.lexer import GlobalLexerBuilder
-
-# -- step-1 --
-
-S = Syntax.set_lexer(GlobalLexerBuilder())  
-
-@grammar
-class ExprGrammar(Grammar):
-    ws = S.re(r"\s*", skip=True, tag="WS")
-    number = S.re(r"\d+")
-    plus = S.lit("+")
-    star = S.lit("*")
-    lparen = S.lit("(")
-    rparen = S.lit(")")
-
-    @lazy(S)
-    def expr():  
-        return (ExprGrammar.term + ExprGrammar.plus + ExprGrammar.expr) | ExprGrammar.term
-
-    @lazy(S)
-    def term():  
-        return (ExprGrammar.factor + ExprGrammar.star + ExprGrammar.term) | ExprGrammar.factor
-
-    @lazy(S)
-    def factor():  
-        return ExprGrammar.number | ExprGrammar.expr.between(ExprGrammar.lparen, ExprGrammar.rparen)
-
-    root = rule(expr, is_root=True)
-# -- step-1-end --
+from syncraft.syntax import Syntax as S
+from syncraft.parser import parse_string
+from syncraft.algebra import Error
+# from rich import print
 
 
-# -- step-2 --
-
-def test_quickstart_step_2() -> None:
-    ast = ExprGrammar.parse(" 1 +2*3 ")
-    assert ast == ("1", "+", ("2", "*", "3"))
-# -- step-2-end --
+def cfgparse(pattern: str, text: str, **refs):
+    """Shorthand: pattern -> Syntax.rp -> parse immediate."""
+    return parse_string(S.rp(pattern, **refs), text)
 
 
-# -- step-3 --
-@dataclass(frozen=True, slots=True)
-class Number:
-    value: int
-
-
-@dataclass(frozen=True, slots=True)
-class Binary:
-    left: Any
-    op: str
-    right: Any
-# -- step-3-end --
-
-
-# -- step-4 --
-@grammar
-class ExprAstGrammar(Grammar):
-    ws = S.re(r"\s*", skip=True)
-    number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
-    plus = S.lit("+")
-    star = S.lit("*")
-    lparen = S.lit("(")
-    rparen = S.lit(")")
-
-    @lazy(S)
-    def expr():  
-        bin_expr = (ExprAstGrammar.term + ExprAstGrammar.plus + ExprAstGrammar.expr).to(
-            lambda env: (env.left, env.op, env.right),
-            lambda env: Binary(env.left, env.op, env.right),
-        )
-        return bin_expr | ExprAstGrammar.term
-
-    @lazy(S)
-    def term():  
-        bin_term = (ExprAstGrammar.factor + ExprAstGrammar.star + ExprAstGrammar.term).to(
-            lambda env: (env.left, env.op, env.right),
-            lambda env: Binary(env.left, env.op, env.right),
-        )
-        return bin_term | ExprAstGrammar.factor
-
-    @lazy(S)
-    def factor():  
-        return ExprAstGrammar.number | ExprAstGrammar.expr.between(ExprAstGrammar.lparen, ExprAstGrammar.rparen)
-
-    root = rule(expr, is_root=True)
-
-
-def test_quickstart_step_4() -> None:
-    ast = ExprAstGrammar.parse(" 1+ 2 * 3 ")
-    assert ast == Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
-# -- step-4-end --
-
-
-# -- step-5 --
-
-def test_quickstart_step_5() -> None:
-    expr = Binary(Number(1), "+", Binary(Number(2), "*", Number(3)))
-    validated = ExprAstGrammar.validate(expr)
-    assert not isinstance(validated, Error)
-
-    generated = ExprAstGrammar.generate(expr)
-    assert not isinstance(generated, Error)
-# -- step-5-end --
-
-
+def test_failed():
+    r"""
+    SIMPLEST REPRODUCER - doesn't need lazy or self-reference!
+    
+    Pattern: r"2|\((?&num)\s*"
+    
+    Uses:
+    - S.lit() for external reference (not S.rp)
+    - S.rp() directly (not S.lazy)
+    - External reference (?&num), not self-reference
+    
+    This proves the bug affects:
+    - ANY alternation (|) with external reference (?&name)
+    - When second branch uses \s* or []* (zero-or-more quantifier)
+    - Lexer fails because alternation lexer doesn't include tokens
+      from branches that contain external references
+    """
+    num = S.lit(r"2")
+    expr = S.rp(r"2|\((?&num)\s*", num=num)
+    result = parse_string(expr, "(2")
+    print(result)
 
 
 if __name__ == "__main__":
-    test_quickstart_step_2()
-    test_quickstart_step_4()
-    test_quickstart_step_5()
+    test_failed()

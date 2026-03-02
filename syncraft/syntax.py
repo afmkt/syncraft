@@ -512,6 +512,10 @@ class LexSpec(SyntaxSpec):
     extra_info: FrozenDict[str, Any] = field(default_factory=FrozenDict)
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
 
+    @classmethod
+    def should_ignore(cls, data: Any) -> bool:
+        from syncraft.lexer import LocalLexerBuilder, GlobalLexerBuilder
+        return isinstance(data, (LocalLexerBuilder, GlobalLexerBuilder))
     
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -522,24 +526,28 @@ class LexSpec(SyntaxSpec):
     
     def to_str(self, highlight: int) -> str:
         if self.str_cache is None:
-            if self.name or not (self.kwargs or self.args):
+            if self.name or not (self.kwargs or self.args or self.extra_info):
                 ret = self.name or self.fname
             else:
                 parts = []
                 for a in self.args:
-                    s = str(a)
-                    if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
-                        s = s[:self.MAX_NAME_LENGTH-3] + "..."
-                    parts.append(s)
+                    if not LexSpec.should_ignore(a):
+                        s = str(a)
+                        if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
+                            s = s[:self.MAX_NAME_LENGTH-3] + "..."
+                        parts.append(s)
                 args = ','.join(parts)
                 kwparts = []
-                for k, v in self.kwargs.items():
-                    if v is not None:
+                all_info = {**self.kwargs, **self.extra_info} if self.extra_info else self.kwargs
+                for k, v in all_info.items():
+                    if v is not None and not LexSpec.should_ignore(v):
                         s = str(v)
                         if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
                             s = s[:self.MAX_NAME_LENGTH-3] + "..."
                         kwparts.append(f"{k}={s}")
                 kwargs = ', '.join(kwparts)
+
+
                 if args and kwargs:
                     ret = self.format("{fname}({args}, {kwargs})", fname=self.fname, args=args, kwargs=kwargs)
                 elif args:
@@ -671,6 +679,11 @@ class Syntax(Generic[A, S]):
 
     
     @property
+    def atomic(self) -> Syntax[A, S]:
+        """Mark this syntax as atomic, which means it will not be flattened during normalization."""
+        return replace(self, can_normalize=False)
+
+    @property
     def is_orelse(self) -> bool:
         return isinstance(self.spec, AltSpec)
 
@@ -694,6 +707,7 @@ class Syntax(Generic[A, S]):
     def vis(self, depth: int = 3) -> Optional[SVGVisualization]:
         from syncraft.vis import syntax2svg
         return syntax2svg(self.spec, max_depth=depth)
+
 
     @classmethod
     def cdbg(cls, e: bool)->Any:
@@ -1006,6 +1020,7 @@ class Syntax(Generic[A, S]):
             >>> syntax = A.sep_by(comma)
             >>> # Parses "a,a,a" and produces Many containing three "a" elements
         """
+        
         def fwd(t: Tuple[A, Tuple[A, ...]], ctx: Any) -> Tuple[A, ...]:
             first, rest = t
             return tuple([first] + list(rest))
@@ -1014,7 +1029,9 @@ class Syntax(Generic[A, S]):
             first, *rest = v
             return (first, tuple(rest))            
 
-        return (self + (sep >> self).many()).bimap(fwd, inv)
+        # Block normalization on self to prevent flattening when used in seq
+        self_blocked = self.atomic
+        return (self_blocked + (sep >> self_blocked).many()).bimap(fwd, inv)
 
 
     def parens(

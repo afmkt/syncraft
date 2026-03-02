@@ -272,6 +272,9 @@ class GroupAtom(RegexNode):
 
     @cached_property
     def has_group(self) -> bool:
+        if self.kind == GroupKind.NON_CAPTURE:
+            # Non-capture groups themselves don't create a group, but inner groups do
+            return self.regex.has_group if self.regex is not None else False
         return True
 
     @cached_property
@@ -307,7 +310,7 @@ class GroupAtom(RegexNode):
             referenced = references[self.name]
             if not isinstance(referenced, Syntax):
                 raise RegexError("Invalid syntax reference in Syntax.rp", offender=referenced, expect="Syntax instance")
-            return syntax_cls.from_spec(referenced.spec)
+            return referenced
 
         if self.kind == GroupKind.COMMENT:
             raise RegexError("Comments are not supported in Syntax.rp yet", offender=self)
@@ -473,27 +476,34 @@ class Branch(RegexNode):
         
         pieces = [p for p in self.pieces if p.effective]
         parts_list: list[Tuple[Syntax[Any, Any], bool]] = []
-        i = 0
-        while i < len(pieces):
-            piece = pieces[i]
-            if piece.has_group:
-                parts_list.append(+piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references))
-                i += 1
-            else:
-                j = i
-                builders: list[Builder[str]] = []
-                while j < len(pieces) and not pieces[j].has_group:
-                    builders.append(pieces[j].builder(case_insensitive=case_insensitive))
-                    j += 1
-                merged = reduce(lambda a, b: a + b, builders) if len(builders) > 0 else Builder.none()
-                # parts_list.append(syntax_cls.lex(merged).bimap(_rp_forward, _rp_inverse))
-                parts_list.append(-syntax_cls.lex(merged))
-                i = j
+        buffered_builders: list[Builder[str]] = []
 
-        parts = tuple(parts_list)
-        if len(parts) == 1:
-            return parts[0][0]
-        seq = syntax_cls.seq(*parts)
+        def flush_buffered_builders() -> None:
+            nonlocal buffered_builders
+            if buffered_builders:
+                merged = reduce(lambda a, b: a + b, buffered_builders)
+                parts_list.append(-syntax_cls.lex(merged))
+                buffered_builders = []
+
+        for piece in pieces:
+            if piece.has_group:
+                flush_buffered_builders()
+                parts_list.append(+piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references))
+            else:
+                q = piece.quantifier
+                if q is not None and q is not Nothing and q.minimum == 0:
+                    # nullable piece without a group
+                    flush_buffered_builders()
+                    atom_builder = piece.atom.builder(case_insensitive=case_insensitive)
+                
+                    repeated = syntax_cls.lex(atom_builder).many(at_least=q.minimum, at_most=q.maximum)
+                    parts_list.append(-repeated)
+                else:
+                    buffered_builders.append(piece.builder(case_insensitive=case_insensitive))
+
+        flush_buffered_builders()
+
+        seq = syntax_cls.seq(*parts_list)
         return seq
     
 
