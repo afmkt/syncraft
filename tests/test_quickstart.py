@@ -70,7 +70,7 @@ class ExprAstGrammar(Grammar):
     @lazy(S)
     def expr():  
         bin_expr = (ExprAstGrammar.term + ExprAstGrammar.plus + ExprAstGrammar.expr).to(
-            lambda env: ((env.left, env.op), env.right),
+            lambda env: (env.left, env.op, env.right),
             lambda env: Binary(env.left, env.op, env.right),
         )
         return bin_expr | ExprAstGrammar.term
@@ -78,7 +78,7 @@ class ExprAstGrammar(Grammar):
     @lazy(S)
     def term():  
         bin_term = (ExprAstGrammar.factor + ExprAstGrammar.star + ExprAstGrammar.term).to(
-            lambda env: ((env.left, env.op), env.right),
+            lambda env: (env.left, env.op, env.right),
             lambda env: Binary(env.left, env.op, env.right),
         )
         return bin_term | ExprAstGrammar.factor
