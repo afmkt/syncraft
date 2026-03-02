@@ -39,10 +39,7 @@ class ExprGrammar(Grammar):
 
 def test_quickstart_step_2() -> None:
     ast = ExprGrammar.parse(" 1 +2*3 ")
-    assert ast == (
-        ("1", "+"),
-        (("2", "*"), "3"),
-    )
+    assert ast == ("1", "+", ("2", "*", "3"))
 # -- step-2-end --
 
 

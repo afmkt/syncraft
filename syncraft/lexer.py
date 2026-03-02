@@ -125,6 +125,19 @@ class Lexer(LexerProtocol[C]):
     cache: ClassVar[LexerCache] = LexerCache()
     filepath: Optional[Path] = field(default=None, compare=False, hash=False, repr=False)
 
+    @staticmethod
+    def _summarize_expected(expected: frozenset[Hashable]) -> str:
+        if not expected:
+            return "valid input"
+
+        items = sorted(str(item) for item in expected)
+        if len(items) == 1:
+            return f"'{items[0]}'"
+        if len(items) <= 10:
+            quoted = [f"'{item}'" for item in items]
+            return f"one of {', '.join(quoted)}"
+        return f"one of {', '.join(items[:5])} ... {len(items)} valid inputs"
+
     def _normalize_default_tags(self) -> bool:
         def needs_normalization(mode: Mode[C]) -> bool:
             has_default_tag = False
@@ -387,8 +400,9 @@ class Lexer(LexerProtocol[C]):
             expecting = mode.runner.resumable_str(old_state)
             mode.runner = mode.runner.reset()
             exp = expecting or frozenset()
+            expected_str = self._summarize_expected(exp)
             return LexerError(
-                message=f"Lexing mismatch '{char}' at index {index}, expect {exp}",
+                message=f"Lexing mismatch '{char}' at index {index}, expected {expected_str}",
                 index=index,
                 offender=char,
                 expect=exp,

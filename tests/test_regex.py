@@ -278,7 +278,7 @@ def test_fuzzing():
     else:
         seed = int(seed_env)
     TEST_CASES = generate_random_regex_tests(400, seed=seed)
-    # ('fuzzing', '\\d{2,}\\U000F44C9{2}\\U000AA4AB{1,5}[Av]*|(?b)|$', True)
+    
     for name, pattern, should_pass in TEST_CASES:
         vr = verify(pattern)
         pattern = ("fuzzing", pattern, should_pass)

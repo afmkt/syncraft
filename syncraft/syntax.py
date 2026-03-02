@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
-from syncraft.bimap import Bindable, Iso, DataError
+from syncraft.bimap import Bindable, Iso, DataError, Match
 from syncraft.ast import Many, Nothing, SyncraftError, Seq, Alt, Lazy, Unknown
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
@@ -133,7 +133,22 @@ class Graph(Generic[N]):
         
 @dataclass(frozen=True, slots=True)
 class SyntaxSpec:
+    """
+    Base class for syntax specifications.
 
+    Subclasses represent grammar combinators (e.g. Seq, Alt, Many, Lex, Lazy).
+    SyntaxSpec is immutable and hashable; metadata fields are excluded from
+    comparisons and hashing.
+
+    A SyntaxSpec records enough structural information to reconstruct a
+    corresponding Syntax object via syntax(cls, cache).
+
+    Caveat:
+        SyntaxSpec stores grammar structure only. It does not store user-level
+        data/operational transformations (e.g. iso/map/bimap/bind/check/debug).
+        Reconstructed Syntax objects therefore keep grammar semantics but do not
+        recover those transformation layers.
+    """
     name: Optional[str] = field(compare=False, hash=False)
     file: Optional[str] = field(compare=False, hash=False) 
     line: Optional[int] = field(compare=False, hash=False)
@@ -547,7 +562,6 @@ class LexSpec(SyntaxSpec):
     
 @dataclass
 class LazyState(Generic[A, S]):
-    
     # thunk returns a Syntax[A, S], the original callable passed to Syntax.lazy
     thunk: Callable[[], Syntax[A, S]]
     # cached resolved Syntax; excluded from comparisons
@@ -619,14 +633,38 @@ class LazyState(Generic[A, S]):
 class Syntax(Generic[A, S]):
     """
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
+    alg_f: Callable[..., Algebra[A, S]] is the function that constructs the algebra instance for this syntax.
+    spec: SyntaxSpec is the metadata/specification of this syntax, which can be used for visualization, debugging, and reconstructing 
+          the syntax via spec.syntax(Syntax, cache). 
+    is_root: whether this syntax is a root syntax (i.e. directly used in Grammar rules). The entry point of a Grammar
+    can_normalize: whether this syntax can be normalized. seq and alt combinators will normalize their children if they are marked as can_normalize, 
+                   which allows normalization to be applied selectively to certain parts of the syntax tree.
+                   Normalization of alt makes 
+                    (A | B) | C == A | (B | C), 
+                   and normalization of seq makes 
+                    (A + B) + C == A + (B + C)
+                    (A >> B) >> C == A >> (B >> C)
+                    (A // B) // C == A // (B // C)
+                   and (A,) becomes A
+    print: a class-level DbgPrint instance for debug printing. Use Syntax.cdbg(True) to enable debug printing for all Syntax instances, 
+           or use Syntax(...).idbg(True) to enable debug printing for a specific instance.
+    _lazy_facade_cache: a class-level cache for storing Syntax instances created as facades for LazySpecs, keyed by the LazySpec's thunk. 
+                        This allows different LazySpecs that share the same thunk to reuse the same Syntax facade, 
+                        which is important for keeping the correspondence between Syntax and Algebra instances across lazy combinators.
+    
+    CAVEAT: Syntax objects reconstructed from SyntaxSpec via spec.syntax(Syntax, cache) will lost its data transformation or operational logic 
+            (e.g. iso, map, imap, bimap, to, bind, check, etc.) since SyntaxSpec only records the grammatic structure of the syntax, 
+            not the data transformation and operational logic.
+                   
     """
     
     alg_f: Callable[..., Algebra[A, S]]
     spec: SyntaxSpec = field(repr=False)
 
     is_root: bool = field(default=False, compare=False, hash=False, repr=False)
-
-
+    can_normalize: bool = field(default=True, compare=False, hash=False, repr=False)
+    # the alt and seq combinators need to keep track of their children for normalization
+    _children: Tuple[Syntax[Any, S], ...] | None = field(default=None, compare=False, hash=False, repr=False)
 
     print: ClassVar[DbgPrint] = DbgPrint.create()
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax]] = ThreadLocalWeakValueDict()
@@ -672,12 +710,20 @@ class Syntax(Generic[A, S]):
     @property
     def present(self) -> Syntax[A, S]:
         """Positive lookahead: ensure this syntax is present. Does not consume input."""
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).present)
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).present,
+            can_normalize=self._updated_can_normalize(block_normalization=True),
+        )
 
     @property
     def absent(self) -> Syntax[type[Nothing], S]:
         """Negative lookahead: ensure this syntax is absent. Does not consume input."""
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).absent) # type: ignore
+        return replace(
+            self,
+            alg_f=cast(Callable[..., Algebra[A, S]], lambda cls, **global_kwargs: self(cls, **global_kwargs).absent),
+            can_normalize=self._updated_can_normalize(block_normalization=True),
+        ) # type: ignore
 
 
     @classmethod
@@ -733,8 +779,11 @@ class Syntax(Generic[A, S]):
     ) -> Graph[SyntaxSpec]:
         return self.spec.graph(max_depth=max_depth)
 
+    def _updated_can_normalize(self, *, block_normalization: bool) -> bool:
+        return False if block_normalization else self.can_normalize
+
     ######################################################## value transformation ########################################################
-    def map(self, f: Callable[..., B]) -> Syntax[B, S]:
+    def map(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
 
         Args:
@@ -743,12 +792,20 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with the same resulting state.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f)) # type: ignore
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        ) # type: ignore
     
-    def imap(self, f: Callable[..., A]) -> Syntax[A, S]:
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f)) # type: ignore
+    def imap(self, f: Callable[..., A], *, block_normalization: bool = True) -> Syntax[A, S]:
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        ) # type: ignore
 
-    def iso(self, iso: Iso[A, B]) -> Syntax[B, S]:
+    def iso(self, iso: Iso[A, B], *, block_normalization: bool = True) -> Syntax[B, S]:
         """
         Isomorphically map values, preserving round-trip info.
 
@@ -758,9 +815,13 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(iso)) # type: ignore
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).iso(iso),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        ) # type: ignore
 
-    def bimap(self, f: Callable[..., B], i: Callable[..., A]) -> Syntax[B, S]:
+    def bimap(self, f: Callable[..., B], i: Callable[..., A], *, block_normalization: bool = True) -> Syntax[B, S]:
         """
         Bidirectionally map values with an inverse, keeping round-trip info.
 
@@ -771,9 +832,13 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax yielding B with state alignment preserved.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(f, i)) # type: ignore
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bimap(f, i),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        ) # type: ignore
     
-    def map_error(self, f: Callable[[Optional[Any]], Any]) -> Syntax[A, S]:
+    def map_error(self, f: Callable[[Optional[Any]], Any], *, block_normalization: bool = True) -> Syntax[A, S]:
         """
         Transform the error payload when this syntax fails.
 
@@ -783,7 +848,11 @@ class Syntax(Generic[A, S]):
         Returns:
             Syntax that preserves successes and maps failures.
         """
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_error(f))         
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map_error(f),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        )
     
     def many(self, *, at_least: int = 0, at_most: Optional[int] = None) -> Syntax[Tuple[A, ...], S]:
         """
@@ -809,11 +878,12 @@ class Syntax(Generic[A, S]):
         def alg_f(cls: type[Algebra], **global_kwargs) -> Algebra[Many, S]:
             return self(cls, **global_kwargs).many(at_least=at_least, at_most=at_most)
         iso = Iso() if self.get('no_iso') else spec.iso()
-        return replace(self, alg_f = alg_f, spec = spec).iso(iso) # type: ignore
+        base = replace(self, alg_f=alg_f, spec=spec)  # type: ignore[arg-type]
+        return base.iso(iso, block_normalization=False) # type: ignore
                        
     
 
-    def on_fail(self, f: Callable[[Optional[Syntax[A, S]], S, Any], Either[Any, Tuple[Any, S]]] | None | Any) -> Syntax[Any, S]:
+    def on_fail(self, f: Callable[[Optional[Syntax[A, S]], S, Any], Either[Any, Tuple[Any, S]]] | None | Any, *, block_normalization: bool = True) -> Syntax[Any, S]:
         """Attach a callback to handle failure cases.
 
         Args:
@@ -830,9 +900,13 @@ class Syntax(Generic[A, S]):
                 return Left.new(f)
         if f is None:
             return self
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_fail(_on_fail)) 
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_fail(_on_fail),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        )
     
-    def on_success(self, f: Callable[[Optional[Syntax[A, S]], S, Tuple[A,S]], Either[Any, Tuple[Any, S]]] | None | Any) -> Syntax[Any, S]:
+    def on_success(self, f: Callable[[Optional[Syntax[A, S]], S, Tuple[A,S]], Either[Any, Tuple[Any, S]]] | None | Any, *, block_normalization: bool = True) -> Syntax[Any, S]:
         """Attach a callback to handle success cases.
 
         Args:
@@ -848,7 +922,11 @@ class Syntax(Generic[A, S]):
                 return Right.new((f, result[1])) 
         if f is None:
             return self 
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success)) 
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).on_success(_on_success),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        )
     
     def debug(self, 
               dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int| None]]], None] | Any = None,
@@ -897,11 +975,14 @@ class Syntax(Generic[A, S]):
 
 
         xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int| None]]], None] | Any = dbg if callable(dbg) else default_dbg
-        return replace(self, alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg))
+        return replace(self, 
+                       alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg),
+                       can_normalize=self._updated_can_normalize(block_normalization=True)
+                       )
             
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[A, S]:
-        return self.seq(left , +self , right).bimap(lambda t, _: t[0], lambda v, _: (v,))
+        return self.seq(left , +self , right)
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
         """Parse this syntax separated by the given separator.
@@ -925,13 +1006,13 @@ class Syntax(Generic[A, S]):
             >>> syntax = A.sep_by(comma)
             >>> # Parses "a,a,a" and produces Many containing three "a" elements
         """
-        def fwd(t: Tuple[A, Tuple[Tuple[A], ...] ], ctx: Any) -> Tuple[A, ...]:
+        def fwd(t: Tuple[A, Tuple[A, ...]], ctx: Any) -> Tuple[A, ...]:
             first, rest = t
-            return tuple([first] + [x[0] for x in rest])
+            return tuple([first] + list(rest))
 
-        def inv(v: Tuple[A, ...], ctx: Any) -> Tuple[A, Tuple[Tuple[A], ...]]:
+        def inv(v: Tuple[A, ...], ctx: Any) -> Tuple[A, Tuple[A, ...]]:
             first, *rest = v
-            return (first, tuple([ (x,) for x in rest]))            
+            return (first, tuple(rest))            
 
         return (self + (sep >> self).many()).bimap(fwd, inv)
 
@@ -980,7 +1061,7 @@ class Syntax(Generic[A, S]):
 
 
     ###################################################### operator overloading #############################################
-    def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
+    def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
         """Then-left: run both and prefer the left in the result kind.
 
         Returns Then(kind=LEFT) with both left and right values.
@@ -994,11 +1075,11 @@ class Syntax(Generic[A, S]):
         return self.seq(+self, -other)                   
 
 
-    def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Tuple[B, ...], S]:
+    def __rfloordiv__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
 
         return other.__floordiv__(self)
 
-    def __add__(self, other: Syntax[B, S]) -> Syntax[Tuple[Any, ...], S]:
+    def __add__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
         """Then-both: run both and keep both values.
 
         Returns Then(kind=BOTH).
@@ -1011,11 +1092,11 @@ class Syntax(Generic[A, S]):
         """
         return self.seq(+self, +other)
     
-    def __radd__(self, other: Syntax[B, S]) -> Syntax[Tuple[Any, ...], S]:
+    def __radd__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
 
         return other.__add__(self)
 
-    def __rshift__(self, other: Syntax[B, S]) -> Syntax[Tuple[B, ...], S]:
+    def __rshift__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
         """Then-right: run both and prefer the right in the result kind.
 
         Returns Then(kind=RIGHT).
@@ -1030,7 +1111,7 @@ class Syntax(Generic[A, S]):
 
 
 
-    def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
+    def __rrshift__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
 
         return other.__rshift__(self)
 
@@ -1055,12 +1136,44 @@ class Syntax(Generic[A, S]):
     ######################################################################## data processing combinators #########################################################
     
     def bind(self, **f: Callable[[Any, Any], Any]) -> Syntax[A, S]:
-        return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(**f)) 
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(**f),
+            can_normalize=self._updated_can_normalize(block_normalization=True),
+        )
     
-    def to(self, a: Callable[..., A], b: Callable[..., B]) -> Syntax[B, S]:
-        return self.iso(Iso.derive(a, b)) 
+    def case(self, *branches: Tuple[Callable[..., Any], Callable[..., Any]], overlap: bool=True, block_normalization: bool = True) -> Syntax[Any, S]:
+        if not branches:
+            return self
+        m = Match(branches[0][0], branches[0][1])
+        for branch in branches[1:]:
+            m.case(branch[0], branch[1])
+        return self.iso(m.iso(overlap=overlap), block_normalization=block_normalization)
+        
 
-    def check(self, pred: Callable[..., bool], *, forward: bool = True, level:int = 0, message: str | None = None) -> Syntax[A, S]:
+    def to(self, a: Callable[..., A], b: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
+        return self.iso(Iso.derive(a, b), block_normalization=block_normalization)
+
+    def check(self, 
+              pred: Callable[..., bool], 
+              *, 
+              forward: bool = True, 
+              level:int = 0, 
+              message: str | None = None) -> Syntax[A, S]:
+        """
+        pred: A predicate function that takes the value and context variables as arguments and returns a boolean.
+              For example, for a predicate that checks if the value is greater than a variable 'x' in the context, you could define:
+              def pred(value, x):
+                  return value > x
+              the variable x would be resolved from the context by its name `x` when the predicate is evaluated.
+        forward: If True, the predicate is applied in the forward direction (after parsing). 
+                 If False, it is applied in the reverse direction (before unparsing).
+        level: The stack level to use for error reporting. 0 means the caller of check, 1 means the caller's caller, etc. 
+               This is used to get the correct file and line number for error messages.
+        message: Optional custom error message template to use when the predicate fails. 
+                 The template can include placeholders {value} and {ctx} for the value being checked and the context variables, respectively. 
+                 If not provided, a default message including the predicate and location will be used.
+        """
         file = get_file(level+1)        
         line = get_line(level+1)
         f = CallWith(pred)
@@ -1088,11 +1201,14 @@ class Syntax(Generic[A, S]):
     @classmethod
     def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
         all_parsers: Tuple[Syntax[Any, S], ...]
-        if bool(cls.get('normalize_alt')):
+        if bool(cls.get('normalize_alt')) or True:
             flattened: List[Syntax[Any, S]] = []
             for parser in parsers:
-                if isinstance(parser.spec, AltSpec):
-                    flattened.extend(cls.from_spec(option_spec) for option_spec in parser.spec.options)
+                if isinstance(parser.spec, AltSpec) and parser.can_normalize:
+                    if parser._children is not None:
+                        flattened.extend(parser._children)
+                    else:
+                        flattened.append(parser)
                 else:
                     flattened.append(parser)
             all_parsers = tuple(flattened)
@@ -1103,10 +1219,12 @@ class Syntax(Generic[A, S]):
             return acls.alt(*algs)
         spec = AltSpec(options=tuple(p.spec for p in all_parsers), name=None, file=None, line=None, func=None)
         iso = Iso() if cls.get('no_iso') else spec.iso()
-        return cls(alg_f=alt_f, spec=spec).iso(iso) # type: ignore
+        base = cls(alg_f=alt_f, spec=spec, _children=all_parsers)
+        wrapped = base.iso(iso, block_normalization=False)  # type: ignore[arg-type]
+        return replace(wrapped, _children=all_parsers) # type: ignore
     
     @classmethod
-    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Tuple[Any, ...], S]:
+    def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Any, S]:
         def infer_default_keep(steps: Tuple[Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str], ...]) -> bool:
             """
             Since the input could be a mix of Syntax and (Syntax, bool), we need to infer the default keep value for the Syntax that are not in a tuple.
@@ -1133,13 +1251,23 @@ class Syntax(Generic[A, S]):
         syntaxes = [X if isinstance(X, tuple) else (X, default) for X in steps]
 
         runtime_steps: List[Tuple[Syntax[Any, S], bool]]
-        if bool(cls.get('normalize_seq')):
+        if bool(cls.get('normalize_seq')) or True:
             normalized_steps: List[Tuple[Syntax[Any, S], bool]] = []
             for step, keep in syntaxes:
-                if isinstance(step.spec, SeqSpec):
-                    for child_spec, child_keep in step.spec.steps:
-                        normalized_keep = child_keep if keep else False
-                        normalized_steps.append((cls.from_spec(child_spec), normalized_keep))
+                if isinstance(step.spec, SeqSpec) and step.can_normalize:
+                    # a nested Seq can be flattened, but we need to respect the keep flags. 
+                    # If the parent Seq has keep=True, then the child steps keep their own keep flags. 
+                    # If the parent Seq has keep=False, then all child steps are treated as keep=False 
+                    # regardless of their own flags.
+                    if step._children is not None:
+                        for i, child_step in enumerate(step._children):
+                            if keep:
+                                normalized_keep = step.spec.steps[i][1] 
+                            else:
+                                normalized_keep = False
+                            normalized_steps.append((child_step, normalized_keep))
+                    else:
+                        normalized_steps.append((step, keep))
                 else:
                     normalized_steps.append((step, keep))
             runtime_steps = normalized_steps
@@ -1155,13 +1283,16 @@ class Syntax(Generic[A, S]):
             iso = Iso()
         else:
             iso = spec.iso()
-            if bool(cls.get('unwrap_unary_seq')) and spec.arity == 1:
+            if (bool(cls.get('unwrap_unary_seq')) or True) and spec.arity == 1:
                 unary_iso = Iso(
                     lambda value, _: value[0],
                     lambda value, _: (value,),
                 )
                 iso = iso >> unary_iso
-        return cls(alg_f=seq_f, spec=spec).iso(iso) # type: ignore
+        children = tuple(rs[0] for rs in runtime_steps)
+        base = cls(alg_f=seq_f, spec=spec, _children=children)
+        wrapped = base.iso(iso, block_normalization=False)
+        return replace(wrapped, _children=children) 
 
     @classmethod
     def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
@@ -1175,7 +1306,7 @@ class Syntax(Generic[A, S]):
         def lazy_alg_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             return helper(acls, **global_kwargs)
         iso = Iso() if cls.get('no_iso') else spec.iso()
-        facade = cls(alg_f=lazy_alg_f, spec=spec).iso(iso) # type: ignore
+        facade = cls(alg_f=lazy_alg_f, spec=spec).iso(iso, block_normalization=False) # type: ignore
         facade_cache[thunk] = facade
         
         return facade

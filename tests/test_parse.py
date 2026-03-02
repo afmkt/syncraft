@@ -33,7 +33,7 @@ def test_sep_by()->None:
     ast = parse_word(syntax, sql)    
     generated = gen.generate_with(syntax, ast)
     assert ast == (Token(text='if'), Token(text='if'), Token(text='if'), Token(text='if'))
-    print(generated)
+    
     assert generated == Seq(
         value=(
             (Token(text='if'), True),
@@ -61,7 +61,8 @@ def test_many_or()->None:
     sql = "if if then end"
     ast = parse_word(syntax, sql)
     generated = gen.generate_with(syntax, ast)
-    assert ast == ((((Token(text='if'), Token(text='if')), (Token(text='then'),)),),)
+    
+    assert ast == (((Token(text='if'), Token(text='if')), (Token(text='then'),)),)
     assert generated == Seq(
         value=(
             (Many(value=(Seq(value=((Many(value=(Token(text='if'), Token(text='if'))), True), (Many(value=(Token(text='then'),)), True))),)), True),
@@ -77,7 +78,9 @@ def test_optional_many():
     
     ast = parse_word(S, sql)    
     generated = gen.generate_with(S, ast)
-    print(ast)
-    print(generated)
+    
+    
     assert ast == (Token(text='a'), Token(text='a'))
     assert generated == Many(value=(Alt(index=0,value=Token(text='a')), Alt(index=0, value=Token(text='a'))))
+
+

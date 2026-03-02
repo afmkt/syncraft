@@ -163,7 +163,6 @@ def test_mutual_recursion()->None:
     )
     
 
-
 def test_recursion() -> None:
     A = literal('a')
     B = literal('b')
@@ -175,7 +174,8 @@ def test_recursion() -> None:
     LL = parens() | L
     
     v = parse_word(LL, p_code)
-    assert v == ((Token(text='a'), ((Token(text='a'), Nothing), Token(text='b'))), Token(text='b'))
+    # print(v)
+    assert v == (Token(text='a'), (Token(text='a'), Nothing, Token(text='b')), Token(text='b'))
     
     vv = generate_with(LL, v)
     
@@ -184,21 +184,12 @@ def test_recursion() -> None:
         index=0,
         value=Seq(
             value=(
-                (
-                    Seq(
-                        value=(
-                            (Token(text='a'), True),
-                            (Alt(index=0, value=Lazy(value=Seq(value=((Seq(value=((Token(text='a'), True), (Alt(index=1, value=Nothing), True))), True), (Token(text='b'), True))))), True)
-                        )
-                    ),
-                    True
-                ),
+                (Token(text='a'), True),
+                (Alt(index=0, value=Lazy(value=Seq(value=((Token(text='a'), True), (Alt(index=1, value=Nothing), True), (Token(text='b'), True))))), True),
                 (Token(text='b'), True)
             )
         )
     )
-
-
 
 
 
@@ -252,8 +243,8 @@ def test_indirect_left_recursion_2()->None:
     Factor: Syntax[Alt, Any] = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
 
     v1 = parse_word(Expr, '1 + 2 * 3')
-    # a1, _ = v1.bimap
-    assert isinstance(v1, tuple) and len(v1) == 2, f"Expected structured AST triple, got {v1!r}"
+    assert v1 == (1, Token(text='+'), (2, Token(text='*'), 3))
+    
     def leaf(x):
         try:
             return int(str(x)[2:]) if str(x).startswith('t.') and str(x)[2:].isdigit() else (str(x)[2:] if str(x).startswith('t.') else x)
@@ -264,22 +255,17 @@ def test_indirect_left_recursion_2()->None:
             return (norm(ast[0]), leaf(ast[1] if not isinstance(ast[1], tuple) else ast[1]), norm(ast[2]))
         return leaf(ast)
     normalized = norm(v1)
-    assert normalized == ((1, Token(text='+')), ((2, Token(text='*')), 3)), f"Unexpected normalized AST: {normalized}"
+    print(normalized)
+    assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
+    
 
     v_42 = parse_word(Expr, '42')
-    # a_42, _ = v_42.bimap
+    
     single_norm = norm(v_42)
     assert single_norm == 42
 
 
 def test_indirect_left_recursion_structured_plus()->None:
-    """Ensure '+' combinator preserves structure in mutual left-recursive arithmetic grammar.
-
-    Expr -> Expr + Term | Term
-    Term -> Term * Factor | Factor
-    Factor -> number
-    Input: 1 + 2 * 3  should yield (1, '+', (2, '*', 3)) structure (with token objects).
-    """
     NUMBER = literal(re.compile(r'\d+'))
     PLUS = literal(text='+')
     STAR = literal(text='*')
@@ -288,9 +274,8 @@ def test_indirect_left_recursion_structured_plus()->None:
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = lazy(lambda: NUMBER)
     v = parse_word(Expr,'1 + 2 * 3')
-    # ast,_ = v.bimap
-    # Basic structural checks
-    assert v == ((Token(text='1'), Token(text='+')), ((Token(text='2'), Token(text='*')), Token(text='3')))
+    
+    assert v == (Token(text='1'), Token(text='+'), (Token(text='2'), Token(text='*'), Token(text='3')))
 
 
 def test_mutual_left_recursive_map_preserves_shape()->None:
@@ -322,10 +307,8 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     Term = lazy(lambda: (Term + STAR + Factor) | Factor)  # type: ignore[name-defined]
     Factor = lazy(lambda: NUMBER)  # type: ignore[name-defined]
     v_raw = parse_word(Expr, '1 + 2 * 3')
-    # raw, _ = v_raw.bimap
-    # Raw structural assertions
-    print(v_raw)
-    assert v_raw == ((Token(text='1'), Token(text='+')), ((Token(text='2'), Token(text='*')), Token(text='3')))
+    # print(v_raw)
+    assert v_raw == (Token(text='1'), Token(text='+'), (Token(text='2'), Token(text='*'), Token(text='3')))
 
     # Mapped variant
     NUMBER_M = NUMBER.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  # type: ignore[name-defined]
@@ -334,8 +317,8 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     FactorM = lazy(lambda: NUMBER_M)  # type: ignore[name-defined]
     v_mapped = parse_word(ExprM, '1 + 2 * 3')
     
-
-    assert v_mapped == ((1, Token(text='+')), ((2, Token(text='*')), 3))
+    # print(v_mapped)
+    assert v_mapped == (1, Token(text='+'), (2, Token(text='*'), 3))
     
 
     # Shape parity: replace ints with placeholder to compare tuple/operator skeletons.
@@ -365,6 +348,9 @@ def test_mutual_left_recursive_map_preserves_shape()->None:
     assert norm(raw_shape) == norm(mapped_shape)
 
 
+
+
+
 def test_non_recursive_map_preserves_shape()->None:
     r"""Verify that applying map to leaf nodes does not collapse sequencing structure.
 
@@ -385,9 +371,8 @@ def test_non_recursive_map_preserves_shape()->None:
     PLUS = literal('+')
     Pair = NUM + PLUS + NUM
     v = parse_word(Pair, '12 + 34')
-    # ast,_ = v.bimap
-    assert isinstance(v, tuple) and len(v) == 2
-    ((left_tok, plus_tok), right_tok) = v
+    assert v == (Token(text='12'), Token(text='+'), Token(text='34'))
+    (left_tok, plus_tok, right_tok) = v
     assert str(plus_tok) == 't.+'
     assert str(left_tok) == 't.12'
     assert str(right_tok) == 't.34'
@@ -397,8 +382,7 @@ def test_non_recursive_map_preserves_shape()->None:
     PairM = NUM_M + PLUS + NUM_M
     v2  = parse_word(PairM, '12 + 34')
     # ast2,_ = v2.bimap
-    assert v2 == ((12, Token(text='+')), 34)
-
+    assert v2 == (12, Token(text='+'), 34)
 
 
 def test_direct_left_recursive_map_preserves_shape()->None:
@@ -409,7 +393,8 @@ def test_direct_left_recursive_map_preserves_shape()->None:
     Expr = lazy(lambda: (Expr + PLUS + NUM) | NUM)  # type: ignore[name-defined]
     v = parse_word(Expr, '1 + 2 + 3')
     generated = gen.generate_with(Expr, v)
-    assert v == ((((Token(text='1'), Token(text='+')), Token(text='2')), Token(text='+')), Token(text='3'))
+    # print(v)
+    assert v == ((Token(text='1'), Token(text='+'), Token(text='2')), Token(text='+'), Token(text='3'))
     # print(generated)
     assert generated == Lazy(
         value=Alt(
@@ -417,24 +402,12 @@ def test_direct_left_recursive_map_preserves_shape()->None:
             value=Seq(
                 value=(
                     (
-                        Seq(
-                            value=(
-                                (
-                                    Lazy(
-                                        value=Alt(
-                                            index=0,
-                                            value=Seq(
-                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='1'))), True), (Token(text='+'), True))), True), (Token(text='2'), True))
-                                            )
-                                        )
-                                    ),
-                                    True
-                                ),
-                                (Token(text='+'), True)
-                            )
+                        Lazy(
+                            value=Alt(index=0, value=Seq(value=((Lazy(value=Alt(index=1, value=Token(text='1'))), True), (Token(text='+'), True), (Token(text='2'), True))))
                         ),
                         True
                     ),
+                    (Token(text='+'), True),
                     (Token(text='3'), True)
                 )
             )
@@ -442,47 +415,35 @@ def test_direct_left_recursive_map_preserves_shape()->None:
     )
 
 
-    assert v == ((((Token(text='1'), Token(text='+')), Token(text='2')), Token(text='+')), Token(text='3'))
 
     # Mapped version
     NUM_M = NUM.bimap(lambda t: int(t.text), lambda n: Token(text=str(n)))  
     ExprM = lazy(lambda: (ExprM + PLUS + NUM_M) | NUM_M)  # type: ignore[name-defined]
     v2 = parse_word(ExprM, '1 + 2 + 3')
     generated = gen.generate_with(ExprM, v2)
-    assert v2 == ((((1, Token(text='+')), 2), Token(text='+')), 3)
+    # print(v2)
+    assert v2 == ((1, Token(text='+'), 2), Token(text='+'), 3)
     # print(generated)
-    assert generated == Lazy(
+    assert generated ==Lazy(
         value=Alt(
             index=0,
             value=Seq(
                 value=(
                     (
-                        Seq(
-                            value=(
-                                (
-                                    Lazy(
-                                        value=Alt(
-                                            index=0,
-                                            value=Seq(
-                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='1'))), True), (Token(text='+'), True))), True), (Token(text='2'), True))
-                                            )
-                                        )
-                                    ),
-                                    True
-                                ),
-                                (Token(text='+'), True)
-                            )
+                        Lazy(
+                            value=Alt(index=0, value=Seq(value=((Lazy(value=Alt(index=1, value=Token(text='1'))), True), (Token(text='+'), True), (Token(text='2'), True))))
                         ),
                         True
                     ),
+                    (Token(text='+'), True),
                     (Token(text='3'), True)
                 )
             )
         )
     )
 
-    # mapped,_ = v2.bimap
-    assert v2 == ((((1, Token(text='+')), 2), Token(text='+')), 3)
+    # print(v2)
+    assert v2 == ((1, Token(text='+'), 2), Token(text='+'), 3)
 
 
 def test_direct_left_recursion_collapse()->None:
@@ -540,32 +501,20 @@ def test_multi_head_identity_in_error()->None:
 
     v = parse_word(Expr, 'n + n + n')
     generated = gen.generate_with(Expr, v)
-    assert v == ((((Token(text='n'), Token(text='+')), Token(text='n')), Token(text='+')), Token(text='n'))
+    assert v == ((Token(text='n'), Token(text='+'), Token(text='n')), Token(text='+'), Token(text='n'))
     # print(generated)
-    assert generated ==Lazy(
+    assert generated == Lazy(
         value=Alt(
             index=0,
             value=Seq(
                 value=(
                     (
-                        Seq(
-                            value=(
-                                (
-                                    Lazy(
-                                        value=Alt(
-                                            index=0,
-                                            value=Seq(
-                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='n'))), True), (Token(text='+'), True))), True), (Token(text='n'), True))
-                                            )
-                                        )
-                                    ),
-                                    True
-                                ),
-                                (Token(text='+'), True)
-                            )
+                        Lazy(
+                            value=Alt(index=0, value=Seq(value=((Lazy(value=Alt(index=1, value=Token(text='n'))), True), (Token(text='+'), True), (Token(text='n'), True))))
                         ),
                         True
                     ),
+                    (Token(text='+'), True),
                     (Token(text='n'), True)
                 )
             )
@@ -581,38 +530,32 @@ def test_indirect_left_recursion_3()->None:
     List = lazy(lambda: (List + literal(text=',') + Item) | Item)
     
     v = parse_word(List, 'a , b , a')
-    print(v)
+    # print(v)
     generated = gen.generate_with(List, v)
-    
-    assert v == ((((Token(text='a'), Token(text=',')), Token(text='b')), Token(text=',')), Token(text='a'))
-    print(generated)
+    # print(generated)
+    assert v == ((Token(text='a'), Token(text=','), Token(text='b')), Token(text=','), Token(text='a'))
+    # print(generated)
     assert generated == Lazy(
         value=Alt(
             index=0,
             value=Seq(
                 value=(
                     (
-                        Seq(
-                            value=(
-                                (
-                                    Lazy(
-                                        value=Alt(
-                                            index=0,
-                                            value=Seq(
-                                                value=(
-                                                    (Seq(value=((Lazy(value=Alt(index=1, value=Lazy(value=Alt(index=0, value=Token(text='a'))))), True), (Token(text=','), True))), True),
-                                                    (Lazy(value=Alt(index=1, value=Token(text='b'))), True)
-                                                )
-                                            )
-                                        )
-                                    ),
-                                    True
-                                ),
-                                (Token(text=','), True)
+                        Lazy(
+                            value=Alt(
+                                index=0,
+                                value=Seq(
+                                    value=(
+                                        (Lazy(value=Alt(index=1, value=Lazy(value=Alt(index=0, value=Token(text='a'))))), True),
+                                        (Token(text=','), True),
+                                        (Lazy(value=Alt(index=1, value=Token(text='b'))), True)
+                                    )
+                                )
                             )
                         ),
                         True
                     ),
+                    (Token(text=','), True),
                     (Lazy(value=Alt(index=0, value=Token(text='a'))), True)
                 )
             )
@@ -620,7 +563,6 @@ def test_indirect_left_recursion_3()->None:
     )
     counts = token_multiset(v)    
     assert counts.get('a', 0) >= 1
-
 
 
 def test_literal():
@@ -643,14 +585,14 @@ def test_seq():
     print(v)
     generated = gen.generate_with(SeqAB, v)
     
-    assert v == (Token(text='b'),)
+    assert v == Token(text='b')
     print(generated)
     assert generated == Seq(value=((Token(text='a'), False), (Token(text='b'), True)))
 
     v = parse_word(SeqAB_, 'a b')
     print(v)
     generated = gen.generate_with(SeqAB_, v)
-    assert v == (Token(text='a'),)
+    assert v == Token(text='a')
     print(generated)
     assert generated == Seq(value=((Token(text='a'), True), (Token(text='b'), False)))
 
@@ -713,8 +655,8 @@ def test_multi_recursion()->None:
     Factor: Syntax[Alt, Any] = lazy(lambda: (LPAREN + Expr + RPAREN) | NUMBER)
 
     v1 = parse_word(Expr, '1 + 2 * 3')
-    # a1, _ = v1.bimap
-    assert isinstance(v1, tuple) and len(v1) == 2, f"Expected structured AST triple, got {v1!r}"
+    assert v1 == (1, Token(text='+'), (2, Token(text='*'), 3))
+
     def leaf(x):
         try:
             return int(str(x)[2:]) if str(x).startswith('t.') and str(x)[2:].isdigit() else (str(x)[2:] if str(x).startswith('t.') else x)
@@ -725,13 +667,13 @@ def test_multi_recursion()->None:
             return (norm(ast[0]), leaf(ast[1] if not isinstance(ast[1], tuple) else ast[1]), norm(ast[2]))
         return leaf(ast)
     normalized = norm(v1)
-    assert normalized == ((1, Token(text='+')), ((2, Token(text='*')), 3)), f"Unexpected normalized AST: {normalized}"
+    print(normalized)
+    assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
 
     v_42 = parse_word(Expr, '42')
-    # a_42, _ = v_42.bimap
+    
     single_norm = norm(v_42)
     assert single_norm == 42
-
 
 
 def test_indirect_left_recursion_5()->None:
@@ -739,33 +681,24 @@ def test_indirect_left_recursion_5()->None:
     Chain = lazy(lambda: (Chain + literal(text='->') + Name) | Name)
     v = parse_word(Chain, 'a -> b -> c')
     generated = gen.generate_with(Chain, v)
-    # print(v)
-    assert v == ((((Token(text='a'), Token(text='->')), Token(text='b')), Token(text='->')), Token(text='c'))
-    # print(generated)
+    print(v)
+    assert v == ((Token(text='a'), Token(text='->'), Token(text='b')), Token(text='->'), Token(text='c'))
+    print(generated)
     assert generated == Lazy(
         value=Alt(
             index=0,
             value=Seq(
                 value=(
                     (
-                        Seq(
-                            value=(
-                                (
-                                    Lazy(
-                                        value=Alt(
-                                            index=0,
-                                            value=Seq(
-                                                value=((Seq(value=((Lazy(value=Alt(index=1, value=Token(text='a'))), True), (Token(text='->'), True))), True), (Token(text='b'), True))
-                                            )
-                                        )
-                                    ),
-                                    True
-                                ),
-                                (Token(text='->'), True)
+                        Lazy(
+                            value=Alt(
+                                index=0,
+                                value=Seq(value=((Lazy(value=Alt(index=1, value=Token(text='a'))), True), (Token(text='->'), True), (Token(text='b'), True)))
                             )
                         ),
                         True
                     ),
+                    (Token(text='->'), True),
                     (Token(text='c'), True)
                 )
             )

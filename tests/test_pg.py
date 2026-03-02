@@ -123,7 +123,7 @@ def test_or_choice_simple():
     vv = generate_with(ABC, v)
     
     # No lazy combinator, so should reconstruct the raw parsed value
-    expected = Alt(index=0, value=Alt(index=1, value=Token('b')))
+    expected = Alt(index=1, value=Token('b'))
     assert vv == expected, f"Expected {expected}, got {vv}"
     
 
@@ -173,7 +173,7 @@ def test_lazy_or():
     v = parse_word(rec, 'b')
     vv = generate_with(rec, v)
     
-    expected =  Lazy(value=Alt(index=0, value=Alt(index=1, value=Token(text='b'))))
+    expected =  Lazy(value=Alt(index=1, value=Token(text='b')))
     assert vv == expected, f"Expected {expected}, got {vv}"
     
 
