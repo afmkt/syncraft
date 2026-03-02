@@ -640,12 +640,12 @@ class Syntax(Generic[A, S]):
     can_normalize: whether this syntax can be normalized. seq and alt combinators will normalize their children if they are marked as can_normalize, 
                    which allows normalization to be applied selectively to certain parts of the syntax tree.
                    Normalization of alt makes 
-                    (A | B) | C == A | (B | C), 
+                    (A | B) | C == A | (B | C) => A or B or C
                    and normalization of seq makes 
-                    (A + B) + C == A + (B + C)
-                    (A >> B) >> C == A >> (B >> C)
-                    (A // B) // C == A // (B // C)
-                   and (A,) becomes A
+                    (A + B) + C == A + (B + C) => (A, B, C)
+                    (A >> B) >> C == A >> (B >> C) => (C,) => C
+                    (A // B) // C == A // (B // C) => (A,) => A
+                    (A,) => A
     print: a class-level DbgPrint instance for debug printing. Use Syntax.cdbg(True) to enable debug printing for all Syntax instances, 
            or use Syntax(...).idbg(True) to enable debug printing for a specific instance.
     _lazy_facade_cache: a class-level cache for storing Syntax instances created as facades for LazySpecs, keyed by the LazySpec's thunk. 
@@ -1201,19 +1201,16 @@ class Syntax(Generic[A, S]):
     @classmethod
     def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
         all_parsers: Tuple[Syntax[Any, S], ...]
-        if bool(cls.get('normalize_alt')) or True:
-            flattened: List[Syntax[Any, S]] = []
-            for parser in parsers:
-                if isinstance(parser.spec, AltSpec) and parser.can_normalize:
-                    if parser._children is not None:
-                        flattened.extend(parser._children)
-                    else:
-                        flattened.append(parser)
+        flattened: List[Syntax[Any, S]] = []
+        for parser in parsers:
+            if isinstance(parser.spec, AltSpec) and parser.can_normalize:
+                if parser._children is not None:
+                    flattened.extend(parser._children)
                 else:
                     flattened.append(parser)
-            all_parsers = tuple(flattened)
-        else:
-            all_parsers = parsers
+            else:
+                flattened.append(parser)
+        all_parsers = tuple(flattened)
         def alt_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [p(acls, **global_kwargs) for p in all_parsers]
             return acls.alt(*algs)
@@ -1251,28 +1248,26 @@ class Syntax(Generic[A, S]):
         syntaxes = [X if isinstance(X, tuple) else (X, default) for X in steps]
 
         runtime_steps: List[Tuple[Syntax[Any, S], bool]]
-        if bool(cls.get('normalize_seq')) or True:
-            normalized_steps: List[Tuple[Syntax[Any, S], bool]] = []
-            for step, keep in syntaxes:
-                if isinstance(step.spec, SeqSpec) and step.can_normalize:
-                    # a nested Seq can be flattened, but we need to respect the keep flags. 
-                    # If the parent Seq has keep=True, then the child steps keep their own keep flags. 
-                    # If the parent Seq has keep=False, then all child steps are treated as keep=False 
-                    # regardless of their own flags.
-                    if step._children is not None:
-                        for i, child_step in enumerate(step._children):
-                            if keep:
-                                normalized_keep = step.spec.steps[i][1] 
-                            else:
-                                normalized_keep = False
-                            normalized_steps.append((child_step, normalized_keep))
-                    else:
-                        normalized_steps.append((step, keep))
+        normalized_steps: List[Tuple[Syntax[Any, S], bool]] = []
+        for step, keep in syntaxes:
+            if isinstance(step.spec, SeqSpec) and step.can_normalize:
+                # a nested Seq can be flattened, but we need to respect the keep flags. 
+                # If the parent Seq has keep=True, then the child steps keep their own keep flags. 
+                # If the parent Seq has keep=False, then all child steps are treated as keep=False 
+                # regardless of their own flags.
+                if step._children is not None:
+                    for i, child_step in enumerate(step._children):
+                        if keep:
+                            normalized_keep = step.spec.steps[i][1] 
+                        else:
+                            normalized_keep = False
+                        normalized_steps.append((child_step, normalized_keep))
                 else:
                     normalized_steps.append((step, keep))
-            runtime_steps = normalized_steps
-        else:
-            runtime_steps = syntaxes
+            else:
+                normalized_steps.append((step, keep))
+
+        runtime_steps = normalized_steps
 
         def seq_f(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             algs = [(step(acls, **global_kwargs), keep) for step, keep in runtime_steps]
@@ -1283,7 +1278,7 @@ class Syntax(Generic[A, S]):
             iso = Iso()
         else:
             iso = spec.iso()
-            if (bool(cls.get('unwrap_unary_seq')) or True) and spec.arity == 1:
+            if spec.arity == 1:
                 unary_iso = Iso(
                     lambda value, _: value[0],
                     lambda value, _: (value,),
