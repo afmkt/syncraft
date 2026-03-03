@@ -39,7 +39,7 @@ Here, we parse a recursive expression grammar:
 from syncraft.syntax import Syntax as S
 from syncraft.parser import parse_string
 
-num = S.rp(r"[0-9]+").map(int)
+num = S.rp(r"[0-9]+").bimap(int, str)
 op = S.rp(r"[+\-*/]")
 
 expr = S.lazy(lambda: S.rp(
