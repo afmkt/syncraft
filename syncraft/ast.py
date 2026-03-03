@@ -181,10 +181,49 @@ ParseResult = Union[
 ]
 
 
-
-                
-
-
-
+def ast_to_text(ast: ParseResult) -> str:
+    """Extract text from an AST object by traversing it and collecting Token texts.
     
+    Args:
+        ast: The AST object to extract text from.
+        
+    Returns:
+        The concatenated text from all Token objects in the AST.
+    """
+    if isinstance(ast, Token):
+        if isinstance(ast.text, str):
+            return ast.text
+        elif isinstance(ast.text, bytes):
+            return ast.text.decode('utf-8')
+        elif isinstance(ast.text, tuple):
+            return ''.join(str(c) for c in ast.text)
+        else:
+            return str(ast.text)
+    elif isinstance(ast, Lazy):
+        return ast_to_text(ast.value)
+    elif isinstance(ast, Alt):
+        if ast.value is not None:
+            return ast_to_text(ast.value)
+        return ""
+    elif isinstance(ast, Seq):
+        parts = []
+        for item, _keep in ast.value:
+            parts.append(ast_to_text(item))
+        return ''.join(parts)
+    elif isinstance(ast, Many):
+        parts = []
+        for item in ast.value:
+            parts.append(ast_to_text(item))
+        return ''.join(parts)
+    elif ast is Nothing or ast is EOF:
+        return ""
+    elif isinstance(ast, Unknown):
+        return ""
+    elif isinstance(ast, str):
+        return ast
+    elif isinstance(ast, bytes):
+        return ast.decode('utf-8')
+    else:
+        return str(ast)
+
 

@@ -1,12 +1,12 @@
 [project]
 name = "syncraft"
 version = "0.3.2"
-description = "Parser combinator library"
+description = "Bidirectional parser/generator combinators for Python with recursive regex-style grammar fragments."
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{name = "Michael Afmokt", email = "michael@esacca.com"}]
-keywords = ["parser", "combinator", "sql", "sqlite", "generator", 'printer']
+keywords = ["parser", "combinator", "generator"]
 requires-python = ">=3.10"
 dependencies = [
     "rstr>=3.2.2",

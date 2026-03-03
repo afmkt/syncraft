@@ -263,15 +263,13 @@ class Grammar(metaclass=GrammarMeta):
         return cls.generator(syntax=syntax)
 
     @classmethod
-    def parse(cls, 
-              data: str, 
-              syntax: Syntax | None = None) -> Any:
+    def parse(cls, data: str, syntax: Syntax | None = None) -> Any:
         """Parse text using the grammar."""
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
         runner: Runner = Runner()
         cursor = StreamCursor.from_data(data)
-        for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=Cache()):
+        for result in runner.run(parser, state=None, cursor=cursor, once=True, cache=Cache()):
             return result
         raise SyncraftError("Regex did not yield any results", offender=None, expect="at least one result")
 
@@ -334,7 +332,7 @@ class Grammar(metaclass=GrammarMeta):
             cursor = StreamCursor.from_stream(data, mode=mode)
         else:
             raise TypeError(f"Unsupported stream type: {type(data)}")
-        for result, s in runner.run(parser, state=None, cursor=cursor, once=False, cache=Cache()):
+        for result in runner.run(parser, state=None, cursor=cursor, once=False, cache=Cache()):
             yield result
                 
     @classmethod
@@ -346,7 +344,7 @@ class Grammar(metaclass=GrammarMeta):
         runner = Runner(ast=data,
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                         restore_pruned=False)
-        for result, s in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
+        for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
             return result
         
     @classmethod
@@ -358,6 +356,6 @@ class Grammar(metaclass=GrammarMeta):
         runner = Runner(ast=data, 
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1),
                         restore_pruned=True)
-        for result, _ in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
+        for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
             return result
         

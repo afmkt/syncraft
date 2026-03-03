@@ -535,30 +535,22 @@ def generate_with(
     data: Optional[ParseResult] = None, 
     seed: Optional[int] = None,
     restore_pruned: bool = False
-) -> AST:
-    
+) -> AST:    
     runner = Runner(ast=data if data is not None else Unknown(), 
                     seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                     restore_pruned=restore_pruned)
 
-    v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-    return v
+    return runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
 
 def validate(syntax: Syntax, data: ParseResult[Any]) -> AST:
-    
-    runner = Runner(ast=data, seed=0, restore_pruned=True)
-    
-    v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-    return v
+    runner = Runner(ast=data, seed=0, restore_pruned=True)    
+    return runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
 
 def generate(syntax, seed: Optional[int] = None) -> AST:
-    
     runner = Runner(ast=Unknown(), 
                     seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
-                    restore_pruned=False)
-    
-    v, s = runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-    return v
+                    restore_pruned=False)    
+    return runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
     
 
 

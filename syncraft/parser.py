@@ -394,9 +394,7 @@ def parser(syntax: Syntax) -> Algebra:
     return runner.algebra(syntax=syntax, alg_cls=Parser)
 
 
-def parse(syntax: Syntax,
-          data: StreamCursor[Any] | ParserState[Any],
-          ) -> Tuple:
+def parse(syntax: Syntax, data: StreamCursor[Any] | ParserState[Any]) -> Any:
     runner: Runner = Runner()
     cache: Cache[Any] = Cache()
     if isinstance(data, ParserState):
@@ -406,32 +404,22 @@ def parse(syntax: Syntax,
 
 
 
-def parse_word(syntax: Syntax, 
-               data: str
-               ) -> Any:
+def parse_word(syntax: Syntax, data: str) -> Any:
     tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens)
 
     
-def parse_data(syntax: Syntax, 
-          data: List[T]
-          ) -> Any:
+def parse_data(syntax: Syntax, data: List[T]) -> Any:
     input : StreamCursor[T] = StreamCursor.from_data(data)
-    v, s = parse(syntax, input)
-    return v
+    return parse(syntax, input)
+    
 
-def parse_string(syntax: Syntax,
-                 data: str
-                 ) -> Any:
+def parse_string(syntax: Syntax, data: str) -> Any:
     input : StreamCursor[str] = StreamCursor.from_data(data)
-    v, s = parse(syntax, input)
-    return v
+    return parse(syntax, input)
 
-def parse_bytes(syntax: Syntax,
-                data: bytes
-                ) -> Any:
+def parse_bytes(syntax: Syntax, data: bytes) -> Any:
     input : StreamCursor[bytes] = StreamCursor.from_data(data)
-    v, s = parse(syntax, input)
-    return v
+    return parse(syntax, input)
 
 

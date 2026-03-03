@@ -830,12 +830,7 @@ def re(pattern: str) -> Builder[str]:
     return parsed.builder()
 
 
-def rp(
-    pattern: str,
-    *,
-    syntax_cls: Type[Syntax] | None = None,
-    **refs: Syntax[Any, Any]
-) -> Syntax[Any, Any]:
+def rp(pattern: str, *, syntax_cls: Type[Syntax] | None = None, **refs: Syntax[Any, Any]) -> Syntax[Any, Any]:
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):

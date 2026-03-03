@@ -1430,6 +1430,81 @@ class Syntax(Generic[A, S]):
         c: Dict[SyntaxSpec, Syntax] = {}
         return graph.root.syntax(cls, cache=c)
     
+    def parse(self, data: str) -> Any:
+        """Parse text using this syntax.
+        
+        Args:
+            data: The string to parse.
+            
+        Returns:
+            The parsed result.
+            
+        Example:
+            >>> num = S.rp(r"[0-9]+").bimap(int, str)
+            >>> num.parse("42")
+            42
+        """
+        from syncraft.parser import Runner
+        from syncraft.parser import Parser
+        runner: Runner = Runner()
+        cursor = StreamCursor.from_data(data)
+        parser = self(Parser)
+        for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=Cache()):  # type: ignore[arg-type]
+            return result
+        raise SyncraftError("Parsing did not yield any results", offender=None, expect="at least one result")
+    
+    def generate(self, data: Any, seed: int | None = None) -> str:
+        """Generate text from data using this syntax.
+        
+        Args:
+            data: The data to generate text from.
+            seed: Optional random seed for deterministic generation.
+            
+        Returns:
+            The generated string.
+            
+        Example:
+            >>> num = S.rp(r"[0-9]+").bimap(int, str)
+            >>> num.generate(42)
+            '42'
+        """
+        from syncraft.generator import Runner, Generator
+        from syncraft.ast import ast_to_text
+        import random
+        runner = Runner(ast=data,
+                       seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
+                       restore_pruned=False)
+        generator = self(Generator)
+        for result, s in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
+            return ast_to_text(result)
+        raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
+    
+    def validate(self, data: Any, seed: int | None = None) -> str:
+        """Validate data and generate text using this syntax.
+        
+        Args:
+            data: The data to validate and generate text from.
+            seed: Optional random seed for deterministic validation.
+            
+        Returns:
+            The validated and generated string.
+            
+        Example:
+            >>> num = S.rp(r"[0-9]+").bimap(int, str)
+            >>> num.validate(42)
+            '42'
+        """
+        from syncraft.generator import Runner, Generator
+        from syncraft.ast import ast_to_text
+        import random
+        runner = Runner(ast=data, 
+                       seed=seed if seed is not None else random.randint(0, 2**32 - 1),
+                       restore_pruned=True)
+        validator = self(Generator)
+        for result, _ in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
+            return ast_to_text(result)
+        raise SyncraftError("Validation did not yield any results", offender=None, expect="at least one result")
+    
 class RunnerProtocol(Protocol, Generic[A, S]):
     def algebra(self, 
                 syntax: Syntax[A, S],
@@ -1438,7 +1513,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
 
     def resume(self, previous: Optional[S], cursor: Optional[StreamCursor[Any]]) -> S: ...
 
-    def finalize(self, result: Optional[Tuple[Any, None | S]]) -> None: 
+    def finalize(self, result: Optional[Any]) -> None: 
         return
 
 
@@ -1448,7 +1523,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
             cursor: Optional[StreamCursor[Any]],
             cache: Optional[Cache[Any]],
             once: bool
-            ) -> Generator[Tuple[Any, None | S], None, None]: 
+            ) -> Generator[Any, None, None]: 
         while True:
             ret = None
             state = self.resume(state, cursor)
@@ -1468,12 +1543,12 @@ class RunnerProtocol(Protocol, Generic[A, S]):
                 result = e.value
                 if isinstance(result, Right):
                     assert result.value is not None, "Algebra returned Right with None value"
-                    ret = result.value
+                    ret = result.value[0]
                 elif isinstance(result, Left):
                     assert result.value is not None, "Algebra returned Left with None value"
-                    ret = result.value, None
+                    ret = result.value
                 else:
-                    ret = Error.new(this=result, message="Algebra returned data that is not Left or Right"), None
+                    ret = Error.new(this=result, message="Algebra returned data that is not Left or Right")
             finally:
                 self.finalize(ret)
             yield ret  # type: ignore
@@ -1487,7 +1562,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
                  cursor: Optional[StreamCursor[Any]],
                  cache: Optional[Cache[Any]],
                  once: bool
-                 ) -> Generator[Tuple[Any, None | S], None, None]:
+                 ) -> Generator[Any, None, None]:
         alg = self.algebra(syntax=syntax, alg_cls=alg_cls)  
         yield from self.run(alg, state, cursor, cache, once=once)
 
@@ -1497,7 +1572,7 @@ class RunnerProtocol(Protocol, Generic[A, S]):
              state: Optional[S],
              cursor: Optional[StreamCursor[Any]],
              cache: Optional[Cache[Any]]
-             ) -> Tuple[Any, None | S]:
+             ) -> Any:
         gen = self(syntax, alg_cls, state, cursor, cache, once=True)
         return next(gen)
         

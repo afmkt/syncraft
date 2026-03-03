@@ -10,7 +10,6 @@ from .syntax import (
 
 from syncraft.regex import (
     RegexError,
-    re
 )
 
 from .algebra import (
@@ -51,5 +50,5 @@ __all__ = [
     "DataError", "Not",
     "SyncraftError",
     "RegexError",
-    "re",
+
 ]
