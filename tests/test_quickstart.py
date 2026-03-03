@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from syncraft import Error, Grammar, Syntax, grammar, lazy, rule, re
+from syncraft import Error, Grammar, Syntax, grammar, lazy, rule
 from syncraft.lexer import GlobalLexerBuilder
 
 # -- step-1 --

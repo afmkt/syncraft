@@ -116,7 +116,7 @@ Expected output:
 ### Adding structured data transformations
 
 Transform parsed tuples into dataclasses and generate text back from those dataclasses:
-`case()` defines a bidirectional structural mapping: it transforms parsed values into domain objects and provides the reverse mapping required for generation.
+The `case()` combinator defines bidirectional structural mappings. Each case provides a pair of functions: one to extract values from parsed tuples, and one to construct domain objects."
 
 ```python
 from dataclasses import dataclass
