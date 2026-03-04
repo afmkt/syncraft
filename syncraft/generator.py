@@ -57,7 +57,7 @@ class GenState(Bindable):
             return "<PRUNED>"
         s = str(self.ast)
         if len(s) > 20:
-            return f"{self.ast.__class__.__name__}(...)"
+            return f"{self.ast.__class__.__name__}(...)" # type: ignore
         else:
             return s
 
@@ -532,10 +532,18 @@ class Runner(RunnerProtocol[ParseResult, GenState]):
 
 
 def generator(syntax: Syntax) -> Algebra:
+    """Build a generator algebra for a syntax.
+
+    This is a low-level helper used by ``Grammar`` and runner APIs.
+    """
     runner: Runner = Runner()
     return runner.algebra(syntax=syntax, alg_cls=Generator)
 
 def validator(syntax: Syntax) -> Algebra:
+    """Build a validator algebra for a syntax.
+
+    Validation reuses generation machinery with replay-constrained behavior.
+    """
     runner: Runner = Runner()
     return runner.algebra(syntax=syntax, alg_cls=Validator)
     
@@ -545,6 +553,18 @@ def generate_with(
     seed: Optional[int] = None,
     replay: bool = False
 ) -> AST:    
+    """Generate an AST-like value from ``syntax``.
+
+    Args:
+        syntax: Syntax to generate with.
+        data: Optional source value/AST. ``None`` is treated as ``Unknown()``.
+        seed: Optional random seed for reproducible stochastic choices.
+        replay: When ``True``, replay provided structure instead of freely
+            sampling pruned/implicit parts.
+
+    Returns:
+        AST-like value extracted from generated ``LayoutDoc``.
+    """
     from syncraft.format import LayoutDoc
     ret = syntax.generate(data=data, seed=seed, replay=replay)
     if isinstance(ret, LayoutDoc):
@@ -553,9 +573,11 @@ def generate_with(
     
 
 def validate(syntax: Syntax, data: ParseResult[Any]) -> AST:
+    """Validate ``data`` against ``syntax`` via replay-constrained generation."""
     return generate_with(syntax=syntax, data=data, seed=0, replay=True)
 
 def generate(syntax, seed: Optional[int] = None) -> AST:
+    """Generate from ``syntax`` with stochastic mode enabled by default."""
     return generate_with(syntax=syntax, data=None, seed=seed, replay=False)
     
 

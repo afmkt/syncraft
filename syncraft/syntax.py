@@ -839,6 +839,16 @@ class Syntax(Generic[A, S]):
         ) # type: ignore
     
     def imap(self, f: Callable[..., A], *, block_normalization: bool = True) -> Syntax[A, S]:
+        """Inversely map the input value while preserving state and metadata.
+        Args: 
+            THE SAME as map, but f maps B to A instead of A to B. 
+        Returns:       
+            Syntax yielding A with the same resulting state.
+        Error Handling:
+            THE SAME as map, but applies to the inverse mapping. 
+            If f raises a system exception during generation, the exception will interrupt the generation.
+            If f raises a DataError(soft_failure=True) during generation, the exception will be treated as a generation failure and trigger backtracking.
+        """
         return replace(
             self,
             alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f, 'imap'),
@@ -1027,24 +1037,22 @@ class Syntax(Generic[A, S]):
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
         """Parse this syntax separated by the given separator.
         
-        Parses one or more occurrences of this syntax separated by the separator.
-        Returns the first element and a Many containing the remaining elements
-        paired with their separators.
+        Parses one or more occurrences of this syntax separated by ``sep`` and
+        returns parsed elements as ``Tuple[A, ...]``.
         
         Args:
             sep: Separator syntax to use between elements.
             
         Returns:
-            Syntax producing Then(first_element, Many(separator_element_pairs)).
-            The result is automatically transformed via iso() to produce Many[A]
-            containing all parsed elements without the separators.
+            Syntax producing ``Tuple[A, ...]`` (separators are not included in
+            the output value).
             
         Example:
             >>> from syncraft.syntax import Syntax
-            >>> A = Syntax.literal("a")
-            >>> comma = Syntax.literal(",")
+            >>> A = Syntax.lit("a")
+            >>> comma = Syntax.lit(",")
             >>> syntax = A.sep_by(comma)
-            >>> # Parses "a,a,a" and produces Many containing three "a" elements
+            >>> # Parses "a,a,a" and produces ('a', 'a', 'a')
         """
         
         def fwd(t: Tuple[A, Tuple[A, ...]], ctx: Any) -> Tuple[A, ...]:
@@ -1084,10 +1092,10 @@ class Syntax(Generic[A, S]):
     def optional(self) -> Syntax[Any, S]:
         """Make this syntax optional.
 
-        Returns a OrElse of the value or Nothing when absent.
+        Parses this syntax if present; otherwise returns ``Nothing``.
 
         Returns:
-            Syntax producing OrElse of value or Nothing.
+            Syntax producing either the parsed value or ``Nothing``.
         """
         return (self | self.success(Nothing)).named(f"{str(self.spec)}?", _location=False)
         
@@ -1105,15 +1113,13 @@ class Syntax(Generic[A, S]):
 
     ###################################################### operator overloading #############################################
     def __floordiv__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
-        """Then-left: run both and prefer the left in the result kind.
-
-        Returns Then(kind=LEFT) with both left and right values.
+        """Sequence two syntaxes and keep the left value.
 
         Args:
             other: Syntax to run after this one.
 
         Returns:
-            Syntax producing Then(left, right, kind=LEFT).
+            Syntax producing the left value.
         """
         return self.seq(+self, -other)                   
 
@@ -1123,15 +1129,13 @@ class Syntax(Generic[A, S]):
         return other.__floordiv__(self)
 
     def __add__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
-        """Then-both: run both and keep both values.
-
-        Returns Then(kind=BOTH).
+        """Sequence two syntaxes and keep both values.
 
         Args:
             other: Syntax to run after this one.
 
         Returns:
-            Syntax producing Then(left, right, kind=BOTH).
+            Syntax producing a combined tuple-like value per ``seq`` isomorphism.
         """
         return self.seq(+self, +other)
     
@@ -1140,15 +1144,13 @@ class Syntax(Generic[A, S]):
         return other.__add__(self)
 
     def __rshift__(self, other: Syntax[B, S]) -> Syntax[Any, S]:
-        """Then-right: run both and prefer the right in the result kind.
-
-        Returns Then(kind=RIGHT).
+        """Sequence two syntaxes and keep the right value.
 
         Args:
             other: Syntax to run after this one.
 
         Returns:
-            Syntax producing Then(left, right, kind=RIGHT).
+            Syntax producing the right value.
         """
         return self.seq(-self, +other)
 
@@ -1483,8 +1485,13 @@ class Syntax(Generic[A, S]):
         """Generate a layout document from data using this syntax.
         
         Args:
-            data: The data to generate text from.
-            seed: Optional random seed for deterministic generation.
+            data: Source value/AST used for generation. ``None`` is treated as
+                ``Unknown()``.
+            seed: Optional random seed. When provided, stochastic choices are
+                reproducible.
+            replay: When ``True``, generation replays provided structure instead
+                of freely sampling pruned/implicit parts. Useful for verification
+                and round-trip checks.
             
         Returns:
             A ``LayoutDoc`` value. Call ``.render(width=..., indent=...)`` to
@@ -1492,7 +1499,7 @@ class Syntax(Generic[A, S]):
             
         Example:
             >>> num = S.rp(r"[0-9]+").bimap(int, str)
-            >>> num.generate(42).render()
+            >>> num.generate(42, seed=0).render()
             '42'
         """
         from syncraft.generator import Runner, Generator
@@ -1509,19 +1516,21 @@ class Syntax(Generic[A, S]):
         raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
     
     def validate(self, data: Any, seed: int | None = None) -> Literal[True] | Error:
-        """Validate data and generate text using this syntax.
+        """Validate data against this syntax.
         
         Args:
-            data: The data to validate and generate text from.
-            seed: Optional random seed for deterministic validation.
+            data: The value/AST to validate.
+            seed: Optional random seed. Used for deterministic internal choices
+                when needed.
             
         Returns:
-            True if validation succeeds, or an Error value with details if it fails.
+            ``True`` if validation succeeds, or ``Error`` with details if it
+            fails.
             
         Example:
             >>> num = S.rp(r"[0-9]+").bimap(int, str)
             >>> num.validate(42)
-            '42'
+            True
         """
         from syncraft.generator import Runner, Validator
         import random

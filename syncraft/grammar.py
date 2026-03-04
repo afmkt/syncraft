@@ -38,7 +38,7 @@ def rule(syntax: Syntax, *, name: str | None = None, is_root: bool = False) -> S
         The syntax with updated metadata and root status.
     
     Example:
-        >>> number = rule(Syntax.lit("0-9").many(), name="number")
+        >>> number = rule(Syntax.re(r"[0-9]+"), name="number")
         >>> expr = rule(number | operator, is_root=True)
     """
     level:int = 1
@@ -212,7 +212,8 @@ class Grammar(metaclass=GrammarMeta):
         ...     number = rule(digit.many(at_least=1), is_root=True)
         
         >>> result = MyGrammar.parse("123")
-        >>> text = MyGrammar.generate(result)
+        >>> doc = MyGrammar.generate(result, seed=0)
+        >>> text = doc.render()
     """
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
@@ -240,7 +241,14 @@ class Grammar(metaclass=GrammarMeta):
 
     @classmethod
     def parser(cls, syntax: Syntax | None = None) -> Algebra:
-        """Create a parser for the grammar."""
+        """Get (and cache) a parser algebra for this grammar.
+
+        Args:
+            syntax: Optional non-root syntax to build a parser for.
+
+        Returns:
+            Parser algebra instance.
+        """
         if syntax is None:
             if cls._root_rule is None:
                 raise ValueError("No root rule defined for the grammar")
@@ -253,7 +261,14 @@ class Grammar(metaclass=GrammarMeta):
     
     @classmethod
     def generator(cls, syntax: Syntax | None = None) -> Algebra:
-        """Create a generator for the grammar."""
+        """Get (and cache) a generator algebra for this grammar.
+
+        Args:
+            syntax: Optional non-root syntax to build a generator for.
+
+        Returns:
+            Generator algebra instance.
+        """
         if syntax is None:
             if cls._root_rule is None:
                 raise ValueError("No root rule defined for the grammar")
@@ -266,7 +281,14 @@ class Grammar(metaclass=GrammarMeta):
     
     @classmethod
     def validator(cls, syntax: Syntax | None = None) -> Algebra:
-        """Create a generator for the grammar."""
+        """Get (and cache) a validator algebra for this grammar.
+
+        Args:
+            syntax: Optional non-root syntax to build a validator for.
+
+        Returns:
+            Validator algebra instance.
+        """
         if syntax is None:
             if cls._root_rule is None:
                 raise ValueError("No root rule defined for the grammar")
@@ -279,7 +301,15 @@ class Grammar(metaclass=GrammarMeta):
 
     @classmethod
     def parse(cls, data: str, syntax: Syntax | None = None) -> Any:
-        """Parse text using the grammar."""
+        """Parse text using the grammar.
+
+        Args:
+            data: Input text.
+            syntax: Optional non-root syntax to parse with.
+
+        Returns:
+            Parsed value.
+        """
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
         runner: Runner = Runner()
@@ -331,7 +361,16 @@ class Grammar(metaclass=GrammarMeta):
                      data: Union[io.TextIOBase, io.BufferedIOBase, asyncio.StreamReader], 
                      mode: Literal['text', 'binary'] = 'text',
                      syntax: Syntax | None = None) -> Iterator[Any]:
-        """Parse text using the grammar."""
+        """Parse from a stream using the grammar.
+
+        Args:
+            data: Text, binary, or async stream source.
+            mode: Stream mode for decoding/iteration strategy.
+            syntax: Optional non-root syntax to parse with.
+
+        Yields:
+            Parsed values produced by the parser.
+        """
         from syncraft.parser import Runner
         parser = cls.parser(syntax=syntax)
         runner: Runner = Runner()
@@ -352,7 +391,19 @@ class Grammar(metaclass=GrammarMeta):
                 
     @classmethod
     def generate(cls, data: Any = Unknown(), syntax: Syntax | None = None, seed: int | None = None, replay: bool = False) -> LayoutDoc:
-        """Generate text using the grammar."""
+        """Generate text using the grammar.
+
+        Args:
+            data: Source value/AST used for generation. ``None`` is treated as
+                ``Unknown()``.
+            syntax: Optional non-root syntax to generate with.
+            seed: Optional random seed for reproducible stochastic choices.
+            replay: When ``True``, replay provided structure instead of freely
+                sampling pruned/implicit parts.
+
+        Returns:
+            A ``LayoutDoc`` representing generated output.
+        """
         from syncraft.generator import Runner
         import random
         generator = cls.generator(syntax=syntax)        
@@ -368,7 +419,16 @@ class Grammar(metaclass=GrammarMeta):
         
     @classmethod
     def validate(cls, data: Any, syntax: Syntax | None = None, seed: int | None = None) -> Literal[True] | Error:
-        """Validate text using the grammar."""
+        """Validate data against the grammar.
+
+        Args:
+            data: Value/AST to validate.
+            syntax: Optional non-root syntax to validate against.
+            seed: Optional random seed used for deterministic internal choices.
+
+        Returns:
+            ``True`` when validation succeeds, or ``Error`` if validation fails.
+        """
         from syncraft.generator import Runner
         import random
         validator = cls.validator(syntax=syntax)   
