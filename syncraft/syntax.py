@@ -1469,7 +1469,7 @@ class Syntax(Generic[A, S]):
             return result
         raise SyncraftError("Parsing did not yield any results", offender=None, expect="at least one result")
     
-    def generate(self, data: Any = Unknown(), seed: int | None = None) -> LayoutDoc:
+    def generate(self, data: Any = Unknown(), seed: int | None = None, replay: bool = False) -> LayoutDoc:
         """Generate a layout document from data using this syntax.
         
         Args:
@@ -1490,7 +1490,7 @@ class Syntax(Generic[A, S]):
         import random
         runner = Runner(ast=data if data is not None else Unknown(),
                        seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
-                       restore_pruned=False)
+                       replay=replay)
         generator = self(Generator)
         for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
             if isinstance(result, LayoutDoc):
@@ -1517,7 +1517,7 @@ class Syntax(Generic[A, S]):
         import random
         runner = Runner(ast=data if data is not None else Unknown(), 
                        seed=seed if seed is not None else random.randint(0, 2**32 - 1),
-                       restore_pruned=True)
+                       replay=True)
         validator = self(Validator)
         try:
             for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]

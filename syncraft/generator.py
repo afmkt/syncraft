@@ -47,7 +47,7 @@ def debug_print(*arg, **kwargs) -> None:
 class GenState(Bindable):
 
     ast: Optional[ParseResult] = None
-    restore_pruned: bool = False
+    replay: bool = False
     seed: int = 0
     id_cache: Dict[int, int] = field(default_factory=dict, compare=False, hash=False, repr=False)
     id_counter: int = field(default=0, compare=False, hash=False, repr=False)
@@ -142,8 +142,8 @@ class GenState(Bindable):
                  *, 
                  ast: Optional[ParseResult[T]], 
                  seed: int = 0, 
-                 restore_pruned:bool=False) -> GenState:
-        return GenState(ast=ast, seed=seed, restore_pruned=restore_pruned)
+                 replay:bool=False) -> GenState:
+        return GenState(ast=ast, seed=seed, replay=replay)
         
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +199,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     ))
                 inp = input
                 for (step, keep), (ast_elem, _) in zip(normaize_steps, ast_seq.value):
-                    if input.restore_pruned or keep:
+                    if input.replay or keep:
                         tmp_state = inp.inject(ast_elem)
                         step_result = yield from step.run(tmp_state, cache)
                         debug_print(f"\nCALLING SEQ {callable_str(step.run_f)} with {ast_elem} -> {step_result}")
@@ -519,13 +519,13 @@ class Validator(Generator[T]):
 
 @dataclass
 class Runner(RunnerProtocol[ParseResult, GenState]):
-    ast : ParseResult | None = None
+    ast : ParseResult = Unknown()
     seed: int = field(default_factory=lambda: random.randint(0, 2**32 - 1))
-    restore_pruned: bool = False
+    replay: bool = False
 
     def resume(self, request: Optional[GenState], cursor: Optional[StreamCursor[Any]]) -> GenState:
         if request is None:
-            return GenState.from_ast(ast=self.ast, seed=self.seed, restore_pruned=self.restore_pruned)
+            return GenState.from_ast(ast=self.ast, seed=self.seed, replay=self.replay)
         raise SyncraftError("Generator does not support resuming from Incomplete states.", offender=request, expect="Not Incomplete")
 
 
@@ -543,20 +543,20 @@ def generate_with(
     syntax: Syntax, 
     data: Optional[ParseResult] = None, 
     seed: Optional[int] = None,
-    restore_pruned: bool = False
+    replay: bool = False
 ) -> AST:    
     from syncraft.format import LayoutDoc
-    ret = syntax.generate(data=data, seed=seed)
+    ret = syntax.generate(data=data, seed=seed, replay=replay)
     if isinstance(ret, LayoutDoc):
         return ret.ast
     return ret
     
 
 def validate(syntax: Syntax, data: ParseResult[Any]) -> AST:
-    return generate_with(syntax=syntax, data=data, seed=0, restore_pruned=True)
+    return generate_with(syntax=syntax, data=data, seed=0, replay=True)
 
 def generate(syntax, seed: Optional[int] = None) -> AST:
-    return generate_with(syntax=syntax, data=None, seed=seed, restore_pruned=False)
+    return generate_with(syntax=syntax, data=None, seed=seed, replay=False)
     
 
 

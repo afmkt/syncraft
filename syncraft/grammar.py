@@ -351,14 +351,14 @@ class Grammar(metaclass=GrammarMeta):
             yield result
                 
     @classmethod
-    def generate(cls, data: Any = Unknown(), syntax: Syntax | None = None, seed: int | None = None) -> LayoutDoc:
+    def generate(cls, data: Any = Unknown(), syntax: Syntax | None = None, seed: int | None = None, replay: bool = False) -> LayoutDoc:
         """Generate text using the grammar."""
         from syncraft.generator import Runner
         import random
         generator = cls.generator(syntax=syntax)        
         runner = Runner(ast=data if data is not None else Unknown(),
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
-                        restore_pruned=False)
+                        replay=replay)
         for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
             if isinstance(result, LayoutDoc):
                 return result
@@ -374,7 +374,7 @@ class Grammar(metaclass=GrammarMeta):
         validator = cls.validator(syntax=syntax)   
         runner = Runner(ast=data if data is not None else Unknown(), 
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1),
-                        restore_pruned=True)
+                        replay=True)
         try:
             for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):
                 if isinstance(result, Error):

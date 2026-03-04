@@ -5,9 +5,9 @@ import pytest
 from syncraft.syntax import Syntax
 from syncraft.ast import Token, Seq, Alt, Lazy
 from syncraft.generator import (
-    new_generate_with as generate_with,
-    new_generate as generate,
-    new_validate as validate,
+    generate_with,
+    generate,
+    validate,
 )
 from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError

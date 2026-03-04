@@ -55,7 +55,6 @@ class RegexNode:
         references: Mapping[str, Syntax[Any, Any]] | None = None,
     ) -> Syntax[Any, Any]:
         b = self.builder(case_insensitive=case_insensitive)
-        # return syntax_cls.lex(b).bimap(_rp_forward, _rp_inverse)
         return syntax_cls.lex(b)
 
 
