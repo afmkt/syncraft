@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 from syncraft.ast import Nothing, Token, Lazy, Seq, Alt
 from syncraft.parser import parse_word
-from syncraft.generator import generate_with
+
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
 from syncraft.cache import set_randomization
@@ -62,7 +62,7 @@ def test_simple_recursion()->None:
     v = parse_word(A, 'a a a')
     
     assert v == (Token(text='a'), (Token(text='a'), (Token(text='a'), Nothing)))
-    vv = generate_with(A, v)
+    vv = gen.generate_with(A, v)
     
     expected = Lazy(
         value=Alt(
@@ -115,7 +115,7 @@ def test_mutual_recursion()->None:
     # print(v)
     assert v == (Token(text='a'), (Token(text='b'), (Token(text='a'), (Token(text='b'), (Token(text='a'), Token(text='c'))))))
 
-    vv = generate_with(A, v)
+    vv = gen.generate_with(A, v)
     # print(vv)
     assert vv == Lazy(
         value=Seq(
@@ -177,7 +177,7 @@ def test_recursion() -> None:
     # print(v)
     assert v == (Token(text='a'), (Token(text='a'), Nothing, Token(text='b')), Token(text='b'))
     
-    vv = generate_with(LL, v)
+    vv = gen.generate_with(LL, v)
     
     # print(vv)
     assert vv == Alt(

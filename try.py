@@ -1,43 +1,102 @@
-"""
-Test cases demonstrating Syntax.rp() in inline, immediate, REPL-style usage.
+from typing import Type
 
-"CFG in regex flavor" — using regex notation to compose CFG rules inline,
-without @grammar classes or explicit rule fields. Everything is immediate.
-"""
+import pytest
 
-from syncraft.syntax import Syntax as S
-from syncraft.parser import parse_string
+from syncraft.syntax import Syntax
+from syncraft.ast import Token, Seq, Alt, Lazy
+from syncraft.generator import (
+    new_generate_with as generate_with,
+    new_generate as generate,
+    new_validate as validate,
+)
 from syncraft.algebra import Error
-# from rich import print
+from syncraft.cache import LeftRecursionError
+from syncraft.fa import Builder
 
+SS = Syntax.set(terminal_constructor=Token)
 
-def cfgparse(pattern: str, text: str, **refs):
-    """Shorthand: pattern -> Syntax.rp -> parse immediate."""
-    return parse_string(S.rp(pattern, **refs), text)
+def tok(text: str):
+    return SS.tok(text=text, case_sensitive=True)
 
-
-def test_failed():
-    r"""
-    SIMPLEST REPRODUCER - doesn't need lazy or self-reference!
+def test_generate_with_direct_left_recursion_with_base_succeeds():
+    # A := A + 'a' | 'a'
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = generate_with(A)
+    print(ast)
+    # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
+    assert not isinstance(ast, Error)
     
-    Pattern: r"2|\((?&num)\s*"
+
+
+def test_generate_direct_left_recursion_with_base_succeeds():
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = generate(A)
+    assert not isinstance(ast, Error)
     
-    Uses:
-    - S.lit() for external reference (not S.rp)
-    - S.rp() directly (not S.lazy)
-    - External reference (?&num), not self-reference
+
+
+
+def test_validate_direct_left_recursion_with_base_succeeds_single_token():
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = validate(A, (Token(text='a'), Token(text='a')))
+    assert not isinstance(ast, Error)
     
-    This proves the bug affects:
-    - ANY alternation (|) with external reference (?&name)
-    - When second branch uses \s* or []* (zero-or-more quantifier)
-    - Lexer fails because alternation lexer doesn't include tokens
-      from branches that contain external references
-    """
-    num = S.lit(r"2")
-    expr = S.rp(r"2|\((?&num)\s*", num=num)
-    result = parse_string(expr, "(2")
-    print(result)
+
+
+def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = validate(A, Token(text='a'))
+    assert not isinstance(ast, Error)
+    
+
+
+# SS = S
+def test_generate_with_mutual_left_recursion_without_base_raises():
+    # Mutual recursion with no productive base: A := B ; B := A
+    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
+    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
+    with pytest.raises(LeftRecursionError):
+        generate_with(A)
+
+
+
+
+def test_generate_with_infers_text_lexer_without_config() -> None:
+    syntax = SS.tok("hi")
+    ast = generate_with(syntax, seed=123)
+    assert ast == Token(text="hi")
+
+
+def test_generate_with_infers_from_fabuilder_literal() -> None:
+    S = Syntax.set(terminal_constructor=Token)
+    lex_syntax = S.lex(Builder.lit("go").tagged("WORD"))
+    ast = generate_with(lex_syntax, seed=321)
+    print(ast)
+    assert isinstance(ast, Token)
+    assert ast.token_type == "WORD" 
+    assert ast.text == "go"
+
+
+def test_validate_lex_token_uses_verify_full_match() -> None:
+    S = Syntax.set(terminal_constructor=Token, terminal_destructor=lambda token: token.text)
+    lex_syntax = S.lex(Builder.lit("ab").tagged("AB"))
+
+    ast = validate(lex_syntax, Token(text="ab", token_type="AB"))
+    assert isinstance(ast, Token)
+    assert ast.token_type == "AB"
+    assert ast.text == "ab"
+    
+
+    # test_validate_direct_left_recursion_with_base_succeeds_single_token()
+    # test_validate_direct_left_recursion_with_base_succeeds_nested_then()
+    # test_generate_with_mutual_left_recursion_without_base_raises()
+    # test_validate_lex_token_uses_verify_full_match()
 
 
 if __name__ == "__main__":
-    test_failed()
+    test_generate_with_direct_left_recursion_with_base_succeeds()
+    test_generate_direct_left_recursion_with_base_succeeds()
+    test_generate_with_infers_text_lexer_without_config()
+    test_generate_with_infers_from_fabuilder_literal()
+
+    

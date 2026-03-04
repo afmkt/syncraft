@@ -13,6 +13,7 @@ from typing import (
 from dataclasses import dataclass, field, replace
 from syncraft.lexerprotocol import LexerBuilder
 if TYPE_CHECKING:
+    from syncraft.format import LayoutDoc
     from syncraft.vis import SVGVisualization
 
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
@@ -1468,36 +1469,36 @@ class Syntax(Generic[A, S]):
             return result
         raise SyncraftError("Parsing did not yield any results", offender=None, expect="at least one result")
     
-    def generate(self, data: Any, seed: int | None = None) -> str:
-        """Generate text from data using this syntax.
+    def generate(self, data: Any = Unknown(), seed: int | None = None) -> LayoutDoc:
+        """Generate a layout document from data using this syntax.
         
         Args:
             data: The data to generate text from.
             seed: Optional random seed for deterministic generation.
             
         Returns:
-            The generated string.
+            A ``LayoutDoc`` value. Call ``.render(width=..., indent=...)`` to
+            materialize text under caller-defined constraints.
             
         Example:
             >>> num = S.rp(r"[0-9]+").bimap(int, str)
-            >>> num.generate(42)
+            >>> num.generate(42).render()
             '42'
         """
         from syncraft.generator import Runner, Generator
-        from syncraft.ast import txt
-        from syncraft.format import LayoutDoc
+        from syncraft.format import Group, LayoutDoc, lower_to_layout
         import random
-        runner = Runner(ast=data,
+        runner = Runner(ast=data if data is not None else Unknown(),
                        seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                        restore_pruned=False)
         generator = self(Generator)
         for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
             if isinstance(result, LayoutDoc):
-                return result.render()
-            return txt(result)
+                return result
+            return Group(lower_to_layout(result))
         raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
     
-    def validate(self, data: Any, seed: int | None = None) -> str:
+    def validate(self, data: Any, seed: int | None = None) -> Literal[True] | Error:
         """Validate data and generate text using this syntax.
         
         Args:
@@ -1505,27 +1506,26 @@ class Syntax(Generic[A, S]):
             seed: Optional random seed for deterministic validation.
             
         Returns:
-            The validated and generated string.
+            True if validation succeeds, or an Error value with details if it fails.
             
         Example:
             >>> num = S.rp(r"[0-9]+").bimap(int, str)
             >>> num.validate(42)
             '42'
         """
-        from syncraft.generator import Runner, Generator
-        from syncraft.ast import txt
-        from syncraft.format import LayoutDoc
+        from syncraft.generator import Runner, Validator
         import random
-        runner = Runner(ast=data, 
+        runner = Runner(ast=data if data is not None else Unknown(), 
                        seed=seed if seed is not None else random.randint(0, 2**32 - 1),
                        restore_pruned=True)
-        validator = self(Generator)
-        for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
-            if isinstance(result, LayoutDoc):
-                return result.render()
-            return txt(result)
-        raise SyncraftError("Validation did not yield any results", offender=None, expect="at least one result")
-    
+        validator = self(Validator)
+        try:
+            for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
+                if isinstance(result, Error):
+                    return result
+            return True    
+        except SyncraftError as e:
+            return Error.new(this=None, message=f"Exception {e} during validation", error=e)
 class RunnerProtocol(Protocol, Generic[A, S]):
     def algebra(self, 
                 syntax: Syntax[A, S],

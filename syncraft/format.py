@@ -1,6 +1,40 @@
+"""Layout document vocabulary and renderer.
+
+This module defines a small pretty-printing algebra used by generation APIs.
+The goal is to let grammars produce structured formatting intent, not only plain
+strings.
+
+LayoutDoc vocabulary
+--------------------
+- ``Text(value)``: literal text.
+- ``Sequence(parts)``: concatenation of child nodes.
+- ``Group(body)``: choose between two rendering modes for ``body``:
+    - *flat mode*: line-break nodes use fallback text.
+    - *break mode*: line-break nodes emit ``\n`` and indentation.
+    The renderer picks flat mode when the group's flat rendering fits within the
+    available line width at the current column; otherwise it picks break mode.
+- ``Line(body, fallback=" ")``: a conditional break.
+    - In flat mode: emits ``fallback`` then ``body``.
+    - In break mode: emits newline + current indentation then ``body``.
+- ``SoftLine(body, fallback="")``: like ``Line`` but default fallback is empty,
+    so it collapses to nothing in flat mode by default.
+- ``Nest(body, level=1)``: increases indentation depth used by nested breaks in
+    ``body`` by ``level`` (non-negative).
+
+Semantics summary
+-----------------
+- Rendering state tracks ``(column, indent-depth, mode)``.
+- ``Group`` performs a width check using the flat projection of its body.
+- ``Nest`` only affects indentation of subsequent breaks, not immediate text.
+- ``Line``/``SoftLine`` are the only nodes that can materialize line breaks.
+
+``render(...)`` lowers AST-like values to this vocabulary with ``lower_to_layout``
+and then renders them under width/indent constraints.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from syncraft.ast import Alt, Lazy, Many, Nothing, ParseResult, Seq, Token, Unknown
@@ -14,33 +48,61 @@ class LayoutDoc:
     supply constraints like max line width.
     """
 
+    origin: Any | None = field(default=None, kw_only=True, repr=False, compare=False)
+
     def render(self, *, width: int = 80, indent: str = "    ") -> str:
         renderer = _Renderer(width=width, indent=indent)
         return renderer.render(self)
 
+    @property
+    def ast(self) -> Any:
+        """Return the underlying AST-like value for this layout doc.
+
+        If this doc was produced by ``lower_to_layout``, the original value is
+        preserved and returned. For manually constructed docs without an origin,
+        a best-effort structural value is synthesized.
+        """
+        if self.origin is not None:
+            return self.origin
+        if isinstance(self, Text):
+            return self.value
+        if isinstance(self, Sequence):
+            return Seq(value=tuple((part.ast, True) for part in self.parts))
+        if isinstance(self, Group):
+            return self.body.ast
+        if isinstance(self, Nest):
+            return self.body.ast
+        if isinstance(self, Line):
+            return self.body.ast
+        if isinstance(self, SoftLine):
+            return self.body.ast
+        raise TypeError(f"Unsupported LayoutDoc node: {type(self)!r}")
+
 
 @dataclass(frozen=True, slots=True)
 class Text(LayoutDoc):
+    """Literal text fragment."""
+
     value: str
 
 
 @dataclass(frozen=True, slots=True)
 class Sequence(LayoutDoc):
-    """Internal concatenation node (not intended for direct user construction)."""
+    """Concatenation node: render each part left-to-right."""
 
     parts: tuple[LayoutDoc, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class Group(LayoutDoc):
-    """Try to render flat; if it does not fit, render in break mode."""
+    """Width-sensitive choice: flat mode if it fits, otherwise break mode."""
 
     body: LayoutDoc
 
 
 @dataclass(frozen=True, slots=True)
 class Line(LayoutDoc):
-    """Hard line break in break mode, fallback text in flat mode."""
+    """Conditional break: newline in break mode, fallback text in flat mode."""
 
     body: LayoutDoc
     fallback: str = " "
@@ -48,7 +110,7 @@ class Line(LayoutDoc):
 
 @dataclass(frozen=True, slots=True)
 class SoftLine(LayoutDoc):
-    """Soft line break; similar to Line but defaults to empty fallback."""
+    """Soft conditional break: same as Line, with empty flat fallback by default."""
 
     body: LayoutDoc
     fallback: str = ""
@@ -56,13 +118,15 @@ class SoftLine(LayoutDoc):
 
 @dataclass(frozen=True, slots=True)
 class Nest(LayoutDoc):
-    """Increase indentation in break mode for nested content."""
+    """Increase indentation depth for nested breaks in ``body``."""
 
     body: LayoutDoc
     level: int = 1
 
 
 def text_of(value: Any) -> str:
+    """Best-effort conversion of AST-like terminal values to text."""
+
     if isinstance(value, str):
         return value
     if isinstance(value, bytes):
@@ -90,16 +154,16 @@ def lower_to_layout(value: Any) -> LayoutDoc:
     if isinstance(value, LayoutDoc):
         return value
     if isinstance(value, Lazy):
-        return lower_to_layout(value.value)
+        return replace(lower_to_layout(value.value), origin=value)
     if isinstance(value, Alt):
         if value.value is None:
-            return Text("")
-        return lower_to_layout(value.value)
+            return Text("", origin=value)
+        return replace(lower_to_layout(value.value), origin=value)
     if isinstance(value, Many):
-        return Sequence(tuple(lower_to_layout(item) for item in value.value))
+        return Sequence(tuple(lower_to_layout(item) for item in value.value), origin=value)
     if isinstance(value, Seq):
-        return Sequence(tuple(lower_to_layout(item) for item, _keep in value.value))
-    return Text(text_of(value))
+        return Sequence(tuple(lower_to_layout(item) for item, _keep in value.value), origin=value)
+    return Text(text_of(value), origin=value)
 
 
 class _Renderer:

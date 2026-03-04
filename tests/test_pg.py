@@ -7,8 +7,9 @@ from syncraft.syntax import Syntax
 from syncraft.ast import Token, Alt, Seq, Lazy, Many
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
-from syncraft.cache import Cache
+
 from typing import Any
+
 class S:
     @staticmethod
     def lit(text: Any) -> Syntax[Any, Any]:

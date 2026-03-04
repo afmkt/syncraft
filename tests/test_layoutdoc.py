@@ -1,7 +1,8 @@
 from __future__ import annotations
-
+from typing import Any
+from syncraft.syntax import Syntax
 from syncraft.ast import Alt, Lazy, Many, Seq, Token, Unknown
-from syncraft.format import Group, Line, Nest, Sequence, SoftLine, Text, lower_to_layout, render, text_of
+from syncraft.format import LayoutDoc, Group, Line, Nest, Sequence, SoftLine, Text, lower_to_layout, render, text_of
 
 
 def test_text_of_terminals() -> None:
@@ -33,6 +34,11 @@ def test_lower_to_layout_seq_many_alt_lazy() -> None:
     assert render(many_doc) == "xy"
     assert render(alt_doc) == "z"
     assert render(lazy_doc) == "q"
+
+    assert seq_doc.ast == seq
+    assert many_doc.ast == many
+    assert alt_doc.ast == alt
+    assert lazy_doc.ast == lazy
 
 
 def test_group_prefers_flat_when_fits() -> None:
@@ -82,3 +88,31 @@ def test_softline_fallback_and_break() -> None:
     )
     assert doc.render(width=10) == "ab"
     assert doc.render(width=1) == "a\nb"
+
+
+def test_syntax_generate_renders_layoutdoc_result() -> None:
+    syntax: Any = Syntax.success(
+        Group(
+            Sequence(
+                (
+                    Text("select"),
+                    Line(Text("*"), fallback=" "),
+                    Line(Text("from"), fallback=" "),
+                    Line(Text("tbl"), fallback=" "),
+                )
+            )
+        )
+    )
+
+    generated = syntax.generate(data=None, seed=0)
+    assert isinstance(generated, LayoutDoc)
+    assert generated.render(width=80) == "select * from tbl"
+
+
+def test_syntax_generate_wraps_non_layoutdoc_in_default_group() -> None:
+    syntax: Any = Syntax.success("abc")
+
+    generated = syntax.generate(data=None, seed=0)
+    assert isinstance(generated, Group)
+    assert generated.render(width=80) == "abc"
+    assert generated.ast == "abc"

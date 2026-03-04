@@ -1,10 +1,14 @@
 from __future__ import annotations
-from typing import Callable, Any, Dict, Union, Literal, Iterator, Optional, overload, TYPE_CHECKING
-from syncraft.ast import SyncraftError
+from typing import (
+    Callable, Any, Dict, Union, Literal, Iterator, Optional, overload, TYPE_CHECKING, Literal
+)
+from syncraft.format import LayoutDoc, Group, lower_to_layout
+from syncraft.algebra import Error
+from syncraft.ast import SyncraftError, Unknown
 from syncraft.syntax import Syntax
 from syncraft.algebra import Algebra
 from syncraft.parser import parser
-from syncraft.generator import generator
+from syncraft.generator import generator, validator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func
@@ -169,6 +173,7 @@ def grammar(cls: type) -> type:
     setattr(cls, '_root_rule', root)
     setattr(cls, '_parser', dict())
     setattr(cls, '_generator', dict())
+    setattr(cls, '_validator', dict())
     return cls
 
         
@@ -213,6 +218,7 @@ class Grammar(metaclass=GrammarMeta):
     _root_rule: Syntax | None
     _parser: Dict[Syntax, Algebra]
     _generator: Dict[Syntax, Algebra]
+    _validator: Dict[Syntax, Algebra]
 
 
     @classmethod
@@ -229,6 +235,7 @@ class Grammar(metaclass=GrammarMeta):
         cls._root_rule = None
         cls._parser = dict()
         cls._generator = dict()
+        cls._validator = dict()
     
 
     @classmethod
@@ -259,8 +266,16 @@ class Grammar(metaclass=GrammarMeta):
     
     @classmethod
     def validator(cls, syntax: Syntax | None = None) -> Algebra:
-        """Create a validator for the grammar."""
-        return cls.generator(syntax=syntax)
+        """Create a generator for the grammar."""
+        if syntax is None:
+            if cls._root_rule is None:
+                raise ValueError("No root rule defined for the grammar")
+            syntax = cls._root_rule
+        if syntax in cls._validator:
+            return cls._validator[syntax]
+        ret = validator(syntax=syntax)
+        cls._validator[syntax] = ret
+        return ret
 
     @classmethod
     def parse(cls, data: str, syntax: Syntax | None = None) -> Any:
@@ -336,26 +351,36 @@ class Grammar(metaclass=GrammarMeta):
             yield result
                 
     @classmethod
-    def generate(cls, data: Any, syntax: Syntax | None = None, seed: int | None = None) -> Any:
+    def generate(cls, data: Any = Unknown(), syntax: Syntax | None = None, seed: int | None = None) -> LayoutDoc:
         """Generate text using the grammar."""
         from syncraft.generator import Runner
         import random
         generator = cls.generator(syntax=syntax)        
-        runner = Runner(ast=data,
+        runner = Runner(ast=data if data is not None else Unknown(),
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                         restore_pruned=False)
-        for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
-            return result
+        for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
+            if isinstance(result, LayoutDoc):
+                return result
+            return Group(lower_to_layout(result))
+        raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
+        
         
     @classmethod
-    def validate(cls, data: Any, syntax: Syntax | None = None, seed: int | None = None) -> Any:
+    def validate(cls, data: Any, syntax: Syntax | None = None, seed: int | None = None) -> Literal[True] | Error:
         """Validate text using the grammar."""
         from syncraft.generator import Runner
         import random
-        generator = cls.generator(syntax=syntax)        
-        runner = Runner(ast=data, 
+        validator = cls.validator(syntax=syntax)   
+        runner = Runner(ast=data if data is not None else Unknown(), 
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1),
                         restore_pruned=True)
-        for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):
-            return result
+        try:
+            for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):
+                if isinstance(result, Error):
+                    return result
+            return True
+        except SyncraftError as e:
+            return Error.new(this=None, message=f"Exception {e} during validation", error=e)
+        
         

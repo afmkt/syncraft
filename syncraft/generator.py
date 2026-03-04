@@ -510,6 +510,11 @@ class Generator(Algebra[ParseResult[T], GenState]):
         return cls(lex_run).flag(intrinsic=True) 
 
 
+@dataclass(frozen=True, slots=True)
+class Validator(Generator[T]):
+    @property
+    def disabled(self) -> Set[str]:
+        return {'map', 'fmt'}
 
 
 @dataclass
@@ -530,7 +535,9 @@ def generator(syntax: Syntax) -> Algebra:
     runner: Runner = Runner()
     return runner.algebra(syntax=syntax, alg_cls=Generator)
 
-    
+def validator(syntax: Syntax) -> Algebra:
+    runner: Runner = Runner()
+    return runner.algebra(syntax=syntax, alg_cls=Validator)
     
 def generate_with(
     syntax: Syntax, 
@@ -538,21 +545,20 @@ def generate_with(
     seed: Optional[int] = None,
     restore_pruned: bool = False
 ) -> AST:    
-    runner = Runner(ast=data if data is not None else Unknown(), 
-                    seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
-                    restore_pruned=restore_pruned)
-
-    return runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-
-def validate(syntax: Syntax, data: ParseResult[Any]) -> AST:
-    runner = Runner(ast=data, seed=0, restore_pruned=True)    
-    return runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
-
-def generate(syntax, seed: Optional[int] = None) -> AST:
-    runner = Runner(ast=Unknown(), 
-                    seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
-                    restore_pruned=False)    
-    return runner.once(syntax=syntax, alg_cls=Generator, state=None, cursor=None, cache=None)
+    from syncraft.format import LayoutDoc
+    ret = syntax.generate(data=data, seed=seed)
+    if isinstance(ret, LayoutDoc):
+        return ret.ast
+    return ret
     
 
+def validate(syntax: Syntax, data: ParseResult[Any]) -> AST:
+    return generate_with(syntax=syntax, data=data, seed=0, restore_pruned=True)
+
+def generate(syntax, seed: Optional[int] = None) -> AST:
+    return generate_with(syntax=syntax, data=None, seed=seed, restore_pruned=False)
+    
+
+
+    
 
