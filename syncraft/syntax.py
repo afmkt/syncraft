@@ -143,7 +143,6 @@ class SyntaxSpec:
 
     A SyntaxSpec records enough structural information to reconstruct a
     corresponding Syntax object via syntax(cls, cache).
-
     Caveat:
         SyntaxSpec stores grammar structure only. It does not store user-level
         data/operational transformations (e.g. iso/map/bimap/bind/check/debug).
@@ -818,9 +817,20 @@ class Syntax(Generic[A, S]):
 
         Args:
             f: Function mapping value A to B.
+            block_normalization: If True, prevents normalization of this node.
+            block_normalization: If False, allows normalization to flatten. 
+
+            normalization happens in seq and alt combinators when their children have can_normalize=True.
+            If block_normalization is True, this syntax will be marked as can_normalize=False, 
+            which prevents normalization from flattening this node. 
+            If block_normalization is False, this syntax will keep its original can_normalize value, 
+            allowing normalization to flatten it if it was originally can_normal
 
         Returns:
             Syntax yielding B with the same resulting state.
+        Error Handling:
+            If f raises an system exception during parsing, the exception will interrupt the parsing.
+            If f raises a DataError(soft_failure=True) during parsing, the exception will be treated as a parsing failure and trigger backtracking.
         """
         return replace(
             self,
