@@ -36,58 +36,52 @@ class AST:
             return svg_content
         except ImportError:
             return None
-        
-class MetaNothing(type):
-    def __instancecheck__(cls, instance: Any) -> bool:
-        return instance is cls or super().__instancecheck__(instance)
-    def __str__(cls)->str:
-        return "Nothing"
-    def __repr__(cls)->str:
-        return "Nothing"
-    def __bool__(cls)->bool:
-        return False
 
-class Nothing(metaclass=MetaNothing):
-    """Singleton sentinel representing the absence of a value in the AST."""
-    def __call__(self)-> Nothing:
+class _SingletonBase:
+    def __call__(self) -> Any:
         return self
-    def __new__(cls):
+
+    def __new__(cls) -> Any:
         return cls
-    def __bool__(self)->bool:
-        return False
-    def __str__(self)->str:
-        return "Nothing"
-    def __repr__(self)->str:
-        return "Nothing"
 
-
-class MetaEOF(type):
-    def __instancecheck__(cls, instance: Any) -> bool:
-        return instance is cls or super().__instancecheck__(instance)
-    def __str__(cls)->str:
-        return "EOF"
-    def __repr__(cls)->str:
-        return "EOF"
-    def __bool__(cls)->bool:
+    def __bool__(self) -> bool:
         return False
 
-class EOF(metaclass=MetaEOF):
-    """Singleton sentinel representing end of input."""
-    def __call__(self)-> EOF:
-        return self
-    def __new__(cls):
-        return cls
-    def __bool__(self)->bool:
-        return False
-    def __str__(self)->str:
-        return "EOF"
-    def __repr__(self)->str:
-        return "EOF"
+    def __str__(self) -> str:
+        return type(self).__name__
+
+    def __repr__(self) -> str:
+        return type(self).__name__
 
 
-@dataclass(frozen=True, slots=True)
-class Unknown(AST):
-    pass
+def singleton(name: str, doc: str, boolean: bool = False) -> type[_SingletonBase]:
+    class _SingletonMeta(type):
+        def __instancecheck__(cls, instance: Any) -> bool:
+            return instance is cls or super().__instancecheck__(instance)
+
+        def __str__(cls) -> str:
+            return name
+
+        def __repr__(cls) -> str:
+            return name
+
+        def __bool__(cls) -> bool:
+            return boolean
+
+    class _Singleton(_SingletonBase, metaclass=_SingletonMeta):
+        __doc__ = doc
+
+    _SingletonMeta.__name__ = f"Meta{name}"
+    _Singleton.__name__ = name
+    _Singleton.__qualname__ = name
+    return _Singleton
+
+
+Nothing = singleton("Nothing", "Singleton sentinel representing the absence of a value in the AST.")
+EOF = singleton("EOF", "Singleton sentinel representing end of input.")
+Unknown = singleton("Unknown", "Singleton sentinel representing an unknown value.")
+
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,15 +167,12 @@ ParseResult = Union[
     Many,
     Alt,
     Seq,
-    Nothing,
-    EOF,
-    Token,
-    Unknown,
+    type[_SingletonBase],
     T,
 ]
 
 
-def ast_to_text(ast: ParseResult) -> str:
+def txt(ast: ParseResult) -> str:
     """Extract text from an AST object by traversing it and collecting Token texts.
     
     Args:
@@ -190,34 +181,23 @@ def ast_to_text(ast: ParseResult) -> str:
     Returns:
         The concatenated text from all Token objects in the AST.
     """
-    if isinstance(ast, Token):
-        if isinstance(ast.text, str):
-            return ast.text
-        elif isinstance(ast.text, bytes):
-            return ast.text.decode('utf-8')
-        elif isinstance(ast.text, tuple):
-            return ''.join(str(c) for c in ast.text)
-        else:
-            return str(ast.text)
-    elif isinstance(ast, Lazy):
-        return ast_to_text(ast.value)
+    if isinstance(ast, Lazy):
+        return txt(ast.value)
     elif isinstance(ast, Alt):
         if ast.value is not None:
-            return ast_to_text(ast.value)
+            return txt(ast.value)
         return ""
     elif isinstance(ast, Seq):
         parts = []
         for item, _keep in ast.value:
-            parts.append(ast_to_text(item))
+            parts.append(txt(item))
         return ''.join(parts)
     elif isinstance(ast, Many):
         parts = []
         for item in ast.value:
-            parts.append(ast_to_text(item))
+            parts.append(txt(item))
         return ''.join(parts)
-    elif ast is Nothing or ast is EOF:
-        return ""
-    elif isinstance(ast, Unknown):
+    elif ast is Nothing or ast is EOF or ast is Unknown:
         return ""
     elif isinstance(ast, str):
         return ast

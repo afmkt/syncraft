@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import (
-    Any, TypeVar, Tuple, Optional, Callable, Dict, Hashable,
+    Any, Set, TypeVar, Tuple, Optional, Callable, Dict, Hashable,
     List, Generator as PyGenerator, cast, Self
 )
 
@@ -152,8 +152,10 @@ class Generator(Algebra[ParseResult[T], GenState]):
               f: Callable[[ParseResult[T], Any], Any], 
               i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState]:
         return self.imap(i)
-
-
+    
+    @property
+    def disabled(self) -> Set[str]:
+        return {'map'}
 
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState] | Tuple[Algebra[Any, GenState], bool]) -> Algebra[Seq, GenState]:

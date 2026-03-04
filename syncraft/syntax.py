@@ -19,7 +19,7 @@ from syncraft.utils import file as get_file, line as get_line, func as get_func,
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
 from syncraft.cache import Cache, Incomplete
 from syncraft.bimap import Bindable, Iso, DataError, Match
-from syncraft.ast import Many, Nothing, SyncraftError, Seq, Alt, Lazy, Unknown
+from syncraft.ast import Many, Nothing, SyncraftError, Seq, Alt, Lazy, Unknown, _SingletonBase
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
@@ -731,7 +731,7 @@ class Syntax(Generic[A, S]):
         )
 
     @property
-    def absent(self) -> Syntax[type[Nothing], S]:
+    def absent(self) -> Syntax[type[_SingletonBase], S]:
         """Negative lookahead: ensure this syntax is absent. Does not consume input."""
         return replace(
             self,
@@ -797,6 +797,21 @@ class Syntax(Generic[A, S]):
         return False if block_normalization else self.can_normalize
 
     ######################################################## value transformation ########################################################
+    def fmt(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
+        """Format the produced value using a custom function.
+
+        Args:
+            f: Function that takes the produced value and returns a formatted version.
+
+        Returns:
+            Syntax that produces the formatted value.
+        """
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, 'fmt'),
+            can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
+        ) # type: ignore
+    
     def map(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
         """Map the produced value while preserving state and metadata.
 
@@ -808,14 +823,14 @@ class Syntax(Generic[A, S]):
         """
         return replace(
             self,
-            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f),
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, 'map'),
             can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
         ) # type: ignore
     
     def imap(self, f: Callable[..., A], *, block_normalization: bool = True) -> Syntax[A, S]:
         return replace(
             self,
-            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f),
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f, 'imap'),
             can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
         ) # type: ignore
 
@@ -1449,7 +1464,7 @@ class Syntax(Generic[A, S]):
         runner: Runner = Runner()
         cursor = StreamCursor.from_data(data)
         parser = self(Parser)
-        for result, s in runner.run(parser, state=None, cursor=cursor, once=True, cache=Cache()):  # type: ignore[arg-type]
+        for result in runner.run(parser, state=None, cursor=cursor, once=True, cache=Cache()):  # type: ignore[arg-type]
             return result
         raise SyncraftError("Parsing did not yield any results", offender=None, expect="at least one result")
     
@@ -1469,14 +1484,17 @@ class Syntax(Generic[A, S]):
             '42'
         """
         from syncraft.generator import Runner, Generator
-        from syncraft.ast import ast_to_text
+        from syncraft.ast import txt
+        from syncraft.format import LayoutDoc
         import random
         runner = Runner(ast=data,
                        seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                        restore_pruned=False)
         generator = self(Generator)
-        for result, s in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
-            return ast_to_text(result)
+        for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
+            if isinstance(result, LayoutDoc):
+                return result.render()
+            return txt(result)
         raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
     
     def validate(self, data: Any, seed: int | None = None) -> str:
@@ -1495,14 +1513,17 @@ class Syntax(Generic[A, S]):
             '42'
         """
         from syncraft.generator import Runner, Generator
-        from syncraft.ast import ast_to_text
+        from syncraft.ast import txt
+        from syncraft.format import LayoutDoc
         import random
         runner = Runner(ast=data, 
                        seed=seed if seed is not None else random.randint(0, 2**32 - 1),
                        restore_pruned=True)
         validator = self(Generator)
-        for result, _ in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
-            return ast_to_text(result)
+        for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
+            if isinstance(result, LayoutDoc):
+                return result.render()
+            return txt(result)
         raise SyncraftError("Validation did not yield any results", offender=None, expect="at least one result")
     
 class RunnerProtocol(Protocol, Generic[A, S]):

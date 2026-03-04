@@ -1,12 +1,12 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, TypeVar, Generic, Callable, Tuple, cast, Mapping,
-    Generator, Hashable, TYPE_CHECKING, Dict
+    Generator, Hashable, TYPE_CHECKING, Dict, Set
 )
 from syncraft.ast import Nothing, EOF
 from dataclasses import dataclass, replace, field
 from enum import IntEnum
-from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq
+from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq, _SingletonBase
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.bimap import Bindable, Iso, DataError
 from syncraft.utils import callable_str, is_orelse, is_lazy, syntax_of, LAZY_MARKER, ORELSE_MARKER, CallWith
@@ -271,7 +271,8 @@ class Algebra(Generic[A, S]):
         for key, value in kwargs.items():
             object.__setattr__(func, key, value)
         return self
-            
+    
+
     def is_intrinsic(self) -> bool:
         func = self.run_f
         return getattr(func, 'intrinsic', False)
@@ -338,11 +339,11 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=present_run)
         
     @property
-    def absent(self) -> Algebra[type[Nothing], S]:
+    def absent(self) -> Algebra[type[_SingletonBase], S]:
         def absent_run(input: S, 
                        cache:Cache[S]) -> Generator[YieldChannelType, 
                                                   S, 
-                                                  Either[Any, Tuple[type[Nothing], S]]]:
+                                                  Either[Any, Tuple[type[_SingletonBase], S]]]:
             result = yield from self.run(input, cache)
             match result:
                 case Left():
@@ -503,7 +504,15 @@ class Algebra(Generic[A, S]):
         from typing import cast as _cast
         return _cast(Algebra[B, S], alg)
     
-    def map(self, f: Callable[..., B]) -> Algebra[B, S]:
+
+    @property
+    def disabled(self) -> Set[str]:
+        raise NotImplementedError("Algebra.disabled is abstract, concrete subclasses must implement it")
+
+    def map(self, f: Callable[..., B], entry: str | None = None) -> Algebra[B, S]:
+        if entry is not None and entry in self.disabled:
+            return self # type: ignore
+
         ff = normalize_map_f(f)
         def map_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
@@ -574,7 +583,9 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=map_state_run) # type: ignore
         
 
-    def imap(self, f: Callable[..., A]) -> Algebra[A, S]:
+    def imap(self, f: Callable[..., A], entry: str | None = None) -> Algebra[A, S]:
+        if entry is not None and entry in self.disabled:
+            return self # type: ignore
         ff = normalize_map_f(f)
         def imap_all_f(s: S) -> S:
             new_state = s.apply(ff)
@@ -649,11 +660,11 @@ class Algebra(Generic[A, S]):
 
 
     @classmethod
-    def eof(cls) -> Algebra[type[EOF], S]:
+    def eof(cls) -> Algebra[type[_SingletonBase], S]:
         def eof_run(input: S, 
                     cache:Cache[S]) -> Generator[YieldChannelType, 
                                                S, 
-                                               Either[Any, Tuple[type[EOF], S]]]:
+                                               Either[Any, Tuple[type[_SingletonBase], S]]]:
             if input.ended:
                 yield from ()
                 return Right.new((EOF, input))

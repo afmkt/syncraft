@@ -39,6 +39,17 @@ from .grammar import (
     lazy,
     grammar, 
 )
+from .format import (
+    LayoutDoc,
+    Text,
+    Sequence,
+    Group,
+    Line,
+    SoftLine,
+    Nest,
+    lower_to_layout,
+    render,
+)
 
 # Export commonly used class methods for convenience
 
@@ -50,5 +61,6 @@ __all__ = [
     "DataError", "Not",
     "SyncraftError",
     "RegexError",
+    "LayoutDoc", "Text", "Sequence", "Group", "Line", "SoftLine", "Nest", "lower_to_layout", "render",
 
 ]

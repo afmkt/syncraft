@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable, 
-    Generic, Generator, Callable
+    Generic, Generator, Callable, Set
 )
 from syncraft.fa import (
     DEFAULT_TAG
@@ -310,6 +310,10 @@ class Parser(Algebra[T, ParserState[T]]):
         
     def bimap(self, f: Callable[[T, Any], A], i: Callable[[A, Any], T]) -> Algebra[A, ParserState[T]]:
         return self.map(f)
+    @property
+    def disabled(self) -> Set[str]:
+        return {'fmt', 'imap'}
+
 
     @classmethod
     def lex(cls, 
