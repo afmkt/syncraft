@@ -7,7 +7,7 @@ from syncraft.parser import parse_word
 import pytest
 
 from syncraft.format import (
-    Annotated,
+    
     Attach,
     Breakability,
     FormatSpec,
@@ -18,7 +18,7 @@ from syncraft.format import (
     Sequence,
     SoftLine,
     Text,
-    apply_format_spec,
+    
     lower_to_layout,
     render,
     text_of,
@@ -138,28 +138,6 @@ def test_syntax_generate_wraps_non_layoutdoc_in_default_group() -> None:
     assert generated.ast == "abc"
 
 
-def test_syntax_format_generates_annotated_layoutdoc() -> None:
-    syntax: Any = Syntax.success("abc").format(
-        kind="token",
-        role="value",
-        breakability="optional",
-        attach="right",
-        indent=1,
-        precedence=10,
-        x=1
-    )
-
-    generated = syntax.generate(data=None, seed=0)
-    assert isinstance(generated, Annotated)
-    assert generated.render(width=80) == "abc"
-    assert generated.spec.attrs["kind"] == "token"
-    assert generated.spec.attrs["role"] == "value"
-    assert generated.spec.breakability is Breakability.OPTIONAL
-    assert generated.spec.attach is Attach.RIGHT
-    assert generated.spec.indent == 1
-    assert generated.spec.attrs["precedence"] == 10
-    assert dict(generated.spec.attrs) == {"kind": "token", "role": "value", "precedence": 10, "x": 1}
-
 
 def test_syntax_format_is_disabled_in_parse_and_validate() -> None:
     """Format spec is intentionally disabled in parse and validation paths.
@@ -168,7 +146,7 @@ def test_syntax_format_is_disabled_in_parse_and_validate() -> None:
     replay use the raw algebra without fmt/map, preserving structural round-trip
     integrity.
     """
-    syntax: Any = Syntax.success("abc").format(kind="token", breakability="optional")
+    syntax: Any = Syntax.success("abc").format(breakability="optional")
 
     # Parse path skips formatting (fmt is disabled in Parser.disabled)
     parsed = syntax.parse("ignored")
@@ -185,7 +163,7 @@ def test_format_spec_validation_errors() -> None:
             breakability="sometimes",
             attach="none",
             indent=0,
-            attrs=None,
+            
         )
 
     with pytest.raises(ValueError, match="indent must be >= 0"):
@@ -227,13 +205,11 @@ def test_apply_format_spec_optional_wraps_and_preserves_origin() -> None:
         breakability="optional",
         attach="none",
         indent=2,
-        attrs={"a": 1},
     )
-    doc = apply_format_spec("abc", spec)
+    doc = spec("abc")
 
-    assert isinstance(doc, Annotated)
-    assert isinstance(doc.body, Group)
-    assert isinstance(doc.body.body, Nest)
+    assert isinstance(doc, Group)
+    assert isinstance(doc.body, Nest)
     assert doc.ast == "abc"
     assert doc.render(width=80, indent=" ") == "abc"
 
@@ -243,10 +219,10 @@ def test_apply_format_spec_required_not_implemented() -> None:
         breakability=Breakability.REQUIRED,
         attach=Attach.NONE,
         indent=0,
-        attrs=None,
+        
     )
     with pytest.raises(ValueError, match="not implemented"):
-        apply_format_spec("abc", spec)
+        spec("abc")
 
 
 def test_format_spec_additional_validation_errors() -> None:
@@ -255,16 +231,7 @@ def test_format_spec_additional_validation_errors() -> None:
             breakability="never",
             attach="middle",
             indent=0,
-            attrs=None,
-        )
-
-
-    with pytest.raises(TypeError, match="attrs must be a mapping"):
-        FormatSpec.coerce(
-            breakability="never",
-            attach="none",
-            indent=0,
-            attrs=[("k", "v")],
+            
         )
 
 
@@ -285,26 +252,21 @@ def test_expression_grammar_integration_with_format_hints_and_rendered_text() ->
     number = expression_syntax.tok(text=re.compile(r"\d+")).bimap(
         lambda token: token.text,
         lambda text: Token(text=text),
-    ).format(kind="number", role="operand")
+    )
 
     # Operator is marked as optional breakpoint
     plus = expression_syntax.tok(text="+").bimap(
         lambda token: token.text,
         lambda text: Token(text=text),
     ).format(
-        kind="operator",
-        role="infix",
         attach="both",
         breakability="optional",
     )
 
     # Sequence: without spacing rule in grammar, renders as "12+345"
     expr = (number + plus + number).format(
-        kind="expr",
-        role="binary",
         breakability="optional",
-        indent=1,
-        attrs={"demo": True},
+        indent=1
     )
 
     parsed = parse_word(expr, "12 + 345")

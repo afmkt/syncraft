@@ -802,7 +802,6 @@ class Syntax(Generic[A, S]):
                breakability: Breakability | Literal['never', 'optional', 'required'] = 'never',
                attach: Attach | Literal['none', 'left', 'right', 'both'] = 'none',
                indent: int = 0,
-               **attrs: Any
                ) -> Syntax["LayoutDoc", S]:
         """Attach declarative formatting metadata to this grammar subtree.
 
@@ -830,20 +829,6 @@ class Syntax(Generic[A, S]):
             - ``'both'``: bind both sides.
             - ``'none'`` (default): no adjacency preference.
 
-        Optional policy metadata
-        ------------------------
-        kind:
-            Semantic category label (e.g., ``"list"``, ``"call"``,
-            ``"operator"``). Consumed by downstream formatting policies.
-        role:
-            Finer-grained role within ``kind`` (e.g., ``"items"``,
-            ``"separator"``, ``"open"``, ``"close"``).
-        precedence:
-            Optional precedence hint for expression formatting rules.
-        attrs:
-            Free-form metadata map for custom policy rules (e.g.,
-            ``{"align_group": "params"}`` for alignment tagging).
-
         Examples
         --------
         Make a container width-sensitive and increase indentation on breaks::
@@ -859,15 +844,15 @@ class Syntax(Generic[A, S]):
             first = ITEM.format(kind="list", attrs={"align_anchor": True, "align_group": "params"})
             rest = ITEM.format(kind="list", attach="left", attrs={"align_group": "params"})
         """
-        from syncraft.format import FormatSpec, apply_format_spec
+        from syncraft.format import FormatSpec
 
         spec = FormatSpec.coerce(
             breakability=breakability,
             attach=attach,
             indent=indent,
-            attrs=attrs,
+            
         )
-        return cast(Syntax["LayoutDoc", S], self.fmt(lambda value, _ctx: apply_format_spec(value, spec), block_normalization=True))
+        return cast(Syntax["LayoutDoc", S], self.fmt(spec, block_normalization=True))
 
     def fmt(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
         """Low-level formatting escape hatch.

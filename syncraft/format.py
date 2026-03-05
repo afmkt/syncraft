@@ -38,8 +38,8 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Mapping
 
-from syncraft.ast import Alt, Lazy, Many, Nothing, ParseResult, Seq, Token, Unknown
-
+from syncraft.ast import AST, Alt, Lazy, Many, Nothing, ParseResult, Seq, Token, Unknown
+from syncraft.utils import FrozenDict
 
 @dataclass(frozen=True, slots=True)
 class LayoutDoc:
@@ -63,23 +63,7 @@ class LayoutDoc:
         preserved and returned. For manually constructed docs without an origin,
         a best-effort structural value is synthesized.
         """
-        if self.origin is not None:
-            return self.origin
-        if isinstance(self, Text):
-            return self.value
-        if isinstance(self, Sequence):
-            return Seq(value=tuple((part.ast, True) for part in self.parts))
-        if isinstance(self, Group):
-            return self.body.ast
-        if isinstance(self, Nest):
-            return self.body.ast
-        if isinstance(self, Line):
-            return self.body.ast
-        if isinstance(self, SoftLine):
-            return self.body.ast
-        if isinstance(self, Annotated):
-            return self.body.ast
-        raise TypeError(f"Unsupported LayoutDoc node: {type(self)!r}")
+        return self.origin
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +71,11 @@ class Text(LayoutDoc):
     """Literal text fragment."""
 
     value: str
+    @property
+    def ast(self) -> Any:
+        if self.origin is not None:
+            return self.origin
+        return self.value
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +83,14 @@ class Sequence(LayoutDoc):
     """Concatenation node: render each part left-to-right."""
 
     parts: tuple[LayoutDoc, ...]
+    @property
+    def ast(self) -> Any:
+        if self.origin is not None:
+            return self.origin
+        return Seq(value=tuple((part.ast, True) for part in self.parts))
+    
+
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +98,11 @@ class Group(LayoutDoc):
     """Width-sensitive choice: flat mode if it fits, otherwise break mode."""
 
     body: LayoutDoc
+    @property
+    def ast(self) -> Any:
+        if self.origin is not None:
+            return self.origin
+        return self.body.ast
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +112,12 @@ class Line(LayoutDoc):
     body: LayoutDoc
     fallback: str = " "
 
+    @property
+    def ast(self) -> Any:
+        if self.origin is not None:
+            return self.origin
+        return self.body.ast
+
 
 @dataclass(frozen=True, slots=True)
 class SoftLine(LayoutDoc):
@@ -118,6 +126,12 @@ class SoftLine(LayoutDoc):
     body: LayoutDoc
     fallback: str = ""
 
+    @property
+    def ast(self) -> Any:
+        if self.origin is not None:
+            return self.origin
+        return self.body.ast
+
 
 @dataclass(frozen=True, slots=True)
 class Nest(LayoutDoc):
@@ -125,6 +139,12 @@ class Nest(LayoutDoc):
 
     body: LayoutDoc
     level: int = 1
+
+    @property
+    def ast(self) -> Any:
+        if self.origin is not None:
+            return self.origin
+        return self.body.ast
 
 
 class Breakability(str, Enum):
@@ -140,7 +160,7 @@ class Attach(str, Enum):
     BOTH = "both"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FormatSpec:
     """Core formatting specification with rendering semantics and optional policy metadata.
     
@@ -153,15 +173,14 @@ class FormatSpec:
     breakability: Breakability = Breakability.NEVER
     attach: Attach = Attach.NONE
     indent: int = 0
-    attrs: Mapping[str, Any] = field(default_factory=dict)
-
+    
     @classmethod
     def coerce(cls,
                *,
                breakability: Breakability | str,
                attach: Attach | str,
                indent: int,
-               attrs: Mapping[str, Any] | None,
+               
                ) -> "FormatSpec":
         """Coerce and validate user-provided formatting parameters into FormatSpec.
         
@@ -192,38 +211,29 @@ class FormatSpec:
 
         if indent < 0:
             raise ValueError(f"indent must be >= 0, got {indent}")
-        if attrs is not None and not isinstance(attrs, Mapping):
-            raise TypeError(f"attrs must be a mapping, got {type(attrs).__name__}")
-
-        # Merge policy metadata into attrs dict
-        merged_attrs = dict(attrs or {})
-
+        
         return cls(
             breakability=normalized_breakability,
             attach=normalized_attach,
-            indent=indent,
-            attrs=merged_attrs,
+            indent=indent
         )
 
+    def __call__(self, body: LayoutDoc | AST | Any) -> LayoutDoc:
+        """Apply this FormatSpec to a LayoutDoc, producing an Annotated node."""
+        doc = lower_to_layout(body)
+        body = Nest(doc, level=self.indent) if self.indent > 0 else doc
 
-@dataclass(frozen=True, slots=True)
-class Annotated(LayoutDoc):
-    body: LayoutDoc
-    spec: FormatSpec
+        if self.breakability is Breakability.OPTIONAL:
+            wrapped: LayoutDoc = Group(body)
+        elif self.breakability is Breakability.REQUIRED:
+            raise ValueError("breakability='required' is not implemented yet")
+        else:
+            wrapped = body
+
+        return wrapped
 
 
-def apply_format_spec(value: Any, spec: FormatSpec) -> LayoutDoc:
-    doc = lower_to_layout(value)
-    body = Nest(doc, level=spec.indent) if spec.indent > 0 else doc
 
-    if spec.breakability is Breakability.OPTIONAL:
-        wrapped: LayoutDoc = Group(body)
-    elif spec.breakability is Breakability.REQUIRED:
-        raise ValueError("breakability='required' is not implemented yet")
-    else:
-        wrapped = body
-
-    return Annotated(body=wrapped, spec=spec, origin=value)
 
 
 def text_of(value: Any) -> str:
@@ -323,10 +333,7 @@ class _Renderer:
             pad = self.indent * depth
             txt, next_col, next_depth = self._render(doc.body, col=len(pad), depth=depth, flat=flat)
             return "\n" + pad + txt, next_col, next_depth
-
-        if isinstance(doc, Annotated):
-            return self._render(doc.body, col=col, depth=depth, flat=flat)
-
+        
         raise TypeError(f"Unsupported LayoutDoc node: {type(doc)!r}")
 
 
