@@ -1,7 +1,9 @@
 from __future__ import annotations
 from typing import Any
+import re
 from syncraft.syntax import Syntax
 from syncraft.ast import Alt, Lazy, Many, Seq, Token, Unknown
+from syncraft.parser import parse_word
 import pytest
 
 from syncraft.format import (
@@ -16,6 +18,7 @@ from syncraft.format import (
     Sequence,
     SoftLine,
     Text,
+    apply_format_spec,
     lower_to_layout,
     render,
     text_of,
@@ -190,3 +193,150 @@ def test_format_spec_validation_errors() -> None:
 
     with pytest.raises(ValueError, match="indent must be >= 0"):
         Syntax.success("abc").format(indent=-1)
+
+
+def test_lower_to_layout_alt_none_and_layoutdoc_passthrough() -> None:
+    alt_none_doc = lower_to_layout(Alt(index=0, value=None))
+    assert isinstance(alt_none_doc, Text)
+    assert alt_none_doc.value == ""
+    assert isinstance(alt_none_doc.ast, Alt)
+
+    original = Group(Sequence((Text("x"), SoftLine(Text("y"), fallback=""))))
+    lowered = lower_to_layout(original)
+    assert lowered is original
+
+
+def test_layoutdoc_ast_synthesizes_seq_for_manual_sequence() -> None:
+    doc = Sequence((Text("a"), Group(Text("b")), Nest(Text("c"), level=2)))
+    ast = doc.ast
+
+    assert isinstance(ast, Seq)
+    assert ast.value == (("a", True), ("b", True), ("c", True))
+
+
+def test_group_fits_exact_boundary_uses_flat_mode() -> None:
+    doc = Group(Sequence((Text("ab"), Line(Text("cd"), fallback=" "))))
+    assert doc.render(width=5) == "ab cd"
+    assert doc.render(width=4) == "ab\ncd"
+
+
+def test_nest_negative_level_is_clamped_to_zero() -> None:
+    doc = Group(Sequence((Text("if"), Nest(Line(Text("x"), fallback=" "), level=-3))))
+    assert doc.render(width=2, indent="  ") == "if\nx"
+
+
+def test_apply_format_spec_optional_wraps_and_preserves_origin() -> None:
+    spec = FormatSpec.coerce(
+        kind="token",
+        role="value",
+        breakability="optional",
+        attach="none",
+        indent=2,
+        precedence=1,
+        attrs={"a": 1},
+    )
+    doc = apply_format_spec("abc", spec)
+
+    assert isinstance(doc, Annotated)
+    assert isinstance(doc.body, Group)
+    assert isinstance(doc.body.body, Nest)
+    assert doc.ast == "abc"
+    assert doc.render(width=80, indent=" ") == "abc"
+
+
+def test_apply_format_spec_required_not_implemented() -> None:
+    spec = FormatSpec.coerce(
+        kind=None,
+        role=None,
+        breakability=Breakability.REQUIRED,
+        attach=Attach.NONE,
+        indent=0,
+        precedence=None,
+        attrs=None,
+    )
+    with pytest.raises(ValueError, match="not implemented"):
+        apply_format_spec("abc", spec)
+
+
+def test_format_spec_additional_validation_errors() -> None:
+    with pytest.raises(ValueError, match="Invalid attach"):
+        FormatSpec.coerce(
+            kind=None,
+            role=None,
+            breakability="never",
+            attach="middle",
+            indent=0,
+            precedence=None,
+            attrs=None,
+        )
+
+    with pytest.raises(TypeError, match="precedence must be int \| None"):
+        FormatSpec.coerce(
+            kind=None,
+            role=None,
+            breakability="never",
+            attach="none",
+            indent=0,
+            precedence="high",
+            attrs=None,
+        )
+
+    with pytest.raises(TypeError, match="attrs must be a mapping"):
+        FormatSpec.coerce(
+            kind=None,
+            role=None,
+            breakability="never",
+            attach="none",
+            indent=0,
+            precedence=None,
+            attrs=[("k", "v")],
+        )
+
+
+def test_render_function_accepts_ast_values() -> None:
+    value = Seq(value=((Token(text="a"), True), (Token(text="b"), True)))
+    assert render(value, width=80) == "ab"
+
+
+def test_expression_grammar_integration_with_format_hints_and_rendered_text() -> None:
+    """Format hints at grammar level control breakability metadata.
+    
+    Apply .format() to mark structural decisions. The layout layer composes
+    the result based on these hints, not custom callbacks. Spacing must be
+    explicit in the grammar—format hints control breaks, not spacing.
+    """
+    expression_syntax = Syntax.set(terminal_constructor=Token)
+
+    number = expression_syntax.tok(text=re.compile(r"\d+")).bimap(
+        lambda token: token.text,
+        lambda text: Token(text=text),
+    ).format(kind="number", role="operand")
+
+    # Operator is marked as optional breakpoint
+    plus = expression_syntax.tok(text="+").bimap(
+        lambda token: token.text,
+        lambda text: Token(text=text),
+    ).format(
+        kind="operator",
+        role="infix",
+        attach="both",
+        breakability="optional",
+    )
+
+    # Sequence: without spacing rule in grammar, renders as "12+345"
+    expr = (number + plus + number).format(
+        kind="expr",
+        role="binary",
+        breakability="optional",
+        indent=1,
+        attrs={"demo": True},
+    )
+
+    parsed = parse_word(expr, "12 + 345")
+    assert parsed == ("12", "+", "345")
+
+    generated = expr.generate(parsed, seed=0)
+    # Format hints are applied during generation, spacing from grammar (none here)
+    result = generated.render(width=80, indent="  ")
+    # Without explicit spacing grammar, operator directly adjoins operands
+    assert result == "12+345"
