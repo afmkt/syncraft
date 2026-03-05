@@ -146,19 +146,19 @@ def test_syntax_format_generates_annotated_layoutdoc() -> None:
         attach="right",
         indent=1,
         precedence=10,
-        attrs={"x": 1},
+        x=1
     )
 
     generated = syntax.generate(data=None, seed=0)
     assert isinstance(generated, Annotated)
     assert generated.render(width=80) == "abc"
-    assert generated.spec.kind == "token"
-    assert generated.spec.role == "value"
+    assert generated.spec.attrs["kind"] == "token"
+    assert generated.spec.attrs["role"] == "value"
     assert generated.spec.breakability is Breakability.OPTIONAL
     assert generated.spec.attach is Attach.RIGHT
     assert generated.spec.indent == 1
-    assert generated.spec.precedence == 10
-    assert dict(generated.spec.attrs) == {"x": 1}
+    assert generated.spec.attrs["precedence"] == 10
+    assert dict(generated.spec.attrs) == {"kind": "token", "role": "value", "precedence": 10, "x": 1}
 
 
 def test_syntax_format_is_disabled_in_parse_and_validate() -> None:
@@ -182,12 +182,9 @@ def test_syntax_format_is_disabled_in_parse_and_validate() -> None:
 def test_format_spec_validation_errors() -> None:
     with pytest.raises(ValueError, match="Invalid breakability"):
         FormatSpec.coerce(
-            kind=None,
-            role=None,
             breakability="sometimes",
             attach="none",
             indent=0,
-            precedence=None,
             attrs=None,
         )
 
@@ -227,12 +224,9 @@ def test_nest_negative_level_is_clamped_to_zero() -> None:
 
 def test_apply_format_spec_optional_wraps_and_preserves_origin() -> None:
     spec = FormatSpec.coerce(
-        kind="token",
-        role="value",
         breakability="optional",
         attach="none",
         indent=2,
-        precedence=1,
         attrs={"a": 1},
     )
     doc = apply_format_spec("abc", spec)
@@ -246,12 +240,9 @@ def test_apply_format_spec_optional_wraps_and_preserves_origin() -> None:
 
 def test_apply_format_spec_required_not_implemented() -> None:
     spec = FormatSpec.coerce(
-        kind=None,
-        role=None,
         breakability=Breakability.REQUIRED,
         attach=Attach.NONE,
         indent=0,
-        precedence=None,
         attrs=None,
     )
     with pytest.raises(ValueError, match="not implemented"):
@@ -261,34 +252,18 @@ def test_apply_format_spec_required_not_implemented() -> None:
 def test_format_spec_additional_validation_errors() -> None:
     with pytest.raises(ValueError, match="Invalid attach"):
         FormatSpec.coerce(
-            kind=None,
-            role=None,
             breakability="never",
             attach="middle",
             indent=0,
-            precedence=None,
             attrs=None,
         )
 
-    with pytest.raises(TypeError, match="precedence must be int \| None"):
-        FormatSpec.coerce(
-            kind=None,
-            role=None,
-            breakability="never",
-            attach="none",
-            indent=0,
-            precedence="high",
-            attrs=None,
-        )
 
     with pytest.raises(TypeError, match="attrs must be a mapping"):
         FormatSpec.coerce(
-            kind=None,
-            role=None,
             breakability="never",
             attach="none",
             indent=0,
-            precedence=None,
             attrs=[("k", "v")],
         )
 

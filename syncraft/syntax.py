@@ -799,28 +799,72 @@ class Syntax(Generic[A, S]):
     ######################################################## value transformation ########################################################
     def format(self,
                *,
-               kind: str | None = None,
-               role: str | None = None,
                breakability: Breakability | Literal['never', 'optional', 'required'] = 'never',
                attach: Attach | Literal['none', 'left', 'right', 'both'] = 'none',
                indent: int = 0,
-               precedence: int | None = None,
-               attrs: Dict[str, Any] | None = None,
+               **attrs: Any
                ) -> Syntax["LayoutDoc", S]:
         """Attach declarative formatting metadata to this grammar subtree.
 
-        This is the high-level idea-1 formatting API. It validates a constrained
-        ``FormatSpec`` and lowers generated values to ``LayoutDoc``.
+        ``Syntax.format(...)`` is the typed, validated entry point for the
+        formatting pipeline. It annotates this node with a ``FormatSpec`` and
+        lowers generated values into ``LayoutDoc`` so a renderer can apply
+        width-sensitive line breaking and indentation.
+
+        Core rendering semantics
+        ------------------------
+        breakability:
+            Controls line-break strategy:
+            - ``'never'`` (default): no width-sensitive grouping.
+            - ``'optional'``: wrap in a ``Group``; render flat when it fits,
+              otherwise break across lines.
+            - ``'required'``: reserved for forced-break semantics; not yet
+              implemented.
+        indent:
+            Extra indentation depth (non-negative integer) applied to nested
+            breaks within this subtree. Used by ``Nest`` in the layout tree.
+        attach:
+            Metadata describing token adjacency intent for policy layers:
+            - ``'left'``: intended to attach to preceding item.
+            - ``'right'``: intended to attach to following item.
+            - ``'both'``: bind both sides.
+            - ``'none'`` (default): no adjacency preference.
+
+        Optional policy metadata
+        ------------------------
+        kind:
+            Semantic category label (e.g., ``"list"``, ``"call"``,
+            ``"operator"``). Consumed by downstream formatting policies.
+        role:
+            Finer-grained role within ``kind`` (e.g., ``"items"``,
+            ``"separator"``, ``"open"``, ``"close"``).
+        precedence:
+            Optional precedence hint for expression formatting rules.
+        attrs:
+            Free-form metadata map for custom policy rules (e.g.,
+            ``{"align_group": "params"}`` for alignment tagging).
+
+        Examples
+        --------
+        Make a container width-sensitive and increase indentation on breaks::
+
+            args = ARG_LIST.format(breakability="optional", indent=1)
+
+        Mark punctuation as left-attached for policy interpretation::
+
+            comma = COMMA.format(attach="left")
+
+        Tag items with an alignment group (for downstream policy)::
+
+            first = ITEM.format(kind="list", attrs={"align_anchor": True, "align_group": "params"})
+            rest = ITEM.format(kind="list", attach="left", attrs={"align_group": "params"})
         """
         from syncraft.format import FormatSpec, apply_format_spec
 
         spec = FormatSpec.coerce(
-            kind=kind,
-            role=role,
             breakability=breakability,
             attach=attach,
             indent=indent,
-            precedence=precedence,
             attrs=attrs,
         )
         return cast(Syntax["LayoutDoc", S], self.fmt(lambda value, _ctx: apply_format_spec(value, spec), block_normalization=True))

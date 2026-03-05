@@ -142,25 +142,34 @@ class Attach(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class FormatSpec:
-    kind: str | None = None
-    role: str | None = None
+    """Core formatting specification with rendering semantics and optional policy metadata.
+    
+    Attributes:
+        breakability: Line-break strategy (never, optional, required).
+        attach: Token adjacency intent (none, left, right, both).
+        indent: Extra indentation depth for nested breaks.
+        attrs: Free-form policy metadata dict (e.g., kind, role, precedence, align_group).
+    """
     breakability: Breakability = Breakability.NEVER
     attach: Attach = Attach.NONE
     indent: int = 0
-    precedence: int | None = None
     attrs: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def coerce(cls,
                *,
-               kind: str | None,
-               role: str | None,
                breakability: Breakability | str,
                attach: Attach | str,
                indent: int,
-               precedence: int | None,
                attrs: Mapping[str, Any] | None,
                ) -> "FormatSpec":
+        """Coerce and validate user-provided formatting parameters into FormatSpec.
+        
+        Args:
+            kind, role, precedence: Policy metadata (moved to attrs dict).
+            breakability, attach, indent: Core rendering semantics.
+            attrs: Additional policy metadata mapping.
+        """
         try:
             normalized_breakability = (
                 breakability
@@ -183,19 +192,17 @@ class FormatSpec:
 
         if indent < 0:
             raise ValueError(f"indent must be >= 0, got {indent}")
-        if precedence is not None and not isinstance(precedence, int):
-            raise TypeError(f"precedence must be int | None, got {type(precedence).__name__}")
         if attrs is not None and not isinstance(attrs, Mapping):
             raise TypeError(f"attrs must be a mapping, got {type(attrs).__name__}")
 
+        # Merge policy metadata into attrs dict
+        merged_attrs = dict(attrs or {})
+
         return cls(
-            kind=kind,
-            role=role,
             breakability=normalized_breakability,
             attach=normalized_attach,
             indent=indent,
-            precedence=precedence,
-            attrs=attrs if attrs is not None else {},
+            attrs=merged_attrs,
         )
 
 
