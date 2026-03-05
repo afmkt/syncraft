@@ -47,6 +47,10 @@ from .format import (
     Line,
     SoftLine,
     Nest,
+    Breakability,
+    Attach,
+    FormatSpec,
+    Annotated,
     lower_to_layout,
     render,
 )
@@ -61,6 +65,6 @@ __all__ = [
     "DataError", "Not",
     "SyncraftError",
     "RegexError",
-    "LayoutDoc", "Text", "Sequence", "Group", "Line", "SoftLine", "Nest", "lower_to_layout", "render",
+    "LayoutDoc", "Text", "Sequence", "Group", "Line", "SoftLine", "Nest", "Breakability", "Attach", "FormatSpec", "Annotated", "lower_to_layout", "render",
 
 ]

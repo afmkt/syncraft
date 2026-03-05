@@ -35,7 +35,8 @@ and then renders them under width/indent constraints.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any
+from enum import Enum
+from typing import Any, Mapping
 
 from syncraft.ast import Alt, Lazy, Many, Nothing, ParseResult, Seq, Token, Unknown
 
@@ -75,6 +76,8 @@ class LayoutDoc:
         if isinstance(self, Line):
             return self.body.ast
         if isinstance(self, SoftLine):
+            return self.body.ast
+        if isinstance(self, Annotated):
             return self.body.ast
         raise TypeError(f"Unsupported LayoutDoc node: {type(self)!r}")
 
@@ -122,6 +125,98 @@ class Nest(LayoutDoc):
 
     body: LayoutDoc
     level: int = 1
+
+
+class Breakability(str, Enum):
+    NEVER = "never"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+
+class Attach(str, Enum):
+    NONE = "none"
+    LEFT = "left"
+    RIGHT = "right"
+    BOTH = "both"
+
+
+@dataclass(frozen=True, slots=True)
+class FormatSpec:
+    kind: str | None = None
+    role: str | None = None
+    breakability: Breakability = Breakability.NEVER
+    attach: Attach = Attach.NONE
+    indent: int = 0
+    precedence: int | None = None
+    attrs: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def coerce(cls,
+               *,
+               kind: str | None,
+               role: str | None,
+               breakability: Breakability | str,
+               attach: Attach | str,
+               indent: int,
+               precedence: int | None,
+               attrs: Mapping[str, Any] | None,
+               ) -> "FormatSpec":
+        try:
+            normalized_breakability = (
+                breakability
+                if isinstance(breakability, Breakability)
+                else Breakability(breakability)
+            )
+        except ValueError as exc:
+            valid = ", ".join(item.value for item in Breakability)
+            raise ValueError(f"Invalid breakability {breakability!r}. Expected one of: {valid}") from exc
+
+        try:
+            normalized_attach = (
+                attach
+                if isinstance(attach, Attach)
+                else Attach(attach)
+            )
+        except ValueError as exc:
+            valid = ", ".join(item.value for item in Attach)
+            raise ValueError(f"Invalid attach {attach!r}. Expected one of: {valid}") from exc
+
+        if indent < 0:
+            raise ValueError(f"indent must be >= 0, got {indent}")
+        if precedence is not None and not isinstance(precedence, int):
+            raise TypeError(f"precedence must be int | None, got {type(precedence).__name__}")
+        if attrs is not None and not isinstance(attrs, Mapping):
+            raise TypeError(f"attrs must be a mapping, got {type(attrs).__name__}")
+
+        return cls(
+            kind=kind,
+            role=role,
+            breakability=normalized_breakability,
+            attach=normalized_attach,
+            indent=indent,
+            precedence=precedence,
+            attrs=attrs if attrs is not None else {},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Annotated(LayoutDoc):
+    body: LayoutDoc
+    spec: FormatSpec
+
+
+def apply_format_spec(value: Any, spec: FormatSpec) -> LayoutDoc:
+    doc = lower_to_layout(value)
+    body = Nest(doc, level=spec.indent) if spec.indent > 0 else doc
+
+    if spec.breakability is Breakability.OPTIONAL:
+        wrapped: LayoutDoc = Group(body)
+    elif spec.breakability is Breakability.REQUIRED:
+        raise ValueError("breakability='required' is not implemented yet")
+    else:
+        wrapped = body
+
+    return Annotated(body=wrapped, spec=spec, origin=value)
 
 
 def text_of(value: Any) -> str:
@@ -221,6 +316,9 @@ class _Renderer:
             pad = self.indent * depth
             txt, next_col, next_depth = self._render(doc.body, col=len(pad), depth=depth, flat=flat)
             return "\n" + pad + txt, next_col, next_depth
+
+        if isinstance(doc, Annotated):
+            return self._render(doc.body, col=col, depth=depth, flat=flat)
 
         raise TypeError(f"Unsupported LayoutDoc node: {type(doc)!r}")
 

@@ -13,7 +13,7 @@ from typing import (
 from dataclasses import dataclass, field, replace
 from syncraft.lexerprotocol import LexerBuilder
 if TYPE_CHECKING:
-    from syncraft.format import LayoutDoc
+    from syncraft.format import LayoutDoc, Breakability, Attach
     from syncraft.vis import SVGVisualization
 
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
@@ -797,14 +797,39 @@ class Syntax(Generic[A, S]):
         return False if block_normalization else self.can_normalize
 
     ######################################################## value transformation ########################################################
+    def format(self,
+               *,
+               kind: str | None = None,
+               role: str | None = None,
+               breakability: Breakability | Literal['never', 'optional', 'required'] = 'never',
+               attach: Attach | Literal['none', 'left', 'right', 'both'] = 'none',
+               indent: int = 0,
+               precedence: int | None = None,
+               attrs: Dict[str, Any] | None = None,
+               ) -> Syntax["LayoutDoc", S]:
+        """Attach declarative formatting metadata to this grammar subtree.
+
+        This is the high-level idea-1 formatting API. It validates a constrained
+        ``FormatSpec`` and lowers generated values to ``LayoutDoc``.
+        """
+        from syncraft.format import FormatSpec, apply_format_spec
+
+        spec = FormatSpec.coerce(
+            kind=kind,
+            role=role,
+            breakability=breakability,
+            attach=attach,
+            indent=indent,
+            precedence=precedence,
+            attrs=attrs,
+        )
+        return cast(Syntax["LayoutDoc", S], self.fmt(lambda value, _ctx: apply_format_spec(value, spec), block_normalization=True))
+
     def fmt(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
-        """Format the produced value using a custom function.
+        """Low-level formatting escape hatch.
 
-        Args:
-            f: Function that takes the produced value and returns a formatted version.
-
-        Returns:
-            Syntax that produces the formatted value.
+        Prefer ``Syntax.format(...)`` for typed, validated formatting metadata.
+        ``fmt`` remains available for advanced raw transformations.
         """
         return replace(
             self,
