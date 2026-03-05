@@ -506,11 +506,11 @@ class Algebra(Generic[A, S]):
     
 
     @property
-    def disabled(self) -> Set[str]:
+    def enabled(self) -> Set[str]:
         raise NotImplementedError("Algebra.disabled is abstract, concrete subclasses must implement it")
 
     def map(self, f: Callable[..., B], entry: str | None = None) -> Algebra[B, S]:
-        if entry is not None and entry in self.disabled:
+        if entry is not None and entry not in self.enabled:
             return self # type: ignore
 
         ff = normalize_map_f(f)
@@ -584,7 +584,7 @@ class Algebra(Generic[A, S]):
         
 
     def imap(self, f: Callable[..., A], entry: str | None = None) -> Algebra[A, S]:
-        if entry is not None and entry in self.disabled:
+        if entry is not None and entry not in self.enabled:
             return self # type: ignore
         ff = normalize_map_f(f)
         def imap_all_f(s: S) -> S:

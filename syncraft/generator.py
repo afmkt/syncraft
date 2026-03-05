@@ -154,8 +154,8 @@ class Generator(Algebra[ParseResult[T], GenState]):
         return self.imap(i)
     
     @property
-    def disabled(self) -> Set[str]:
-        return {'map'}
+    def enabled(self) -> Set[str]:
+        return {'imap, fmt'}
 
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState] | Tuple[Algebra[Any, GenState], bool]) -> Algebra[Seq, GenState]:
@@ -513,8 +513,8 @@ class Generator(Algebra[ParseResult[T], GenState]):
 @dataclass(frozen=True, slots=True)
 class Validator(Generator[T]):
     @property
-    def disabled(self) -> Set[str]:
-        return {'map', 'fmt'}
+    def enabled(self) -> Set[str]:
+        return {'imap'}
 
 
 @dataclass
