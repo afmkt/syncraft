@@ -309,8 +309,8 @@ class ParserState(Bindable, Generic[T]):
 class Parser(Algebra[T, ParserState[T]]):
         
     def bimap(self, f: Callable[[T, Any], A], i: Callable[[A, Any], T]) -> Algebra[A, ParserState[T]]:
-        return self.map(f)
-    @property
+        return self.map(f, entry="map")
+    
     def enabled(self) -> Set[str]:
         return {'map'}
 

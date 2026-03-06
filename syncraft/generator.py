@@ -151,11 +151,10 @@ class Generator(Algebra[ParseResult[T], GenState]):
     def bimap(self, 
               f: Callable[[ParseResult[T], Any], Any], 
               i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState]:
-        return self.imap(i)
+        return self.imap(i, entry="imap")
     
-    @property
     def enabled(self) -> Set[str]:
-        return {'imap, fmt'}
+        return {'imap', 'fmt'}
 
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState] | Tuple[Algebra[Any, GenState], bool]) -> Algebra[Seq, GenState]:
@@ -512,7 +511,6 @@ class Generator(Algebra[ParseResult[T], GenState]):
 
 @dataclass(frozen=True, slots=True)
 class Validator(Generator[T]):
-    @property
     def enabled(self) -> Set[str]:
         return {'imap'}
 

@@ -13,7 +13,7 @@ from typing import (
 from dataclasses import dataclass, field, replace
 from syncraft.lexerprotocol import LexerBuilder
 if TYPE_CHECKING:
-    from syncraft.format import LayoutDoc, Breakability, Attach
+    from syncraft.format import LayoutDoc
     from syncraft.vis import SVGVisualization
 
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
@@ -802,8 +802,8 @@ class Syntax(Generic[A, S]):
     ######################################################## value transformation ########################################################
     def format(self,
                *,
-               breakability: Breakability | Literal['never', 'optional', 'required'] = 'never',
-               attach: Attach | Literal['none', 'left', 'right', 'both'] = 'none',
+               breakability: Literal['never', 'optional', 'required'] = 'never',
+               attach: Literal['none', 'left', 'right', 'both'] = 'none',
                indent: int = 0,
                ) -> Syntax["LayoutDoc", S]:
         """Attach declarative formatting metadata to this grammar subtree.
@@ -847,14 +847,22 @@ class Syntax(Generic[A, S]):
             first = ITEM.format(kind="list", attrs={"align_anchor": True, "align_group": "params"})
             rest = ITEM.format(kind="list", attach="left", attrs={"align_group": "params"})
         """
-        from syncraft.format import FormatSpec
+        from syncraft.format import Nest, Group, Concat, Line, LayoutDoc
 
-        spec = FormatSpec.coerce(
-            breakability=breakability,
-            attach=attach,
-            indent=indent
-        )
-        return cast(Syntax["LayoutDoc", S], self.fmt(spec, block_normalization=True))
+        def to_doc(ast: Any) -> "LayoutDoc":
+            doc = LayoutDoc.from_ast(ast)
+            body = Nest(ast=ast, body=doc, level=indent) if indent > 0 else doc
+
+            if breakability == 'optional':
+                return Group(ast=ast, body=Concat(parts=(body, Line())))
+            elif breakability == 'required':
+                return Group(ast=ast, body=Concat(parts=(body, Line(flat="\n"))))
+            elif breakability == 'never':
+                return body
+            else:
+                raise SyncraftError(f"Invalid value for breakability: {breakability}", offender=breakability, expect="one of 'never', 'optional', 'required'")
+
+        return cast(Syntax["LayoutDoc", S], self.fmt(to_doc, block_normalization=True))
 
     def fmt(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
         """Low-level formatting escape hatch.

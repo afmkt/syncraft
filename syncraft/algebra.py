@@ -505,14 +505,15 @@ class Algebra(Generic[A, S]):
         return _cast(Algebra[B, S], alg)
     
 
-    @property
     def enabled(self) -> Set[str]:
-        raise NotImplementedError("Algebra.disabled is abstract, concrete subclasses must implement it")
+        raise NotImplementedError("Algebra.enabled is abstract, concrete subclasses must implement it")
 
     def map(self, f: Callable[..., B], entry: str | None = None) -> Algebra[B, S]:
-        if entry is not None and entry not in self.enabled:
-            return self # type: ignore
-
+        e = self.enabled()
+        if entry is not None:
+            if entry not in e:
+                return self # type: ignore
+        
         ff = normalize_map_f(f)
         def map_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
             parsed = yield from self.run(input, cache)
@@ -584,8 +585,10 @@ class Algebra(Generic[A, S]):
         
 
     def imap(self, f: Callable[..., A], entry: str | None = None) -> Algebra[A, S]:
-        if entry is not None and entry not in self.enabled:
-            return self # type: ignore
+        e = self.enabled()
+        if entry is not None:
+            if entry not in e:
+                return self # type: ignore
         ff = normalize_map_f(f)
         def imap_all_f(s: S) -> S:
             new_state = s.apply(ff)
