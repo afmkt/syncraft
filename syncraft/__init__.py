@@ -42,16 +42,13 @@ from .grammar import (
 from .format import (
     LayoutDoc,
     Text,
-    Sequence,
+    Concat,
     Group,
     Line,
-    SoftLine,
     Nest,
     Breakability,
     Attach,
     FormatSpec,
-    
-    lower_to_layout,
     render,
 )
 
@@ -65,6 +62,6 @@ __all__ = [
     "DataError", "Not",
     "SyncraftError",
     "RegexError",
-    "LayoutDoc", "Text", "Sequence", "Group", "Line", "SoftLine", "Nest", "Breakability", "Attach", "FormatSpec", "lower_to_layout", "render",
+    "LayoutDoc", "Text", "Concat", "Group", "Line", "Nest", "Breakability", "Attach", "FormatSpec", "render",
 
 ]

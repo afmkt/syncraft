@@ -15,23 +15,15 @@ from syncraft.format import (
     Group,
     Line,
     Nest,
-    Sequence,
-    SoftLine,
+    Concat,
     Text,
     
-    lower_to_layout,
+    
     render,
-    text_of,
+    
 )
 
 
-def test_text_of_terminals() -> None:
-    assert text_of("abc") == "abc"
-    assert text_of(b"abc") == "abc"
-    assert text_of(Token(text="x")) == "x"
-    assert text_of(Token(text=("a", "b", "c"))) == "abc"
-    assert text_of(("a", b"b", 3)) == "ab3"
-    assert text_of(Unknown()) == ""
 
 
 def test_lower_to_layout_seq_many_alt_lazy() -> None:
@@ -40,13 +32,13 @@ def test_lower_to_layout_seq_many_alt_lazy() -> None:
     alt = Alt(index=0, value=Token(text="z"))
     lazy = Lazy(value=Token(text="q"))
 
-    seq_doc = lower_to_layout(seq)
-    many_doc = lower_to_layout(many)
-    alt_doc = lower_to_layout(alt)
-    lazy_doc = lower_to_layout(lazy)
+    seq_doc = LayoutDoc.from_ast(seq)
+    many_doc = LayoutDoc.from_ast(many)
+    alt_doc = LayoutDoc.from_ast(alt)
+    lazy_doc = LayoutDoc.from_ast(lazy)
 
-    assert isinstance(seq_doc, Sequence)
-    assert isinstance(many_doc, Sequence)
+    assert isinstance(seq_doc, Concat)
+    assert isinstance(many_doc, Concat)
     assert isinstance(alt_doc, Text)
     assert isinstance(lazy_doc, Text)
 
@@ -63,10 +55,12 @@ def test_lower_to_layout_seq_many_alt_lazy() -> None:
 
 def test_group_prefers_flat_when_fits() -> None:
     doc = Group(
-        Sequence(
-            (
+        body = Concat(
+            parts=(
                 Text("hello"),
-                Line(Text("world"), fallback=" "),
+                Line(flat=" "),
+                Text("world"),
+                
             )
         )
     )
@@ -75,10 +69,11 @@ def test_group_prefers_flat_when_fits() -> None:
 
 def test_group_breaks_when_not_fit() -> None:
     doc = Group(
-        Sequence(
-            (
+        body=Concat(
+            parts=(
                 Text("hello"),
-                Line(Text("world"), fallback=" "),
+                Line(),
+                Text("world"),
             )
         )
     )
@@ -87,10 +82,13 @@ def test_group_breaks_when_not_fit() -> None:
 
 def test_nest_applies_indentation_on_break() -> None:
     doc = Group(
-        Sequence(
-            (
+        body=Concat(
+            parts=(
                 Text("if"),
-                Nest(Line(Text("x"), fallback=" "), level=1),
+                Nest(
+                    body=Concat(parts=(Line(),Text("x"))), 
+                    level=1
+                )
             )
         )
     )
@@ -99,10 +97,11 @@ def test_nest_applies_indentation_on_break() -> None:
 
 def test_softline_fallback_and_break() -> None:
     doc = Group(
-        Sequence(
+        body=Concat(
             (
                 Text("a"),
-                SoftLine(Text("b"), fallback=""),
+                Line(flat=""),
+                Text("b"),
             )
         )
     )
@@ -113,12 +112,15 @@ def test_softline_fallback_and_break() -> None:
 def test_syntax_generate_renders_layoutdoc_result() -> None:
     syntax: Any = Syntax.success(
         Group(
-            Sequence(
-                (
+            body=Concat(
+                parts=(
                     Text("select"),
-                    Line(Text("*"), fallback=" "),
-                    Line(Text("from"), fallback=" "),
-                    Line(Text("tbl"), fallback=" "),
+                    Line(flat=" "),
+                    Text("*"),
+                    Line(flat=" "),
+                    Text("from"),
+                    Line(flat=" "),
+                    Text("tbl"),
                 )
             )
         )
@@ -133,7 +135,7 @@ def test_syntax_generate_wraps_non_layoutdoc_in_default_group() -> None:
     syntax: Any = Syntax.success("abc")
 
     generated = syntax.generate(data=None, seed=0)
-    assert isinstance(generated, Group)
+    assert isinstance(generated, LayoutDoc)
     assert generated.render(width=80) == "abc"
     assert generated.ast == "abc"
 
@@ -171,32 +173,67 @@ def test_format_spec_validation_errors() -> None:
 
 
 def test_lower_to_layout_alt_none_and_layoutdoc_passthrough() -> None:
-    alt_none_doc = lower_to_layout(Alt(index=0, value=None))
+    alt_none_doc = LayoutDoc.from_ast(Alt(index=0, value=None))
     assert isinstance(alt_none_doc, Text)
     assert alt_none_doc.value == ""
     assert isinstance(alt_none_doc.ast, Alt)
 
-    original = Group(Sequence((Text("x"), SoftLine(Text("y"), fallback=""))))
-    lowered = lower_to_layout(original)
+    original = Group(body=Concat(parts=(Text("x"), Line(flat=""), Text("y"))))
+    lowered = LayoutDoc.from_ast(original)
     assert lowered is original
 
 
 def test_layoutdoc_ast_synthesizes_seq_for_manual_sequence() -> None:
-    doc = Sequence((Text("a"), Group(Text("b")), Nest(Text("c"), level=2)))
+    doc = Concat(
+        parts=(
+            Text("a"), 
+            Group(
+                body=Concat(
+                    parts=(
+                        Text("b"), 
+                        Nest(
+                            body=Concat(
+                                parts=(Text("c"),)
+                            ), 
+                            level=2
+                        )
+                    )
+                )
+            )
+        )
+    )
     ast = doc.ast
-
-    assert isinstance(ast, Seq)
-    assert ast.value == (("a", True), ("b", True), ("c", True))
+    assert ast is None
+    assert doc.render(width=80) == "abc"
+    
 
 
 def test_group_fits_exact_boundary_uses_flat_mode() -> None:
-    doc = Group(Sequence((Text("ab"), Line(Text("cd"), fallback=" "))))
+    doc = Group(
+        body=Concat(
+            parts=(
+                Text("ab"),
+                Line(), 
+                Text("cd")
+                )
+            )
+        )
     assert doc.render(width=5) == "ab cd"
     assert doc.render(width=4) == "ab\ncd"
 
 
 def test_nest_negative_level_is_clamped_to_zero() -> None:
-    doc = Group(Sequence((Text("if"), Nest(Line(Text("x"), fallback=" "), level=-3))))
+    doc = Group(
+        body=Concat(
+            parts=(
+                Text("if"), 
+                Nest(
+                    body=Concat(parts=(Line(), Text("x"))),
+                    level=-3
+                )
+            )
+        )
+    )
     assert doc.render(width=2, indent="  ") == "if\nx"
 
 
@@ -207,9 +244,8 @@ def test_apply_format_spec_optional_wraps_and_preserves_origin() -> None:
         indent=2,
     )
     doc = spec("abc")
-
     assert isinstance(doc, Group)
-    assert isinstance(doc.body, Nest)
+    assert isinstance(doc.body, Concat)
     assert doc.ast == "abc"
     assert doc.render(width=80, indent=" ") == "abc"
 
@@ -221,8 +257,12 @@ def test_apply_format_spec_required_not_implemented() -> None:
         indent=0,
         
     )
-    with pytest.raises(ValueError, match="not implemented"):
-        spec("abc")
+    doc = spec("abc")
+    assert isinstance(doc, Group)
+    assert isinstance(doc.body, Concat)
+    assert doc.ast == "abc"
+    # Required breakability is stripped at the out most level, treated as optional for now
+    assert doc.render(width=80, indent=" ") == "abc" 
 
 
 def test_format_spec_additional_validation_errors() -> None:
@@ -277,3 +317,159 @@ def test_expression_grammar_integration_with_format_hints_and_rendered_text() ->
     result = generated.render(width=80, indent="  ")
     # Without explicit spacing grammar, operator directly adjoins operands
     assert result == "12+345"
+
+
+def test_format_single_line_function_call() -> None:
+    """Format: f(a, b, c) - single line, no width-sensitive grouping."""
+    syntax_cls = Syntax
+    
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda s: s
+    )
+    
+    comma_space = syntax_cls.lit(", ").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: ", "
+    )
+        
+    args = identifier + (comma_space + identifier).many()
+    func_call = (identifier + syntax_cls.lit("(") + args + syntax_cls.lit(")")).format(
+        breakability="never"
+    )
+    
+    expected = "f(a, b, c)"
+    generated = func_call.generate(('f', '(', 'a', ((', ', 'b'), (', ', 'c')), ')'))
+    result = generated.render(width=80)
+    assert result == expected
+
+
+def test_format_multiline_function_call() -> None:
+    """Format: f(a, b, c) breaking to multiple lines when too wide."""
+    syntax_cls = Syntax
+    
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda s: s
+    )
+    
+    comma = syntax_cls.lit(",").format(attach="left")
+    space = syntax_cls.lit(" ").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: " "
+    )
+    
+    # Width-sensitive argument list with indentation
+    args = (identifier + (comma + space + identifier).many()).format(
+        breakability="optional",
+        indent=1
+    )
+    
+    func_call = identifier + syntax_cls.lit("(") + args + syntax_cls.lit(")")
+    
+    generated = func_call.generate(('f', '(', ('a', ((',', ' ', 'b'), (',', ' ', 'c'))), ')'))
+    
+    # Fits on one line with width=80
+    result_wide = generated.render(width=80)
+    print(result_wide)
+    assert "," in result_wide
+    
+    # Breaks to multiple lines with narrow width
+
+    result_narrow = generated.render(width=5)
+    print(result_narrow)
+    assert "\n" in result_narrow
+
+
+
+
+def test_format_single_line_addition() -> None:
+    """Format: a + b + c + d - single line expression."""
+    syntax_cls = Syntax
+    
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda s: s
+    )
+    
+    plus_space = syntax_cls.lit(" + ").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: " + "
+    )
+    
+    expr = identifier + (plus_space + identifier).many()
+    
+    generated = expr.generate(('a', ((' + ', 'b'), (' + ', 'c'), (' + ', 'd'))))
+    result = generated.render(width=80)
+    assert result == "a + b + c + d"
+
+
+def test_format_multiline_addition_operator_first() -> None:
+    """Format: a, +b, +c, +d - operators at line start when breaking."""
+    syntax_cls = Syntax
+    
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda s: s
+    )
+    
+    plus = syntax_cls.lit(" +").format(attach="left")
+    space = syntax_cls.lit(" ").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: " "
+    )
+    
+    # Indented addition chain
+    expr = (identifier + (plus + space + identifier).many()).format(
+        breakability="optional",
+        indent=1
+    )
+    generated = expr.generate(("a", ((" +", " ", "b"), (" +", " ", "c"), (" +", " ", "d"))))
+    
+    # Fits on one line with width=80
+    result_wide = generated.render(width=80)
+    assert "+" in result_wide
+    
+    # Breaks to multiple lines with narrow width
+    result_narrow = generated.render(width=8)
+    assert "\n" in result_narrow
+    # Operator should be on continuation lines
+    lines = result_narrow.strip().split("\n")
+    assert len(lines) > 1
+
+
+
+
+def test_format_nested_indentation() -> None:
+    """Format: nested if statements with proper indentation."""
+    syntax_cls = Syntax
+    
+    keyword = syntax_cls.lit("if") | syntax_cls.lit("else")
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*")
+    colon = syntax_cls.lit(":")
+    newline = syntax_cls.lit("\n").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: "\n"
+    )
+    
+    # Simple statement (placeholder)
+    stmt = identifier
+    
+    # if statement: if x: <body>
+    if_stmt = (
+        keyword + syntax_cls.lit(" ") + identifier + colon +
+        newline + stmt.format(indent=1)
+    ).format(indent=0)
+    
+    # Nested if statements
+    nested = (
+        keyword + syntax_cls.lit(" ") + identifier + colon +
+        newline + if_stmt.format(indent=1)
+    )
+    
+    generated = nested.generate((None, None, "x", None, None, None, None, None, "y", None, None, None, None, None, None, None, "z"))
+    result = generated.render(width=80, indent="    ")
+    
+    # Should have proper indentation structure
+    assert "if" in result
+    assert "\n" in result

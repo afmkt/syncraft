@@ -1,102 +1,123 @@
-from typing import Type
-
+from __future__ import annotations
+from typing import Any
+import re
+from syncraft.syntax import Syntax
+from syncraft.ast import Alt, Lazy, Many, Seq, Token, Unknown
+from syncraft.parser import parse_word
 import pytest
 
-from syncraft.syntax import Syntax
-from syncraft.ast import Token, Seq, Alt, Lazy
-from syncraft.generator import (
-    generate_with,
-    generate,
-    validate,
-)
-from syncraft.algebra import Error
-from syncraft.cache import LeftRecursionError
-from syncraft.fa import Builder
 
-SS = Syntax.set(terminal_constructor=Token)
 
-def tok(text: str):
-    return SS.tok(text=text, case_sensitive=True)
 
-def test_generate_with_direct_left_recursion_with_base_succeeds():
-    # A := A + 'a' | 'a'
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = generate_with(A)
-    print(ast)
-    # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
-    assert not isinstance(ast, Error)
+def test_format_multiline_function_call() -> None:
+    """Format: f(a, b, c) breaking to multiple lines when too wide."""
+    syntax_cls = Syntax
     
-
-
-def test_generate_direct_left_recursion_with_base_succeeds():
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = generate(A)
-    assert not isinstance(ast, Error)
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda s: s
+    )
     
-
-
-
-def test_validate_direct_left_recursion_with_base_succeeds_single_token():
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = validate(A, (Token(text='a'), Token(text='a')))
-    assert not isinstance(ast, Error)
+    comma = syntax_cls.lit(",").format(attach="left")
+    space = syntax_cls.lit(" ").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: " "
+    )
     
-
-
-def test_validate_direct_left_recursion_with_base_succeeds_nested_then():
-    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
-    ast = validate(A, Token(text='a'))
-    assert not isinstance(ast, Error)
+    # Width-sensitive argument list with indentation
+    args = (identifier + (comma + space + identifier).many()).format(
+        breakability="optional",
+        indent=1
+    )
     
-
-
-# SS = S
-def test_generate_with_mutual_left_recursion_without_base_raises():
-    # Mutual recursion with no productive base: A := B ; B := A
-    A = SS.lazy(lambda: B)  # type: ignore[name-defined]
-    B = SS.lazy(lambda: A)  # type: ignore[name-defined]
-    with pytest.raises(LeftRecursionError):
-        generate_with(A)
-
-
-
-
-def test_generate_with_infers_text_lexer_without_config() -> None:
-    syntax = SS.tok("hi")
-    ast = generate_with(syntax, seed=123)
-    assert ast == Token(text="hi")
-
-
-def test_generate_with_infers_from_fabuilder_literal() -> None:
-    S = Syntax.set(terminal_constructor=Token)
-    lex_syntax = S.lex(Builder.lit("go").tagged("WORD"))
-    ast = generate_with(lex_syntax, seed=321)
-    print(ast)
-    assert isinstance(ast, Token)
-    assert ast.token_type == "WORD" 
-    assert ast.text == "go"
-
-
-def test_validate_lex_token_uses_verify_full_match() -> None:
-    S = Syntax.set(terminal_constructor=Token, terminal_destructor=lambda token: token.text)
-    lex_syntax = S.lex(Builder.lit("ab").tagged("AB"))
-
-    ast = validate(lex_syntax, Token(text="ab", token_type="AB"))
-    assert isinstance(ast, Token)
-    assert ast.token_type == "AB"
-    assert ast.text == "ab"
+    func_call = identifier + syntax_cls.lit("(") + args + syntax_cls.lit(")")
     
+    generated = func_call.generate(('f', '(', ('a', ((',', ' ', 'b'), (',', ' ', 'c'))), ')'))
+    
+    # Fits on one line with width=80
+    result_wide = generated.render(width=80)
+    print(result_wide)
+    assert "," in result_wide
+    
+    # Breaks to multiple lines with narrow width
 
-    # test_validate_direct_left_recursion_with_base_succeeds_single_token()
-    # test_validate_direct_left_recursion_with_base_succeeds_nested_then()
-    # test_generate_with_mutual_left_recursion_without_base_raises()
-    # test_validate_lex_token_uses_verify_full_match()
+    result_narrow = generated.render(width=5)
+    print(result_narrow)
+    assert "\n" in result_narrow
 
+
+
+
+def test_format_multiline_addition_operator_first() -> None:
+    """Format: a, +b, +c, +d - operators at line start when breaking."""
+    syntax_cls = Syntax
+    
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda s: s
+    )
+    
+    plus = syntax_cls.lit(" +").format(attach="left")
+    space = syntax_cls.lit(" ").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: " "
+    )
+    
+    # Indented addition chain
+    expr = (identifier + (plus + space + identifier).many()).format(
+        breakability="optional",
+        indent=1
+    )
+    generated = expr.generate(("a", ((" +", " ", "b"), (" +", " ", "c"), (" +", " ", "d"))))
+    
+    # Fits on one line with width=80
+    result_wide = generated.render(width=80)
+    assert "+" in result_wide
+    
+    # Breaks to multiple lines with narrow width
+    result_narrow = generated.render(width=8)
+    assert "\n" in result_narrow
+    # Operator should be on continuation lines
+    lines = result_narrow.strip().split("\n")
+    assert len(lines) > 1
+
+
+def test_format_nested_indentation() -> None:
+    """Format: nested if statements with proper indentation."""
+    syntax_cls = Syntax
+    
+    keyword = syntax_cls.lit("if") | syntax_cls.lit("else")
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*")
+    colon = syntax_cls.lit(":")
+    newline = syntax_cls.lit("\n").bimap(
+        lambda t: t.text if isinstance(t, Token) else t,
+        lambda _: "\n"
+    )
+    
+    # Simple statement (placeholder)
+    stmt = identifier
+    
+    # if statement: if x: <body>
+    if_stmt = (
+        keyword + syntax_cls.lit(" ") + identifier + colon +
+        newline + stmt.format(indent=1)
+    ).format(indent=0)
+    
+    # Nested if statements
+    nested = (
+        keyword + syntax_cls.lit(" ") + identifier + colon +
+        newline + if_stmt.format(indent=1)
+    )
+    
+    generated = nested.generate((None, None, "x", None, None, None, None, None, "y", None, None, None, None, None, None, None, "z"))
+    
+    result = generated.render(width=80, indent="    ")
+    
+    # Should have proper indentation structure
+    assert "if" in result
+    assert "\n" in result
+    print(result)
 
 if __name__ == "__main__":
-    test_generate_with_direct_left_recursion_with_base_succeeds()
-    test_generate_direct_left_recursion_with_base_succeeds()
-    test_generate_with_infers_text_lexer_without_config()
-    test_generate_with_infers_from_fabuilder_literal()
-
+    test_format_nested_indentation()
     

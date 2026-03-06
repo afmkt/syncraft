@@ -33,118 +33,120 @@ and then renders them under width/indent constraints.
 """
 
 from __future__ import annotations
-
+from typing import Any, Tuple
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Mapping
+from syncraft.ast import AST, Alt, Lazy, Many, ParseResult, Seq, Nothing, EOF, Unknown
 
-from syncraft.ast import AST, Alt, Lazy, Many, Nothing, ParseResult, Seq, Token, Unknown
-from syncraft.utils import FrozenDict
+
+
+
+
+
 
 @dataclass(frozen=True, slots=True)
 class LayoutDoc:
     """Base layout document.
 
-    Layout documents are rendered via `render(...)`, not `__str__`, so callers can
+    Layout documents are rendered via `render(...)`, callers can
     supply constraints like max line width.
     """
 
-    origin: Any | None = field(default=None, kw_only=True, repr=False, compare=False)
+    ast: AST | Any = field(default=None, kw_only=True, repr=False, compare=False)
+
+    @classmethod
+    def from_ast(cls, value: Any) -> LayoutDoc:
+        """
+        Build LayoutDoc from AST tree
+        """
+        def terminal(value: Any) -> str:
+            if isinstance(value, str):
+                return value
+            elif isinstance(value, bytes):
+                return value.decode('utf-8', errors='replace')
+            elif hasattr(value, "text"):
+                return value.text
+            elif isinstance(value, (Nothing, EOF, Unknown)):
+                return ""
+            else:
+                return str(value)
+                                  
+        if isinstance(value, LayoutDoc):
+            return value
+        elif isinstance(value, Lazy):
+            return replace(LayoutDoc.from_ast(value.value), ast=value)
+        elif isinstance(value, Alt):
+            if value.value is None:
+                return Text(value="", ast=value)
+            return replace(LayoutDoc.from_ast(value.value), ast=value)
+        elif isinstance(value, Many):
+            return Concat(parts=tuple(LayoutDoc.from_ast(item) for item in value.value), ast=value)
+        elif isinstance(value, Seq):
+            return Concat(parts=tuple(LayoutDoc.from_ast(item) for item, _keep in value.value), ast=value)
+        return Text(value=terminal(value), ast=value)
 
     def render(self, *, width: int = 80, indent: str = "    ") -> str:
         renderer = _Renderer(width=width, indent=indent)
-        return renderer.render(self)
-
-    @property
-    def ast(self) -> Any:
-        """Return the underlying AST-like value for this layout doc.
-
-        If this doc was produced by ``lower_to_layout``, the original value is
-        preserved and returned. For manually constructed docs without an origin,
-        a best-effort structural value is synthesized.
-        """
-        return self.origin
-
-
+        return renderer.render(self).strip()
+    
 @dataclass(frozen=True, slots=True)
 class Text(LayoutDoc):
-    """Literal text fragment."""
+    """
+    Literal text fragment.
+    Unbreakable: it always renders as-is, without line breaks, 
+    even if it exceeds the available width.
 
-    value: str
-    @property
-    def ast(self) -> Any:
-        if self.origin is not None:
-            return self.origin
-        return self.value
-
+    This is the atomic unit of rendering: 
+    it has a fixed width equal to the length of its text content.
+    """
+    value: str = ""
 
 @dataclass(frozen=True, slots=True)
-class Sequence(LayoutDoc):
-    """Concatenation node: render each part left-to-right."""
+class Concat(LayoutDoc):
+    """
+    Concatenation node: render each part left-to-right.
+    The width of a Concat is the sum of the widths of its parts 
+    if it doesn't contain Line.
 
-    parts: tuple[LayoutDoc, ...]
-    @property
-    def ast(self) -> Any:
-        if self.origin is not None:
-            return self.origin
-        return Seq(value=tuple((part.ast, True) for part in self.parts))
+    If it contains Line, its width is unbounded, 
+    since Line can break into multiple lines.
+
+    This class doesn't break lines by itself, but it can contain Line nodes that do.
+    """
+    parts: Tuple[LayoutDoc, ...]
+
     
-
-
 
 
 @dataclass(frozen=True, slots=True)
 class Group(LayoutDoc):
-    """Width-sensitive choice: flat mode if it fits, otherwise break mode."""
-
-    body: LayoutDoc
-    @property
-    def ast(self) -> Any:
-        if self.origin is not None:
-            return self.origin
-        return self.body.ast
+    """
+    Width-sensitive choice: flat mode if it fits, otherwise break mode.
+    """
+    body: LayoutDoc = field(kw_only=True)
+    
 
 
 @dataclass(frozen=True, slots=True)
 class Line(LayoutDoc):
-    """Conditional break: newline in break mode, fallback text in flat mode."""
+    """
+    Conditional break: newline in break mode, flat text in flat mode.
+    flat: emitted in flat mode (default: "" = self.flat).
+    broken: emitted in break mode (default: "\n" + indentation + "" = self.broken).
 
-    body: LayoutDoc
-    fallback: str = " "
+    its ast should be None, since it doesn't correspond to a specific AST node, 
+    but rather a formatting intent.
+    """
+    flat: str = " "
+    broken: str = ""
 
-    @property
-    def ast(self) -> Any:
-        if self.origin is not None:
-            return self.origin
-        return self.body.ast
-
-
-@dataclass(frozen=True, slots=True)
-class SoftLine(LayoutDoc):
-    """Soft conditional break: same as Line, with empty flat fallback by default."""
-
-    body: LayoutDoc
-    fallback: str = ""
-
-    @property
-    def ast(self) -> Any:
-        if self.origin is not None:
-            return self.origin
-        return self.body.ast
 
 
 @dataclass(frozen=True, slots=True)
 class Nest(LayoutDoc):
     """Increase indentation depth for nested breaks in ``body``."""
-
-    body: LayoutDoc
-    level: int = 1
-
-    @property
-    def ast(self) -> Any:
-        if self.origin is not None:
-            return self.origin
-        return self.body.ast
+    body: LayoutDoc = field(kw_only=True)
+    level: int = 0
 
 
 class Breakability(str, Enum):
@@ -173,21 +175,19 @@ class FormatSpec:
     breakability: Breakability = Breakability.NEVER
     attach: Attach = Attach.NONE
     indent: int = 0
-    
+
     @classmethod
     def coerce(cls,
                *,
                breakability: Breakability | str,
                attach: Attach | str,
-               indent: int,
-               
+               indent: int
                ) -> "FormatSpec":
-        """Coerce and validate user-provided formatting parameters into FormatSpec.
-        
+        """Coerce and validate user-provided formatting parameters into FormatSpec.        
         Args:
-            kind, role, precedence: Policy metadata (moved to attrs dict).
+
             breakability, attach, indent: Core rendering semantics.
-            attrs: Additional policy metadata mapping.
+
         """
         try:
             normalized_breakability = (
@@ -218,16 +218,17 @@ class FormatSpec:
             indent=indent
         )
 
-    def __call__(self, body: LayoutDoc | AST | Any) -> LayoutDoc:
+    def __call__(self, ast: LayoutDoc | AST | Any) -> LayoutDoc:
         """Apply this FormatSpec to a LayoutDoc, producing an Annotated node."""
-        doc = lower_to_layout(body)
-        body = Nest(doc, level=self.indent) if self.indent > 0 else doc
+        doc = LayoutDoc.from_ast(ast)
+        body = Nest(ast=ast, body=doc, level=self.indent) if self.indent > 0 else doc
 
         if self.breakability is Breakability.OPTIONAL:
-            wrapped: LayoutDoc = Group(body)
+            wrapped: LayoutDoc = Group(ast=ast, body=Concat(parts=(body, Line())))
         elif self.breakability is Breakability.REQUIRED:
-            raise ValueError("breakability='required' is not implemented yet")
+            wrapped = Group(ast=ast, body=Concat(parts=(body, Line(flat="\n"))))
         else:
+            # self.breakability is Breakability.NEVER:
             wrapped = body
 
         return wrapped
@@ -236,103 +237,67 @@ class FormatSpec:
 
 
 
-def text_of(value: Any) -> str:
-    """Best-effort conversion of AST-like terminal values to text."""
 
-    if isinstance(value, str):
-        return value
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if isinstance(value, Token):
-        return text_of(value.text)
-    if isinstance(value, tuple):
-        return "".join(text_of(x) for x in value)
-    if value is Nothing:
-        return ""
-    if isinstance(value, Unknown):
-        return ""
-    return str(value)
-
-
-def lower_to_layout(value: Any) -> LayoutDoc:
-    """Lower parser/generator values to a LayoutDoc tree.
-
-    Safe default lowering owned by the library:
-    - Seq -> Sequence(children)
-    - Many -> Sequence(children)
-    - Alt/Lazy -> unwrap
-    - terminals -> Text
-    """
-    if isinstance(value, LayoutDoc):
-        return value
-    if isinstance(value, Lazy):
-        return replace(lower_to_layout(value.value), origin=value)
-    if isinstance(value, Alt):
-        if value.value is None:
-            return Text("", origin=value)
-        return replace(lower_to_layout(value.value), origin=value)
-    if isinstance(value, Many):
-        return Sequence(tuple(lower_to_layout(item) for item in value.value), origin=value)
-    if isinstance(value, Seq):
-        return Sequence(tuple(lower_to_layout(item) for item, _keep in value.value), origin=value)
-    return Text(text_of(value), origin=value)
 
 
 class _Renderer:
+    @dataclass(frozen=True, slots=True)
+    class RenderState:
+        col: int
+        depth: int
+        flat: bool
+
     def __init__(self, *, width: int, indent: str) -> None:
         self.width = width
         self.indent = indent
 
     def render(self, doc: LayoutDoc) -> str:
-        out, _, _ = self._render(doc, col=0, depth=0, flat=False)
+        out, _ = self._render(doc, state=self.RenderState(col=0, depth=0, flat=False))
         return out
 
     def _flat_text(self, doc: LayoutDoc) -> str:
-        out, _, _ = self._render(doc, col=0, depth=0, flat=True)
+        out, _ = self._render(doc, state=self.RenderState(col=0, depth=0, flat=True))
         return out
 
-    def _fits(self, doc: LayoutDoc, col: int) -> bool:
-        return col + len(self._flat_text(doc)) <= self.width
+    def _fits(self, doc: LayoutDoc, state: RenderState) -> bool:
+        return state.col + len(self._flat_text(doc)) <= self.width
 
-    def _render(self, doc: LayoutDoc, *, col: int, depth: int, flat: bool) -> tuple[str, int, int]:
+    def _render(self, doc: LayoutDoc, *, state: RenderState) -> tuple[str, RenderState]:
         if isinstance(doc, Text):
             s = doc.value
-            return s, col + len(s), depth
+            next_state = self.RenderState(col=state.col + len(s), depth=state.depth, flat=state.flat)
+            return s, next_state
 
-        if isinstance(doc, Sequence):
+        if isinstance(doc, Concat):
             chunks: list[str] = []
-            cur_col = col
-            cur_depth = depth
+            cur_state = state
             for part in doc.parts:
-                txt, cur_col, cur_depth = self._render(part, col=cur_col, depth=cur_depth, flat=flat)
+                txt, cur_state = self._render(part, state=cur_state)
                 chunks.append(txt)
-            return "".join(chunks), cur_col, cur_depth
+            return "".join(chunks), cur_state
 
         if isinstance(doc, Group):
-            use_flat = flat or self._fits(doc.body, col)
-            return self._render(doc.body, col=col, depth=depth, flat=use_flat)
+            use_flat = state.flat or self._fits(doc.body, state)
+            group_state = self.RenderState(col=state.col, depth=state.depth, flat=use_flat)
+            txt, rendered_state = self._render(doc.body, state=group_state)
+            return txt, self.RenderState(col=rendered_state.col, depth=rendered_state.depth, flat=state.flat)
 
         if isinstance(doc, Nest):
-            next_depth = depth + max(0, doc.level)
-            return self._render(doc.body, col=col, depth=next_depth, flat=flat)
+            nested_state = self.RenderState(col=state.col, depth=state.depth + max(0, doc.level), flat=state.flat)
+            txt, rendered_state = self._render(doc.body, state=nested_state)
+            return txt, self.RenderState(col=rendered_state.col, depth=state.depth, flat=state.flat)
 
-        if isinstance(doc, Line):
-            if flat:
-                s = doc.fallback
-                txt, next_col, next_depth = self._render(doc.body, col=col + len(s), depth=depth, flat=flat)
-                return s + txt, next_col, next_depth
-            pad = self.indent * depth
-            txt, next_col, next_depth = self._render(doc.body, col=len(pad), depth=depth, flat=flat)
-            return "\n" + pad + txt, next_col, next_depth
+        if isinstance(doc, Line):            
+            if state.flat:
+                s = doc.flat
+                next_state = self.RenderState(col=state.col + len(s), depth=state.depth, flat=state.flat)
+                return s, next_state
+            else:
+                s = doc.broken
+                pad = self.indent * state.depth
+                next_state = self.RenderState(col=len(pad) + len(s), depth=state.depth, flat=state.flat)
+                return "\n" + pad + s, next_state
 
-        if isinstance(doc, SoftLine):
-            if flat:
-                s = doc.fallback
-                txt, next_col, next_depth = self._render(doc.body, col=col + len(s), depth=depth, flat=flat)
-                return s + txt, next_col, next_depth
-            pad = self.indent * depth
-            txt, next_col, next_depth = self._render(doc.body, col=len(pad), depth=depth, flat=flat)
-            return "\n" + pad + txt, next_col, next_depth
         
         raise TypeError(f"Unsupported LayoutDoc node: {type(doc)!r}")
 
@@ -343,5 +308,7 @@ def render(value: ParseResult | LayoutDoc | Any, *, width: int = 80, indent: str
     Accepts either an existing LayoutDoc or AST-like values and lowers them
     using the default safe lowering strategy.
     """
-    doc = lower_to_layout(value)
+    doc = LayoutDoc.from_ast(value)
     return doc.render(width=width, indent=indent)
+
+

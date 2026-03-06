@@ -3,13 +3,14 @@
 from __future__ import annotations
 from typing import (
     Optional, Any, TypeVar, Tuple,
-    Union, TYPE_CHECKING, 
-    Hashable
+    Union, TYPE_CHECKING, Protocol, runtime_checkable, 
+    Hashable, Iterator, Callable, List
 )
 if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
 from dataclasses import dataclass
 from enum import Enum
+
 class SyncraftError(Exception):
     def __init__(self, message: str, offender: Any, expect: Any = None, **kwargs: Any) -> None:
         super().__init__(message)
@@ -25,17 +26,6 @@ class SyncraftError(Exception):
         if self.data:
             details += ", " + ", ".join(f"{k}={v!r}" for k, v in self.data.items())
         return f"{base} ({details})"
-    
-
-@dataclass(frozen=True, slots=True)    
-class AST:
-    def vis(self, depth: int = 5) -> Optional[SVGVisualization]:
-        try:
-            from syncraft.vis import ast2svg
-            svg_content = ast2svg(self, max_depth=depth)
-            return svg_content
-        except ImportError:
-            return None
 
 class _SingletonBase:
     def __call__(self) -> Any:
@@ -82,11 +72,65 @@ EOF = singleton("EOF", "Singleton sentinel representing end of input.")
 Unknown = singleton("Unknown", "Singleton sentinel representing an unknown value.")
 
 
+class WalkEvent(Enum):
+    ENTER = "enter"
+    EXIT = "exit"
+    ATOMIC = "atomic"
+
+
+@runtime_checkable
+class Walkable(Protocol):
+    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
+        ...
+@dataclass(frozen=True, slots=True)    
+class AST(Walkable):
+    def vis(self, depth: int = 5) -> Optional[SVGVisualization]:
+        try:
+            from syncraft.vis import ast2svg
+            svg_content = ast2svg(self, max_depth=depth)
+            return svg_content
+        except ImportError:
+            return None
+        
+    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
+        """
+        Walk the AST, yielding events for entering and exiting nodes, as well as atomic values.
+        Args:
+            stack: The current traversal stack, which will be modified in-place. 
+                   The current node will be appended to the stack before yielding events and popped afterward.
+            keep: A boolean flag indicating whether the current node or any of its ancestors is kept in the AST. 
+                  Seq node stores its chiildren's keep flags, which are combined with the current keep flag when yielding events for child nodes.
+                  
+        Yields:
+            A tuple of (WalkEvent, current stack, keep flag) for each event during the walk.
+        """
+        stack.append(self)
+        try:
+            yield (WalkEvent.ATOMIC, stack, keep)
+        finally:
+            stack.pop()
+
+
 
 
 @dataclass(frozen=True, slots=True)
 class Lazy(AST):
     value: Any
+    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
+        stack.append(self)
+        try:
+            yield (WalkEvent.ENTER, stack, keep)
+            if isinstance(self.value, AST):
+                yield from self.value.walk(stack, keep)
+            else:
+                stack.append(self.value)
+                try:
+                    yield (WalkEvent.ATOMIC, stack, keep)
+                finally:
+                    stack.pop()
+            yield (WalkEvent.EXIT, stack, keep)
+        finally:
+            stack.pop()
     
 
 @dataclass(frozen=True, slots=True)
@@ -94,17 +138,63 @@ class Alt(AST):
     index: Optional[int]
     value: Optional[Any]
 
-
+    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
+        stack.append(self)
+        try:
+            yield (WalkEvent.ENTER, stack, keep)
+            if isinstance(self.value, AST):
+                yield from self.value.walk(stack, keep)
+            else:
+                stack.append(self.value)
+                try:
+                    yield (WalkEvent.ATOMIC, stack, keep)
+                finally:
+                    stack.pop()
+            yield (WalkEvent.EXIT, stack, keep)
+        finally:
+            stack.pop()
 
 
 @dataclass(frozen=True, slots=True)
 class Many(AST):
-    """A finite sequence of values within the AST."""
+    
     value: Tuple[Any, ...]
+    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
+        stack.append(self)
+        try:
+            yield (WalkEvent.ENTER, stack, keep)
+            for item in self.value:
+                if isinstance(item, AST):
+                    yield from item.walk(stack, keep)
+                else:
+                    stack.append(item)
+                    try:
+                        yield (WalkEvent.ATOMIC, stack, keep)
+                    finally:
+                        stack.pop()
+            yield (WalkEvent.EXIT, stack, keep)
+        finally:
+            stack.pop()
 
 @dataclass(frozen=True, slots=True)
 class Seq(AST):
     value: Tuple[Tuple[Any, bool], ...]
+    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
+        stack.append(self)
+        try:
+            yield (WalkEvent.ENTER, stack, keep)
+            for item, _keep in self.value:
+                if isinstance(item, AST):
+                    yield from item.walk(stack, keep and _keep)
+                else:
+                    stack.append(item)
+                    try:
+                        yield (WalkEvent.ATOMIC, stack, keep and _keep)
+                    finally:
+                        stack.pop()
+            yield (WalkEvent.EXIT, stack, keep)
+        finally:
+            stack.pop()
 
 
 
@@ -118,45 +208,29 @@ class Seq(AST):
 @dataclass(frozen=True, slots=True)
 class Token(AST):
     text: str | bytes | Tuple[Any, ...]
-    token_type: Optional[Union[str, Enum]] = None    
+    token_type: Optional[Union[str, Enum]] = None   
 
-    def __repr__(self) -> str:
+    def to_str(self) -> str:
         if isinstance(self.text, str):
-            if self.token_type is None:
-                return f"Token(text={self.text.strip()!r})"
-            else:
-                return f"Token(text={self.text.strip()!r}, token_type={self.token_type!r})"
+            return self.text.strip()
         elif isinstance(self.text, bytes):
-            if self.token_type is None:
-                return f"Token(text={self.text.decode(errors='replace').strip()!r})"
-            else:
-                return f"Token(text={self.text.decode(errors='replace').strip()!r}, token_type={self.token_type!r})"
+            return self.text.decode('utf-8', errors='replace').strip()
         elif isinstance(self.text, tuple):
-            if self.token_type is None:
-                return f"Token(text={''.join(str(c) for c in self.text).strip()!r})"
-            else:
-                return f"Token(text={''.join(str(c) for c in self.text).strip()!r}, token_type={self.token_type!r})"
+            return ''.join(str(c) for c in self.text).strip()
         else:
             raise SyncraftError("Unsupported type for Token text", offender=self.text, expect="str, bytes, or tuple")
+
+    def __repr__(self) -> str:        
+        if self.token_type is None:
+            return f"Token(text={self.to_str()!r})"
+        else:
+            return f"Token(text={self.to_str()!r}, token_type={self.token_type!r})"
 
     def __str__(self) -> str:
-        if isinstance(self.text, str):
-            if self.token_type is None:
-                return f"t.{self.text.strip()}"
-            else:
-                return f"t.({self.text.strip()}, {self.token_type})"
-        elif isinstance(self.text, bytes):
-            if self.token_type is None:
-                return f"t.{self.text.decode(errors='replace').strip()}"
-            else:
-                return f"t.({self.text.decode(errors='replace').strip()}, {self.token_type})"
-        elif isinstance(self.text, tuple):
-            if self.token_type is None:
-                return f"t.({''.join(str(c) for c in self.text).strip()})"
-            else:
-                return f"t.({''.join(str(c) for c in self.text).strip()}, {self.token_type})"
-        else:
-            raise SyncraftError("Unsupported type for Token text", offender=self.text, expect="str, bytes, or tuple")
+        if self.token_type is None:
+            return f"t.{self.to_str().strip()}"        
+        else:            
+            return f"t.({self.to_str().strip()}, {self.token_type})"
         
 T = TypeVar('T', bound=Hashable)
 
@@ -171,39 +245,62 @@ ParseResult = Union[
     T,
 ]
 
+def map(f: Callable[[Any], Any]):
+    """
+    Create a transducer that applies a function to each item before reducing it.
+    Args:
+    f: A function that takes an item and returns a transformed item.
+    Returns:
+    A transducer function that can be used to create a new reducer that applies the transformation before reducing.
+    """
+    def transducer(reducer: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:
+        """
+        Wrap the original reducer to apply the transformation function `f` to each item before reducing it.
+        Args:
+        reducer: The original reducer function that takes an accumulator and an item and returns a new accumulator.
+        Returns:
+        A new reducer function that applies the transformation function `f` to each item before reducing it
+        """
+        def wrapped(acc: Any, item: Any) -> Any:
+            return reducer(acc, f(item))
+        return wrapped
+    return transducer
 
-def txt(ast: ParseResult) -> str:
-    """Extract text from an AST object by traversing it and collecting Token texts.
+def filter(pred: Callable[[Any], bool]):
+    """
+    Create a transducer that filters items based on a predicate function.
     
     Args:
-        ast: The AST object to extract text from.
+        pred: A function that takes an item and returns True if the item should be kept, False otherwise.
         
     Returns:
-        The concatenated text from all Token objects in the AST.
+        A transducer function that can be used to create a new reducer that only processes items that satisfy the predicate.
     """
-    if isinstance(ast, Lazy):
-        return txt(ast.value)
-    elif isinstance(ast, Alt):
-        if ast.value is not None:
-            return txt(ast.value)
-        return ""
-    elif isinstance(ast, Seq):
-        parts = []
-        for item, _keep in ast.value:
-            parts.append(txt(item))
-        return ''.join(parts)
-    elif isinstance(ast, Many):
-        parts = []
-        for item in ast.value:
-            parts.append(txt(item))
-        return ''.join(parts)
-    elif ast is Nothing or ast is EOF or ast is Unknown:
-        return ""
-    elif isinstance(ast, str):
-        return ast
-    elif isinstance(ast, bytes):
-        return ast.decode('utf-8')
-    else:
-        return str(ast)
+    def transducer(reducer: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:
+        """
+        Wrap the original reducer to only apply it to items that satisfy the predicate function `pred`.
+        Args:
+            reducer: The original reducer function that takes an accumulator and an item and returns a new accumulator.
+        Returns:
+            A new reducer function that only applies the original reducer to items that satisfy the predicate function `
+        """
+        def wrapped(acc: Any, item: Any) -> Any:
+            if pred(item):
+                return reducer(acc, item)
+            return acc
+        return wrapped
+    return transducer
+
+
+def compose(*transducers: Callable[[Callable[[Any, Any], Any]], Callable[[Any, Any], Any]]) -> Callable[[Callable[[Any, Any], Any]], Callable[[Any, Any], Any]]:
+    """Compose multiple transducers into a single transducer that applies them in sequence."""
+    def composed(reducer: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:
+        for transducer in reversed(transducers):
+            reducer = transducer(reducer)
+        return reducer
+    return composed
+
+
+
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import (
     Callable, Any, Dict, Union, Literal, Iterator, Optional, overload, TYPE_CHECKING, Literal
 )
-from syncraft.format import LayoutDoc, Group, lower_to_layout
+from syncraft.format import LayoutDoc, Group
 from syncraft.algebra import Error
 from syncraft.ast import SyncraftError, Unknown
 from syncraft.syntax import Syntax
@@ -411,9 +411,7 @@ class Grammar(metaclass=GrammarMeta):
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                         replay=replay)
         for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
-            if isinstance(result, LayoutDoc):
-                return result
-            return Group(lower_to_layout(result))
+            return LayoutDoc.from_ast(result)
         raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
         
         

@@ -332,29 +332,32 @@ class SeqSpec(SyntaxSpec):
         def inv(v: Tuple[Any, ...], ctx: Any) -> Seq:
             if not isinstance(v, tuple):
                 raise DataError(f"Expected a tuple for SeqSpec value, got {v}", soft_failure=True)
-            
-            new_elements = []
-            v_index = 0
-            for spec, include in self.steps:
-                if include:
-                    data = v[v_index]
-                    new_elements.append((data, True)) 
-                    v_index += 1
-                else:
-                    new_elements.append((Unknown(), False))
-            ret = Seq(value=tuple(new_elements))
-            
-            return ret
+            try:
+                new_elements = []
+                v_index = 0
+                for spec, include in self.steps:
+                    if include:
+                        data = v[v_index]
+                        new_elements.append((data, True)) 
+                        v_index += 1
+                    else:
+                        new_elements.append((Unknown(), False))
+                ret = Seq(value=tuple(new_elements))
+                return ret
+            except IndexError as e:
+                raise DataError(f"SeqSpec expected {sum(1 for _, include in self.steps if include)} elements, got {len(v)}", soft_failure=False) from e
         def fwd(s: Seq, ctx: Any) -> Tuple[Any, ...]:
-            vs = []
-            index = 0
-            for spec, include in self.steps:
-                if include:
-                    vs.append(s.value[index][0])
-                index += 1
-            ret = tuple(vs)
-            
-            return ret
+            try:
+                vs = []
+                index = 0
+                for spec, include in self.steps:
+                    if include:
+                        vs.append(s.value[index][0])
+                    index += 1
+                ret = tuple(vs)
+                return ret
+            except IndexError as e:
+                raise DataError(f"Seq value has too few elements. Expected at least {len(self.steps)} elements, got {len(s.value)}", soft_failure=False) from e
         return Iso(fwd, inv)
 
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
@@ -538,7 +541,7 @@ class LexSpec(SyntaxSpec):
                         parts.append(s)
                 args = ','.join(parts)
                 kwparts = []
-                all_info = {**self.kwargs, **self.extra_info} if self.extra_info else self.kwargs
+                all_info = {**self.kwargs, **self.extra_info}
                 for k, v in all_info.items():
                     if v is not None and not LexSpec.should_ignore(v):
                         s = str(v)
@@ -849,8 +852,7 @@ class Syntax(Generic[A, S]):
         spec = FormatSpec.coerce(
             breakability=breakability,
             attach=attach,
-            indent=indent,
-            
+            indent=indent
         )
         return cast(Syntax["LayoutDoc", S], self.fmt(spec, block_normalization=True))
 
@@ -1470,9 +1472,16 @@ class Syntax(Generic[A, S]):
     @classmethod
     def rp(cls, pattern: str, **refs: Syntax[Any, Any]) -> Syntax:
         import syncraft.regex as regex
-        return regex.rp(pattern, syntax_cls=cls, **refs)
-        
-    
+        ret = regex.rp(pattern, syntax_cls=cls, **refs)
+        if isinstance(ret.spec, LexSpec):
+            extra: FrozenDict[str, Any] = FrozenDict({
+                'type': 'rp',
+                'pattern': pattern,
+                'refs': tuple(refs.keys())
+            })
+            return replace(ret, spec=replace(ret.spec, extra_info = extra))
+        return ret
+
     @classmethod
     def lit(cls, 
             txt: str | bytes,
@@ -1499,7 +1508,11 @@ class Syntax(Generic[A, S]):
     @classmethod
     def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:
         tkspec: TokenSpec | None = TokenSpecBase.from_kwargs(*txt, case_sensitive=case_sensitive, **kwargs)
-        assert tkspec is not None, "TokenSpecBase.from_kwargs returned None"
+        if tkspec is None:
+            parts = [str(t) for t in txt]
+            parts += [f"{k}={v}" for k, v in kwargs.items()]
+            args = ', '.join(parts)
+            raise SyncraftError(f"Invalid arguments to tok({args})", offender=(txt, kwargs), expect="valid token specification")
         return cls.lex(tkspec, **kwargs)
 
     @classmethod
@@ -1557,16 +1570,16 @@ class Syntax(Generic[A, S]):
             '42'
         """
         from syncraft.generator import Runner, Generator
-        from syncraft.format import Group, LayoutDoc, lower_to_layout
+        from syncraft.format import LayoutDoc
         import random
         runner = Runner(ast=data if data is not None else Unknown(),
                        seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                        replay=replay)
         generator = self(Generator)
         for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
-            if isinstance(result, LayoutDoc):
-                return result
-            return Group(lower_to_layout(result))
+            if isinstance(result, Error):
+                raise SyncraftError(f"Generation failed with error: {result}", offender=result, expect="successful generation")
+            return LayoutDoc.from_ast(result)
         raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
     
     def validate(self, data: Any, seed: int | None = None) -> Literal[True] | Error:
