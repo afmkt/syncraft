@@ -851,14 +851,18 @@ class Syntax(Generic[A, S]):
 
         def to_doc(ast: Any) -> "LayoutDoc":
             doc = LayoutDoc.from_ast(ast)
-            body = Nest(ast=ast, body=doc, level=indent) if indent > 0 else doc
-
             if breakability == 'optional':
-                return Group(ast=ast, body=Concat(parts=(body, Line())))
+                body: LayoutDoc = Concat(parts=(doc, Line()))
+                if indent > 0:
+                    body = Nest(ast=ast, body=body, level=indent)
+                return Group(ast=ast, body=body)
             elif breakability == 'required':
-                return Group(ast=ast, body=Concat(parts=(body, Line(flat="\n"))))
+                body = Concat(parts=(doc, Line(flat="\n")))
+                if indent > 0:
+                    body = Nest(ast=ast, body=body, level=indent)
+                return Group(ast=ast, body=body)
             elif breakability == 'never':
-                return body
+                return Nest(ast=ast, body=doc, level=indent) if indent > 0 else doc
             else:
                 raise SyncraftError(f"Invalid value for breakability: {breakability}", offender=breakability, expect="one of 'never', 'optional', 'required'")
 

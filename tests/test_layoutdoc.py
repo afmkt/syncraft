@@ -391,33 +391,39 @@ def test_format_multiline_addition_operator_first() -> None:
 def test_format_nested_indentation() -> None:
     """Format: nested if statements with proper indentation."""
     syntax_cls = Syntax
-    
-    keyword = syntax_cls.lit("if") | syntax_cls.lit("else")
-    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*")
+
+    keyword = syntax_cls.lit("if")
+    space = syntax_cls.lit(" ")
     colon = syntax_cls.lit(":")
-    newline = syntax_cls.lit("\n").bimap(
+
+    identifier = syntax_cls.rp(r"[a-zA-Z_]\w*").bimap(
         lambda t: t.text if isinstance(t, Token) else t,
-        lambda _: "\n"
+        lambda s: s
     )
-    
-    # Simple statement (placeholder)
+
+    head = keyword + space + identifier + colon
     stmt = identifier
-    
-    # if statement: if x: <body>
-    if_stmt = (
-        keyword + syntax_cls.lit(" ") + identifier + colon +
-        newline + stmt.format(indent=1)
-    ).format(indent=0)
-    
-    # Nested if statements
-    nested = (
-        keyword + syntax_cls.lit(" ") + identifier + colon +
-        newline + if_stmt.format(indent=1)
-    )
-    
-    generated = nested.generate((None, None, "x", None, None, None, None, None, "y", None, None, None, None, None, None, None, "z"))
-    result = generated.render(width=80, indent="    ")
-    
-    # Should have proper indentation structure
-    assert "if" in result
-    assert "\n" in result
+
+    sep = space.format(breakability="optional", indent=1)
+
+    if_stmt = (head + sep + stmt).format(indent=1)
+    nested = head + sep + if_stmt
+
+    generated = nested.generate(("if", " ", "x", ":", " ", ("if", " ", "y", ":", " ", "z")))
+    result = generated.render(width=6, indent="    ")
+
+    print("Result:")
+    print(result)
+    print("\nLines:")
+    lines = result.split("\n")
+    for i, line in enumerate(lines):
+        print(f"  {i}: {repr(line)}")
+
+    assert len(lines) >= 3
+    assert lines[0].startswith("if x:")
+    assert lines[1].startswith("    if y:")
+    assert lines[2].startswith("        z")
+
+
+
+
