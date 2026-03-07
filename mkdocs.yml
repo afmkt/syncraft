@@ -20,7 +20,13 @@ plugins:
             filters: 
               - "!^_"
 nav:
+  - Home: index.md
   - Quickstart: quickstart.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - Bidirectional Model: concepts/bidirectional.md
+      - Performance: concepts/performance.md
+  - FAQ: faq.md
   - Tutorials:
       - SQLite CREATE TRIGGER Parser Tutorial: tutorials/trigger.ipynb
   - Reference: reference.md

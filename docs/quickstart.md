@@ -54,6 +54,8 @@ See also: `Syntax`, `@grammar`, `lazy`, and `Grammar.parse` in the [API referenc
 
 If you want regex terminals directly on character input, use `Syntax.re(pattern)`.
 
+For grammar efficiency guidance (alternative ordering and recursion style), see [Performance](concepts/performance.md).
+
 ## 3. Define dataclasses for the AST
 Create a small, explicit AST model for numbers and binary operators.
 

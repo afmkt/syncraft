@@ -261,7 +261,7 @@ def normalize_map_f(f: Callable[..., Any]) -> Callable[..., Any]:
         elif len(c.missing_args) == 1:
             return wrapper
         else:
-            raise ValueError(f"Unsupported arity {len(c.missing_args)} for map function {f}, expected 1 or 2")
+            raise SyncraftError(f"Unsupported arity {len(c.missing_args)} of {f}, expected 1 or 2. Use lambda to wrap the function.", offender=f)
 
 @dataclass(frozen=True, slots=True)        
 class Algebra(Generic[A, S]):

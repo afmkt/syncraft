@@ -1,18 +1,15 @@
-# Syncraft
+# Syncraft Docs
 
 Current version: {{ version }}
 
-Syncraft is a parser/generator combinator library for Python with round‑trip support.
-You describe syntax once, parse text into a structured AST, transform or map it to data, and generate the original text back.
+This docs site is task-oriented and intentionally concise. The `README.md` stays as the project overview and narrative introduction, while this site focuses on practical usage and API details.
 
+## Start here
 
-## Why Syncraft?
-
-- One grammar, two directions. Parse and generate from the same syntax.
-- Transform data to the shape you need and back
-- Constraints to validate AST/data.
-
-
+- New to Syncraft: [Quickstart](quickstart.md)
+- Looking for API symbols: [API reference](reference.md)
+- Need conceptual mental models: [Concepts](concepts/architecture.md)
+- Troubleshooting: [FAQ](faq.md)
 
 ## Installation
 
@@ -26,12 +23,11 @@ pip install syncraft
 uv add syncraft
 ```
 
+## What belongs where?
 
+- `README.md`: project pitch, capabilities, and high-level examples.
+- `docs/`: operational guidance for users and contributors.
 
-Links:
-
-- Quickstart: [Quickstart](quickstart.md)
-- Reference: [API reference](reference.md)
 
 
 

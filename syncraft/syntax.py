@@ -688,37 +688,44 @@ class Syntax(Generic[A, S]):
 
     @property
     def is_orelse(self) -> bool:
+        """Return `True` when this syntax node is an alternative (`AltSpec`)."""
         return isinstance(self.spec, AltSpec)
 
     @property
     def is_lazy(self) -> bool:
+        """Return `True` when this syntax node is lazy (`LazySpec`)."""
         return isinstance(self.spec, LazySpec)
 
     @property
     def has_name(self) -> bool:
+        """Return whether this syntax node has a display/debug name."""
         return self.spec.name is not None
 
 
 
     @property
     def location(self) -> Optional[str]:
+        """Return source location metadata if available."""
         return self.spec.location
     
     def __str__(self) -> str:
         return str(self.spec)
 
     def vis(self, depth: int = 3) -> Optional[SVGVisualization]:
+        """Render an SVG visualization of this syntax subtree."""
         from syncraft.vis import syntax2svg
         return syntax2svg(self.spec, max_depth=depth)
 
 
     @classmethod
     def cdbg(cls, e: bool)->Any:
+        """Enable or disable class-level debug printing for all syntax instances."""
         # cls debug enable
         cls.print.enable(e)
         return cls
 
     def idbg(self, e: bool) -> Syntax[A, S]:
+        """Enable or disable debug printing for this syntax instance only."""
         # instance debug enable
         self.print.enable(e)
         return self
@@ -745,18 +752,38 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def set(cls, **attrs: Any) -> Type[Syntax]:
+        """Create a configured `Syntax` subclass.
+
+        This is used to attach class-level runtime configuration flags
+        (for example lexer builders or normalization options) without mutating
+        the base class globally.
+
+        Returns:
+            A new subclass of `Syntax` with merged configuration.
+        """
         return type(cls.__name__, (cls,), {SYNCRAFT_CONFIG_KEY: attrs})
 
     @classmethod
     def get_all(cls) -> Dict[str, Any]:
+        """Return all class-level Syncraft configuration values."""
         return getattr(cls, SYNCRAFT_CONFIG_KEY, {})
 
     @classmethod
     def get(cls, key: str) -> Any:
+        """Return a class-level configuration value by key, or `None`."""
         cfg = getattr(cls, SYNCRAFT_CONFIG_KEY, {})
         return cfg.get(key, None)
 
     def __call__(self, alg: Type[Algebra], **global_kwargs) -> Algebra[A, S]:
+        """Materialize this syntax into an algebra instance.
+
+        Args:
+            alg: Algebra class to instantiate (`Parser`, `Generator`, etc.).
+            **global_kwargs: Runtime options forwarded to algebra builders.
+
+        Returns:
+            Bound algebra instance associated with this syntax node.
+        """
         cfg = getattr(self.__class__, SYNCRAFT_CONFIG_KEY, {})
         return self.alg_f(alg, **(cfg | global_kwargs)).with_syntax(self)
     
@@ -780,13 +807,22 @@ class Syntax(Generic[A, S]):
         return replace(self, spec=self.spec.named(name=name, file=file, line=line, func=func, _location=True))         
 
     def as_root(self) -> Syntax[A, S]:
+        """Return a copy marked as grammar root entry."""
         return replace(self, is_root=True)
 
 
     def named(self, name: str | None, *, level:int=0, _location:bool=True) -> Syntax[A, S]:
+        """Return a copy with an explicit display/debug name.
+
+        Args:
+            name: Rule/syntax name, or `None` to clear.
+            level: Stack-frame offset used for source-location metadata.
+            _location: Whether to update file/line/function location.
+        """
         return replace(self, spec=self.spec.named(name=name, file=get_file(level+1), line=get_line(level+1), func=get_func(level+1), _location=_location))
 
     def walk(self, *, max_depth: Optional[int] = None) -> Iterator[Tuple[int, SyntaxSpec]]:
+        """Iterate over syntax spec nodes as `(depth, spec)` pairs."""
         return self.spec.walk(max_depth=max_depth)
 
     def graph(
@@ -794,6 +830,7 @@ class Syntax(Generic[A, S]):
         *,
         max_depth: Optional[int] = None,
     ) -> Graph[SyntaxSpec]:
+        """Build a graph view of this syntax specification tree."""
         return self.spec.graph(max_depth=max_depth)
 
     def _updated_can_normalize(self, *, block_normalization: bool) -> bool:
@@ -1033,6 +1070,21 @@ class Syntax(Generic[A, S]):
               only_success: bool = False,
               papuse: bool = False,
               level:int = 0) -> Syntax[A, S]:
+        """Attach runtime debug tracing to this syntax.
+
+        Args:
+            dbg: Optional custom debug callback.
+            show_stack: Include formatted call stack in default output.
+            only_fail: Emit traces only for failures.
+            only_success: Emit traces only for successes.
+            papuse: Pause for user input after each trace event.
+            level: Stack-frame offset used for source metadata in debug output.
+        
+        Example:
+            >>> syntax = Syntax.lit("a").debug()
+            >>> # The default debug callback will print input state, success/failure, 
+            >>> # and call stack for each parse attempt of "a".
+        """
         file=get_file(level+1)
         line=get_line(level+1)
         def default_dbg(syn: Syntax[A, S], state: S, new_state: Optional[S], value: A | Any, stack: List[Tuple[Syntax[Any, S], int, int| None]])->None:
@@ -1079,6 +1131,7 @@ class Syntax(Generic[A, S]):
             
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[A, S]:
+        """Parse `left`, then `self`, then `right`, returning `self` value."""
         return self.seq(left , +self , right)
 
     def sep_by(self, sep: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
@@ -1216,9 +1269,15 @@ class Syntax(Generic[A, S]):
 
 
     def __pos__(self) -> Tuple[Syntax[A, S], bool]:
+        """
+        Mark this syntax as a positive branch in sequencing combinators.
+        """
         return (self, True)
 
     def __neg__(self) -> Tuple[Syntax[A, S], bool]:
+        """
+        Mark this syntax as a negative branch in sequencing combinators.
+        """
         return (self, False)
     
     def __invert__(self) -> Syntax[Any, S]:
@@ -1229,6 +1288,12 @@ class Syntax(Generic[A, S]):
 
 
     def case(self, *branches: Tuple[Callable[..., Any], Callable[..., Any]], overlap: bool=True, block_normalization: bool = True) -> Syntax[Any, S]:
+        """
+        Attach multi-branch bidirectional shape mappings.
+
+        Each branch is `(forward, inverse)` and is tried in order.
+        
+        """
         if not branches:
             return self
         m = Match(branches[0][0], branches[0][1])
@@ -1238,10 +1303,34 @@ class Syntax(Generic[A, S]):
         
 
     def to(self, a: Callable[..., A], b: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
+        """
+        Derive an isomorphism from two constructors. 
+        The isomorphism will be used in structural transformations between 
+        different data representations, for example between 
+        raw tuples and user-friendly dataclasses or typed records.
+        
+        Args:
+            a: Constructor for A, the source pattern.
+            b: Constructor for B, the target pattern.
+
+        """
         return self.iso(Iso.derive(a, b), block_normalization=block_normalization)
 
 
     def bind(self, entry: EntryCategory = EntryCategory.Parse, **f: Callable[[Any, Any], Any]) -> Syntax[A, S]:
+        """
+        Bind parsing result to a name for downstream transforms/checks.
+
+        Args:
+            entry: The stage where bindings are applied (`Parse`/`Generate`/`Format`).
+                   The default is 'parse', which means the bindings will only be available 
+                   during parsing and can be used by map and check that are applied 
+                   after this bind in the syntax node.
+            **f: Name-to-function mapping. Each function receives current value
+                and context and returns the bound value. The name of the keyword argument
+                becomes the name of the variable in the context that can be accessed by 
+                downstream combinators.
+        """
         return replace(
             self,
             alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(entry=entry, **f),
@@ -1259,7 +1348,7 @@ class Syntax(Generic[A, S]):
               For example, for a predicate that checks if the value is greater than a variable 'x' in the context, you could define:
               def pred(value, x):
                   return value > x
-              the variable x would be resolved from the context by its name `x` when the predicate is evaluated.
+              the variable x will be resolved from the context by its name `x` when the predicate is evaluated.
         entry: Indicates which stage to apply the check on. It can be one of EntryCategory.Parse, EntryCategory.Generate, or EntryCategory.Format.
                - If EntryCategory.Parse, the predicate will be applied during parsing, and a failure will trigger backtracking.
                - If EntryCategory.Generate, the predicate will be applied during generation, and a failure will raise an error.
@@ -1295,14 +1384,21 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def fail(cls, error: B) -> Syntax[B, S]:
+        """Create a syntax that always fails with `error`."""
         return cls.factory('fail', error=error)
 
     @classmethod
     def success(cls, value: B) -> Syntax[B, S]:
+        """Create a syntax that always succeeds with `value` without consuming input."""
         return cls.factory('success', value=value)
 
     @classmethod
     def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
+        """
+        Construct an alternative (`or`) syntax from one or more branches.
+
+        Normalization flattens nested alternatives when allowed.
+        """
         all_parsers: Tuple[Syntax[Any, S], ...]
         flattened: List[Syntax[Any, S]] = []
         for parser in parsers:
@@ -1325,6 +1421,17 @@ class Syntax(Generic[A, S]):
     
     @classmethod
     def seq(cls, *steps: Syntax[Any, S] | Tuple[Syntax[Any, S], bool]) -> Syntax[Any, S]:
+        """
+        Construct a sequence syntax with optional keep/discard flags.
+
+        Each step may be either:
+        - `Syntax` (default keep inference is applied), or
+        - `(Syntax, keep_bool)` where `True` keeps and `False` discards.
+
+        Args:
+            *steps: One or more steps to sequence, with optional keep flags.
+
+        """
         def infer_default_keep(steps: Tuple[Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str], ...]) -> bool:
             """
             Since the input could be a mix of Syntax and (Syntax, bool), we need to infer the default keep value for the Syntax that are not in a tuple.
@@ -1394,6 +1501,12 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def lazy(cls, thunk: Callable[[], Syntax[A, S]]) -> Syntax[A, S]:
+        """
+        Create a lazy syntax node for recursive grammar.
+
+        The thunk is evaluated on demand and memoized through a facade cache,
+        which keeps recursion identity stable across parser/generator algebras.
+        """
         facade_cache = cls._lazy_facade_cache
         existing = facade_cache.get(thunk)
         if existing is not None:
@@ -1412,6 +1525,12 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def factory(cls, name: str, *args:Any, **kwargs: Any) -> Syntax:
+        """
+        Create syntax from a method name of the underlying algebra.
+
+        This is the primitive constructor used by helpers like `lit`, `re`, `rp`, 
+        `tok`, and `eof`.
+        """
         def factory_run(acls: Type[Algebra], **global_kwargs: Any) -> Algebra:
             method = getattr(acls, name, None)
             if method is None or not callable(method):
@@ -1423,20 +1542,24 @@ class Syntax(Generic[A, S]):
     
     @classmethod
     def eof(cls) -> Syntax:
+        """Create an end-of-input syntax."""
         return cls.factory('eof')
     
     @classmethod
     def lex(cls, builder: Builder | TokenSpec, **kwargs: Any) -> Syntax:
+        """Create a terminal syntax from a lexer builder/token specification."""
         lexer_builder = cls.lexer()
         lb = lexer_builder(builder, **kwargs)
         return cls.factory('lex', builder=lb)
 
     @classmethod
     def set_lexer(cls, builder: LexerBuilder) -> Type[Syntax]:
+        """Return a configured `Syntax` subclass with a custom lexer builder."""
         return cls.set(lexer_builder=builder)
 
     @classmethod
     def lexer(cls) -> LexerBuilder:
+        """Return the active lexer builder, creating a local default if needed."""
         from syncraft.lexer import LocalLexerBuilder
         tmp = cls.get('lexer_builder')
         if tmp is None:
@@ -1455,6 +1578,13 @@ class Syntax(Generic[A, S]):
            push: str | None = None, 
            pop: str | Literal[True] | None = None,  
            of: str | None = None) -> Syntax:
+        """Create a regex-backed terminal syntax.
+
+        This is lexical regex matching (token-level). For recursive grammar
+        fragments with `(?&name)` references, use `Syntax.rp(...)`.
+        NOTE:
+            This API only works on str input
+        """
         # local import to avoid circular dependency
         import syncraft.regex as regex  
         b = regex.re(pattern).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
@@ -1473,6 +1603,42 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def rp(cls, pattern: str, **refs: Syntax[Any, Any]) -> Syntax:
+        """Compile a regex++ grammar fragment into `Syntax`.
+
+        `rp` extends regex-like authoring with grammar references and recursion.
+        Use `(?&name)` in `pattern` and pass the referenced syntaxes through
+        keyword arguments (`name=...`).
+
+        Args:
+            pattern: Regex++ fragment string.
+            **refs: Named syntax references used by `(?&name)`.
+
+        Returns:
+            A `Syntax` value representing the compiled fragment.
+
+        Supported high-level capabilities:
+        - Character classes, quantifiers, grouping, alternation.
+        - Named syntax references via `(?&name)`.
+        - Recursive references when combined with `Syntax.lazy(...)`.
+
+        Example:
+            >>> from syncraft.syntax import Syntax as S
+            >>> number = S.rp(r"[0-9]+").bimap(int, str)
+            >>> op = S.rp(r"[+\\-*/]")
+            >>> expr = S.lazy(lambda: S.rp(
+            ...     r"(?&number)|(\\((?&expr)\\s*(?&op)\\s*(?&expr)\\))",
+            ...     number=number,
+            ...     op=op,
+            ...     expr=expr,
+            ... ))
+
+        NOTE:
+        - Keep reference names aligned between `(?&name)` and `name=...`.
+        - Recursive references should usually be wrapped in `Syntax.lazy(...)`.
+        - Backreferences in classic regex style are not supported;
+          model structural dependencies through grammar composition instead.
+        - This API only works on str input, as regex matching is inherently string-based.
+        """
         import syncraft.regex as regex
         ret = regex.rp(pattern, syntax_cls=cls, **refs)
         if isinstance(ret.spec, LexSpec):
@@ -1493,6 +1659,11 @@ class Syntax(Generic[A, S]):
             push: str | None = None, 
             pop: str | Literal[True] | None = None,  
             of: str | None = None) -> Syntax:
+        """
+        Create a literal terminal syntax from exact text.
+        NOTE:
+        - This API only works on str input.
+        """
         b: Builder[Any]= Builder.lit(txt).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
         ret = cls.lex(b)
         extra: FrozenDict[str, Any] = FrozenDict({
@@ -1509,6 +1680,11 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:
+        """
+        Create token-spec terminal syntax from literal/regex token forms.
+        NOTE:
+        - This API only works on structured token input, not raw strings.
+        """
         tkspec: TokenSpec | None = TokenSpecBase.from_kwargs(*txt, case_sensitive=case_sensitive, **kwargs)
         if tkspec is None:
             parts = [str(t) for t in txt]
@@ -1519,11 +1695,13 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax:
+        """Reconstruct a `Syntax` tree from a `SyntaxSpec` graph root."""
         c: Dict[SyntaxSpec, Syntax] = {}
         return spec.syntax(cls, cache=c)
     
     @classmethod
     def from_graph(cls, graph: Graph[SyntaxSpec]) -> Syntax:
+        """Reconstruct a `Syntax` tree from a graph produced by `Syntax.graph()`."""
         c: Dict[SyntaxSpec, Syntax] = {}
         return graph.root.syntax(cls, cache=c)
     
@@ -1614,6 +1792,9 @@ class Syntax(Generic[A, S]):
             return True    
         except SyncraftError as e:
             return Error.new(this=None, message=f"Exception {e} during validation", error=e)
+
+
+
 class RunnerProtocol(Protocol, Generic[A, S]):
     def algebra(self, 
                 syntax: Syntax[A, S],

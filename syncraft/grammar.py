@@ -129,10 +129,11 @@ def grammar(cls: type) -> type:
         cls: Class containing Syntax definitions as class attributes.
     
     Returns:
-        The class with Grammar functionality and metadata attached.
+        The same class, enriched with grammar metadata and caches.
     
     Raises:
-        ValueError: If multiple root rules are defined or rules lack location info.
+        ValueError: If multiple root rules are defined or if location metadata
+            cannot be derived for rule fields.
     
     Example:
         >>> @grammar
@@ -224,6 +225,15 @@ class Grammar(metaclass=GrammarMeta):
 
     @classmethod
     def vis(cls, syntax: Syntax | None = None, depth: int = 3) -> Optional["SVGVisualization"]:
+        """Render a syntax visualization for grammar inspection.
+
+        Args:
+            syntax: Optional specific syntax. Defaults to root rule.
+            depth: Maximum expansion depth for visualization.
+
+        Returns:
+            `SVGVisualization` when available.
+        """
         if syntax is None:
             syntax = cls._root_rule
         if syntax is None:
@@ -231,6 +241,7 @@ class Grammar(metaclass=GrammarMeta):
         return syntax.vis(depth=depth)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Initialize per-subclass grammar caches and rule registry."""
         super().__init_subclass__(**kwargs)
         cls._rules = dict()
         cls._root_rule = None
@@ -324,7 +335,17 @@ class Grammar(metaclass=GrammarMeta):
                    mode: Literal['text', 'binary'] = 'text',
                    encoding: str = 'utf-8',
                    syntax: Syntax | None = None) -> Iterator[Any]:
-        """Parse a file using the grammar, yielding all matches."""
+        """Parse a file using the grammar and yield all results.
+
+        Args:
+            file_path: Path to input file.
+            mode: Read mode (`text` or `binary`).
+            encoding: Text encoding for `text` mode.
+            syntax: Optional non-root syntax to parse with.
+
+        Yields:
+            Parsed values emitted by the parser runner.
+        """
         if mode == 'text':
             with open(file_path, "r", encoding=encoding) as f:
                 yield from cls.parse_stream(f, mode=mode, syntax=syntax)
