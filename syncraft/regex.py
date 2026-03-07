@@ -305,12 +305,16 @@ class GroupAtom(RegexNode):
             if self.name is None:
                 raise RegexError("Syntax reference group is missing a name", offender=self)
             if references is None or self.name not in references:
-                return syntax_cls.resolve(self.name)  
-            else:
-                referenced = references[self.name]
-                if not isinstance(referenced, Syntax):
-                    raise RegexError("Invalid syntax reference in Syntax.rp", offender=referenced, expect="Syntax instance")
-                return referenced
+                # Technically, we could resolve this at runtime against the parsing context.
+                # However, that requires building Syntax at runtime as well(the parsing context only available at runtiime)
+                # A dynamic syntax rule will break the round-tripping property of Syntax.rp, so we require explicit references to be provided at compile time.
+                # Further more, pattern reusing is fullfilled by external reference ready.
+                # So we just raise error here to avoid the complexity of supporting dynamic references.
+                raise RegexError("Unknown syntax reference in Syntax.rp", offender=self.name, expect="Provide refs={'name': Syntax(...)}")
+            referenced = references[self.name]
+            if not isinstance(referenced, Syntax):
+                raise RegexError("Invalid syntax reference in Syntax.rp", offender=referenced, expect="Syntax instance")
+            return referenced
 
         if self.kind == GroupKind.COMMENT:
             raise RegexError("Comments are not supported in Syntax.rp yet", offender=self)

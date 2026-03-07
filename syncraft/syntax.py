@@ -1322,11 +1322,6 @@ class Syntax(Generic[A, S]):
     def success(cls, value: B) -> Syntax[B, S]:
         return cls.factory('success', value=value)
 
-    @classmethod    
-    def resolve(cls, variable: str, soft_failure: bool = False) -> Syntax[A, S]:
-        return cls.factory('resolve', variable=variable, soft_failure=soft_failure)
-
-
     @classmethod
     def alt(cls, *parsers: Syntax[Any, S]) -> Syntax[Any, S]:
         all_parsers: Tuple[Syntax[Any, S], ...]
