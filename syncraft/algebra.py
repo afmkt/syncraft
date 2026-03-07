@@ -474,9 +474,9 @@ class Algebra(Generic[A, S]):
         raise NotImplementedError("Algebra.bimap_all is abstract, concrete subclasses must implement it")
     
     def bind(self, entry: EntryCategory = EntryCategory.Parse,  **f: Callable[[Any, Any], Any])-> Algebra[A, S]:
-        if entry is not None:
-            if entry not in self.enabled():
-                return self
+        assert entry in EntryCategory, f"entry must be an instance of EntryCategory, got {entry}"
+        if entry not in self.enabled():
+            return self
         def bind_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Right):
@@ -514,11 +514,10 @@ class Algebra(Generic[A, S]):
     def enabled(self) -> Set[EntryCategory]:
         raise NotImplementedError("Algebra.enabled is abstract, concrete subclasses must implement it")
 
-    def map(self, f: Callable[..., B], entry: EntryCategory | None = None) -> Algebra[B, S]:
-        e = self.enabled()
-        if entry is not None:
-            if entry not in e:
-                return self # type: ignore
+    def map(self, f: Callable[..., B], entry: EntryCategory) -> Algebra[B, S]:
+        assert entry in EntryCategory, f"entry must be an instance of EntryCategory, got {entry}"
+        if entry not in self.enabled():
+            return self # type: ignore
         
         ff = normalize_map_f(f)
         def map_run(input: S, cache:Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[B, S]]]:
@@ -590,11 +589,11 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=map_state_run) # type: ignore
         
 
-    def imap(self, f: Callable[..., A], entry: EntryCategory | None = None) -> Algebra[A, S]:
-        e = self.enabled()
-        if entry is not None:
-            if entry not in e:
-                return self # type: ignore
+    def imap(self, f: Callable[..., A], entry: EntryCategory) -> Algebra[A, S]:
+        assert entry in EntryCategory, f"entry must be an instance of EntryCategory, got {entry}"
+        if entry not in self.enabled():
+            return self # type: ignore
+
         ff = normalize_map_f(f)
         def imap_all_f(s: S) -> S:
             new_state = s.apply(ff)

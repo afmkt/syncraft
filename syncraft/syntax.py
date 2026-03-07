@@ -1313,7 +1313,7 @@ class Syntax(Generic[A, S]):
                     msg = f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}\n{message}" 
                 else:
                     msg = message.format(value=value, ctx=ctx)
-                raise DataError(msg, soft_failure=entry is not  EntryCategory.Parse)
+                raise DataError(msg, soft_failure=entry is EntryCategory.Parse)
             return value
         match entry:
             case EntryCategory.Parse:
