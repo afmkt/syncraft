@@ -802,8 +802,7 @@ class Syntax(Generic[A, S]):
     ######################################################## value transformation ########################################################
     def format(self,
                *,
-               breakability: Literal['never', 'optional', 'required'] = 'never',
-               attach: Literal['none', 'left', 'right', 'both'] = 'none',
+               breaks: Literal['never', 'optional', 'required'] = 'never',
                indent: int = 0,
                ) -> Syntax["LayoutDoc", S]:
         """Attach declarative formatting metadata to this grammar subtree.
@@ -815,7 +814,7 @@ class Syntax(Generic[A, S]):
 
         Core rendering semantics
         ------------------------
-        breakability:
+        breaks:
             Controls line-break strategy:
             - ``'never'`` (default): no width-sensitive grouping.
             - ``'optional'``: wrap in a ``Group``; render flat when it fits,
@@ -825,46 +824,26 @@ class Syntax(Generic[A, S]):
         indent:
             Extra indentation depth (non-negative integer) applied to nested
             breaks within this subtree. Used by ``Nest`` in the layout tree.
-        attach:
-            Metadata describing token adjacency intent for policy layers:
-            - ``'left'``: intended to attach to preceding item.
-            - ``'right'``: intended to attach to following item.
-            - ``'both'``: bind both sides.
-            - ``'none'`` (default): no adjacency preference.
 
-        Examples
-        --------
-        Make a container width-sensitive and increase indentation on breaks::
-
-            args = ARG_LIST.format(breakability="optional", indent=1)
-
-        Mark punctuation as left-attached for policy interpretation::
-
-            comma = COMMA.format(attach="left")
-
-        Tag items with an alignment group (for downstream policy)::
-
-            first = ITEM.format(kind="list", attrs={"align_anchor": True, "align_group": "params"})
-            rest = ITEM.format(kind="list", attach="left", attrs={"align_group": "params"})
         """
         from syncraft.format import Nest, Group, Concat, Line, LayoutDoc
 
         def to_doc(ast: Any) -> "LayoutDoc":
             doc = LayoutDoc.from_ast(ast)
-            if breakability == 'optional':
+            if breaks == 'optional':
                 body: LayoutDoc = Concat(parts=(doc, Line()))
                 if indent > 0:
                     body = Nest(ast=ast, body=body, level=indent)
                 return Group(ast=ast, body=body)
-            elif breakability == 'required':
+            elif breaks == 'required':
                 body = Concat(parts=(doc, Line(flat="\n")))
                 if indent > 0:
                     body = Nest(ast=ast, body=body, level=indent)
                 return Group(ast=ast, body=body)
-            elif breakability == 'never':
+            elif breaks == 'never':
                 return Nest(ast=ast, body=doc, level=indent) if indent > 0 else doc
             else:
-                raise SyncraftError(f"Invalid value for breakability: {breakability}", offender=breakability, expect="one of 'never', 'optional', 'required'")
+                raise SyncraftError(f"Invalid value for breaks: {breaks}", offender=breaks, expect="one of 'never', 'optional', 'required'")
 
         return cast(Syntax["LayoutDoc", S], self.fmt(to_doc, block_normalization=True))
 

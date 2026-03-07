@@ -145,7 +145,7 @@ def test_syntax_format_is_disabled_in_parse_and_validate() -> None:
     replay use the raw algebra without fmt/map, preserving structural round-trip
     integrity.
     """
-    syntax: Any = Syntax.success("abc").format(breakability="optional")
+    syntax: Any = Syntax.success("abc").format(breaks="optional")
 
     # Parse path skips formatting (fmt is disabled in Parser.disabled)
     parsed = syntax.parse("ignored")
@@ -234,7 +234,7 @@ def test_render_function_accepts_ast_values() -> None:
 
 
 def test_expression_grammar_integration_with_format_hints_and_rendered_text() -> None:
-    """Format hints at grammar level control breakability metadata.
+    """Format hints at grammar level control breaks metadata.
     
     Apply .format() to mark structural decisions. The layout layer composes
     the result based on these hints, not custom callbacks. Spacing must be
@@ -252,13 +252,12 @@ def test_expression_grammar_integration_with_format_hints_and_rendered_text() ->
         lambda token: token.text,
         lambda text: Token(text=text),
     ).format(
-        attach="both",
-        breakability="optional",
+        breaks="optional",
     )
 
     # Sequence: without spacing rule in grammar, renders as "12+345"
     expr = (number + plus + number).format(
-        breakability="optional",
+        breaks="optional",
         indent=1
     )
 
@@ -288,7 +287,7 @@ def test_format_single_line_function_call() -> None:
         
     args = identifier + (comma_space + identifier).many()
     func_call = (identifier + syntax_cls.lit("(") + args + syntax_cls.lit(")")).format(
-        breakability="never"
+        breaks="never"
     )
     
     expected = "f(a, b, c)"
@@ -308,7 +307,7 @@ def test_format_multiline_function_call() -> None:
     
     # Apply format to the separator part (comma + space)
     separator = (syntax_cls.lit(",") + syntax_cls.lit(" ")).format(
-        breakability="optional",
+        breaks="optional",
         indent=1
     )
     
@@ -364,7 +363,7 @@ def test_format_multiline_addition_operator_first() -> None:
     
     # Apply format to the operator part (space + plus + space) with attach="left"
     operator = (syntax_cls.lit(" ") + syntax_cls.lit("+") + syntax_cls.lit(" ")).format(
-        breakability="optional",
+        breaks="optional",
         indent=1
     )
     
@@ -404,7 +403,7 @@ def test_format_nested_indentation() -> None:
     head = keyword + space + identifier + colon
     stmt = identifier
 
-    sep = space.format(breakability="optional", indent=1)
+    sep = space.format(breaks="optional", indent=1)
 
     if_stmt = (head + sep + stmt).format(indent=1)
     nested = head + sep + if_stmt
