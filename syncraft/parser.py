@@ -9,7 +9,7 @@ from syncraft.fa import (
 from syncraft.lexerprotocol import LexerProtocol, LexerBuilder, LexerError, LexerResult
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
 from syncraft.algebra import (
-     Algebra, YieldChannelType, Error
+     Algebra, YieldChannelType, Error, EntryCategory
 )
 from dataclasses import dataclass, field, replace
 from functools import total_ordering
@@ -309,10 +309,10 @@ class ParserState(Bindable, Generic[T]):
 class Parser(Algebra[T, ParserState[T]]):
         
     def bimap(self, f: Callable[[T, Any], A], i: Callable[[A, Any], T]) -> Algebra[A, ParserState[T]]:
-        return self.map(f, entry="map")
+        return self.map(f, entry=EntryCategory.Parse)
     
-    def enabled(self) -> Set[str]:
-        return {'map'}
+    def enabled(self) -> Set[EntryCategory]:
+        return {EntryCategory.Parse}
 
 
     @classmethod

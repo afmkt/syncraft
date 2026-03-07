@@ -5,7 +5,7 @@ from typing import (
 )
 from syncraft.ast import Nothing, EOF
 from dataclasses import dataclass, replace, field
-from enum import IntEnum
+from enum import IntEnum, Enum
 from syncraft.ast import Lazy, Many, SyncraftError, Alt, Seq, _SingletonBase
 from syncraft.cache import Cache, LeftRecursionError, Right, Left, Incomplete, Either
 from syncraft.bimap import Bindable, Iso, DataError
@@ -22,7 +22,10 @@ B = TypeVar('B')  # Mapped result type
 SYNCRAFT_CONFIG_KEY = "__syncraft_config__"
 
 
-
+class EntryCategory(Enum):
+    Parse = 'map'
+    Generate = "imap"
+    Format = "fmt"
 
 
 YieldChannelType = Incomplete[S]
@@ -470,7 +473,10 @@ class Algebra(Generic[A, S]):
     def bimap(self, f: Callable[..., B], i: Callable[..., A]) -> Algebra[B, S]:
         raise NotImplementedError("Algebra.bimap_all is abstract, concrete subclasses must implement it")
     
-    def bind(self, **f: Callable[[Any, Any], Any])-> Algebra[A, S]:
+    def bind(self, entry: EntryCategory = EntryCategory.Parse,  **f: Callable[[Any, Any], Any])-> Algebra[A, S]:
+        if entry is not None:
+            if entry not in self.enabled():
+                return self
         def bind_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             result = yield from self.run(input, cache)
             if isinstance(result, Right):
@@ -505,10 +511,10 @@ class Algebra(Generic[A, S]):
         return _cast(Algebra[B, S], alg)
     
 
-    def enabled(self) -> Set[str]:
+    def enabled(self) -> Set[EntryCategory]:
         raise NotImplementedError("Algebra.enabled is abstract, concrete subclasses must implement it")
 
-    def map(self, f: Callable[..., B], entry: str | None = None) -> Algebra[B, S]:
+    def map(self, f: Callable[..., B], entry: EntryCategory | None = None) -> Algebra[B, S]:
         e = self.enabled()
         if entry is not None:
             if entry not in e:
@@ -584,7 +590,7 @@ class Algebra(Generic[A, S]):
         return replace(self, run_f=map_state_run) # type: ignore
         
 
-    def imap(self, f: Callable[..., A], entry: str | None = None) -> Algebra[A, S]:
+    def imap(self, f: Callable[..., A], entry: EntryCategory | None = None) -> Algebra[A, S]:
         e = self.enabled()
         if entry is not None:
             if entry not in e:

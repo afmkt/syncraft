@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from syncraft.vis import SVGVisualization
 
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
-from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error
+from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error, EntryCategory
 from syncraft.cache import Cache, Incomplete
 from syncraft.bimap import Bindable, Iso, DataError, Match
 from syncraft.ast import Many, Nothing, SyncraftError, Seq, Alt, Lazy, Unknown, _SingletonBase
@@ -876,7 +876,7 @@ class Syntax(Generic[A, S]):
         """
         return replace(
             self,
-            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, 'fmt'),
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, entry=EntryCategory.Format),
             can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
         ) # type: ignore
     
@@ -902,7 +902,7 @@ class Syntax(Generic[A, S]):
         """
         return replace(
             self,
-            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, 'map'),
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).map(f, entry=EntryCategory.Parse),
             can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
         ) # type: ignore
     
@@ -919,7 +919,7 @@ class Syntax(Generic[A, S]):
         """
         return replace(
             self,
-            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f, 'imap'),
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).imap(f, entry=EntryCategory.Generate),
             can_normalize=self._updated_can_normalize(block_normalization=block_normalization),
         ) # type: ignore
 
@@ -1247,14 +1247,8 @@ class Syntax(Generic[A, S]):
         return self.optional
 
     ######################################################################## data processing combinators #########################################################
-    
-    def bind(self, **f: Callable[[Any, Any], Any]) -> Syntax[A, S]:
-        return replace(
-            self,
-            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(**f),
-            can_normalize=self._updated_can_normalize(block_normalization=True),
-        )
-    
+
+
     def case(self, *branches: Tuple[Callable[..., Any], Callable[..., Any]], overlap: bool=True, block_normalization: bool = True) -> Syntax[Any, S]:
         if not branches:
             return self
@@ -1267,10 +1261,29 @@ class Syntax(Generic[A, S]):
     def to(self, a: Callable[..., A], b: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
         return self.iso(Iso.derive(a, b), block_normalization=block_normalization)
 
+
+    def bind(self, entry: EntryCategory = EntryCategory.Parse, **f: Callable[[Any, Any], Any]) -> Syntax[A, S]:
+        return replace(
+            self,
+            alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(entry=entry, **f),
+            can_normalize=self._updated_can_normalize(block_normalization=True),
+        )
+    
+    def resolve(self, name: str, entry: EntryCategory = EntryCategory.Parse) -> Syntax[A, S]:
+        match entry:
+            case EntryCategory.Parse:
+                return self.map(lambda value, ctx: ctx[name], block_normalization=True)
+            case EntryCategory.Generate:
+                return self.imap(lambda value, ctx: ctx[name], block_normalization=True)
+            case EntryCategory.Format:
+                return self.fmt(lambda value, ctx: ctx[name], block_normalization=True)
+            case _:
+                raise SyncraftError(f"Invalid entry category: {entry}", offender=entry, expect=f"None, {EntryCategory.Parse}, {EntryCategory.Generate}, or {EntryCategory.Format}")
+
     def check(self, 
               pred: Callable[..., bool], 
               *, 
-              forward: bool = True, 
+              entry: EntryCategory = EntryCategory.Parse,
               level:int = 0, 
               message: str | None = None) -> Syntax[A, S]:
         """
@@ -1299,8 +1312,15 @@ class Syntax(Generic[A, S]):
                 else:
                     raise DataError(message.format(value, ctx), soft_failure=False)
             return value
-        return self.map(check_preds) if forward else self.imap(check_preds)
-        
+        match entry:
+            case EntryCategory.Parse:
+                return self.map(check_preds)
+            case EntryCategory.Generate:
+                return self.imap(check_preds)
+            case EntryCategory.Format:
+                return self.fmt(check_preds)
+            case _:
+                raise SyncraftError(f"Invalid entry category: {entry}", offender=entry, expect=f"None, {EntryCategory.Parse}, {EntryCategory.Generate}, or {EntryCategory.Format}")        
 
     @classmethod
     def fail(cls, error: B) -> Syntax[B, S]:

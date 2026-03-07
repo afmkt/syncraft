@@ -6,7 +6,7 @@ from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any, Type, Mapping
 import unicodedata
 
-from syncraft.algebra import Error
+from syncraft.algebra import Error, EntryCategory 
 from syncraft.syntax import Syntax
 from syncraft.fa import Builder
 from syncraft.alphabet import Alphabet
@@ -325,7 +325,7 @@ class GroupAtom(RegexNode):
         if self.kind == GroupKind.CAPTURE:
             captured = inner
             if self.name:
-                return captured.bind(**{self.name: lambda m, _: m})
+                return captured.bind(EntryCategory.Parse, **{self.name: lambda m, _: m})
             return captured
 
         raise RegexError("Unsupported group type in parser regex", offender=self)

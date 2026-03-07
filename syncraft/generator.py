@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace, field
 from syncraft.algebra import (
     Algebra, YieldChannelType, Error
 )
-from syncraft.algebra import ErrorPriority
+from syncraft.algebra import ErrorPriority, EntryCategory
 
 
 from syncraft.lexerprotocol import LexerBuilder, LexerProtocol
@@ -151,10 +151,10 @@ class Generator(Algebra[ParseResult[T], GenState]):
     def bimap(self, 
               f: Callable[[ParseResult[T], Any], Any], 
               i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState]:
-        return self.imap(i, entry="imap")
+        return self.imap(i, entry=EntryCategory.Generate)
     
-    def enabled(self) -> Set[str]:
-        return {'imap', 'fmt'}
+    def enabled(self) -> Set[EntryCategory]:
+        return {EntryCategory.Generate, EntryCategory.Format}
 
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState] | Tuple[Algebra[Any, GenState], bool]) -> Algebra[Seq, GenState]:
@@ -511,8 +511,8 @@ class Generator(Algebra[ParseResult[T], GenState]):
 
 @dataclass(frozen=True, slots=True)
 class Validator(Generator[T]):
-    def enabled(self) -> Set[str]:
-        return {'imap'}
+    def enabled(self) -> Set[EntryCategory]:
+        return {EntryCategory.Generate}
 
 
 @dataclass
