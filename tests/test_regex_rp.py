@@ -100,6 +100,3 @@ def test_rp_external_syntax_reference() -> None:
     assert RPExternalSyntaxRefGrammar.parse("12-34") == ("12", "34")
 
 
-def test_rp_external_syntax_reference_missing_name() -> None:
-    with pytest.raises(RegexError):
-        S.rp(r"(?&missing)")

@@ -12,11 +12,12 @@ from dataclasses import dataclass
 from enum import Enum
 
 class SyncraftError(Exception):
-    def __init__(self, message: str, offender: Any, expect: Any = None, **kwargs: Any) -> None:
+    def __init__(self, message: str, offender: Any, expect: Any = None, soft_failure: bool = False, **kwargs: Any) -> None:
         super().__init__(message)
         self.offender = offender
         self.expect = expect
         self.data = kwargs
+        self.soft_failure = soft_failure
 
     def __str__(self) -> str:
         base = super().__str__()

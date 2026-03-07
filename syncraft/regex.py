@@ -305,11 +305,12 @@ class GroupAtom(RegexNode):
             if self.name is None:
                 raise RegexError("Syntax reference group is missing a name", offender=self)
             if references is None or self.name not in references:
-                raise RegexError("Unknown syntax reference in Syntax.rp", offender=self.name, expect="Provide refs={'name': Syntax(...)}")
-            referenced = references[self.name]
-            if not isinstance(referenced, Syntax):
-                raise RegexError("Invalid syntax reference in Syntax.rp", offender=referenced, expect="Syntax instance")
-            return referenced
+                return syntax_cls.resolve(self.name)  
+            else:
+                referenced = references[self.name]
+                if not isinstance(referenced, Syntax):
+                    raise RegexError("Invalid syntax reference in Syntax.rp", offender=referenced, expect="Syntax instance")
+                return referenced
 
         if self.kind == GroupKind.COMMENT:
             raise RegexError("Comments are not supported in Syntax.rp yet", offender=self)

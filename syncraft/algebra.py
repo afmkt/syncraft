@@ -394,6 +394,22 @@ class Algebra(Generic[A, S]):
             return Right.new((value, input))
         return cls(success_run)
     
+    @classmethod
+    def resolve(cls, variable: str, soft_failure: bool) -> Algebra[Any, S]:
+        def resolve_run(input: S, cache: Cache[S] | None) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
+            yield from ()
+            if variable in input.ctx:
+                return Right.new((input.ctx.get(variable, ...), input))
+            else:
+                if soft_failure:
+                    return Left.new(Error.new(
+                        message=f"Unresolved variable '{variable}'",
+                        this=cls,
+                        state=input
+                    ))
+                else:
+                    raise SyncraftError(f"Unresolved variable '{variable}'", soft_failure=False, offender=variable)
+        return cls(resolve_run)
     
     def cut(self) -> Algebra[A, S]:
         def commit_error(e: Any) -> Error:

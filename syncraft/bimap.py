@@ -16,13 +16,12 @@ from typing import (
 from dataclasses import dataclass, field, is_dataclass, fields, replace
 from syncraft.utils import FrozenDict, CallWith
 from abc import ABC, abstractmethod
+from syncraft.ast import SyncraftError
 
-
-class DataError(Exception):
+class DataError(SyncraftError):
     def __init__(self, message: str, reason: list[Any] | None = None, *, soft_failure: bool = False):
-        super().__init__(message)
+        super().__init__(message, offender=None, soft_failure=soft_failure)
         self.reason = reason
-        self.soft_failure = soft_failure
         self.rule: str | None = None
         self.file: str | None = None
         self.line: int | None = None

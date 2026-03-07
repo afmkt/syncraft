@@ -1268,17 +1268,6 @@ class Syntax(Generic[A, S]):
             alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).bind(entry=entry, **f),
             can_normalize=self._updated_can_normalize(block_normalization=True),
         )
-    
-    def resolve(self, name: str, entry: EntryCategory = EntryCategory.Parse) -> Syntax[A, S]:
-        match entry:
-            case EntryCategory.Parse:
-                return self.map(lambda value, ctx: ctx[name], block_normalization=True)
-            case EntryCategory.Generate:
-                return self.imap(lambda value, ctx: ctx[name], block_normalization=True)
-            case EntryCategory.Format:
-                return self.fmt(lambda value, ctx: ctx[name], block_normalization=True)
-            case _:
-                raise SyncraftError(f"Invalid entry category: {entry}", offender=entry, expect=f"None, {EntryCategory.Parse}, {EntryCategory.Generate}, or {EntryCategory.Format}")
 
     def check(self, 
               pred: Callable[..., bool], 
@@ -1332,6 +1321,10 @@ class Syntax(Generic[A, S]):
     @classmethod
     def success(cls, value: B) -> Syntax[B, S]:
         return cls.factory('success', value=value)
+
+    @classmethod    
+    def resolve(cls, variable: str, soft_failure: bool = False) -> Syntax[A, S]:
+        return cls.factory('resolve', variable=variable, soft_failure=soft_failure)
 
 
     @classmethod
