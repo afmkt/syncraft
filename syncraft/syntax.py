@@ -1292,8 +1292,10 @@ class Syntax(Generic[A, S]):
               def pred(value, x):
                   return value > x
               the variable x would be resolved from the context by its name `x` when the predicate is evaluated.
-        forward: If True, the predicate is applied in the forward direction (after parsing). 
-                 If False, it is applied in the reverse direction (before unparsing).
+        entry: Indicates which stage to apply the check on. It can be one of EntryCategory.Parse, EntryCategory.Generate, or EntryCategory.Format.
+               - If EntryCategory.Parse, the predicate will be applied during parsing, and a failure will trigger backtracking.
+               - If EntryCategory.Generate, the predicate will be applied during generation, and a failure will raise an error.
+               - If EntryCategory.Format, the predicate will be applied during formatting, and a failure will raise an error.
         level: The stack level to use for error reporting. 0 means the caller of check, 1 means the caller's caller, etc. 
                This is used to get the correct file and line number for error messages.
         message: Optional custom error message template to use when the predicate fails. 
@@ -1308,9 +1310,10 @@ class Syntax(Generic[A, S]):
             vars = [ctx.get(name, ...) for name in names]
             if not pred(value, *vars):
                 if message is None:
-                    raise DataError(f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}\n{message}", soft_failure=True)                    
+                    msg = f"Predicate {pred} (at {file}:{line}) failed for value {value} with context {ctx}\n{message}" 
                 else:
-                    raise DataError(message.format(value, ctx), soft_failure=False)
+                    msg = message.format(value=value, ctx=ctx)
+                raise DataError(msg, soft_failure=entry is not  EntryCategory.Parse)
             return value
         match entry:
             case EntryCategory.Parse:
