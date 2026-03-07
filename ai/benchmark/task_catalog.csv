@@ -1,5 +1,0 @@
-task_id,title,difficulty,category,description,test_file,notes
-T001,Number list parse+generate,small,list,"Comma-separated integer list with roundtrip",tests/test_ai_t001.py,
-T002,Arithmetic precedence,medium,expr,"+ and * precedence with nested parens",tests/test_ai_t002.py,
-T003,JSON-like object pairs,medium,object,"Key:value pairs with optional whitespace",tests/test_ai_t003.py,
-T004,Recursive binary expr,hard,recursion,"num | (expr op expr) with transforms",tests/test_ai_t004.py,
