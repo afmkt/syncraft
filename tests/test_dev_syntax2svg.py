@@ -1,11 +1,6 @@
 import pytest
 
 try:  # pragma: no cover - guard optional test dependencies
-    import rstr  # type: ignore  # noqa: F401
-except ImportError:  # pragma: no cover - tests skipped when optional deps missing
-    pytest.skip("rstr is required for syntax spec construction", allow_module_level=True)
-
-try:  # pragma: no cover - guard optional test dependencies
     import railroad  # type: ignore  # noqa: F401
 except ImportError:  # pragma: no cover - tests skipped when optional deps missing
     pytest.skip("railroad-diagrams is required for SVG rendering", allow_module_level=True)

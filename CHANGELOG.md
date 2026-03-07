@@ -8,6 +8,7 @@ This project follows Semantic Versioning from `1.0.0` onward.
 - Contributor guide for a single-maintainer workflow.
 - Security policy with vulnerability reporting guidance.
 - Concept docs, FAQ, and runnable examples.
+- **Streaming parsing** as an established feature: `Grammar.parse_stream()`, `StreamCursor`, and incremental `ParserState` with backtracking support via `choice_depth` and `safe_base` tracking.
 
 ## [0.3.2] - 2026-03-07
 

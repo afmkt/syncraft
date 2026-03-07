@@ -6,7 +6,6 @@ import re
 
 from syncraft.utils import CallWith, FrozenDict
 from dataclasses import dataclass, field, fields, is_dataclass
-import rstr
 
 
 
@@ -198,10 +197,7 @@ class Structured(TokenSpecBase):
             data = {}
             for k, v in kwargs.items():
                 if isinstance(v, re.Pattern):
-                    try:
-                        data[k] = rstr.xeger(v)
-                    except Exception:
-                        data[k] = v.pattern
+                    data[k] = v.pattern
                 else:
                     data[k] = v
             return ((), data)

@@ -22,9 +22,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 requires-python = ">=3.10"
-dependencies = [
-    "rstr>=3.2.2",
-]
+dependencies = []
 
 [project.urls]
 Documentation = "https://afmkt.github.io/syncraft/"

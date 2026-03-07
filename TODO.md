@@ -3,8 +3,7 @@ TODO
 ## Now (high value)
 - [ ] Static analyzer for grammar/DX diagnostics
 - [ ] Interactive parse tree visualizer for parse/debug experience
-- [ ] Streaming parsing test/debug toolkit (tests + trace helpers + examples)
-- [ ] Remove `rstr` dependency
+- [x] Remove `rstr` dependency
 
 ## Next (clarify and de-risk)
 - [ ] LSP-from-grammar feasibility spike (scope, architecture, minimal prototype)
