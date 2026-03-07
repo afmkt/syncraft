@@ -11,7 +11,7 @@ from syncraft.parser import parser
 from syncraft.generator import generator, validator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
-from syncraft.utils import file as get_file, line as get_line, func as get_func
+from syncraft.utils import file as get_file, line as get_line, func as get_func, ThreadLocalDict
 import io
 import asyncio
 import textwrap
@@ -172,9 +172,9 @@ def grammar(cls: type) -> type:
             setattr(cls, name, value)
     setattr(cls, '_rules', rules)
     setattr(cls, '_root_rule', root)
-    setattr(cls, '_parser', dict())
-    setattr(cls, '_generator', dict())
-    setattr(cls, '_validator', dict())
+    setattr(cls, '_parser', ThreadLocalDict())
+    setattr(cls, '_generator', ThreadLocalDict())
+    setattr(cls, '_validator', ThreadLocalDict())
     return cls
 
         
@@ -196,15 +196,17 @@ class Grammar(metaclass=GrammarMeta):
     text according to syntax rules. Grammars are typically defined using the
     @grammar class decorator, which automatically collects Syntax rules and
     provides parsing and generation methods.
-    
-    The Grammar class caches parsers and generators for efficiency across
-    multiple parse/generate operations.
+
+    Thread-safety: Each thread maintains isolated caches for parsers, generators,
+    and validators using thread-local storage. This eliminates lock contention
+    and ensures safe concurrent use of the same grammar across multiple threads.
     
     Attributes:
         _rules: Dictionary mapping rule names to Syntax definitions.
         _root_rule: The entry point syntax for the grammar (marked with is_root=True).
-        _parser: Cache of parser algebras for rules.
-        _generator: Cache of generator algebras for rules.
+        _parser: Thread-local cache of parser algebras for rules.
+        _generator: Thread-local cache of generator algebras for rules.
+        _validator: Thread-local cache of validator algebras for rules.
     
     Example:
         >>> @grammar
@@ -218,9 +220,9 @@ class Grammar(metaclass=GrammarMeta):
     """
     _rules: Dict[str, Syntax]
     _root_rule: Syntax | None
-    _parser: Dict[Syntax, Algebra]
-    _generator: Dict[Syntax, Algebra]
-    _validator: Dict[Syntax, Algebra]
+    _parser: ThreadLocalDict
+    _generator: ThreadLocalDict
+    _validator: ThreadLocalDict
 
 
     @classmethod
@@ -245,9 +247,9 @@ class Grammar(metaclass=GrammarMeta):
         super().__init_subclass__(**kwargs)
         cls._rules = dict()
         cls._root_rule = None
-        cls._parser = dict()
-        cls._generator = dict()
-        cls._validator = dict()
+        cls._parser = ThreadLocalDict()
+        cls._generator = ThreadLocalDict()
+        cls._validator = ThreadLocalDict()
     
 
     @classmethod
@@ -264,8 +266,9 @@ class Grammar(metaclass=GrammarMeta):
             if cls._root_rule is None:
                 raise ValueError("No root rule defined for the grammar")
             syntax = cls._root_rule
-        if syntax in cls._parser:
-            return cls._parser[syntax]
+        cached = cls._parser.get(syntax)
+        if cached is not None:
+            return cached
         ret = parser(syntax=syntax)
         cls._parser[syntax] = ret
         return ret
@@ -284,8 +287,9 @@ class Grammar(metaclass=GrammarMeta):
             if cls._root_rule is None:
                 raise ValueError("No root rule defined for the grammar")
             syntax = cls._root_rule
-        if syntax in cls._generator:
-            return cls._generator[syntax]
+        cached = cls._generator.get(syntax)
+        if cached is not None:
+            return cached
         ret = generator(syntax=syntax)
         cls._generator[syntax] = ret
         return ret
@@ -304,8 +308,9 @@ class Grammar(metaclass=GrammarMeta):
             if cls._root_rule is None:
                 raise ValueError("No root rule defined for the grammar")
             syntax = cls._root_rule
-        if syntax in cls._validator:
-            return cls._validator[syntax]
+        cached = cls._validator.get(syntax)
+        if cached is not None:
+            return cached
         ret = validator(syntax=syntax)
         cls._validator[syntax] = ret
         return ret
