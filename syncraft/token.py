@@ -197,7 +197,11 @@ class Structured(TokenSpecBase):
             data = {}
             for k, v in kwargs.items():
                 if isinstance(v, re.Pattern):
-                    data[k] = v.pattern
+                    try:
+                        import syncraft.regex as syncraft_regex
+                        data[k] = syncraft_regex.xeger(v, rnd=rnd)
+                    except Exception:
+                        data[k] = v.pattern
                 else:
                     data[k] = v
             return ((), data)

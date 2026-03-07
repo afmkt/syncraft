@@ -5,10 +5,12 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, Tuple, Union, Any, Type, Mapping
 import unicodedata
+import random
+import re as pyre
 
 from syncraft.algebra import Error, EntryCategory 
 from syncraft.syntax import Syntax
-from syncraft.fa import Builder
+from syncraft.fa import Builder, DEFAULT_TAG
 from syncraft.alphabet import Alphabet
 from syncraft.grammar import Grammar, lazy, rule, grammar
 from functools import reduce
@@ -86,7 +88,7 @@ class ShorthandKind(Enum):
         for kind in cls:
             if kind.value == literal:
                 return kind
-        raise ValueError(f"Unknown shorthand literal: {literal}")
+        raise RegexError(f"Unknown shorthand literal: {literal}", offender=literal, expect="One of \\d, \\D, \\w, \\W, \\s, \\S")
 
     @classmethod
     def to_literal(cls, kind: ShorthandKind) -> str:
@@ -829,17 +831,47 @@ def re(pattern: str) -> Builder[str]:
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
-            raise SyncraftError("Regex parse failed", offender=parsed, expect=parsed.summary)
-        raise SyncraftError("Regex parse failed", offender=parsed)
+            raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
+        raise RegexError("Regex parse failed", offender=parsed)
     return parsed.builder()
+
+
+def xeger(
+    pattern: str | pyre.Pattern[str],
+    *,
+    rnd: random.Random | None = None,
+    seed: int | None = None,
+) -> str:
+    if rnd is not None and seed is not None:
+        raise ValueError("Provide either 'rnd' or 'seed', not both")
+
+    pattern_text = pattern.pattern if isinstance(pattern, pyre.Pattern) else pattern
+    parsed = parse(pattern_text)
+    if not isinstance(parsed, Regex):
+        if isinstance(parsed, Error):
+            raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
+        raise RegexError("Regex parse failed", offender=parsed)
+
+    alphabet = Alphabet(str)
+    dfa = parsed.builder().compile(alphabet).dfa.with_default_tag_invariant()
+    rng = rnd if rnd is not None else random.Random(seed)
+    result = dfa.reverse.gen(DEFAULT_TAG, rng)
+
+    # For text alphabet, gen() always returns str after internal concat
+    if not isinstance(result, str):
+        raise RegexError(
+            f"Expected string from text DFA generation, got {type(result).__name__}",
+            offender=result
+        )
+    return result
 
 
 def rp(pattern: str, *, syntax_cls: Type[Syntax] | None = None, **refs: Syntax[Any, Any]) -> Syntax[Any, Any]:
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
-            raise SyncraftError("Regex parse failed", offender=parsed, expect=parsed.summary)
-        raise SyncraftError("Regex parse failed", offender=parsed)
+            raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
+        raise RegexError("Regex parse failed", offender=parsed)
     if syntax_cls is None:
         if len(refs) > 0:
             syntax_cls = type(next(iter(refs.values())))
