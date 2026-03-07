@@ -44,6 +44,12 @@ from .format import (
     
 )
 
+try:
+    from importlib.metadata import version
+    __version__ = version("syncraft")
+except Exception:
+    __version__ = "0.0.0+unknown"
+
 # Export commonly used class methods for convenience
 
 __all__ = [
@@ -55,4 +61,5 @@ __all__ = [
     "SyncraftError",
     "RegexError",
     "LayoutDoc",
+    "__version__",
 ]

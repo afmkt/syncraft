@@ -1496,7 +1496,7 @@ class Syntax(Generic[A, S]):
                 iso = iso >> unary_iso
         children = tuple(rs[0] for rs in runtime_steps)
         base = cls(alg_f=seq_f, spec=spec, _children=children)
-        wrapped = base.iso(iso, block_normalization=False)
+        wrapped = base.iso(iso, block_normalization=False) # type: ignore
         return replace(wrapped, _children=children) 
 
     @classmethod

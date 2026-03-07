@@ -7,6 +7,20 @@ license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{name = "Michael Shen", email = "mshen7310@hotmail.com"}]
 keywords = ["parser", "combinator", "generator"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
 requires-python = ">=3.10"
 dependencies = [
     "rstr>=3.2.2",
