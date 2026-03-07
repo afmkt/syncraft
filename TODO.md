@@ -9,7 +9,6 @@ TODO
 ## Next (clarify and de-risk)
 - [ ] LSP-from-grammar feasibility spike (scope, architecture, minimal prototype)
 - [ ] Grammar modularization design spike (module boundaries, imports, composition APIs)
-- [ ] Document and test "parallel parsing" guarantees (thread/process safety matrix)
 
 ## Later (platform/ecosystem)
 - [ ] Integrate `Tracer` performance profile into parse tree visualizer

@@ -80,6 +80,45 @@ def underline(text: str, ul: bool) -> str:
 @total_ordering
 @dataclass(frozen=True, slots=True)
 class ParserState(Bindable, Generic[T]):
+    """Immutable parser checkpoint used for incremental/streaming parsing.
+
+    Attributes:
+        input:
+            Currently buffered input window. This is either a token tuple,
+            a text chunk, or a bytes chunk.
+        index:
+            Current read position within ``input`` (relative offset).
+        base:
+            Absolute start offset of the current ``input`` window in the full
+            stream. The absolute cursor position is ``base + index``.
+        final:
+            ``True`` when no more input will arrive from the stream.
+        safe_base:
+            Absolute offset that is safe to discard from the left side of the
+            buffer. This is controlled by ``choice_depth``:
+
+            - ``enter()`` increases depth when parser begins exploring choices.
+            - While depth is non-zero, ``safe_base`` is held steady so earlier
+                input remains available for backtracking.
+            - ``leave()`` decreases depth; when depth returns to zero,
+                ``safe_base`` advances to
+                ``max(safe_base, base + index)`` (committed absolute progress).
+            - ``extend()`` / ``gc()`` can then drop buffered data before
+                ``safe_base`` to keep memory bounded.
+
+            In short: ``safe_base`` marks the leftmost point guaranteed not to
+            be needed by any active alternative.
+        choice_depth:
+            Nesting level of active choice/backtracking contexts. While this is
+            greater than zero, the parser is inside one or more unresolved
+            alternatives, so ``safe_base`` must not move forward yet. When
+            depth returns to zero, all active choice scopes are closed and
+            ``safe_base`` may advance.
+        line:
+            1-based line number for text input diagnostics.
+        column:
+            1-based column number for text input diagnostics.
+    """
 
 
     input: Tuple[T, ...] | str | bytes = field(default_factory=tuple, compare=False, hash=False)
