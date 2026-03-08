@@ -841,6 +841,7 @@ class Syntax(Generic[A, S]):
                *,
                breaks: Literal['never', 'optional', 'required'] = 'never',
                indent: int = 0,
+               right: bool = True,
                ) -> Syntax["LayoutDoc", S]:
         """Attach declarative formatting metadata to this grammar subtree.
 
@@ -861,6 +862,11 @@ class Syntax(Generic[A, S]):
         indent:
             Extra indentation depth (non-negative integer) applied to nested
             breaks within this subtree. Used by ``Nest`` in the layout tree.
+        
+        right:
+            Whether to attach line breaks to the right (default) or left of this node.
+            This controls whether breaks introduced by this formatting node will prefer to 
+            break before (right=False) or after (right=True) this node when breaking.
 
         """
         from syncraft.format import Nest, Group, Concat, Line, LayoutDoc
@@ -868,12 +874,12 @@ class Syntax(Generic[A, S]):
         def to_doc(ast: Any) -> "LayoutDoc":
             doc = LayoutDoc.from_ast(ast)
             if breaks == 'optional':
-                body: LayoutDoc = Concat(parts=(doc, Line()))
+                body: LayoutDoc = Concat(parts=(doc, Line())) if right else Concat(parts=(Line(), doc))
                 if indent > 0:
                     body = Nest(ast=ast, body=body, level=indent)
                 return Group(ast=ast, body=body)
             elif breaks == 'required':
-                body = Concat(parts=(doc, Line(flat="\n")))
+                body = Concat(parts=(doc, Line(flat="\n"))) if right else Concat(parts=(Line(flat="\n"), doc))
                 if indent > 0:
                     body = Nest(ast=ast, body=body, level=indent)
                 return Group(ast=ast, body=body)
@@ -1704,6 +1710,17 @@ class Syntax(Generic[A, S]):
         """Reconstruct a `Syntax` tree from a graph produced by `Syntax.graph()`."""
         c: Dict[SyntaxSpec, Syntax] = {}
         return graph.root.syntax(cls, cache=c)
+
+    def to_ebnf(self) -> str:
+        """Export this syntax to canonical EBNF text."""
+        from syncraft.ebnf import syntax_to_ebnf_text
+        return syntax_to_ebnf_text(self)
+
+    @classmethod
+    def from_ebnf(cls, source: str) -> Syntax:
+        """Build syntax from EBNF text."""
+        from syncraft.ebnf import ebnf_text_to_syntax
+        return ebnf_text_to_syntax(source, syntax_cls=cls)
     
     def parse(self, data: str) -> Any:
         """Parse text using this syntax.
