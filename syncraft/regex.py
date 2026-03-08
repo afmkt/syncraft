@@ -703,7 +703,7 @@ class RE(Grammar):
     comment = S.lex(B.range("\u0000", "\U0010FFFF") - B.lit(")").many(at_least=1))
 
     @lazy(S)
-    def group(): # type: ignore
+    def group(_): 
         return S.alt(
             S.seq(RE.lparen, +RE.regex, RE.rparen).to(lambda env: env.X, 
                                                       lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),

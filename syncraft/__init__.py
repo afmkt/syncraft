@@ -44,6 +44,7 @@ from .format import (
     
 )
 
+
 try:
     from importlib.metadata import version
     __version__ = version("syncraft")

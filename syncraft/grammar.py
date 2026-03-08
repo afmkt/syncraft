@@ -12,6 +12,7 @@ from syncraft.generator import generator, validator
 from syncraft.cache import Cache
 from syncraft.input import StreamCursor
 from syncraft.utils import file as get_file, line as get_line, func as get_func, ThreadLocalDict
+
 import io
 import asyncio
 import textwrap
@@ -52,6 +53,10 @@ def rule(syntax: Syntax, *, name: str | None = None, is_root: bool = False) -> S
     return ret
 
 
+def ignore_argument(cls_f: Callable[..., Syntax], first:Any) -> Callable[..., Syntax]:
+    def wrapper() -> Syntax:
+        return cls_f(first)
+    return wrapper
 
 def lazy(S: type[Syntax], name: str | None | Callable[..., Syntax] = None, *, is_root: bool = False) -> Any:
     """Create a lazy-evaluated syntax rule for recursive or forward-referenced grammars.
@@ -85,11 +90,11 @@ def lazy(S: type[Syntax], name: str | None | Callable[..., Syntax] = None, *, is
         else:
             return S.lazy(name)._named(name=None, file=file, line=line, func=func)
     elif isinstance(name, str) or name is None:
-        def wrapper(f: Callable[..., Syntax]) -> Syntax:
+        def wrapper(cls_f: Callable[..., Syntax]) -> Syntax:            
             if is_root:
-                return S.lazy(f).as_root()._named(name=name if name is not None else f.__name__, file=file, line=line, func=func)
+                return S.lazy(ignore_argument(cls_f, S)).as_root()._named(name=name if name is not None else cls_f.__name__, file=file, line=line, func=func)
             else:
-                return S.lazy(f)._named(name=name if name is not None else f.__name__, file=file, line=line, func=func)
+                return S.lazy(ignore_argument(cls_f, S))._named(name=name if name is not None else cls_f.__name__, file=file, line=line, func=func)
         return wrapper
     else: 
         raise TypeError(f"Argument to lazy must be a callable or a string or a boolean, got {type(name)}")

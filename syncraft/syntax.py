@@ -1140,7 +1140,7 @@ class Syntax(Generic[A, S]):
         """Parse `left`, then `self`, then `right`, returning `self` value."""
         return self.seq(left , +self , right)
 
-    def sep_by(self, sep: Syntax[B, S]) -> Syntax[Tuple[A, ...], S]:
+    def sep_by(self, sep: Syntax[B, S], at_least:int = 1) -> Syntax[Tuple[A, ...], S]: # type: ignore
         """Parse this syntax separated by the given separator.
         
         Parses one or more occurrences of this syntax separated by ``sep`` and
@@ -1148,7 +1148,7 @@ class Syntax(Generic[A, S]):
         
         Args:
             sep: Separator syntax to use between elements.
-            
+            at_least: Minimum number of occurrences required.
         Returns:
             Syntax producing ``Tuple[A, ...]`` (separators are not included in
             the output value).
@@ -1160,7 +1160,6 @@ class Syntax(Generic[A, S]):
             >>> syntax = A.sep_by(comma)
             >>> # Parses "a,a,a" and produces ('a', 'a', 'a')
         """
-        
         def fwd(t: Tuple[A, Tuple[A, ...]], ctx: Any) -> Tuple[A, ...]:
             first, rest = t
             return tuple([first] + list(rest))
@@ -1171,7 +1170,20 @@ class Syntax(Generic[A, S]):
 
         # Block normalization on self to prevent flattening when used in seq
         self_blocked = self.atomic
-        return (self_blocked + (sep >> self_blocked).many()).bimap(fwd, inv)
+        ret1 = (self_blocked + (sep >> self_blocked).many()).bimap(fwd, inv)
+
+        if at_least == 0:
+            def fwd0(t: Any, ctx: Any) -> Tuple[A, ...]:
+                assert isinstance(t, tuple) or t is Nothing
+                return t if t is not Nothing else tuple() # type: ignore
+            def inv0(v: Tuple[A, ...], ctx: Any) -> Any:
+                assert isinstance(v, tuple)
+                return v if v else Nothing
+            return ret1.optional.bimap(fwd0, inv0)
+        elif at_least == 1:
+            return ret1
+        else:
+            raise SyncraftError(f"at_least must be 1 or 0, got {at_least}", offender=at_least, expect="non-negative integer with 0 or 1")
 
 
     def parens(
@@ -1588,8 +1600,43 @@ class Syntax(Generic[A, S]):
 
         This is lexical regex matching (token-level). For recursive grammar
         fragments with `(?&name)` references, use `Syntax.rp(...)`.
+        
+        Args:
+            pattern: Regular expression pattern for matching.
+            skip: Mark this terminal for automatic skipping (whitespace/comments).
+            tag: Optional tag for lexer identification.
+            push: Push a new lexer mode when this token is matched (requires
+                  GlobalLexerBuilder).
+            pop: Pop the current lexer mode when this token is matched (requires
+                 GlobalLexerBuilder).
+            of: Specifies which mode this rule belongs to (requires
+                GlobalLexerBuilder).
+        
         NOTE:
-            This API only works on str input
+            This API only works on str input.
+        
+        Skip Flag Behavior:
+            The `skip` flag marks tokens for automatic filtering between other
+            terminals. Behavior depends on the lexer builder mode:
+            
+            - **LocalLexerBuilder** (default): `skip=True` affects ONLY this
+              specific terminal. If this terminal is explicitly included in your
+              grammar (e.g., `S.re(r"\\s+", skip=True) + S.lit("x")`), the skip
+              node still yields its text. Skip is NOT globally applied to other
+              terminals.
+            
+            - **GlobalLexerBuilder**: `skip=True` is unioned into a shared DFA.
+              Marked tokens are automatically filtered between ALL terminals in
+              the grammar.
+            
+            For grammars using `S.rp()` patterns, explicit spacing in the pattern
+            is often clearer than relying on skip flags.
+        
+        Lexer Modes (GlobalLexerBuilder only):
+            The `push`, `pop`, and `of` parameters enable context-sensitive
+            lexing (e.g., string interpolation, nested comments). These features
+            require `GlobalLexerBuilder` as they depend on a unified lexer state
+            machine. See `GlobalLexerBuilder` documentation for details.
         """
         # local import to avoid circular dependency
         import syncraft.regex as regex  
@@ -1641,6 +1688,9 @@ class Syntax(Generic[A, S]):
         NOTE:
         - Keep reference names aligned between `(?&name)` and `name=...`.
         - Recursive references should usually be wrapped in `Syntax.lazy(...)`.
+        - Global lexer skip behavior configured via grammar terminals does not
+            automatically apply inside `rp` patterns; include spacing/comments in
+            the pattern itself when needed.
         - Backreferences in classic regex style are not supported;
           model structural dependencies through grammar composition instead.
         - This API only works on str input, as regex matching is inherently string-based.
@@ -1667,8 +1717,33 @@ class Syntax(Generic[A, S]):
             of: str | None = None) -> Syntax:
         """
         Create a literal terminal syntax from exact text.
+        
+        Args:
+            txt: Exact text to match.
+            skip: Mark this terminal for automatic skipping (whitespace/comments).
+            tag: Optional tag for lexer identification.
+            push: Push a new lexer mode when this token is matched (requires
+                  GlobalLexerBuilder).
+            pop: Pop the current lexer mode when this token is matched (requires
+                 GlobalLexerBuilder).
+            of: Specifies which mode this rule belongs to (requires
+                GlobalLexerBuilder).
+        
         NOTE:
-        - This API only works on str input.
+            This API only works on str input.
+        
+        Skip Flag Behavior:
+            The `skip` flag marks tokens for automatic filtering. Behavior
+            depends on the lexer builder mode:
+            
+            - **LocalLexerBuilder** (default): Skip is NOT globally applied.
+              Each terminal has its own independent lexer.
+            
+            - **GlobalLexerBuilder**: Skip is globally applied via DFA union.
+              Marked tokens are filtered between all terminals.
+            
+            See `Syntax.re()` and `GlobalLexerBuilder` documentation for
+            detailed skip semantics and lexer mode features.
         """
         b: Builder[Any]= Builder.lit(txt).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
         ret = cls.lex(b)

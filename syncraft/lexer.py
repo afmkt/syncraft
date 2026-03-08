@@ -519,6 +519,25 @@ class ExtLexer(LexerProtocol[T]):
 
 @dataclass(frozen=True, slots=True)
 class LocalLexerBuilder(LexerBuilder[C]):
+    """Per-terminal lexer builder (Syncraft's default mode).
+    
+    Each terminal (`S.re()`, `S.lit()`) gets its own independent lexer.
+    The `skip=True` flag affects only that specific terminal and is NOT
+    globally applied to other terminals in the grammar.
+    
+    Example:
+        >>> S = Syntax.set()  # Uses LocalLexerBuilder by default
+        >>> _ws = S.re(r"\\s+", skip=True)  # Skip only for this terminal
+        >>> expr = S.lit("a") + S.lit("b")   # "a b" will NOT parse
+        >>> # Each lit() has its own lexer without whitespace skipping
+    
+    Use this mode when:
+    - Terminals have different whitespace/spacing rules
+    - Using `S.rp()` patterns with explicit spacing
+    - You want fine-grained control over where skipping applies
+    
+    For global skip behavior, use `GlobalLexerBuilder` instead.
+    """
     lexer: LexerProtocol[C] | None = field(default=None, compare=False, hash=False, repr=False)
     def __call__(self, arg: TokenSpec | Builder, **kwargs: Any) -> LocalLexerBuilder[C]:
         if isinstance(arg, TokenSpec):
@@ -550,6 +569,37 @@ class LocalLexerBuilder(LexerBuilder[C]):
 
 @dataclass(slots=True)
 class GlobalLexerBuilder(LexerBuilder[C]):
+    """Unified DFA lexer builder for global skip behavior.
+    
+    All terminals are combined into a single DFA. The `skip=True` flag is
+    globally applied: marked tokens are automatically filtered between ALL
+    terminals in the grammar.
+    
+    Example:
+        >>> G = Syntax.set_lexer(GlobalLexerBuilder())
+        >>> _ws = G.re(r"\\s+", skip=True)  # Global skip rule
+        >>> expr = G.lit("a") + G.lit("b")   # "a b" parses successfully
+        >>> # Whitespace is skipped between all terminals
+    
+    Features requiring GlobalLexerBuilder:
+    - **Global skip behavior**: skip=True applies to all terminals
+    - **Lexer modes**: push/pop/of parameters for context-sensitive lexing
+      (e.g., string interpolation, nested comments)
+    - **Priority rules**: Disambiguate overlapping patterns with explicit
+      precedence (higher priority wins)
+    - **Non-greedy matching**: Shortest-match semantics instead of maximal
+      munch (useful for minimal string matching)
+    - **DFA caching**: Compiled lexer persisted to disk for faster startup
+    
+    Use this mode when:
+    - All terminals share the same whitespace/comment skipping rules
+    - You need lexer modes for context-sensitive tokens
+    - You want traditional lexer behavior (single tokenization pass)
+    - Performance optimization via compiled DFA
+    
+    Note: Cannot mix `S.rp()` with GlobalLexerBuilder; rp patterns are
+    PEG-based and bypass the DFA lexer.
+    """
     args: Set[Builder] = field(default_factory=set)
 
     builtin: bool = False
