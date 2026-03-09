@@ -54,10 +54,10 @@ class RegexNode:
         *,
         syntax_cls: Type[Syntax],
         case_insensitive: bool = False,
-        references: Mapping[str, Syntax[Any, Any]] | None = None,
-    ) -> Syntax[Any, Any]:
+        references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
+    ) -> Tuple[Syntax[Any, Any], bool]:
         b = self.builder(case_insensitive=case_insensitive)
-        return syntax_cls.lex(b)
+        return syntax_cls.lex(b), True
 
 
 @dataclass(frozen=True)
@@ -205,11 +205,11 @@ class CharClassAtom(RegexNode):
         *,
         syntax_cls: Type[Syntax],
         case_insensitive: bool = False,
-        references: Mapping[str, Syntax[Any, Any]] | None = None,
-    ) -> Syntax[Any, Any]:
+        references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
+    ) -> Tuple[Syntax[Any, Any], bool]:
         b = self.builder(case_insensitive=case_insensitive)
         # return syntax_cls.lex(b).bimap(_rp_forward, _rp_inverse)
-        return syntax_cls.lex(b)
+        return syntax_cls.lex(b), True
 
 
 
@@ -289,8 +289,8 @@ class GroupAtom(RegexNode):
         *,
         syntax_cls: Type[Syntax],
         case_insensitive: bool = False,
-        references: Mapping[str, Syntax[Any, Any]] | None = None,
-    ) -> Syntax[Any, Any]:
+        references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
+    ) -> Tuple[Syntax[Any, Any], bool]:
         self.validate()
         if self.kind == GroupKind.FLAGS_SCOPED:
             if self.regex is None or self.inline_flags is None:
@@ -314,8 +314,11 @@ class GroupAtom(RegexNode):
                 # So we just raise error here to avoid the complexity of supporting dynamic references.
                 raise RegexError("Unknown syntax reference in Syntax.rp", offender=self.name, expect="Provide refs={'name': Syntax(...)}")
             referenced = references[self.name]
-            if not isinstance(referenced, Syntax):
+            if not isinstance(referenced, (Syntax, tuple)):
                 raise RegexError("Invalid syntax reference in Syntax.rp", offender=referenced, expect="Syntax instance")
+            if isinstance(referenced, tuple):
+                if len(referenced) != 2 or not isinstance(referenced[0], Syntax) or not isinstance(referenced[1], bool):
+                    raise RegexError("Invalid syntax reference tuple in Syntax.rp", offender=referenced, expect="Tuple[Syntax, bool]")
             return referenced
 
         if self.kind == GroupKind.COMMENT:
@@ -330,10 +333,10 @@ class GroupAtom(RegexNode):
             return inner
 
         if self.kind == GroupKind.CAPTURE:
-            captured = inner
+            captured = inner if isinstance(inner, Syntax) else inner[0]
             if self.name:
-                return captured.bind(EntryCategory.Parse, **{self.name: lambda m, _: m})
-            return captured
+                return captured.bind(EntryCategory.Parse, **{self.name: lambda m, _: m}), True
+            return captured, True
 
         raise RegexError("Unsupported group type in parser regex", offender=self)
         
@@ -391,8 +394,8 @@ class AnchorAtom(RegexNode):
         *,
         syntax_cls: Type[Syntax],
         case_insensitive: bool = False,
-        references: Mapping[str, Syntax[Any, Any]] | None = None,
-    ) -> Syntax[Any, Any]:
+        references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
+    ) -> Tuple[Syntax[Any, Any], bool]:
         raise RegexError("Anchors are not supported in Syntax.rp yet", offender=self)
     
 
@@ -438,8 +441,8 @@ class Piece(RegexNode):
         *,
         syntax_cls: Type[Syntax],
         case_insensitive: bool = False,
-        references: Mapping[str, Syntax[Any, Any]] | None = None,
-    ) -> Syntax[Any, Any]:
+        references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
+    ) -> Tuple[Syntax[Any, Any], bool]:
         if not self.has_group:
             return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
 
@@ -448,8 +451,9 @@ class Piece(RegexNode):
             return atom_syntax
 
         q = self.quantifier
-        repeated = atom_syntax.many(at_least=q.minimum, at_most=q.maximum)
-        return repeated
+        s, keep = atom_syntax
+        repeated = s.many(at_least=q.minimum, at_most=q.maximum)
+        return repeated, keep
 
 
 
@@ -475,8 +479,8 @@ class Branch(RegexNode):
         *,
         syntax_cls: Type[Syntax],
         case_insensitive: bool = False,
-        references: Mapping[str, Syntax[Any, Any]] | None = None,
-    ) -> Syntax[Any, Any]:
+        references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
+    ) -> Tuple[Syntax[Any, Any], bool]:
         if not self.has_group:
             return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
         
@@ -494,7 +498,8 @@ class Branch(RegexNode):
         for piece in pieces:
             if piece.has_group:
                 flush_buffered_builders()
-                parts_list.append(+piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references))
+                item = piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
+                parts_list.append(item if isinstance(item, tuple) else (item, True))
             else:
                 q = piece.quantifier
                 if q is not None and q is not Nothing and q.minimum == 0:
@@ -510,7 +515,7 @@ class Branch(RegexNode):
         flush_buffered_builders()
 
         seq = syntax_cls.seq(*parts_list)
-        return seq
+        return seq, True
     
 
 
@@ -534,8 +539,8 @@ class Regex(RegexNode):
         *,
         syntax_cls: Type[Syntax],
         case_insensitive: bool = False,
-        references: Mapping[str, Syntax[Any, Any]] | None = None,
-    ) -> Syntax[Any, Any]:
+        references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
+    ) -> Tuple[Syntax[Any, Any], bool]:
 
         if not self.has_group:
             return RegexNode.syntax(self, syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
@@ -543,7 +548,7 @@ class Regex(RegexNode):
         group_branches = [branch for branch in self.branches if branch.has_group and branch.effective]
         plain_branches = [branch for branch in self.branches if not branch.has_group and branch.effective]
 
-        alternatives: list[Syntax[Any, Any]] = []
+        alternatives: list[Tuple[Syntax[Any, Any], bool]] = []
         alternatives.extend(branch.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references) for branch in group_branches)
 
         if plain_branches:
@@ -553,14 +558,14 @@ class Regex(RegexNode):
             if plain_non_empty:
                 plain_builders = [branch.builder(case_insensitive=case_insensitive) for branch in plain_non_empty]
                 plain_merged = reduce(lambda a, b: a | b, plain_builders)
-                alternatives.append(syntax_cls.lex(plain_merged))
+                alternatives.append(+syntax_cls.lex(plain_merged))
 
             if has_plain_empty:
-                alternatives.append(syntax_cls.success(""))
+                alternatives.append(-syntax_cls.success(""))
 
         if len(alternatives) == 1:
             return alternatives[0]
-        return syntax_cls.alt(*alternatives)
+        return syntax_cls.alt(*(item[0] for item in alternatives)), True
     
 
 
@@ -629,9 +634,9 @@ class RE(Grammar):
                                                                                  ShorthandKind.to_literal).to(lambda env: env.X, 
                                                                                                               lambda env: ShorthandAtom(env.X))
     category_name = unicode_category.many()
-    positive_unicode_category = S.seq(escaped_p, +category_name, rbrace).to(lambda env: env.C, 
+    positive_unicode_category = S.seq(-escaped_p, +category_name, -rbrace).to(lambda env: env.C, 
                                                                             lambda env: UnicodeCategoryAtom(env.C, False))
-    negative_unicode_category = S.seq(escaped_P, +category_name, rbrace).to(lambda env: env.C, 
+    negative_unicode_category = S.seq(-escaped_P, +category_name, -rbrace).to(lambda env: env.C, 
                                                                             lambda env: UnicodeCategoryAtom(env.C, True))
 
     unicode_category_escape = S.alt(positive_unicode_category, negative_unicode_category)
@@ -665,7 +670,7 @@ class RE(Grammar):
     escaped_class_meta= backslash >> class_meta_char
     class_atom = class_literal | shorthand | escaped_metachar | control_escape | unicode_escape | unicode_category_escape | escaped_class_meta
 
-    irange = S.seq(+class_atom, minus, +class_atom).to(lambda env: (env.S, env.E), 
+    irange = S.seq(+class_atom, -minus, +class_atom).to(lambda env: (env.S, env.E), 
                                                        lambda env: CharRange(env.S, env.E))
     class_item = irange | class_atom
     
@@ -673,7 +678,7 @@ class RE(Grammar):
                                                                        lambda items: (items[0], tuple(items[1:])) if items and isinstance(items[0], str) and items[0] in '-]' else (Nothing,tuple(items)))
 
 
-    char_class = S.seq(lsquare, +(~caret), +class_class_items, rsquare).to(lambda env: (env.negated, env.items), 
+    char_class = S.seq(-lsquare, +(~caret), +class_class_items, -rsquare).to(lambda env: (env.negated, env.items), 
                                                                            lambda env: CharClassAtom(negated=env.negated, items=env.items))
 
     flag_text = S.lex(B.oneof("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
@@ -705,54 +710,54 @@ class RE(Grammar):
     @lazy(S)
     def group(_): 
         return S.alt(
-            S.seq(RE.lparen, +RE.regex, RE.rparen).to(lambda env: env.X, 
+            S.seq(-RE.lparen, +RE.regex, -RE.rparen).to(lambda env: env.X, 
                                                       lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),
-            S.seq(RE.lparen, RE.question, RE.colon, +RE.regex, RE.rparen).to(lambda env: env.X, 
+            S.seq(-RE.lparen, -RE.question, -RE.colon, +RE.regex, -RE.rparen).to(lambda env: env.X, 
                                                                              lambda env: GroupAtom(regex=env.X, kind=GroupKind.NON_CAPTURE)),
-            S.seq(S.lit("(?&"), +RE.name, RE.rparen).to(lambda env: env.name, 
+            S.seq(-S.lit("(?&"), +RE.name, -RE.rparen).to(lambda env: env.name, 
                                                         lambda env: GroupAtom(name=env.name, kind=GroupKind.SYNTAX_REF)),
-            S.seq(S.lit("(?="), +RE.regex, RE.rparen).to(lambda env: env.X, 
+            S.seq(-S.lit("(?="), +RE.regex, -RE.rparen).to(lambda env: env.X, 
                                                          lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
-            S.seq(S.lit("(?!"), +RE.regex, RE.rparen).to(lambda env: env.X, 
+            S.seq(-S.lit("(?!"), +RE.regex, -RE.rparen).to(lambda env: env.X, 
                                                          lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
-            S.seq(S.lit("(?<="), +RE.regex, RE.rparen).to(lambda env: env.X, 
+            S.seq(-S.lit("(?<="), +RE.regex, -RE.rparen).to(lambda env: env.X, 
                                                           lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
-            S.seq(S.lit("(?<!"), +RE.regex, RE.rparen).to(lambda env: env.X, 
+            S.seq(-S.lit("(?<!"), +RE.regex, -RE.rparen).to(lambda env: env.X, 
                                                           lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
-            S.alt(      S.seq(S.lit("(?"), +RE.number, RE.rparen),
-                        S.seq(S.lit("(?R"), RE.rparen),
-                        S.seq(S.lit("(?r"), RE.rparen),
-                        S.seq(S.lit("(?P"), RE.rparen),            
-                        S.seq(S.lit("(?p"), RE.rparen),
-                        S.seq(S.lit("(?0"), RE.rparen),   
+            S.alt(      S.seq(-S.lit("(?"), +RE.number, -RE.rparen),
+                        S.seq(-S.lit("(?R"), -RE.rparen),
+                        S.seq(-S.lit("(?r"), -RE.rparen),
+                        S.seq(-S.lit("(?P"), -RE.rparen),            
+                        S.seq(-S.lit("(?p"), -RE.rparen),
+                        S.seq(-S.lit("(?0"), -RE.rparen),
                     ).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="recursive group")),
 
-            S.seq(S.lit("(?P<"), +RE.name, RE.greater, +RE.regex, RE.rparen).to(lambda env: (env.name, env.regex), 
+            S.seq(-S.lit("(?P<"), +RE.name, -RE.greater, +RE.regex, -RE.rparen).to(lambda env: (env.name, env.regex), 
                                                                                 lambda env: GroupAtom(name=env.name, 
                                                                                                       regex=env.regex, 
                                                                                                       kind=GroupKind.CAPTURE)),
-            S.seq(S.lit("(?"), +RE.inline_flags_strict, RE.rparen).to(lambda env: env.inline_flags, 
+            S.seq(-S.lit("(?"), +RE.inline_flags_strict, -RE.rparen).to(lambda env: env.inline_flags, 
                                                                       lambda env: GroupAtom(inline_flags=env.inline_flags, 
                                                                                             kind=GroupKind.FLAGS)),
-            S.seq( S.lit("(?"), +RE.inline_flags_strict, RE.colon, +RE.regex, RE.rparen).to(lambda env: (env.inline_flags, env.regex), 
+            S.seq(-S.lit("(?"), +RE.inline_flags_strict, -RE.colon, +RE.regex, -RE.rparen).to(lambda env: (env.inline_flags, env.regex), 
                                                                                             lambda env: GroupAtom(inline_flags=env.inline_flags, 
                                                                                                                   regex=env.regex, 
                                                                                                                   kind=GroupKind.FLAGS_SCOPED)),
 
             
             S.seq(
-                S.lit("(?") | S.lit("(?=") | S.lit("(?!") | S.lit("(?<=") | S.lit("(?<!"), +RE.regex, RE.rparen
+                -(S.lit("(?") | S.lit("(?=") | S.lit("(?!") | S.lit("(?<=") | S.lit("(?<!")), +RE.regex, -RE.rparen
                 ).to(lambda env: env.regex, 
                      lambda env: unsuppoerted(regex=env.regex, 
                                               feature="lookaround assertion group")),
 
-            S.seq(S.lit("(?("), RE.number | RE.name, +RE.regex, RE.rparen).to(lambda env: env.regex, 
+            S.seq(-S.lit("(?("), -(RE.number | RE.name), +RE.regex, -RE.rparen).to(lambda env: env.regex, 
                                                                               lambda env:  unsuppoerted(regex=env.regex, 
                                                                                                         feature="group existence test")),
 
-            S.seq(S.lit("(?#"), 
+            S.seq(-S.lit("(?#"), 
                   +RE.comment,
-                  RE.rparen).to(lambda env: env.regex, 
+                  -RE.rparen).to(lambda env: env.regex, 
                                 lambda env: unsuppoerted(regex=env.regex, feature="comment group")),
                   
                 ).bind(group_counter = lambda _, c: c + 1 if c is not ... else 1)
@@ -764,13 +769,13 @@ class RE(Grammar):
 
 
     braced_quantifier = S.alt(
-        S.seq(lbrace, +number, rbrace).to(lambda env: env.M, 
+        S.seq(-lbrace, +number, -rbrace).to(lambda env: env.M, 
                                           lambda env: Quantifier(minimum=env.M, maximum=env.M)),
-        S.seq(lbrace, +number, comma, rbrace).to(lambda env: env.M, 
+        S.seq(-lbrace, +number, -comma, -rbrace).to(lambda env: env.M, 
                                                  lambda env: Quantifier(minimum=env.M, maximum=None)),
-        S.seq(lbrace, comma, +number, rbrace).to(lambda env: env.M, 
+        S.seq(-lbrace, -comma, +number, -rbrace).to(lambda env: env.M, 
                                                  lambda env: Quantifier(minimum=0, maximum=env.M)),
-        S.seq(lbrace, +number, comma, +number, rbrace).to(lambda env: (env.M, env.N), 
+        S.seq(-lbrace, +number, -comma, +number, -rbrace).to(lambda env: (env.M, env.N), 
                                                           lambda env: Quantifier(env.M, env.N))
     )
 
@@ -804,7 +809,7 @@ class RE(Grammar):
             group,
             )
 
-    piece = S.seq(atom, ~quantifier).to(lambda env: (env.atom, env.quantifier), 
+    piece = S.seq(+atom, ~quantifier).to(lambda env: (env.atom, env.quantifier), 
                                         lambda env: Piece(env.atom, env.quantifier))
 
     branch = piece.many().to(lambda env: env.piece, 
@@ -866,7 +871,7 @@ def xeger(
     return result
 
 
-def rp(pattern: str, *, syntax_cls: Type[Syntax] | None = None, **refs: Syntax[Any, Any]) -> Syntax[Any, Any]:
+def rp(pattern: str, *, syntax_cls: Type[Syntax] | None = None, **refs: Syntax[Any, Any] | Tuple[Syntax[Any, Any], bool]) -> Syntax[Any, Any]:
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
@@ -874,11 +879,19 @@ def rp(pattern: str, *, syntax_cls: Type[Syntax] | None = None, **refs: Syntax[A
         raise RegexError("Regex parse failed", offender=parsed)
     if syntax_cls is None:
         if len(refs) > 0:
-            syntax_cls = type(next(iter(refs.values())))
+            for ref in refs.values():
+                if isinstance(ref, Syntax):
+                    syntax_cls = type(ref)
+                elif isinstance(ref, tuple) and len(ref) == 2 and isinstance(ref[0], Syntax):
+                    syntax_cls = type(ref[0])
+                else:
+                    raise RegexError("Invalid reference provided to rp()", offender=ref, expect="Syntax instance or (Syntax instance, bool) tuple")
         else:
             syntax_cls = Syntax
-    converted = parsed.syntax(syntax_cls=syntax_cls, references=refs)
-    return converted
+    assert syntax_cls is not None  # for mypy
+
+    converted = parsed.syntax(syntax_cls=syntax_cls, references={k: v if isinstance(v, tuple) else (v, True) for k, v in refs.items()})
+    return converted[0]
     
 
 @dataclass

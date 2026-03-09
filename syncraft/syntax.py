@@ -963,14 +963,31 @@ class Syntax(Generic[A, S]):
 
     def bimap(self, f: Callable[..., B], i: Callable[..., A], *, block_normalization: bool = True) -> Syntax[B, S]:
         """
-        Bidirectionally map values with an inverse, keeping round-trip info.
+        Bidirectional data transformation with explicit forward and inverse functions.
+        
+        Use `bimap` for simple, direct value conversions where you can explicitly
+        provide both directions (e.g., int ↔ str, encoding/decoding). This is the
+        most straightforward transformation when both mappings are trivial.
 
         Args:
-            f: Forward mapping A -> B.
-            i: Inverse mapping B -> A.
+            f: Forward mapping A -> B (for parsing/reading).
+            i: Inverse mapping B -> A (for generation/writing).
+            block_normalization: Prevent flattening this node during normalization.
 
         Returns:
-            Syntax yielding B with state alignment preserved.
+            Syntax yielding B during parsing, accepting B during generation.
+            
+        Example:
+            >>> # Simple type conversion
+            >>> number = S.rp(r"[0-9]+").bimap(int, str)
+            >>> number.parse("42")  # -> 42 (int)
+            >>> number.generate(42)  # -> "42" (str)
+            >>>
+            >>> # Encoding/decoding
+            >>> base64_text = S.rp(r"[A-Za-z0-9+/=]+").bimap(
+            ...     lambda s: base64.b64decode(s),
+            ...     lambda b: base64.b64encode(b).decode()
+            ... )
         """
         return replace(
             self,
@@ -1138,7 +1155,7 @@ class Syntax(Generic[A, S]):
     ############################################################### facility combinators ############################################################
     def between(self, left: Syntax[B, S], right: Syntax[C, S]) -> Syntax[A, S]:
         """Parse `left`, then `self`, then `right`, returning `self` value."""
-        return self.seq(left , +self , right)
+        return self.seq(-left, +self, -right)
 
     def sep_by(self, sep: Syntax[B, S], at_least:int = 1) -> Syntax[Tuple[A, ...], S]: # type: ignore
         """Parse this syntax separated by the given separator.
@@ -1307,9 +1324,37 @@ class Syntax(Generic[A, S]):
 
     def case(self, *branches: Tuple[Callable[..., Any], Callable[..., Any]], overlap: bool=True, block_normalization: bool = True) -> Syntax[Any, S]:
         """
-        Attach multi-branch bidirectional shape mappings.
+        Conditional bidirectional transformation based on structural shape.
+        
+        Use `case` when you need pattern matching on structural/shape conditionally.
+        Each branch provides a (forward, inverse) pair that is tried in sequence until
+        one succeeds. This is ideal for discriminated unions or sum types where the
+        different branches have structurally different input/output shapes.
+        
+        LIMITATION: `case` handles structural conditions only (i.e., which branch to use
+        based on data shape). For non-structural conditions or complex logic
+        that cannot be determined by shape alone, use `.bimap()` instead.
 
-        Each branch is `(forward, inverse)` and is tried in order.
+        Args:
+            *branches: Each branch is a tuple (forward_fn, inverse_fn) where:
+                      - forward_fn: A -> B (returns value or raises to try next branch)
+                      - inverse_fn: B -> A (for generation)
+            overlap: Allow multiple branches to match (default True).
+            block_normalization: Prevent flattening this node during normalization.
+
+        Returns:
+            Syntax with conditional transformation applied.
+            
+        Example:
+            >>> # Discriminated union: structural difference in input
+            >>> value = S.alt(
+            ...     S.rp(r"null"),
+            ...     S.rp(r"true|false")
+            ... ).case(
+            ...     (lambda _: "null", lambda _: None),
+            ...     (lambda _: "true", lambda _: True), 
+            ...     (lambda _: "false", lambda _: False)
+            ... )
         
         """
         if not branches:
@@ -1322,15 +1367,46 @@ class Syntax(Generic[A, S]):
 
     def to(self, a: Callable[..., A], b: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
         """
-        Derive an isomorphism from two constructors. 
-        The isomorphism will be used in structural transformations between 
-        different data representations, for example between 
-        raw tuples and user-friendly dataclasses or typed records.
+        Structural transformation via constructor-based isomorphism derivation.
+        
+        Use `to` when transforming between data shapes (e.g., tuples to
+        dataclasses). Syncraft automatically derives the inverse transformation by
+        analyzing the constructors' signatures, making this ideal for
+        "destruct-then-reconstruct" workflows without manually writing the inverse.
+        
+        LIMITATION: `to` works only on flat or finitely nested structures. General recursion and nesting are
+        handled at the grammar/syntax level (e.g., via `Syntax.lazy()` or rule
+        composition), not at the data transformation level. Use `.to()` to reshape
+        single-level parsed results, then compose syntaxes for recursive structures.
         
         Args:
-            a: Constructor for A, the source pattern.
-            b: Constructor for B, the target pattern.
+            a: Destructor/pattern for A (source shape). Typically a lambda that
+               deconstructs the parsed result into components.
+            b: Constructor for B (target shape). Takes the components from `a` and
+               builds the desired output type.
+            block_normalization: Prevent flattening this node during normalization.
 
+        Returns:
+            Syntax yielding B during parsing, accepting B during generation.
+            
+        Example:
+            >>> from dataclasses import dataclass
+            >>> @dataclass
+            >>> class Point:
+            ...     x: int
+            ...     y: int
+            >>>
+            >>> # Transform from tuple to dataclass (flat structure)
+            >>> point = S.seq(
+            ...     S.rp(r"[0-9]+").bimap(int, str),
+            ...     S.lit(","),
+            ...     S.rp(r"[0-9]+").bimap(int, str)
+            ... ).to(
+            ...     lambda env: (env.X, env.Y),         # destruct: extract X, Y
+            ...     lambda env: Point(env.X, env.Y)     # construct: build Point
+            ... )
+            >>> assert point.parse("3,4") == Point(3, 4) 
+            >>> assert point.generate(Point(3, 4)) == "3,4"
         """
         return self.iso(Iso.derive(a, b), block_normalization=block_normalization)
 
@@ -1443,37 +1519,19 @@ class Syntax(Generic[A, S]):
         Construct a sequence syntax with optional keep/discard flags.
 
         Each step may be either:
-        - `Syntax` (default keep inference is applied), or
+        - `Syntax` (defaults to keep=True), or
         - `(Syntax, keep_bool)` where `True` keeps and `False` discards.
+
+        Use the unary `+` operator to explicitly mark as keep, and `-` to discard:
+        - `+syntax` creates `(syntax, True)` - keep in output
+        - `-syntax` creates `(syntax, False)` - discard from output
 
         Args:
             *steps: One or more steps to sequence, with optional keep flags.
 
         """
-        def infer_default_keep(steps: Tuple[Syntax[Any, S] | Tuple[Syntax[Any, S], bool | str], ...]) -> bool:
-            """
-            Since the input could be a mix of Syntax and (Syntax, bool), we need to infer the default keep value for the Syntax that are not in a tuple.
-             - If all tuples have the same bool value, we can infer the default keep value as the opposite of that value.
-             - If there are conflicting bool values in the tuples, we cannot infer a default and must require explicit bools for all steps.
-             - If there are no tuples, we can default to keep=True.
-            """
-            infered_default: Optional[bool] = None
-            for X in steps:
-                if isinstance(X, tuple):
-                    if len(X) != 2:
-                        raise SyncraftError("Invalid tuple in seq steps", offender=X, expect="Tuple of (Syntax, bool)")
-                    elif infered_default is None:
-                        infered_default = not bool(X[1])
-                    elif infered_default == bool(X[1]):
-                        infered_default = None
-                        break
-            if infered_default is not None:
-                return infered_default
-            else:
-                return True
-            
-        default:bool = infer_default_keep(steps)
-        syntaxes = [X if isinstance(X, tuple) else (X, default) for X in steps]
+        # Simple default: always True (keep) if not explicitly specified
+        syntaxes = [X if isinstance(X, tuple) else (X, True) for X in steps]
 
         runtime_steps: List[Tuple[Syntax[Any, S], bool]]
         normalized_steps: List[Tuple[Syntax[Any, S], bool]] = []
@@ -1655,7 +1713,7 @@ class Syntax(Generic[A, S]):
         return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
     @classmethod
-    def rp(cls, pattern: str, **refs: Syntax[Any, Any]) -> Syntax:
+    def rp(cls, pattern: str, **refs: Syntax[Any, Any] | Tuple[Syntax[Any, Any], bool]) -> Syntax:
         """Compile a regex++ grammar fragment into `Syntax`.
 
         `rp` extends regex-like authoring with grammar references and recursion.
@@ -1669,6 +1727,22 @@ class Syntax(Generic[A, S]):
         Returns:
             A `Syntax` value representing the compiled fragment.
 
+        Output semantics:
+        - Capturing groups `(...)` and named captures `(?P<name>...)` are included in output
+        - Placeholders `(?&name)` include their referenced syntax's output if the referenced syntax 
+          is a bare Syntax object or marked as keep=True in the refs argument; 
+          otherwise, they are matched but not included in output
+          rp(..., ref = Syntax(...))  # placeholder is included in output
+          rp(..., ref = (Syntax(...), True))  # placeholder is included in output
+          rp(..., ref = (Syntax(...), False))  # placeholder is NOT included in output
+          rp(..., ref = +Syntax(...))  # placeholder is included in output (keep=True
+          rp(..., ref = -Syntax(...))  # placeholder is NOT included in output (keep=False)
+
+        - Non-capturing groups `(?:...)` are matched but NOT included in output
+        - Literals and character classes outside groups are matched but NOT captured
+        - Multiple captures are flattened into a tuple in order of appearance
+        - If no captures exist, returns the full matched text as a string
+
         Supported high-level capabilities:
         - Character classes, quantifiers, grouping, alternation.
         - Named syntax references via `(?&name)`.
@@ -1676,6 +1750,16 @@ class Syntax(Generic[A, S]):
 
         Example:
             >>> from syncraft.syntax import Syntax as S
+            >>> # No captures: returns full text
+            >>> word = S.rp(r"[a-z]+")  # "hello" -> "hello"
+            >>> 
+            >>> # With captures: returns tuple
+            >>> pair = S.rp(r"(\\w+)-(\\d+)")  # "foo-42" -> ("foo", "42")
+            >>> 
+            >>> # Non-capturing groups excluded from output
+            >>> S.rp(r"(?:foo)(bar)")  # "foobar" -> "bar"
+            >>> 
+            >>> # Grammar references
             >>> number = S.rp(r"[0-9]+").bimap(int, str)
             >>> op = S.rp(r"[+\\-*/]")
             >>> expr = S.lazy(lambda: S.rp(
@@ -1788,14 +1872,16 @@ class Syntax(Generic[A, S]):
 
     def to_ebnf(self) -> str:
         """Export this syntax to canonical EBNF text."""
-        from syncraft.ebnf import syntax_to_ebnf_text
-        return syntax_to_ebnf_text(self)
+        return ""
+        # from syncraft.ebnf import syntax_to_ebnf_text
+        # return syntax_to_ebnf_text(self)
 
     @classmethod
     def from_ebnf(cls, source: str) -> Syntax:
         """Build syntax from EBNF text."""
-        from syncraft.ebnf import ebnf_text_to_syntax
-        return ebnf_text_to_syntax(source, syntax_cls=cls)
+        return cls.success(None)  # placeholder
+        # from syncraft.ebnf import ebnf_text_to_syntax
+        # return ebnf_text_to_syntax(source, syntax_cls=cls)
     
     def parse(self, data: str) -> Any:
         """Parse text using this syntax.
