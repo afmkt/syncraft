@@ -20,7 +20,7 @@ from syncraft.ast import SyncraftError
 
 class DataError(SyncraftError):
     def __init__(self, message: str, reason: list[Any] | None = None, *, soft_failure: bool = False):
-        super().__init__(message, offender=None, soft_failure=soft_failure)
+        super().__init__(message, offender="N/A", soft_failure=soft_failure)
         self.reason = reason
         self.rule: str | None = None
         self.file: str | None = None
@@ -773,8 +773,9 @@ def unify(pattern: Any, value: Any, env: Env) -> Tuple[bool, List[Any]]:
                     return False, reason + [(pattern, value, f"Failed to unify key {k}")]
             return True, []
         elif isinstance(pattern, (list, tuple)) and isinstance(value, (list, tuple)):
-            if len(pattern) > len(value):
+            if len(pattern) != len(value):
                 return False, [(pattern, value, "Pattern list/tuple is longer than value")]
+            
             for p_item, v_item in zip(pattern, value):
                 success, reason = unify(p_item, v_item, env)
                 if not success:

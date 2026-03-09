@@ -105,7 +105,7 @@ class GenState(Bindable):
     
     
     def apply(self, f: Callable[..., Any]) -> GenState:
-        if isinstance(self.ast, Unknown):            
+        if isinstance(self.ast, (Unknown, Nothing)):
             new_ast = self.ast
         else:
             new_ast = f(self.ast, self.ctx)            
@@ -320,9 +320,32 @@ class Generator(Algebra[ParseResult[T], GenState]):
     
  
     @classmethod
+    def success(cls, value: Any) -> Algebra[Any, GenState]:
+        def success_run(input: GenState, cache: Cache[GenState] | None) -> PyGenerator[YieldChannelType, 
+                                                                                     GenState,
+                                                                                     Either[Any, Tuple[Any, GenState]]]:
+            yield from ()
+            if input.pruned:
+                return Right.new((value, input))
+            elif value != input.ast:
+                debug_print(f"\nCALLING {callable_str(success_run)} with {input.ast} -> {value}")
+                return Left.new(Error.new(
+                    message=f"Success expected {value} but got {input.ast}",
+                    this=cls,
+                    priority=ErrorPriority.LEXER_VERIFICATION,
+                    state=input,
+                ))
+            else:
+                debug_print(f"\nCALLING {callable_str(success_run)} with {input.ast} -> {value}")
+                return Right.new((value, input))
+        return cls(success_run)
+
+
+
+    @classmethod
     def alt(cls, *options: Algebra[Any, GenState]) -> Algebra[Alt, GenState]:
         assert options, "At least one option is required for choice"
-        def alt_run(input: GenState, cache: Cache[GenState]) -> PyGenerator[YieldChannelType, 
+        def alt_run(input: GenState, cache: Cache[GenState] | None) -> PyGenerator[YieldChannelType, 
                                                                                      GenState, 
                                                                                      Either[Any, Tuple[Alt, GenState]]]:
             if input.pruned:
@@ -344,13 +367,13 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     return last_error
                 else:
                     return Left.new(Error.new(
-                        message="No options provided",
+                        message=f"Alt, no branch match the given input {input.ast}",
                         this=cls,
                         priority=ErrorPriority.ALT_NO_MATCH,
                         state=input,
                     ))
-            else:
-                if not isinstance(input.ast, Alt):
+            else:                    
+                if not isinstance(input.ast, (Alt, Nothing)):
                     debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
                     return Left.new(Error.new(
                         this=input.ast,
@@ -358,7 +381,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                         priority=ErrorPriority.EXPECTED,
                         state=input,
                     ))
-                ast_choice = input.ast
+                ast_choice = input.ast if isinstance(input.ast, Alt) else Alt(index=1, value=Nothing)
                 if ast_choice.index is None:
                     for i, option in enumerate(options):
                         tmp_state = input.inject(ast_choice.value)

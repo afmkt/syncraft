@@ -1385,7 +1385,15 @@ class Syntax(Generic[A, S]):
         composition), not at the data transformation level. Use `.to()` to reshape
         single-level parsed results, then compose syntaxes for recursive structures.
         
-        Args:
+        Args: 
+            A pair of functions that takes one environment argument and returns a pattern. 
+            The first function `a` is used for parsing (destructuring the source shape), 
+            and the second function `b` is used for generation (constructing the target shape). 
+            If only one function is provided, it is treated as the target pattern
+            and Syncraft will treat the source pattern as `lambda env: env.X`. 
+            The name `X` is inferred from the target pattern, which must 
+            contain exactly one variable.
+            
             a: Destructor/pattern for A (source shape). Typically a lambda that
                deconstructs the parsed result into components. When `b` is omitted,
                this becomes the target constructor instead.

@@ -170,12 +170,13 @@ class EBNF(Grammar):
 
     primary = ref | str_ | grouped
     
-    suffix = S.rp(r"(\?|\*|\+|\{(?&int)(,(?&int)?)?\})", int=S.re(r"\d+")).case(
+    suffix = S.rp(r"(\?|\*|\+|\{(?&int)(,(?&int)?)?\})", int=S.re(r"\d+").bimap(int, str)).case(
         (lambda _: '*', lambda _: (0, None)),
         (lambda _: '?', lambda _: (0, 1)),
         (lambda _: '+', lambda _: (1, None)),
-        (lambda env: (env.Min, ), lambda env: (env.Min, None)),
-        (lambda env: (env.Min, env.Max), lambda env: (env.Min, env.Max))
+        (lambda env: (env.Min, ()), lambda env: (env.Min, None)),
+        (lambda env: (env.Min, ((),)), lambda env: (env.Min, None)),
+        (lambda env: (env.Min, ((env.Max,),)), lambda env: (env.Min, env.Max))
     )
     factor = (primary + ~suffix).case(( lambda env: (env.primary, Nothing), 
                                         lambda env: env.primary),
