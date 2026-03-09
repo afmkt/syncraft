@@ -7,7 +7,7 @@ from enum import Enum
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING,
-    Pattern, Literal
+    Pattern, Literal, overload
 )
 
 from dataclasses import dataclass, field, replace
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error, EntryCategory
 from syncraft.cache import Cache, Incomplete
-from syncraft.bimap import Bindable, Iso, DataError, Match
+from syncraft.bimap import Bindable, Iso, DataError, Match, Env
 from syncraft.ast import Many, Nothing, SyncraftError, Seq, Alt, Lazy, Unknown, _SingletonBase
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
@@ -1365,7 +1365,13 @@ class Syntax(Generic[A, S]):
         return self.iso(m.iso(overlap=overlap), block_normalization=block_normalization)
         
 
-    def to(self, a: Callable[..., A], b: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
+    @overload
+    def to(self, a: Callable[..., B], b: None = None, *, block_normalization: bool = True) -> Syntax[B, S]: ...
+
+    @overload
+    def to(self, a: Callable[..., A], b: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]: ...
+
+    def to(self, a: Callable[..., A|B], b: Callable[..., B] | None = None, *, block_normalization: bool = True) -> Syntax[B, S]:
         """
         Structural transformation via constructor-based isomorphism derivation.
         
@@ -1381,9 +1387,12 @@ class Syntax(Generic[A, S]):
         
         Args:
             a: Destructor/pattern for A (source shape). Typically a lambda that
-               deconstructs the parsed result into components.
+               deconstructs the parsed result into components. When `b` is omitted,
+               this becomes the target constructor instead.
             b: Constructor for B (target shape). Takes the components from `a` and
-               builds the desired output type.
+               builds the desired output type. If omitted, `a` is used as the target
+               constructor and the source pattern is automatically inferred from the
+               single variable in `a` (requires exactly one variable in the pattern).
             block_normalization: Prevent flattening this node during normalization.
 
         Returns:
@@ -1407,8 +1416,32 @@ class Syntax(Generic[A, S]):
             ... )
             >>> assert point.parse("3,4") == Point(3, 4) 
             >>> assert point.generate(Point(3, 4)) == "3,4"
+            >>> 
+            >>> # Convenience form: single-argument identity transformation
+            >>> # Useful for wrapping a single value in a constructor
+            >>> expr = S.rp(r"[0-9]+").to(
+            ...     lambda env: SomeDataClass(env.X)    # unary target pattern, auto-infer source pattern
+            ... )
+            >>> # Equivalent to: .to(lambda env: env.X, lambda env: int(env.X))
+                
         """
+        if b is None:
+            env = Env(constants=FrozenDict())
+            # execute the pattern function to populate the environment with variable names, 
+            a(env)
+            names = env.scope.all_var_names()
+            if len(names) != 1:
+                raise SyncraftError(f"to() with single function requires exactly one variable in the pattern, found {len(names)}: {names}", offender=names, expect="exactly one variable name")
+            var_name = next(iter(names))
+            def default_source(env: Env) -> Any:
+                return env.create_var(var_name)
+            b = cast(Callable[..., B], a)
+            a = default_source
+
+        assert b is not None # For mypy type checking
         return self.iso(Iso.derive(a, b), block_normalization=block_normalization)
+        
+
 
 
     def bind(self, entry: EntryCategory = EntryCategory.Parse, **f: Callable[[Any, Any], Any]) -> Syntax[A, S]:

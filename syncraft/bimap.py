@@ -486,6 +486,9 @@ class Scope:
         if name not in self.pool:
             self.pool[name] = Var(name=name)
         return self.pool[name]
+    
+    def all_var_names(self) -> Set[str]:
+        return set(self.pool.keys())
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Let(Expr):
@@ -614,7 +617,7 @@ class Env:
 
     def __getattr__(self, name: str) -> Var:
         return self.scope.create(name)
-
+    
     def create_var(self, name: str) -> Var:
         return self.scope.create(name)
 
@@ -807,25 +810,13 @@ def transform(
     target: Callable[..., Any],
     *,
     soft_failure: bool,
-) -> Callable[[Any, Any], Any]:
-    src_sig = CallWith(source)
-    src_vars = src_sig.missing_args[1:]
-    def call_src(env: Env) -> Any:
-        vars = [env.create_var(name) for name in src_vars]
-        return source(env, *vars)
-
-    tgt_sig = CallWith(target)
-    tgt_vars = tgt_sig.missing_args[1:]
-    def call_tgt(env: Env) -> Any:
-        vars = [env.create_var(name) for name in tgt_vars]
-        return target(env, *vars)
-        
+) -> Callable[[Any, Any], Any]:        
 
     def transform_f(value: Any, ctx: Any) -> Any:
         # from rich import print
         assert ctx is None or isinstance(ctx, FrozenDict), f"Context must be a FrozenDict, got {type(ctx)}"
         env = Env(constants=ctx or FrozenDict())
-        src = call_src(env)
+        src = source(env)
 
         new_env = solve(src, value, env)
         if isinstance(new_env, list):
@@ -833,7 +824,7 @@ def transform(
                 f"Failed to unify source with value: {new_env}",
                 soft_failure=soft_failure,
             )
-        tgt = call_tgt(new_env)
+        tgt = target(new_env)
         fully_resolved, result = evaluate(tgt, new_env, set())
         if not fully_resolved:
             raise DataError(f"Failed to fully evaluate target after unification: {result}")

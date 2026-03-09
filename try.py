@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from syncraft.ast import Token
-from syncraft.syntax import Syntax
+from syncraft.syntax import Syntax as S
 
 
 
@@ -9,11 +8,6 @@ from syncraft.syntax import Syntax
 
 
 
-def test_format_nested_indentation() -> None:
-    """Format: nested if statements with proper indentation."""
-    S = Syntax
-    r = S.rp('(A)(B)(C)').map(tuple).parse('ABC')
-    print(r)
 
 
 
@@ -22,5 +16,12 @@ def test_format_nested_indentation() -> None:
 
 
 if __name__ == "__main__":
+    
+    g = S.re(r"'([^'\\]|\\.)*'|\"([^\"\\]|\\.)*\"")
+    print(g.parse('"a a a"'))
+    print(g.parse('"a "a a"'))
+    print(g.parse('"a \'a a"'))
 
-    test_format_nested_indentation()
+    print(g.parse("'a a a'"))
+    print(g.parse("'a \'a a'"))
+    print(g.parse("'a \"a a'"))

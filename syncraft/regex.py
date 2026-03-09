@@ -631,13 +631,10 @@ class RE(Grammar):
     meta_char = S.lex(B.oneof("\"\\.[](){}|+*?^$"))
     control_escape = S.lex(B.oneof(["\\t", "\\n", "\\r", "\\f", "\\v", "\\0"]))
     shorthand = S.lex(B.oneof(["\\d", "\\D", "\\s", "\\S", "\\w", "\\W"])).bimap(ShorthandKind.from_literal, 
-                                                                                 ShorthandKind.to_literal).to(lambda env: env.X, 
-                                                                                                              lambda env: ShorthandAtom(env.X))
+                                                                                 ShorthandKind.to_literal).to(lambda env: ShorthandAtom(env.X))
     category_name = unicode_category.many()
-    positive_unicode_category = S.seq(-escaped_p, +category_name, -rbrace).to(lambda env: env.C, 
-                                                                            lambda env: UnicodeCategoryAtom(env.C, False))
-    negative_unicode_category = S.seq(-escaped_P, +category_name, -rbrace).to(lambda env: env.C, 
-                                                                            lambda env: UnicodeCategoryAtom(env.C, True))
+    positive_unicode_category = S.seq(-escaped_p, +category_name, -rbrace).to(lambda env: UnicodeCategoryAtom(env.C, False))
+    negative_unicode_category = S.seq(-escaped_P, +category_name, -rbrace).to(lambda env: UnicodeCategoryAtom(env.C, True))
 
     unicode_category_escape = S.alt(positive_unicode_category, negative_unicode_category)
         
@@ -710,34 +707,26 @@ class RE(Grammar):
     @lazy(S)
     def group(_): 
         return S.alt(
-            S.seq(-RE.lparen, +RE.regex, -RE.rparen).to(lambda env: env.X, 
-                                                      lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),
-            S.seq(-RE.lparen, -RE.question, -RE.colon, +RE.regex, -RE.rparen).to(lambda env: env.X, 
-                                                                             lambda env: GroupAtom(regex=env.X, kind=GroupKind.NON_CAPTURE)),
-            S.seq(-S.lit("(?&"), +RE.name, -RE.rparen).to(lambda env: env.name, 
-                                                        lambda env: GroupAtom(name=env.name, kind=GroupKind.SYNTAX_REF)),
-            S.seq(-S.lit("(?="), +RE.regex, -RE.rparen).to(lambda env: env.X, 
-                                                         lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
-            S.seq(-S.lit("(?!"), +RE.regex, -RE.rparen).to(lambda env: env.X, 
-                                                         lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
-            S.seq(-S.lit("(?<="), +RE.regex, -RE.rparen).to(lambda env: env.X, 
-                                                          lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
-            S.seq(-S.lit("(?<!"), +RE.regex, -RE.rparen).to(lambda env: env.X, 
-                                                          lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
+            S.seq(-RE.lparen, +RE.regex, -RE.rparen).to(lambda env: GroupAtom(regex=env.X, kind=GroupKind.CAPTURE)),
+            S.seq(-RE.lparen, -RE.question, -RE.colon, +RE.regex, -RE.rparen).to(lambda env: GroupAtom(regex=env.X, kind=GroupKind.NON_CAPTURE)),
+            S.seq(-S.lit("(?&"), +RE.name, -RE.rparen).to(lambda env: GroupAtom(name=env.X, kind=GroupKind.SYNTAX_REF)),
+            S.seq(-S.lit("(?="), +RE.regex, -RE.rparen).to(lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKAHEAD)),
+            S.seq(-S.lit("(?!"), +RE.regex, -RE.rparen).to(lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKAHEAD)),
+            S.seq(-S.lit("(?<="), +RE.regex, -RE.rparen).to(lambda env: GroupAtom(regex=env.X, kind=GroupKind.LOOKBEHIND)),
+            S.seq(-S.lit("(?<!"), +RE.regex, -RE.rparen).to(lambda env: GroupAtom(regex=env.X, kind=GroupKind.NEG_LOOKBEHIND)),
             S.alt(      S.seq(-S.lit("(?"), +RE.number, -RE.rparen),
                         S.seq(-S.lit("(?R"), -RE.rparen),
                         S.seq(-S.lit("(?r"), -RE.rparen),
                         S.seq(-S.lit("(?P"), -RE.rparen),            
                         S.seq(-S.lit("(?p"), -RE.rparen),
                         S.seq(-S.lit("(?0"), -RE.rparen),
-                    ).to(lambda env: env.regex, lambda env: unsuppoerted(regex=env.regex, feature="recursive group")),
+                    ).to(lambda env: unsuppoerted(regex=env.regex, feature="recursive group")),
 
             S.seq(-S.lit("(?P<"), +RE.name, -RE.greater, +RE.regex, -RE.rparen).to(lambda env: (env.name, env.regex), 
-                                                                                lambda env: GroupAtom(name=env.name, 
+                                                                                   lambda env: GroupAtom(name=env.name, 
                                                                                                       regex=env.regex, 
                                                                                                       kind=GroupKind.CAPTURE)),
-            S.seq(-S.lit("(?"), +RE.inline_flags_strict, -RE.rparen).to(lambda env: env.inline_flags, 
-                                                                      lambda env: GroupAtom(inline_flags=env.inline_flags, 
+            S.seq(-S.lit("(?"), +RE.inline_flags_strict, -RE.rparen).to(lambda env: GroupAtom(inline_flags=env.inline_flags, 
                                                                                             kind=GroupKind.FLAGS)),
             S.seq(-S.lit("(?"), +RE.inline_flags_strict, -RE.colon, +RE.regex, -RE.rparen).to(lambda env: (env.inline_flags, env.regex), 
                                                                                             lambda env: GroupAtom(inline_flags=env.inline_flags, 
@@ -747,34 +736,27 @@ class RE(Grammar):
             
             S.seq(
                 -(S.lit("(?") | S.lit("(?=") | S.lit("(?!") | S.lit("(?<=") | S.lit("(?<!")), +RE.regex, -RE.rparen
-                ).to(lambda env: env.regex, 
-                     lambda env: unsuppoerted(regex=env.regex, 
+                ).to(lambda env: unsuppoerted(regex=env.regex, 
                                               feature="lookaround assertion group")),
 
-            S.seq(-S.lit("(?("), -(RE.number | RE.name), +RE.regex, -RE.rparen).to(lambda env: env.regex, 
-                                                                              lambda env:  unsuppoerted(regex=env.regex, 
-                                                                                                        feature="group existence test")),
+            S.seq(-S.lit("(?("), -(RE.number | RE.name), +RE.regex, -RE.rparen).to(lambda env:  unsuppoerted(regex=env.regex, 
+                                                                                                    feature="group existence test")),
 
             S.seq(-S.lit("(?#"), 
                   +RE.comment,
-                  -RE.rparen).to(lambda env: env.regex, 
-                                lambda env: unsuppoerted(regex=env.regex, feature="comment group")),
+                  -RE.rparen).to(lambda env: unsuppoerted(regex=env.regex, feature="comment group")),
                   
                 ).bind(group_counter = lambda _, c: c + 1 if c is not ... else 1)
 
 
-    anchor = S.alt(caret, dollar, boundary_escape).to(lambda env: env.regex, 
-                                                      lambda env: unsuppoerted(regex=env.regex, 
+    anchor = S.alt(caret, dollar, boundary_escape).to(lambda env: unsuppoerted(regex=env.regex, 
                                                                                feature="group existence test"))
 
 
     braced_quantifier = S.alt(
-        S.seq(-lbrace, +number, -rbrace).to(lambda env: env.M, 
-                                          lambda env: Quantifier(minimum=env.M, maximum=env.M)),
-        S.seq(-lbrace, +number, -comma, -rbrace).to(lambda env: env.M, 
-                                                 lambda env: Quantifier(minimum=env.M, maximum=None)),
-        S.seq(-lbrace, -comma, +number, -rbrace).to(lambda env: env.M, 
-                                                 lambda env: Quantifier(minimum=0, maximum=env.M)),
+        S.seq(-lbrace, +number, -rbrace).to(lambda env: Quantifier(minimum=env.M, maximum=env.M)),
+        S.seq(-lbrace, +number, -comma, -rbrace).to(lambda env: Quantifier(minimum=env.M, maximum=None)),
+        S.seq(-lbrace, -comma, +number, -rbrace).to(lambda env: Quantifier(minimum=0, maximum=env.M)),
         S.seq(-lbrace, +number, -comma, +number, -rbrace).to(lambda env: (env.M, env.N), 
                                                           lambda env: Quantifier(env.M, env.N))
     )
@@ -799,8 +781,7 @@ class RE(Grammar):
 
     atom = S.alt(        
             backreference.check(lambda v, group_counter: v == 0 or (group_counter is not ... and group_counter >= v)),
-            literal.to(lambda env: env.text, 
-                       lambda env: LiteralAtom(env.text)),
+            literal.to(lambda env: LiteralAtom(env.text)),
             char_class,
             anchor,
             dot,
@@ -812,13 +793,10 @@ class RE(Grammar):
     piece = S.seq(+atom, ~quantifier).to(lambda env: (env.atom, env.quantifier), 
                                         lambda env: Piece(env.atom, env.quantifier))
 
-    branch = piece.many().to(lambda env: env.piece, 
-                             lambda env: Branch(env.piece))
+    branch = piece.many().to(lambda env: Branch(env.piece))
 
-    regex = branch.sep_by(or_).to(lambda env: env.branch, 
-                                  lambda env: Regex(env.branch))
-    regex_full = rule((regex // S.eof()).to(lambda env: env.X, 
-                                            lambda env: env.X), is_root=True)
+    regex = branch.sep_by(or_).to(lambda env: Regex(env.branch))
+    regex_full = rule((regex // S.eof()), is_root=True)
 
 
 
