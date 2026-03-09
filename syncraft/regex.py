@@ -330,7 +330,7 @@ class GroupAtom(RegexNode):
 
         inner = self.regex.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
         if self.kind == GroupKind.NON_CAPTURE:
-            return inner
+            return inner[0], False  # non-capture groups don't keep the match result
 
         if self.kind == GroupKind.CAPTURE:
             captured = inner if isinstance(inner, Syntax) else inner[0]
