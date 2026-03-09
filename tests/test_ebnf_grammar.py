@@ -12,26 +12,18 @@ from typing import Any
 
 from syncraft.ebnf import EBNF
 from syncraft.algebra import Error
-from rich import print as rich_print
+
 
 def assert_ebnf_roundtrip(text: str, *, syntax: Any | None = None) -> Any:
     parsed = EBNF.parse(text, syntax=syntax)
-    assert not isinstance(parsed, Error), f"EBNF parsing failed: {parsed}"
+    assert not isinstance(parsed, Error)
 
     generated = EBNF.generate(parsed, syntax=syntax, replay=True).render()
-    assert not isinstance(generated, Error), f"EBNF generation failed: {generated}"
     reparsed = EBNF.parse(generated, syntax=syntax)
 
     if isinstance(reparsed, Error):
-        rich_print(parsed)
-        print(generated)
-        rich_print(reparsed)
         pytest.xfail(f"Known EBNF generation limitation: generated text is not parseable: {generated!r}")
     if reparsed != parsed:
-        rich_print(f"Original text:\n{text}\n")
-        rich_print(f"Parsed AST:\n{parsed}\n")
-        rich_print(f"Generated text:\n{generated}\n")
-        rich_print(f"Re-parsed AST:\n{reparsed}\n")
         pytest.xfail(
             "Known EBNF generation limitation: parse(generate(parse(text))) does not preserve AST"
         )
@@ -43,6 +35,9 @@ def test_ebnf_simple_rule():
     assert_ebnf_roundtrip("rule = 'a';")
 
 
+def test_ebnf_empty_sequence():
+    """Empty sequence (epsilon rule)."""
+    assert_ebnf_roundtrip("rule = ;")
 
 
 def test_ebnf_optional_suffix():
@@ -80,6 +75,9 @@ def test_ebnf_numeric_repetition_unbounded():
     assert_ebnf_roundtrip("rule = 'a'{2,};")
 
 
+def test_ebnf_alternation():
+    """Alternation with | operator."""
+    assert_ebnf_roundtrip("rule = 'a' | 'b';")
 
 
 def test_ebnf_parenthesized_group():
@@ -235,32 +233,3 @@ def test_ebnf_recursive_list_grammar():
     value = 'x' | list;
     """
     assert_ebnf_roundtrip(ebnf)
-
-
-if __name__ == "__main__":
-    
-    # test_ebnf_complex_arithmetic_grammar()
-    # test_ebnf_complex_nested_repetition()
-    
-    test_ebnf_individual_rules()
-    # test_ebnf_identifier_with_underscore()
-    # test_ebnf_nested_groups()
-    # test_ebnf_optional_group()
-    # test_ebnf_optional_suffix()
-    # test_ebnf_parenthesized_group()
-    # test_ebnf_repetition_group()
-    # test_ebnf_suffix_on_group()
-    # test_ebnf_string_pattern()
-    # test_ebnf_whitespace_handling()
-    # test_ebnf_multiple_alternations()
-    # test_ebnf_multiple_factors_with_suffixes()
-    # test_ebnf_numeric_repetition_exact()
-    # test_ebnf_numeric_repetition_range()
-    # test_ebnf_numeric_repetition_unbounded()
-    # test_ebnf_escaped_quote_in_string()
-    # test_ebnf_double_quoted_string()
-    # test_ebnf_coloneq_assign()
-    # test_ebnf_comment()
-    # test_ebnf_multiple_rules()
-    # test_ebnf_simple_rule()
-    # test_ebnf_recursive_list_grammar()

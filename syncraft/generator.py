@@ -397,7 +397,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> FAILED")
                     return Left.new(Error.new(
                         this=input.ast,
-                        message=f"None of the choices matched for {input.ast}",
+                        message=f"No branch matched for {input.ast}",
                         priority=ErrorPriority.ALT_NO_MATCH,
                         state=input,
                     ))
