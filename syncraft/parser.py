@@ -350,8 +350,8 @@ class Parser(Algebra[T, ParserState[T]]):
     def bimap(self, f: Callable[[T, Any], A], i: Callable[[A, Any], T]) -> Algebra[A, ParserState[T]]:
         return self.map(f, entry=EntryCategory.Parse)
     
-    def enabled(self) -> Set[EntryCategory]:
-        return {EntryCategory.Parse}
+    def enabled(self, entry: EntryCategory) -> bool:
+        return entry == EntryCategory.Parse
 
 
     @classmethod

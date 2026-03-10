@@ -1536,6 +1536,139 @@ class Builder(Generic[C]):
     def with_non_greedy(self, non_greedy: bool = True) -> Builder[C]:
         return replace(self, non_greedy=non_greedy)
 
+    def to_regex(self, max_length: Optional[int] = None) -> str:
+        """Convert Builder to regex pattern string representation.
+        
+        This outputs a regex pattern that represents the Builder's semantics.
+        Note: Some advanced Builder operations (like complement, intersection, 
+        difference) may not have direct regex equivalents and will output 
+        approximations or error messages.
+        
+        Args:
+            max_length: If specified, truncate patterns longer than this with '...'
+        """
+        def escape_literal(text: Union[str, bytes]) -> str:
+            """Escape special regex characters in literal text."""
+            if isinstance(text, bytes):
+                text = text.decode('utf-8', errors='replace')
+            # Escape regex metacharacters
+            special_chars = r'.^$*+?{}[]()|\\'
+            escaped = ''.join('\\' + c if c in special_chars else c for c in str(text))
+            return escaped
+        
+        def escape_char_class(ch: str) -> str:
+            """Escape characters for use inside character classes."""
+            special_in_class = r'\]^-'
+            if ch in special_in_class:
+                return '\\' + ch
+            return ch
+        
+        match self.kind:
+            case _NodeKind.EMPTY:
+                result = "(?!.*)"  # Never matches anything
+            case _NodeKind.LITERAL:
+                if self.text is None:
+                    result = ""
+                elif isinstance(self.text, (str, bytes)):
+                    result = escape_literal(self.text)
+                else:
+                    # For Sequence[C], try to join if possible
+                    result = "(?# complex literal)"
+            case _NodeKind.ONEOF:
+                if self.text is None:
+                    result = "(?!.*)"
+                elif isinstance(self.text, bytes):
+                    chars = self.text.decode('utf-8', errors='replace')
+                    if len(chars) == 1:
+                        result = escape_literal(chars)
+                    else:
+                        escaped_chars = ''.join(escape_char_class(c) for c in chars)
+                        result = f"[{escaped_chars}]"
+                elif isinstance(self.text, str):
+                    chars = self.text
+                    if len(chars) == 1:
+                        result = escape_literal(chars)
+                    else:
+                        escaped_chars = ''.join(escape_char_class(c) for c in chars)
+                        result = f"[{escaped_chars}]"
+                else:
+                    # For Sequence[C], try to convert
+                    result = "(?# complex oneof)"
+            case _NodeKind.RANGE:
+                if not self.intervals:
+                    result = "(?!.*)"
+                else:
+                    parts = []
+                    for start, end in self.intervals:
+                        start_str = start if isinstance(start, str) else chr(start) if isinstance(start, int) else str(start)
+                        end_str = end if isinstance(end, str) else chr(end) if isinstance(end, int) else str(end)
+                        if start == end:
+                            parts.append(escape_char_class(start_str))
+                        else:
+                            parts.append(f"{escape_char_class(start_str)}-{escape_char_class(end_str)}")
+                    result = f"[{''.join(parts)}]"
+            case _NodeKind.CONCAT:
+                left = self.children[0].to_regex(max_length=None)  # Don't truncate children
+                right = self.children[1].to_regex(max_length=None)
+                result = f"{left}{right}"
+            case _NodeKind.UNION:
+                left = self.children[0].to_regex(max_length=None)
+                right = self.children[1].to_regex(max_length=None)
+                result = f"(?:{left}|{right})"
+            case _NodeKind.STAR:
+                inner = self.children[0].to_regex(max_length=None)
+                # Wrap in non-capturing group if it's complex
+                if self.children[0].kind in (_NodeKind.CONCAT, _NodeKind.UNION):
+                    result = f"(?:{inner})*"
+                else:
+                    result = f"{inner}*"
+            case _NodeKind.OPTIONAL:
+                inner = self.children[0].to_regex(max_length=None)
+                if self.children[0].kind in (_NodeKind.CONCAT, _NodeKind.UNION):
+                    result = f"(?:{inner})?"
+                else:
+                    result = f"{inner}?"
+            case _NodeKind.PLUS:
+                inner = self.children[0].to_regex(max_length=None)
+                if self.children[0].kind in (_NodeKind.CONCAT, _NodeKind.UNION):
+                    result = f"(?:{inner})+"
+                else:
+                    result = f"{inner}+"
+            case _NodeKind.MANY:
+                inner = self.children[0].to_regex(max_length=None)
+                needs_group = self.children[0].kind in (_NodeKind.CONCAT, _NodeKind.UNION)
+                base = f"(?:{inner})" if needs_group else inner
+                if self.at_most is None:
+                    result = f"{base}{{{self.at_least},}}"
+                elif self.at_least == self.at_most:
+                    result = f"{base}{{{self.at_least}}}"
+                else:
+                    result = f"{base}{{{self.at_least},{self.at_most}}}"
+            case _NodeKind.COMPLEMENT:
+                # Complement is not directly expressible in standard regex
+                result = f"(?# COMPLEMENT: {self.children[0].to_regex(max_length=None)})"
+            case _NodeKind.INTERSECT:
+                # Intersection is not directly expressible in standard regex
+                left = self.children[0].to_regex(max_length=None)
+                right = self.children[1].to_regex(max_length=None)
+                result = f"(?# INTERSECT: {left} AND {right})"
+            case _NodeKind.DIFF:
+                # Difference is not directly expressible in standard regex
+                left = self.children[0].to_regex(max_length=None)
+                right = self.children[1].to_regex(max_length=None)
+                result = f"(?# DIFF: {left} MINUS {right})"
+            case _:
+                result = f"(?# Unknown Builder kind: {self.kind})"
+        
+        # Truncate if max_length is specified and result is too long
+        if max_length is not None and len(result) > max_length:
+            # Keep first part and add ellipsis
+            if max_length > 10:
+                return result[:max_length - 3] + "..."
+            else:
+                return result[:max_length]
+        return result
+
     def compile(self, alphabet: AlphabetProtocol[C]) -> NFA[C] | DFA[C]: 
         cs_factory = CharSetFactory(alphabet=alphabet)
         match self.kind:

@@ -153,8 +153,8 @@ class Generator(Algebra[ParseResult[T], GenState]):
               i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState]:
         return self.imap(i, entry=EntryCategory.Generate)
     
-    def enabled(self) -> Set[EntryCategory]:
-        return {EntryCategory.Generate, EntryCategory.Format}
+    def enabled(self, entry: EntryCategory) -> bool:
+        return entry in {EntryCategory.Generate, EntryCategory.Format}
 
     @classmethod
     def seq(cls, *steps: Algebra[Any, GenState] | Tuple[Algebra[Any, GenState], bool]) -> Algebra[Seq, GenState]:
@@ -534,8 +534,8 @@ class Generator(Algebra[ParseResult[T], GenState]):
 
 @dataclass(frozen=True, slots=True)
 class Validator(Generator[T]):
-    def enabled(self) -> Set[EntryCategory]:
-        return {EntryCategory.Generate}
+    def enabled(self, entry: EntryCategory) -> bool:
+        return entry == EntryCategory.Generate
 
 
 @dataclass

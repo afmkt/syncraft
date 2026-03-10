@@ -31,6 +31,24 @@ def assert_ebnf_roundtrip(text: str, *, syntax: Any | None = None) -> Any:
         )
     return parsed
 
+def test_factor():
+    assert_ebnf_roundtrip("'a'?", syntax=EBNF.factor)
+    assert_ebnf_roundtrip("'a'+", syntax=EBNF.factor)
+    assert_ebnf_roundtrip("'a'*", syntax=EBNF.factor)
+    assert_ebnf_roundtrip("'a'{3}", syntax=EBNF.factor)
+    assert_ebnf_roundtrip("'a'{3,}", syntax=EBNF.factor)
+    assert_ebnf_roundtrip("'a'{2,5}", syntax=EBNF.factor)
+
+
+def test_primary():
+    """Test primary expressions."""
+    assert_ebnf_roundtrip("'a'", syntax=EBNF.primary)
+    assert_ebnf_roundtrip('"a"', syntax=EBNF.primary)
+    assert_ebnf_roundtrip("( 'a' )", syntax=EBNF.primary)
+    assert_ebnf_roundtrip("[ 'a' ]", syntax=EBNF.primary)
+    assert_ebnf_roundtrip("{ 'a' }", syntax=EBNF.primary)
+    assert_ebnf_roundtrip("{ ident }", syntax=EBNF.primary)
+
 
 def test_ebnf_text_roundtrip_is_canonical() -> None:
     assert_ebnf_roundtrip(ARITH_EBNF)

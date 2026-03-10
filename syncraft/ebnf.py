@@ -178,10 +178,10 @@ class EBNF(Grammar):
         (lambda env: (env.Min, ((),)), lambda env: (env.Min, None)),
         (lambda env: (env.Min, ((env.Max,),)), lambda env: (env.Min, env.Max))
     )
-    factor = (primary + ~suffix).case(( lambda env: (env.primary, Nothing), 
-                                        lambda env: env.primary),
-                                      ( lambda env: (env.primary, (env.Min, env.Max)), 
-                                        lambda env: Repeat(env.primary, env.Min, env.Max)))
+    factor = (primary + ~suffix).case(
+        (lambda env: (env.P, Nothing),            lambda env: env.P),
+        (lambda env: (env.P, (env.Min, env.Max)), lambda env: Repeat(env.P, env.Min, env.Max))
+    )
 
 
     seq = S.rp(r"(\s*(?&factor)\s*)*", factor=factor).to(lambda env: Seq(env.X))
@@ -192,11 +192,9 @@ class EBNF(Grammar):
         r"\s*(?&ident)\s*(?:=|::=)\s*(?&expr)\s*;\s*",
         ident=ident,
         expr=expr,
-    ).to(lambda env: (env.ident, env.expr),
-         lambda env: RuleDef(env.ident, env.expr))
+    ).to(lambda env: (env.ident, env.expr), lambda env: RuleDef(env.ident, env.expr))
 
-    grammar = rule(erule.many(at_least=1).to(lambda env: GrammarDef(env.X)), 
-                    is_root=True)
+    grammar = rule(erule.many(at_least=1).to(lambda env: GrammarDef(env.X)), is_root=True)
 
     
 

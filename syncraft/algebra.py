@@ -405,8 +405,11 @@ class Algebra(Generic[A, S]):
         return self.map_error(commit_error)
 
     def debug(self, 
-              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int | None]]], None]
+              dbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int | None]]], None],
+              entry: EntryCategory
               ) -> Algebra[A, S]:
+        if not self.enabled(entry):
+            return self
         syn1 = self.syntax
         def debug_run(input: S,
                       cache: Cache[S] | None) -> Generator[YieldChannelType, 
@@ -474,7 +477,7 @@ class Algebra(Generic[A, S]):
     
     def bind(self, entry: EntryCategory = EntryCategory.Parse,  **f: Callable[[Any, Any], Any])-> Algebra[A, S]:
         assert entry in EntryCategory, f"entry must be an instance of EntryCategory, got {entry}"
-        if entry not in self.enabled():
+        if not self.enabled(entry):
             return self
         def bind_run(input: S, cache:Cache[S]) -> Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]:
             result = yield from self.run(input, cache)
@@ -510,12 +513,12 @@ class Algebra(Generic[A, S]):
         return _cast(Algebra[B, S], alg)
     
 
-    def enabled(self) -> Set[EntryCategory]:
+    def enabled(self, entry:EntryCategory) -> bool:
         raise NotImplementedError("Algebra.enabled is abstract, concrete subclasses must implement it")
 
     def map(self, f: Callable[..., B], entry: EntryCategory) -> Algebra[B, S]:
         assert entry in EntryCategory, f"entry must be an instance of EntryCategory, got {entry}"
-        if entry not in self.enabled():
+        if not self.enabled(entry):
             return self # type: ignore
         
         ff = normalize_map_f(f)
@@ -590,7 +593,7 @@ class Algebra(Generic[A, S]):
 
     def imap(self, f: Callable[..., A], entry: EntryCategory) -> Algebra[A, S]:
         assert entry in EntryCategory, f"entry must be an instance of EntryCategory, got {entry}"
-        if entry not in self.enabled():
+        if not self.enabled(entry):
             return self # type: ignore
 
         ff = normalize_map_f(f)

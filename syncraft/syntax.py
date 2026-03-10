@@ -35,6 +35,10 @@ RED = "\033[91m"
 UNDERLINE = "\033[4m"
 ITALIC = "\033[3m"
 
+OPEN_TOP="\u231C"
+CLOSE_TOP="\u231D"
+OPEN="\u2e24"
+CLOSE="\u2e25"
 
 def valid_name(name: str) -> bool:
     return (name.isidentifier() 
@@ -150,9 +154,9 @@ class SyntaxSpec:
         recover those transformation layers.
     """
     name: Optional[str] = field(compare=False, hash=False)
-    file: Optional[str] = field(compare=False, hash=False) 
-    line: Optional[int] = field(compare=False, hash=False)
-    func: Optional[str] = field(compare=False, hash=False)
+    file: Optional[str] = field(compare=False, hash=False, repr=False) 
+    line: Optional[int] = field(compare=False, hash=False, repr=False)
+    func: Optional[str] = field(compare=False, hash=False, repr=False)
 
     def to_str(self, highlight:int) -> str:
         return str(self)
@@ -376,9 +380,9 @@ class SeqSpec(SyntaxSpec):
                 def format_step(s: Tuple[SyntaxSpec, bool], index: int) -> str:
                     step_str = str(s[0])
                     if s[1]:
-                        step_str = f"{GREEN}{step_str}{RESET}"
+                        step_str = f"{OPEN}{step_str}{CLOSE}"
                     if index == highlight:
-                        step_str = f"{ITALIC}{step_str}{RESET}"
+                        step_str = f"{OPEN_TOP}{step_str}{CLOSE_TOP}"
                     return step_str
                 
                 inner = " \u25b6 ".join(format_step(s, i) for i, s in enumerate(self.steps))
@@ -434,7 +438,7 @@ class AltSpec(SyntaxSpec):
             if self.name:
                 ret = self.name
             else:
-                choices = [str(opt) if i != highlight else f"{ITALIC}{str(opt)}{RESET}" for i, opt in enumerate(self.options)]
+                choices = [str(opt) if i != highlight else f"{OPEN_TOP}{str(opt)}{CLOSE_TOP}" for i, opt in enumerate(self.options)]
                 inner = " | ".join(str(c) for c in choices)
                 ret = self.format("({choices})", choices=inner)
             object.__setattr__(self, 'str_cache', ret)
@@ -544,7 +548,8 @@ class LexSpec(SyntaxSpec):
                 all_info = {**self.kwargs, **self.extra_info}
                 for k, v in all_info.items():
                     if v is not None and not LexSpec.should_ignore(v):
-                        s = str(v)
+                        # Use repr() for strings to properly escape backslashes and special chars
+                        s = repr(v) if isinstance(v, str) else str(v)
                         if self.MAX_NAME_LENGTH is not None and len(s) > self.MAX_NAME_LENGTH:
                             s = s[:self.MAX_NAME_LENGTH-3] + "..."
                         kwparts.append(f"{k}={s}")
@@ -554,9 +559,9 @@ class LexSpec(SyntaxSpec):
                 if args and kwargs:
                     ret = self.format("{fname}({args}, {kwargs})", fname=self.fname, args=args, kwargs=kwargs)
                 elif args:
-                    ret = self.format("{args}", args=args)
+                    ret = self.format("({args})", args=args)
                 elif kwargs:
-                    ret = self.format("{kwargs}", kwargs=kwargs)
+                    ret = self.format("({kwargs})", kwargs=kwargs)
                 else:
                     ret = self.fname
             object.__setattr__(self, 'str_cache', ret)
@@ -1091,7 +1096,8 @@ class Syntax(Generic[A, S]):
               show_stack: bool = True,
               only_fail: bool = False,
               only_success: bool = False,
-              papuse: bool = False,
+              pause: bool = False,
+              entry: EntryCategory = EntryCategory.Parse,
               level:int = 0) -> Syntax[A, S]:
         """Attach runtime debug tracing to this syntax.
 
@@ -1100,7 +1106,8 @@ class Syntax(Generic[A, S]):
             show_stack: Include formatted call stack in default output.
             only_fail: Emit traces only for failures.
             only_success: Emit traces only for successes.
-            papuse: Pause for user input after each trace event.
+            pause: Pause for user input after each trace event.
+            entry: Entry category for which to enable debug tracing.
             level: Stack-frame offset used for source metadata in debug output.
         
         Example:
@@ -1142,13 +1149,13 @@ class Syntax(Generic[A, S]):
                 print( "   Call Stack:")
                 lns = Error.fmt_stack(stack, indent=" " * 13)
                 print('\n'.join(lns))
-            if papuse:
+            if pause:
                 input("Press Enter to continue...")
 
 
         xdbg: Callable[[Syntax[A, S], S, Optional[S], A | Any, List[Tuple[Syntax[Any, S], int, int| None]]], None] | Any = dbg if callable(dbg) else default_dbg
         return replace(self, 
-                       alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg),
+                       alg_f = lambda acls, **global_args: self(acls, **global_args).debug(dbg=xdbg, entry=entry),
                        can_normalize=self._updated_can_normalize(block_normalization=True)
                        )
             
@@ -1480,7 +1487,7 @@ class Syntax(Generic[A, S]):
             a = default_source
 
         assert b is not None # For mypy type checking
-        return self.iso(Iso.derive(a, b), block_normalization=block_normalization)
+        return self.iso(Iso.derive(a, b), block_normalization=block_normalization) # type: ignore
         
 
 
@@ -1775,7 +1782,7 @@ class Syntax(Generic[A, S]):
         b = regex.re(pattern).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
         ret = cls.lex(b)
         extra: FrozenDict[str, Any] = FrozenDict({
-            'type': 'regex',
+            'type': 're',
             'pattern': pattern,
             'skip': skip,
             'tag': tag,

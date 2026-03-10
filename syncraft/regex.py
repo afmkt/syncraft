@@ -8,7 +8,7 @@ import unicodedata
 import random
 import re as pyre
 
-from syncraft.algebra import Error, EntryCategory 
+from syncraft.algebra import Error
 from syncraft.syntax import Syntax
 from syncraft.fa import Builder, DEFAULT_TAG
 from syncraft.alphabet import Alphabet
@@ -17,12 +17,30 @@ from functools import reduce
 from syncraft.bimap import DataError, Not
 from syncraft.ast import Nothing, SyncraftError
 from functools import cached_property
+from syncraft.utils import FrozenDict
+from dataclasses import replace
 
 
 
 
 class RegexError(SyncraftError):
     pass
+
+
+def _annotate_lex(syntax_cls: Type[Syntax], builder: Builder[Any]) -> Syntax:
+    """Create a lex syntax from a builder and annotate it with regex pattern info."""
+    ret = syntax_cls.lex(builder)
+    try:
+        # Truncate long patterns at 100 characters for better repr output
+        pattern = builder.to_regex(max_length=100)
+        extra: FrozenDict[str, Any] = FrozenDict({'pattern': pattern})
+        from syncraft.syntax import LexSpec
+        if isinstance(ret.spec, LexSpec):
+            return replace(ret, spec=replace(ret.spec, extra_info=extra))
+    except Exception:
+        # If to_regex() fails, just return the syntax without annotation
+        pass
+    return ret
 
 
 @dataclass(frozen=True)
@@ -57,7 +75,7 @@ class RegexNode:
         references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
     ) -> Tuple[Syntax[Any, Any], bool]:
         b = self.builder(case_insensitive=case_insensitive)
-        return syntax_cls.lex(b), True
+        return _annotate_lex(syntax_cls, b), True
 
 
 @dataclass(frozen=True)
@@ -208,8 +226,7 @@ class CharClassAtom(RegexNode):
         references: Mapping[str, Tuple[Syntax[Any, Any], bool]] | None = None,
     ) -> Tuple[Syntax[Any, Any], bool]:
         b = self.builder(case_insensitive=case_insensitive)
-        # return syntax_cls.lex(b).bimap(_rp_forward, _rp_inverse)
-        return syntax_cls.lex(b), True
+        return _annotate_lex(syntax_cls, b), True
 
 
 
@@ -334,8 +351,6 @@ class GroupAtom(RegexNode):
 
         if self.kind == GroupKind.CAPTURE:
             captured = inner if isinstance(inner, Syntax) else inner[0]
-            if self.name:
-                return captured.bind(EntryCategory.Parse, **{self.name: lambda m, _: m}), True
             return captured, True
 
         raise RegexError("Unsupported group type in parser regex", offender=self)
@@ -492,7 +507,7 @@ class Branch(RegexNode):
             nonlocal buffered_builders
             if buffered_builders:
                 merged = reduce(lambda a, b: a + b, buffered_builders)
-                parts_list.append(-syntax_cls.lex(merged))
+                parts_list.append(-_annotate_lex(syntax_cls, merged))
                 buffered_builders = []
 
         for piece in pieces:
@@ -507,7 +522,7 @@ class Branch(RegexNode):
                     flush_buffered_builders()
                     atom_builder = piece.atom.builder(case_insensitive=case_insensitive)
                 
-                    repeated = syntax_cls.lex(atom_builder).many(at_least=q.minimum, at_most=q.maximum)
+                    repeated = _annotate_lex(syntax_cls, atom_builder).many(at_least=q.minimum, at_most=q.maximum)
                     parts_list.append(-repeated)
                 else:
                     buffered_builders.append(piece.builder(case_insensitive=case_insensitive))
@@ -558,7 +573,7 @@ class Regex(RegexNode):
             if plain_non_empty:
                 plain_builders = [branch.builder(case_insensitive=case_insensitive) for branch in plain_non_empty]
                 plain_merged = reduce(lambda a, b: a | b, plain_builders)
-                alternatives.append(+syntax_cls.lex(plain_merged))
+                alternatives.append(+_annotate_lex(syntax_cls, plain_merged))
 
             if has_plain_empty:
                 alternatives.append(-syntax_cls.success(""))
