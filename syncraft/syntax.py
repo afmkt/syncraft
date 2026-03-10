@@ -1331,6 +1331,38 @@ class Syntax(Generic[A, S]):
         one succeeds. This is ideal for discriminated unions or sum types where the
         different branches have structurally different input/output shapes.
         
+        IMPORTANT - CHANNEL CONSISTENCY:
+        Forward direction discriminates on SOURCE patterns (in declaration order).
+        Inverse direction discriminates on TARGET patterns (sorted by specificity).
+        
+        To avoid "channel mismatch" (same data taking different branches in different
+        directions), ensure that:
+        1. Source and target patterns have parallel structure/specificity
+        2. Use distinct structural shapes (e.g., different dataclass types)
+        3. Avoid overlapping patterns that could unify with the same value
+        
+        Example of problematic channel mismatch:
+            >>> # BAD: generic source but specific target
+            >>> .case(
+            ...     (lambda env: env.x,              # matches anything
+            ...      lambda env: Specific(...)),     # specific structure
+            ...     ...
+            ... )
+            >>> # In forward: first branch matches everything
+            >>> # In inverse: other branches may match before first (higher specificity)
+            
+            >>> # BAD: .case().bimap() composition with structural overlap
+            >>> .case(
+            ...     (lambda env: ("tagged", env.x),
+            ...      lambda env: {"type": "tagged", "value": env.x})
+            ... ).bimap(
+            ...     forward=lambda x: f"processed:{x}",
+            ...     inverse=lambda x: {"type": "other", "value": x}  # Also a dict!
+            ... )
+            >>> # Forward: unmatched input -> passthrough -> bimap.forward ✓
+            >>> # Inverse: bimap.inverse produces dict -> matches case target pattern!
+            >>> #          Takes case branch instead of passthrough = channel mismatch!
+        
         LIMITATION: `case` handles structural conditions only (i.e., which branch to use
         based on data shape). For non-structural conditions or complex logic
         that cannot be determined by shape alone, use `.bimap()` instead.
@@ -1347,7 +1379,7 @@ class Syntax(Generic[A, S]):
             Syntax with conditional transformation applied.
             
         Example:
-            >>> # Discriminated union: structural difference in input
+            >>> # GOOD: Discriminated union with parallel structure
             >>> value = S.alt(
             ...     S.rp(r"null"),
             ...     S.rp(r"true|false")
