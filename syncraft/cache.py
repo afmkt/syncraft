@@ -396,7 +396,8 @@ class Cache(Generic[S]):
                 else:
                     assert existing.payload.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.payload.rule} != {f}"
                     if existing.payload.result is not None:
-                        return existing.payload.result
+                        ret = existing.payload.result
+                        return ret
                     else:
                         self.build_group(f, cache_key)  # Group is stored in self.groups[cache_key]
                         return Left.new() 
