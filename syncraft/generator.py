@@ -43,14 +43,40 @@ def debug_print(*arg, **kwargs) -> None:
     pass
     # print(*arg, **kwargs)
 
+@dataclass
+class IdTracker:
+    """Shared ID tracking across all GenState forks."""
+    cache: Dict[int, int] = field(default_factory=dict)
+    counter: int = 0
+    
+    def mark(self, data: Any) -> int:
+        """Assign and return unique ID for data object."""
+        key = id(data)
+        if key not in self.cache:
+            self.counter += 1
+            self.cache[key] = self.counter
+        return self.cache[key]
+    
+    def get(self, data: Any) -> int:
+        """Get existing ID for data object."""
+        key = id(data)
+        assert key in self.cache, f"Data object {data} does not have a generator state position marker"
+        return self.cache[key]
+    
+    def transfer(self, source: Any, target: Any) -> None:
+        """Copy ID from source to target."""
+        source_key = id(source)
+        target_key = id(target)
+        if target_key not in self.cache and source_key in self.cache:
+            self.cache[target_key] = self.cache[source_key]
+
 @dataclass(frozen=True, slots=True)
 class GenState(Bindable):
 
     ast: Optional[ParseResult] = None
     replay: bool = False
     seed: int = 0
-    id_cache: Dict[int, int] = field(default_factory=dict, compare=False, hash=False, repr=False)
-    id_counter: int = field(default=0, compare=False, hash=False, repr=False)
+    id_tracker: IdTracker = field(default_factory=IdTracker, compare=False, hash=False, repr=False)
 
     def str_input(self, ul: bool) -> str:
         if not self.ast:
@@ -71,24 +97,17 @@ class GenState(Bindable):
             self.mark_id(self.ast)
 
     def mark_id(self, data: Any) -> Any:
-        key = id(data)
-        if key not in self.id_cache:
-            next_id = self.id_counter + 1
-            self.id_cache[key] = next_id
-            object.__setattr__(self, "id_counter", next_id)
+        """Assign unique ID to data object via shared tracker."""
+        self.id_tracker.mark(data)
         return data
 
     def transfer_id(self, source: Any, target: Any) -> None:
-        source_key = id(source)
-        target_key = id(target)
-        if target_key not in self.id_cache and source_key in self.id_cache:
-            self.id_cache[target_key] = self.id_cache[source_key]
-            
+        """Copy ID from source to target via shared tracker."""
+        self.id_tracker.transfer(source, target)
 
     def get_id(self, data: Any) -> int:
-        key = id(data)
-        assert key in self.id_cache, f"Data object {data} does not have a generator state position marker"
-        return self.id_cache[key]
+        """Get ID for data object from shared tracker."""
+        return self.id_tracker.get(data)
 
 
     def __str__(self) -> str:
