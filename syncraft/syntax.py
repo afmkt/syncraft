@@ -1327,7 +1327,7 @@ class Syntax(Generic[A, S]):
         Conditional bidirectional transformation based on structural shape.
         
         Use `case` when you need pattern matching on structural/shape conditionally.
-        Each branch provides a (forward, inverse) pair that is tried in sequence until
+        Each branch provides a (source, target) pair that is tried in sequence until
         one succeeds. This is ideal for discriminated unions or sum types where the
         different branches have structurally different input/output shapes.
         
@@ -1335,7 +1335,7 @@ class Syntax(Generic[A, S]):
         Forward direction discriminates on SOURCE patterns (in declaration order).
         Inverse direction discriminates on TARGET patterns (sorted by specificity).
         
-        To avoid "channel mismatch" (same data taking different branches in different
+        To avoid "channel mismatch" (data taking different branches in different
         directions), ensure that:
         1. Source and target patterns have parallel structure/specificity
         2. Use distinct structural shapes (e.g., different dataclass types)
@@ -1373,7 +1373,7 @@ class Syntax(Generic[A, S]):
                       - inverse_fn: B -> A (for generation)
             strict: Not allow multiple branches to match the same value (default False).
             passthrough: Add catch-all branch that passes through unmatched values (default True).
-            block_normalization: Prevent flattening this node during normalization.
+            block_normalization: Prevent flattening this node during normalization (default True).
 
         Returns:
             Syntax with conditional transformation applied.
