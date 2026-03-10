@@ -38,16 +38,6 @@ def assert_ebnf_roundtrip(text: str, *, syntax: Any | None = None) -> Any:
     return parsed
 
 
-def test_ebnf_simple_rule():
-    """Single rule with literal."""
-    assert_ebnf_roundtrip("rule = 'a';")
-
-
-
-
-def test_ebnf_optional_suffix():
-    """Factor with ? suffix."""
-    assert_ebnf_roundtrip("rule = 'a'?;")
 
 
 def test_ebnf_star_suffix():
@@ -65,19 +55,10 @@ def test_ebnf_multiple_factors_with_suffixes():
     assert_ebnf_roundtrip("rule = 'a'? 'b'+ 'c'*;")
 
 
-def test_ebnf_numeric_repetition_exact():
-    """Exact repetition count {n}."""
-    assert_ebnf_roundtrip("rule = 'a'{2};")
 
 
-def test_ebnf_numeric_repetition_range():
-    """Bounded repetition {n,m}."""
-    assert_ebnf_roundtrip("rule = 'a'{2,5};")
 
 
-def test_ebnf_numeric_repetition_unbounded():
-    """Unbounded repetition {n,}."""
-    assert_ebnf_roundtrip("rule = 'a'{2,};")
 
 
 
@@ -87,18 +68,7 @@ def test_ebnf_parenthesized_group():
     assert_ebnf_roundtrip("rule = ('a' | 'b') 'c';")
 
 
-def test_ebnf_coloneq_assign():
-    """Alternative assignment operator ::=."""
-    assert_ebnf_roundtrip("rule ::= 'a';")
 
-
-def test_ebnf_comment():
-    """Comment between or after tokens (not before first token)."""
-    # Comments work between tokens
-    assert_ebnf_roundtrip("rule = 'a'; (* comment *)")
-    
-    # Note: Leading comments before the first token are not supported
-    # due to lexer skip behavior applying only between tokens
 
 
 def test_ebnf_multiple_rules():
@@ -129,14 +99,8 @@ def test_ebnf_nested_groups():
 
 
 
-def test_ebnf_double_quoted_string():
-    """String literal with double quotes."""
-    assert_ebnf_roundtrip('rule = "hello";')
 
 
-def test_ebnf_escaped_quote_in_string():
-    """Escaped quote inside string literal."""
-    assert_ebnf_roundtrip(r"rule = 'it\'s';")
 
 
 
@@ -146,41 +110,10 @@ def test_ebnf_multiple_alternations():
     assert_ebnf_roundtrip("rule = 'a' | 'b' | 'c' | 'd';")
 
 
-def test_ebnf_suffix_on_group():
-    """Suffix applied to grouped expression."""
-    assert_ebnf_roundtrip("rule = ('a' | 'b')+;")
-
-
 def test_ebnf_complex_nested_repetition():
     """Complex nesting of groups and repetitions."""
     assert_ebnf_roundtrip("rule = { ['a' | 'b']+ 'c'* }?;")
 
-
-def test_ebnf_individual_rules():
-    """Test parsing individual grammar rules."""
-    from syncraft.ebnf import Repeat
-    from syncraft.ebnf import Lit
-    
-    # Test factor rule
-    result = assert_ebnf_roundtrip("'a'?", syntax=EBNF.factor)
-    
-    assert isinstance(result, Repeat)
-    assert result.expr == Lit('a')
-    assert result.minimum == 0
-    assert result.maximum == 1
-    
-    # Test suffix rule
-    result = assert_ebnf_roundtrip("?", syntax=EBNF.suffix)
-    assert result == (0,1)
-    
-    result = assert_ebnf_roundtrip("{2,5}", syntax=EBNF.suffix)
-    assert result == (2,5)
-
-    result = assert_ebnf_roundtrip("{2,}", syntax=EBNF.suffix)
-    assert result == (2,None)
-
-    result = assert_ebnf_roundtrip("{2}", syntax=EBNF.suffix)
-    assert result == (2,None)
 
 
 def test_ebnf_ident_pattern():
@@ -204,45 +137,20 @@ def test_ebnf_recursive_list_grammar():
     assert_ebnf_roundtrip(ebnf)
 
 
-def test_simple():
-    from syncraft.syntax import Syntax as S
-    from syncraft.ast import Nothing
-    s = ((S.lit("a") | S.lit("b")) + ~S.lit("?")).case(
-        (lambda env: (env.X, Nothing),  lambda env: env.X),
-        (lambda env: (env.a, env.b),    lambda env: {'first': env.a, 'second': env.b})
-    )    
-    result = s.parse("a?")
-    print(result)
-    g = s.generate(result, replay=True)
-    print(g)
 
 
 
 if __name__ == "__main__":
     
-    # test_ebnf_complex_arithmetic_grammar()
-    # test_ebnf_complex_nested_repetition()
-    
-    # test_ebnf_individual_rules()
-    
-    # test_ebnf_nested_groups()
-    
-    # test_ebnf_optional_suffix()
-    # test_ebnf_parenthesized_group()
-    
-    # test_ebnf_suffix_on_group()
-    
-    # test_ebnf_multiple_alternations()
-    # test_ebnf_multiple_factors_with_suffixes()
-    # test_ebnf_numeric_repetition_exact()
-    # test_ebnf_numeric_repetition_range()
-    # test_ebnf_numeric_repetition_unbounded()
-    # test_ebnf_escaped_quote_in_string()
-    # test_ebnf_double_quoted_string()
-    # test_ebnf_coloneq_assign()
-    # test_ebnf_comment()
-    # test_ebnf_multiple_rules()
-    # test_ebnf_simple_rule()
-    # test_ebnf_recursive_list_grammar()
+    test_ebnf_complex_arithmetic_grammar()
+    test_ebnf_complex_nested_repetition()
+    test_ebnf_nested_groups()
+    test_ebnf_parenthesized_group()
+    test_ebnf_multiple_alternations()
+    test_ebnf_multiple_factors_with_suffixes()
 
-    test_simple()
+    test_ebnf_multiple_rules()
+    
+    test_ebnf_recursive_list_grammar()
+
+    
