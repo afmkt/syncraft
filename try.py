@@ -87,16 +87,6 @@ def test_ebnf_parenthesized_group():
     assert_ebnf_roundtrip("rule = ('a' | 'b') 'c';")
 
 
-def test_ebnf_optional_group():
-    """Optional group with brackets."""
-    assert_ebnf_roundtrip("rule = ['a'];")
-
-
-def test_ebnf_repetition_group():
-    """Repetition group with braces."""
-    assert_ebnf_roundtrip("rule = {'a'};")
-
-
 def test_ebnf_coloneq_assign():
     """Alternative assignment operator ::=."""
     assert_ebnf_roundtrip("rule ::= 'a';")
@@ -137,9 +127,6 @@ def test_ebnf_nested_groups():
     assert_ebnf_roundtrip("rule = [('a' | 'b')] {'c'}*;")
 
 
-def test_ebnf_identifier_with_underscore():
-    """Rule identifier with underscore."""
-    assert_ebnf_roundtrip("rule_name = 'a';")
 
 
 def test_ebnf_double_quoted_string():
@@ -152,9 +139,6 @@ def test_ebnf_escaped_quote_in_string():
     assert_ebnf_roundtrip(r"rule = 'it\'s';")
 
 
-def test_ebnf_whitespace_handling():
-    """Various whitespace between tokens."""
-    assert_ebnf_roundtrip("rule   =   'a'   |   'b'  ;")
 
 
 def test_ebnf_multiple_alternations():
@@ -208,23 +192,6 @@ def test_ebnf_ident_pattern():
     assert result == "_underscore"
 
 
-def test_ebnf_string_pattern():
-    from syncraft.ebnf import Lit
-    """Test string literal lexical pattern."""
-    result = assert_ebnf_roundtrip("'single'", syntax=EBNF.str_)
-    assert result == Lit("single")
-    
-    result = assert_ebnf_roundtrip('"double"', syntax=EBNF.str_)
-    assert result == Lit("double")
-
-    result = assert_ebnf_roundtrip(r"'it\'s'", syntax=EBNF.str_)
-    assert result == Lit("it's")
-
-    result = assert_ebnf_roundtrip(r'"a \"quote\""', syntax=EBNF.str_)
-    assert result == Lit('a "quote"')
-
-    result = assert_ebnf_roundtrip(r"'c:\\tmp'", syntax=EBNF.str_)
-    assert result == Lit(r"c:\tmp")
 
 
 def test_ebnf_recursive_list_grammar():
@@ -237,21 +204,34 @@ def test_ebnf_recursive_list_grammar():
     assert_ebnf_roundtrip(ebnf)
 
 
+def test_simple():
+    from syncraft.syntax import Syntax as S
+    from syncraft.ast import Nothing
+    s = ((S.lit("a") | S.lit("b")) + ~S.lit("?")).case(
+        (lambda env: (env.X, Nothing),  lambda env: env.X),
+        (lambda env: (env.a, env.b),    lambda env: {'first': env.a, 'second': env.b})
+    )    
+    result = s.parse("a?")
+    print(result)
+    g = s.generate(result, replay=True)
+    print(g)
+
+
+
 if __name__ == "__main__":
     
     # test_ebnf_complex_arithmetic_grammar()
     # test_ebnf_complex_nested_repetition()
     
-    test_ebnf_individual_rules()
-    # test_ebnf_identifier_with_underscore()
+    # test_ebnf_individual_rules()
+    
     # test_ebnf_nested_groups()
-    # test_ebnf_optional_group()
+    
     # test_ebnf_optional_suffix()
     # test_ebnf_parenthesized_group()
-    # test_ebnf_repetition_group()
+    
     # test_ebnf_suffix_on_group()
-    # test_ebnf_string_pattern()
-    # test_ebnf_whitespace_handling()
+    
     # test_ebnf_multiple_alternations()
     # test_ebnf_multiple_factors_with_suffixes()
     # test_ebnf_numeric_repetition_exact()
@@ -264,3 +244,5 @@ if __name__ == "__main__":
     # test_ebnf_multiple_rules()
     # test_ebnf_simple_rule()
     # test_ebnf_recursive_list_grammar()
+
+    test_simple()

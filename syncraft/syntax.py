@@ -1322,7 +1322,7 @@ class Syntax(Generic[A, S]):
     ######################################################################## data processing combinators #########################################################
 
 
-    def case(self, *branches: Tuple[Callable[..., Any], Callable[..., Any]], overlap: bool=True, block_normalization: bool = True) -> Syntax[Any, S]:
+    def case(self, *branches: Tuple[Callable[..., Any], Callable[..., Any]], strict: bool=False, passthrough: bool=True, block_normalization: bool = True) -> Syntax[Any, S]:
         """
         Conditional bidirectional transformation based on structural shape.
         
@@ -1339,7 +1339,8 @@ class Syntax(Generic[A, S]):
             *branches: Each branch is a tuple (forward_fn, inverse_fn) where:
                       - forward_fn: A -> B (returns value or raises to try next branch)
                       - inverse_fn: B -> A (for generation)
-            overlap: Allow multiple branches to match (default True).
+            strict: Not allow multiple branches to match the same value (default False).
+            passthrough: Add catch-all branch that passes through unmatched values (default True).
             block_normalization: Prevent flattening this node during normalization.
 
         Returns:
@@ -1362,7 +1363,7 @@ class Syntax(Generic[A, S]):
         m = Match(branches[0][0], branches[0][1])
         for branch in branches[1:]:
             m.case(branch[0], branch[1])
-        return self.iso(m.iso(overlap=overlap), block_normalization=block_normalization)
+        return self.iso(m.iso(strict=strict, passthrough=passthrough), block_normalization=block_normalization)
         
 
     @overload

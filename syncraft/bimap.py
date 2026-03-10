@@ -142,6 +142,39 @@ class Iso(Generic[A, B]):
 
 
 
+def specificity(value: Any) -> Tuple[int, int, int, int, int]:
+    """Return a lexicographically comparable specificity score.
+
+    Higher score means more specific:
+    - more concrete leaves (constants/literals)
+    - more structural nodes (tuple/list/dict/dataclass)
+    - deeper structure
+    - fewer variables/opaque expressions
+    """
+    if isinstance(value, Var):
+        return (0, 0, 0, -1, 0)
+    if isinstance(value, Expr):
+        return (0, 0, 0, 0, -1)
+    if is_primitive(value):
+        return (1, 0, 1, 0, 0)
+    if isinstance(value, dict):
+        acc:Tuple[int, int, int, int, int] = (0, 1, 1, 0, 0)
+        for k, v in value.items():
+            acc = tuple(a + b for a, b in zip(acc, specificity(k), strict=True)) # type: ignore
+            acc = tuple(a + b for a, b in zip(acc, specificity(v), strict=True)) # type: ignore
+        return acc
+    if isinstance(value, (list, tuple)):
+        acc = (0, 1, 1, 0, 0)
+        for item in value:
+            acc = tuple(a + b for a, b in zip(acc, specificity(item), strict=True)) # type: ignore
+        return acc
+    if is_dataclass(value):
+        acc = (0, 1, 1, 0, 0)
+        for f in fields(value):
+            acc = tuple(a + b for a, b in zip(acc, specificity(getattr(value, f.name)), strict=True)) # type: ignore
+        return acc
+    return (1, 0, 1, 0, 0)
+
 
 
 class Match:
@@ -153,18 +186,33 @@ class Match:
         return self
 
     @staticmethod
-    def overlap(*ptns: Callable[..., Any]) -> Tuple[bool, List[Any]]:
-        def build(env: Env, ptn: Callable[..., Any]) -> Any:
-            sig = CallWith(ptn)
-            vars = [env.create_var(name) for name in sig.missing_args[1:]]
-            return ptn(env, *vars)
+    def _build_pattern(ptn: Callable[..., Any], env: Env | None = None) -> Any:
+        env = env or Env()
+        sig = CallWith(ptn)
+        vars = [env.create_var(name) for name in sig.missing_args[1:]]
+        return ptn(env, *vars)
 
+
+    @staticmethod
+    def _ordered_cases(cases: List[Tuple[Callable[..., Any], Callable[..., Any]]]) -> List[Tuple[Callable[..., Any], Callable[..., Any]]]:
+        # Forward: use source order (least surprising, matches standard pattern matching)
+        # Inverse: sort by target specificity (helps prevent shadowing bugs)
+        
+        scored: List[Tuple[Tuple[int, int, int, int, int], int, Callable[..., Any], Callable[..., Any]]] = []
+        for idx, (src, tgt) in enumerate(cases):
+            score = specificity(Match._build_pattern(tgt))
+            scored.append((score, idx, src, tgt))
+        scored.sort(key=lambda x: (x[0], -x[1]), reverse=True)
+        return [(src, tgt) for _, _, src, tgt in scored]
+
+    @staticmethod
+    def overlap(*ptns: Callable[..., Any]) -> Tuple[bool, List[Any]]:
         n = len(ptns)
         for i in range(n):
             for j in range(i + 1, n):
                 env = Env()  # fresh env per pair
-                a = build(env, ptns[i])
-                b = build(env, ptns[j])
+                a = Match._build_pattern(ptns[i], env)
+                b = Match._build_pattern(ptns[j], env)
                 success, _ = unify(a, b, env)
                 if not success:
                     continue
@@ -172,12 +220,18 @@ class Match:
                     return True, [a, b]
         return False, []
     
-    def forward(self, overlap: bool) -> Callable[[Any, Any], Any]:
-        if not overlap:
+    def forward(self, strict: bool, passthrough: bool) -> Callable[[Any, Any], Any]:
+        if strict:
             o, offender = Match.overlap(*(src for src, tgt in self.cases))
             if o:
                 raise DataError(f"Overlapping patterns detected in Match.forward: {offender[0]} VS. {offender[1]}")
-        transforms = [transform(src, tgt, soft_failure=False) for src, tgt in self.cases]
+        # we don't reorder specificity for forward direction, 
+        # just use the order they were added in, which is more intuitive 
+        # and matches standard pattern matching semantics
+        ordered = self.cases
+        if passthrough:
+            ordered = ordered + [(lambda env: env._passthrough, lambda env: env._passthrough)]
+        transforms = [transform(src, tgt, soft_failure=False) for src, tgt in ordered]
         def transform_f(value: Any, ctx: Any) -> Any:
             for t in transforms:
                 try:
@@ -187,12 +241,15 @@ class Match:
             raise DataError(f"No matching case found for value: {value}")
         return transform_f
     
-    def inverse(self, overlap: bool) -> Callable[[Any, Any], Any]:
-        if not overlap:
+    def inverse(self, strict: bool, passthrough: bool) -> Callable[[Any, Any], Any]:
+        if strict:
             o, offender = Match.overlap(*(tgt for src, tgt in self.cases))
             if o:
                 raise DataError(f"Overlapping patterns detected in Match.inverse: {offender[0]} VS. {offender[1]}")
-        transforms = [transform(tgt, src, soft_failure=True) for src, tgt in self.cases]
+        ordered = Match._ordered_cases(self.cases)
+        if passthrough:
+            ordered = ordered + [(lambda env: env._passthrough, lambda env: env._passthrough)]
+        transforms = [transform(tgt, src, soft_failure=True) for src, tgt in ordered]
         def transform_f(value: Any, ctx: Any) -> Any:
             for t in transforms:
                 try:
@@ -202,8 +259,8 @@ class Match:
             raise DataError(f"No matching case found for value: {value}")
         return transform_f
     
-    def iso(self, overlap: bool) -> Iso:
-        return Iso(self.forward(overlap=overlap), self.inverse(overlap=overlap))
+    def iso(self, strict: bool, passthrough: bool) -> Iso:
+        return Iso(self.forward(strict=strict, passthrough=passthrough), self.inverse(strict=strict, passthrough=passthrough))
 
 
 

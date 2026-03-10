@@ -1,4 +1,4 @@
-from syncraft.bimap import solve, Env, evaluate, let, Expr, Scope, transform, Iso, Not
+from syncraft.bimap import solve, Env, evaluate, let, Expr, Scope, transform, Iso, Not, Match
 from typing import Any, Optional
 import pytest
 from dataclasses import dataclass
@@ -467,6 +467,80 @@ def test_transformation()->None:
     assert b == Quantifier(1, 5, True)
     c = iso.inverse(b, None)
     assert c == (Quantifier(1, 5, True), False)
+
+
+@dataclass(frozen=True)
+class _CaseNode:
+    primary: Any
+    minimum: int
+    maximum: Optional[int]
+
+
+def test_match_inverse_prefers_more_specific_target_pattern() -> None:
+    # Branch 1 target is generic (env.X), branch 2 target is structured dataclass.
+    m = Match(
+        lambda env: (env.primary, env.tag),
+        lambda env: env.X,
+    ).case(
+        lambda env: (env.primary, (env.minimum, env.maximum)),
+        lambda env: _CaseNode(env.primary, env.minimum, env.maximum),
+    )
+
+    inv = m.inverse(strict=False, passthrough=False)
+    assert inv(_CaseNode("a", 0, 1), None) == ("a", (0, 1))
+
+
+def test_match_forward_uses_source_order() -> None:
+    # Forward direction uses declaration order (first match wins).
+    # Branch 1: generic pattern (matches anything)
+    # Branch 2: more specific pattern (matches question marks)
+    m = Match(
+        lambda env: (env.a, env.b),
+        lambda env: "generic",
+    ).case(
+        lambda env: (env.a, "?"),
+        lambda env: "question",
+    )
+
+    fwd = m.forward(strict=False, passthrough=False)
+    # First pattern wins in forward direction
+    assert fwd(("x", "?"), None) == "generic"
+    
+    # Flip order: specific pattern first
+    m2 = Match(
+        lambda env: (env.a, "?"),
+        lambda env: "question",
+    ).case(
+        lambda env: (env.a, env.b),
+        lambda env: "generic",
+    )
+    
+    fwd2 = m2.forward(strict=False, passthrough=False)
+    # Now specific pattern wins because it's first
+    assert fwd2(("x", "?"), None) == "question"
+
+
+def test_match_passthrough_catches_unmatched() -> None:
+    # With passthrough=True, unmatched values pass through unchanged
+    m = Match(
+        lambda env: ("binary", env.op, env.left, env.right),
+        lambda env: {"type": "binary", "op": env.op, "left": env.left, "right": env.right},
+    ).case(
+        lambda env: ("variable", env.name),
+        lambda env: {"type": "variable", "name": env.name},
+    )
+    
+    # Forward: unmatched pattern passes through
+    fwd = m.forward(strict=False, passthrough=True)
+    assert fwd(("binary", "+", 1, 2), None) == {"type": "binary", "op": "+", "left": 1, "right": 2}
+    assert fwd(("variable", "x"), None) == {"type": "variable", "name": "x"}
+    assert fwd(("unhandled", "data"), None) == ("unhandled", "data")  # passes through
+    
+    # Inverse: unmatched target passes through
+    inv = m.inverse(strict=False, passthrough=True)
+    assert inv({"type": "binary", "op": "+", "left": 1, "right": 2}, None) == ("binary", "+", 1, 2)
+    assert inv({"type": "variable", "name": "x"}, None) == ("variable", "x")
+    assert inv({"type": "unknown"}, None) == {"type": "unknown"}  # passes through
 
 
 
