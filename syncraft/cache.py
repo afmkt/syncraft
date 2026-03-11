@@ -394,7 +394,7 @@ class Cache(Generic[S]):
                         return ret
                     else:
                         self.build_group(f, cache_key)  # Group is stored in self.groups[cache_key]
-                        return Left.new() 
+                        return Left.new("Placeholder for left recursion - group building in progress") 
             
             head: InProgress[S] = InProgress(rule=f)
             entry = CacheEntry(payload=head, state=key)
