@@ -18,4 +18,5 @@ site/
 .vibe/
 **/*.prof
 syncraft.main
+syncraft.old.cache.key
 
