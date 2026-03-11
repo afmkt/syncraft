@@ -17,6 +17,6 @@ site/
 .todo/
 .vibe/
 **/*.prof
-syncraft.main
-syncraft.old.cache.key
+syncraft.main/*
+syncraft.old/*
 
