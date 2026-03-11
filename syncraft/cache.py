@@ -311,20 +311,14 @@ class Cache(Generic[S]):
             print("[Cache]    ", *args, **kwargs)
     
     def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
-        frame_id = trace_push(rule=syntax_of(rule), 
-                                    parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, 
-                                    state=key)
+        frame_id = trace_push(rule=syntax_of(rule), parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, state=key)
         try:
             assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
             result = yield from rule(key, self) 
             if isinstance(result, Right):
-                trace_pop(frame_id, 
-                        state = result.state,
-                        result = result.value[0])
+                trace_pop(frame_id, state = result.state, result = result.value[0])
             elif isinstance(result, Left):
-                trace_pop(frame_id, 
-                        state = None,
-                        result = result.value)
+                trace_pop(frame_id, state = None, result = result.value)
             else:
                 raise SyncraftError("Unexpected result type", offender=result, expect=(Left, Right))
             return result

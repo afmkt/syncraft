@@ -20,7 +20,7 @@ import threading
 from syncraft.token import TokenSpec
 from functools import cached_property
 import pickle
-from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder
+from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder, GeneratedToken, VerifiedToken
 
 Tag = str | Enum | None
 
@@ -327,7 +327,7 @@ class Lexer(LexerProtocol[C]):
         lexer.push_mode(None)
         return lexer
 
-    def gen(self, tag: Tag, rng: random.Random) -> Any:
+    def gen(self, tag: Tag, rng: random.Random) -> GeneratedToken:
         ret = self.current_mode.rdfa.gen(tag, rng)
         act = self.actions.get(tag)
         if act is not None:
@@ -338,9 +338,9 @@ class Lexer(LexerProtocol[C]):
                     self.pop_mode(mode_name)
                 case _:
                     raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
-        return ((ret, tag), {})
+        return GeneratedToken(value=ret, tag=tag, steps=len(ret) if isinstance(ret, (str, bytes, tuple)) else 1)
 
-    def verify(self, tag: frozenset[Tag], value: Any) -> bool:
+    def verify(self, tag: frozenset[Tag], value: Any) -> VerifiedToken:
         txt = value
         lexer = self
         try:
@@ -349,28 +349,28 @@ class Lexer(LexerProtocol[C]):
 
                     case LexerResult(tag=t, start=s, end=e):
                         if len(tag) > 0 and t not in tag:
-                            return False
+                            return VerifiedToken(False, 0)
                         if s != 0 or e != len(txt):
-                            return False
+                            return VerifiedToken(False, 0)
                         if index != len(txt) - 1:
-                            return False
-                        return True
+                            return VerifiedToken(False, 0)
+                        return VerifiedToken(True, len(txt))
                     case None:
                         continue  # Intermediate character, keep going
                     case LexerError():
-                        return False  # Matching failed
+                        return VerifiedToken(False, 0)
             candidate = lexer.candidate()
             if isinstance(candidate, LexerResult):
                 if len(tag) > 0 and candidate.tag not in tag:
-                    return False
-                return candidate.start == 0 and candidate.end == len(txt)
+                    return VerifiedToken(False, 0)
+                return VerifiedToken(candidate.start == 0 and candidate.end == len(txt), len(txt))
         except TypeError:
             raise SyncraftError(
                 f"Value {value} is not valid for verification, expected an eenumerable object like string, bytes, or tuple",
                 offender=value,
                 expect="an enumerable object",
             )
-        return False
+        return VerifiedToken(False, 0)
 
     def candidate(self) -> LexerError | LexerResult[C]:
         mode = self.current_mode
@@ -448,7 +448,7 @@ class Lexer(LexerProtocol[C]):
 @dataclass(frozen=True, slots=True)
 class ExtRule(Generic[T]):
     predicate: Callable[[T], bool]
-    generator: Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]
+    generator: Callable[[Any, random.Random], GeneratedToken]
 
 @dataclass(slots=True)
 class ExtLexer(LexerProtocol[T]):
@@ -495,15 +495,15 @@ class ExtLexer(LexerProtocol[T]):
         )
         
 
-    def verify(self, tag: frozenset[Tag], value: Any) -> bool:
+    def verify(self, tag: frozenset[Tag], value: Any) -> VerifiedToken:
         for t in tag:
             rule = self.rules.get(t)
             if rule is not None:
                 if rule.predicate(value):
-                    return True
-        return False
+                    return VerifiedToken(True, 1)
+        return VerifiedToken(False, 0)
 
-    def gen(self, tag: Tag, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    def gen(self, tag: Tag, rng: random.Random) -> GeneratedToken:
         rule = self.rules.get(tag)
         if rule is None or rule.generator is None:
             raise SyncraftError(

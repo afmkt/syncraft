@@ -219,7 +219,7 @@ class Token(AST):
         elif isinstance(self.text, tuple):
             return ''.join(str(c) for c in self.text).strip()
         else:
-            raise SyncraftError("Unsupported type for Token text", offender=self.text, expect="str, bytes, or tuple")
+            raise SyncraftError(f"Unsupported type {type(self.text)} for Token text", offender=self.text, expect="str, bytes, or tuple")
 
     def __repr__(self) -> str:        
         if self.token_type is None:

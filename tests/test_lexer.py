@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 
 from syncraft.fa import Builder, ModeAction, ModeActionEnum
-from syncraft.lexer import Lexer, LexerResult
+from syncraft.lexer import Lexer, LexerResult, GeneratedToken, VerifiedToken
 import pytest
 from syncraft.ast import SyncraftError
 
@@ -53,7 +53,7 @@ def test_mode_actions_should_emit_mode_specific_tags() -> None:
 
     rng = random.Random(0)
     generated = _lexer_with_parentheses().gen("OPEN", rng)
-    assert generated == (("(", "OPEN"), {})
+    assert generated == GeneratedToken("(", "OPEN", 1)
 
 
 def test_skip_rules_should_suppress_tokens() -> None:
@@ -110,12 +110,12 @@ def test_mode_actions_update_stack_in_generation() -> None:
     lexer = _lexer_with_modes()
     rng = random.Random(0)
 
-    assert lexer.gen("OPEN", rng) == (("(", "OPEN"), {})
+    assert lexer.gen("OPEN", rng) == GeneratedToken("(", "OPEN", 1)
     assert lexer.current_mode is lexer.modes["paren"]
 
-    assert lexer.gen("INNER", rng) == (("b", "INNER"), {})
+    assert lexer.gen("INNER", rng) == GeneratedToken("b", "INNER", 1)
 
-    assert lexer.gen("CLOSE", rng) == ((")", "CLOSE"), {})
+    assert lexer.gen("CLOSE", rng) == GeneratedToken(")", "CLOSE", 1)
     assert lexer.current_mode is lexer.modes[None]
 
 
@@ -163,4 +163,4 @@ def test_verify_accepts_full_match() -> None:
     rule: Builder[str] = Builder.lit("ab").tagged("AB")
     lexer = Lexer.from_builders(rule)
 
-    assert lexer.verify(frozenset({"AB"}), "ab") is True
+    assert lexer.verify(frozenset({"AB"}), "ab") == VerifiedToken(True, 2)

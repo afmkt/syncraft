@@ -89,6 +89,9 @@ class LayoutDoc:
         renderer = _Renderer(width=width, indent=indent)
         return renderer.render(self).strip()
     
+    def __str__(self) -> str:
+        return self.render()
+
 @dataclass(frozen=True, slots=True)
 class Text(LayoutDoc):
     """

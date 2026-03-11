@@ -52,17 +52,34 @@ class LexerResult(Generic[C]):
 
 
 
+@dataclass(frozen=True, slots=True)
+class GeneratedToken:
+    """
+    The result of generating a token and a tag. Contains the value of the token and the number of steps to advance after generating this token.
+    Scalar and structured token will advance 1 step, 
+    str or bytes will advance len(value) steps.
+    """
+    value: Any | None 
+    tag: Tag | None
+    steps: int 
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedToken:
+    ok: bool
+    steps: int
+
 @runtime_checkable
 class LexerProtocol(Protocol, Generic[C]):
     def reset(self) -> None: ...
 
     def match(self, char: C, index: int) -> LexerError | None | LexerResult[C]: ...
 
-    def verify(self, tag: frozenset[Tag], value: Any) -> bool: ...
+    def verify(self, tag: frozenset[Tag], value: Any) -> VerifiedToken: ...
 
     def tags(self) -> frozenset[str|Enum|None]: ...
 
-    def gen(self, tag: Tag, rng: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]: ...
+    def gen(self, tag: Tag, rng: random.Random) -> GeneratedToken: ...  
 
     def candidate(self) -> LexerError | LexerResult[C]: ...
     

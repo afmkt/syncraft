@@ -1,56 +1,56 @@
-"""
-Test the EBNF grammar parser (not AST conversion or semantic processing).
+from syncraft.syntax import Syntax
 
-This validates that the rewritten EBNF grammar correctly parses EBNF text
-into raw parse trees, focusing on grammar correctness only.
-"""
+from syncraft.parser import parse_word
 
-from __future__ import annotations
-
-import pytest
-from typing import Any
-
-from syncraft.ebnf import EBNF
 from syncraft.algebra import Error
-from rich import print as rich_print
+from syncraft.cache import Cache
+from syncraft.generator import validate, generate_with
 
-def assert_ebnf_roundtrip(text: str, *, syntax: Any | None = None) -> Any:
-    rich_print(f"Original text:\n{text}\n")
-    parsed = EBNF.parse(text, syntax=syntax)
-    rich_print(f"Parsed AST:\n{parsed}\n")
-    assert not isinstance(parsed, Error), f"EBNF parsing failed: {parsed}"
-
-    generated = EBNF.generate(parsed, syntax=syntax, replay=True).render()
-    rich_print(f"Generated text:\n{generated}\n")
-    assert not isinstance(generated, Error), f"EBNF generation failed: {generated}"
-    reparsed = EBNF.parse(generated, syntax=syntax)
-    rich_print(f"Re-parsed AST:\n{reparsed}\n")
-
-    if isinstance(reparsed, Error):
-        pytest.xfail(f"Known EBNF generation limitation: generated text is not parseable: {generated!r}")
-
-    if reparsed != parsed:
-        pytest.xfail(
-            "Known EBNF generation limitation: parse(generate(parse(text))) does not preserve AST"
-        )
-    return parsed
+from rich import print
+S = Syntax
+def tok(text: str):
+    return S.tok(text=text, case_sensitive=True)
 
 
-
-
-
-
-def test_ebnf_multiple_rules():
-    """Grammar with multiple rules."""
-    ebnf = """
-    expr = term;
-    term = 'x';
-    """
-    assert_ebnf_roundtrip(ebnf)
-
-
-
-if __name__ == "__main__":
+def test_validate_and_generate_with_after_bimap_resets_choice_kind():
+    A = S.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = parse_word(A, 'a a a')
+    print(ast)
+    assert not isinstance(ast, Error)
+    v1 = validate(A, ast)
+    assert not isinstance(v1, Error)
+    v2 = generate_with(A, ast)
+    assert not isinstance(v2, Error)
     
-    test_ebnf_multiple_rules()
 
+
+# @pytest.mark.xfail(reason="Mutual LR with OrElse.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
+def test_mutual_left_recursion_with_base_after_bimap_A():
+    A = S.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    B = S.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
+    ast = parse_word(A, 'a b a')
+    assert not isinstance(ast, Error)
+    v1 = validate(A, ast)
+    assert not isinstance(v1, Error)
+    
+    v2 = generate_with(A, ast)
+    assert not isinstance(v2, Error)
+    
+
+
+# @pytest.mark.xfail(reason="Mutual LR with OrElse.kind=None after bimap is ambiguous without explicit branch tags; validation requires a hint (set kind) or disambiguation.")
+def test_mutual_left_recursion_with_base_after_bimap_B():
+    A = S.lazy(lambda: (B + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    B = S.lazy(lambda: (A + tok('b')) | tok('b'))  # type: ignore[name-defined]
+    ast = parse_word(B, 'b a b')
+    assert not isinstance(ast, Error)
+    v1 = validate(B, ast)
+    assert not isinstance(v1, Error)
+    
+    v2 = generate_with(B, ast)
+    assert not isinstance(v2, Error)
+    
+if __name__ == "__main__":
+    test_validate_and_generate_with_after_bimap_resets_choice_kind()
+    # test_mutual_left_recursion_with_base_after_bimap_A()
+    # test_mutual_left_recursion_with_base_after_bimap_B()

@@ -4,6 +4,9 @@ from typing import (
     List, Generator as PyGenerator, cast, Self
 )
 
+from syncraft.fa import (
+    DEFAULT_TAG
+)
 
 
 import random
@@ -40,35 +43,10 @@ B = TypeVar('B')
 
 
 def debug_print(*arg, **kwargs) -> None:
-    pass
-    # print(*arg, **kwargs)
+    # pass
+    from rich import print as rich_print
+    rich_print(*arg, **kwargs)
 
-@dataclass
-class IdTracker:
-    """Shared ID tracking across all GenState forks."""
-    cache: Dict[int, int] = field(default_factory=dict)
-    counter: int = 0
-    
-    def mark(self, data: Any) -> int:
-        """Assign and return unique ID for data object."""
-        key = id(data)
-        if key not in self.cache:
-            self.counter += 1
-            self.cache[key] = self.counter
-        return self.cache[key]
-    
-    def get(self, data: Any) -> int:
-        """Get existing ID for data object."""
-        key = id(data)
-        assert key in self.cache, f"Data object {data} does not have a generator state position marker"
-        return self.cache[key]
-    
-    def transfer(self, source: Any, target: Any) -> None:
-        """Copy ID from source to target."""
-        source_key = id(source)
-        target_key = id(target)
-        if target_key not in self.cache and source_key in self.cache:
-            self.cache[target_key] = self.cache[source_key]
 
 @dataclass(frozen=True, slots=True)
 class GenState(Bindable):
@@ -76,7 +54,7 @@ class GenState(Bindable):
     ast: Optional[ParseResult] = None
     replay: bool = False
     seed: int = 0
-    id_tracker: IdTracker = field(default_factory=IdTracker, compare=False, hash=False, repr=False)
+    steps: int = 0
 
     def str_input(self, ul: bool) -> str:
         if not self.ast:
@@ -92,23 +70,9 @@ class GenState(Bindable):
     def ended(self) -> bool:
         return False
 
-    def __post_init__(self):
-        if self.ast is not None:
-            self.mark_id(self.ast)
-
-    def mark_id(self, data: Any) -> Any:
-        """Assign unique ID to data object via shared tracker."""
-        self.id_tracker.mark(data)
-        return data
-
-    def transfer_id(self, source: Any, target: Any) -> None:
-        """Copy ID from source to target via shared tracker."""
-        self.id_tracker.transfer(source, target)
-
-    def get_id(self, data: Any) -> int:
-        """Get ID for data object from shared tracker."""
-        return self.id_tracker.get(data)
-
+    @property
+    def cache_key(self) -> int:
+        return self.steps
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}(ast={self.ast})"
@@ -131,17 +95,13 @@ class GenState(Bindable):
         if new_ast is self.ast:
             return self
         else:
-            self.transfer_id(self.ast, new_ast)
             return replace(self, ast=new_ast)
         
-
-    @property
-    def cache_key(self) -> int:
-        return self.get_id(self.ast) 
-
+    def advance(self, steps: int = 1) -> GenState:
+        return replace(self, steps=self.steps + steps)
     
     def inject(self, a: Any) -> GenState:
-        return replace(self, ast=self.mark_id(a))
+        return replace(self, ast=a)
     
     def fork(self, tag: Any) -> GenState:
         return replace(self, seed=hash((self.seed, tag)))
@@ -508,10 +468,10 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     ntags = all_tags  # Fallback if all tags are skip
                 tag = input.rng("lex_tag").choice(tuple(ntags))                
                 input = input.fork(tag=tag)
-                args, kwargs = lexer.gen(tag, input.rng())
-                generated = terminal_constructor(*args, **kwargs)
+                gt = lexer.gen(tag, input.rng())
+                generated = terminal_constructor(gt.value, gt.tag if gt.tag != DEFAULT_TAG else None)
                 debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> {generated}")
-                return Right.new((cast(ParseResult[T], generated), input))
+                return Right.new((cast(ParseResult[T], generated), input.advance(gt.steps)))
             else:
                 current = input.ast
                 current_value = terminal_destructor(current)
@@ -532,7 +492,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                             state=input,
                         )
                     )
-                if not verified:
+                if not verified.ok:
                     debug_print(f"\nCALLING {callable_str(lex_run)} with {input.ast} -> FAILED")
                     return Left.new(
                         Error.new(
@@ -546,7 +506,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 if isinstance(parsed_value, AST):
                     parsed_value = replace(parsed_value) # type: ignore
                 debug_print(f"\nCALLING {callable_str(lex_run)} with {current} -> {parsed_value}")
-                return Right.new((parsed_value, input))
+                return Right.new((parsed_value, input.advance(verified.steps)))
 
         return cls(lex_run).flag(intrinsic=True) 
 

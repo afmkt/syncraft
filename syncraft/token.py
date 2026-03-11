@@ -6,7 +6,7 @@ import re
 
 from syncraft.utils import CallWith, FrozenDict
 from dataclasses import dataclass, field, fields, is_dataclass
-
+from syncraft.lexerprotocol import GeneratedToken
 
 
 
@@ -28,7 +28,7 @@ def all_subclasses(cls: Type[Any])->Set[Type[Any]]:
 class TokenSpec(Protocol):
     def tags(self) -> frozenset[Tag]: ...
     def predicate(self) -> Callable[[Any], bool]: ...
-    def generator(self) -> Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]: ...
+    def generator(self) -> Callable[[Any, random.Random], GeneratedToken]: ...
     @classmethod
     def create(cls, *args: Any, **kwargs: Any) -> TokenSpec: ...
 
@@ -87,6 +87,8 @@ class TokenSpecBase(TokenSpec):
         config, params = self._extract_config_kwargs(kwargs)
         tags, params = self._resolve_tag_kwargs(params)
         return config, params, tags
+
+
     
 @dataclass(frozen=True, slots=True)
 class Scalar(TokenSpecBase):
@@ -113,12 +115,13 @@ class Scalar(TokenSpecBase):
         pred.__name__ = f"P({self.value!r})"
         return pred
 
-    def generator(self) -> Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]:
+    def generator(self) -> Callable[[Any, random.Random], GeneratedToken]:
         value = self.value
-        def gen(input: Any, rnd: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
-            return ((value,), {})
+        def gen(input: Any, rnd: random.Random) -> GeneratedToken:
+            return GeneratedToken(value=value, tag=None, steps=1)
         gen.__name__ = f"G({self.value!r})"
         return gen
+
 
 
 
@@ -191,10 +194,10 @@ class Structured(TokenSpecBase):
         pred.__name__ = f"P({self.describe()})"
         return pred
 
-    def generator(self) -> Callable[[Any, random.Random], Tuple[Tuple[Any, ...], Dict[str, Any]]]:
+    def generator(self) -> Callable[[Any, random.Random], GeneratedToken]:
         config, kwargs, _ = self.normalise_kwargs(dict(self.kwargs))
-        def gen(input: Any, rnd: random.Random) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
-            data = {}
+        def gen(input: Any, rnd: random.Random) -> GeneratedToken:
+            data: Dict[str, Any] = {}
             for k, v in kwargs.items():
                 if isinstance(v, re.Pattern):
                     try:
@@ -204,7 +207,7 @@ class Structured(TokenSpecBase):
                         data[k] = v.pattern
                 else:
                     data[k] = v
-            return ((), data)
+            return GeneratedToken(value=data, tag=None, steps=1)
         gen.__name__ = f"G({self.describe()})"
         return gen
     
