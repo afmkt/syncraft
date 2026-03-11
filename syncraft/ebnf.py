@@ -234,7 +234,7 @@ class GrammarDef(EBNFExpr):
 
 
     @classmethod
-    def from_syntax(cls, graph: Graph[SyntaxSpec]) -> GrammarDef:
+    def from_graph(cls, graph: Graph[SyntaxSpec]) -> GrammarDef:
         # Map SyntaxSpec nodes to EBNFExprs (memoized to handle cycles)
         spec_to_expr: Dict[SyntaxSpec, EBNFExpr] = {}
 
@@ -363,7 +363,6 @@ class EBNF(Grammar):
     grammar = rule(erule.many(at_least=1).to(lambda env: GrammarDef(env.X)), is_root=True)
 
     
-
 
 # -- data-transformation-for-EBNF --
 

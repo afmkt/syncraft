@@ -68,9 +68,9 @@ def test_ebnf_numeric_repetition_bounds() -> None:
 
     rule_expr = grammar.rules[0].expr
     assert isinstance(rule_expr, Alt)
-    only_seq = rule_expr.options[0]
+    only_seq = rule_expr.alt[0]
     assert isinstance(only_seq, Seq)
-    rep = only_seq.items[0]
+    rep = only_seq.seq[0]
     assert isinstance(rep, Repeat)
     assert rep.minimum == 2
     assert rep.maximum == 5
@@ -82,13 +82,13 @@ def test_ebnf_optional_and_plus_shorthand() -> None:
 
     rule_expr = grammar.rules[0].expr
     assert isinstance(rule_expr, Alt)
-    only_seq = rule_expr.options[0]
+    only_seq = rule_expr.alt[0]
     assert isinstance(only_seq, Seq)
-    assert len(only_seq.items) == 3
+    assert len(only_seq.seq) == 3
 
-    rep_x = only_seq.items[0]
-    rep_y = only_seq.items[1]
-    rep_z = only_seq.items[2]
+    rep_x = only_seq.seq[0]
+    rep_y = only_seq.seq[1]
+    rep_z = only_seq.seq[2]
     assert isinstance(rep_x, Repeat)
     assert isinstance(rep_y, Repeat)
     assert isinstance(rep_z, Repeat)
@@ -102,9 +102,9 @@ def test_ebnf_empty_sequence() -> None:
     grammar = assert_ebnf_roundtrip(ebnf)
     rule_expr = grammar.rules[0].expr
     assert isinstance(rule_expr, Alt)
-    only_seq = rule_expr.options[0]
+    only_seq = rule_expr.alt[0]
     assert isinstance(only_seq, Seq)
-    assert only_seq.items == ()
+    assert only_seq.seq == ()
 
 
 def test_ebnf_named_rules_with_recursion() -> None:

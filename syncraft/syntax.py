@@ -1965,18 +1965,18 @@ class Syntax(Generic[A, S]):
         c: Dict[SyntaxSpec, Syntax] = {}
         return graph.root.syntax(cls, cache=c)
 
-    def to_ebnf(self) -> str:
+    def ebnf(self) -> Any:
         """Export this syntax to canonical EBNF text."""
-        return ""
-        # from syncraft.ebnf import syntax_to_ebnf_text
-        # return syntax_to_ebnf_text(self)
+        from syncraft.ebnf import GrammarDef
+        return GrammarDef.from_graph(self.graph())      
+        
+        
 
     @classmethod
     def from_ebnf(cls, source: str) -> Syntax:
         """Build syntax from EBNF text."""
-        return cls.success(None)  # placeholder
-        # from syncraft.ebnf import ebnf_text_to_syntax
-        # return ebnf_text_to_syntax(source, syntax_cls=cls)
+        from syncraft.ebnf import EBNF
+        return EBNF.parse(source).syntax(cls, {}, set())
     
     def parse(self, data: str) -> Any:
         """Parse text using this syntax.

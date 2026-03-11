@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import (
     Callable, Any, Dict, Union, Literal, Iterator, Optional, overload, TYPE_CHECKING, Literal
 )
-from syncraft.format import LayoutDoc, Group
+from syncraft.format import LayoutDoc
 from syncraft.algebra import Error
 from syncraft.ast import SyncraftError, Unknown
 from syncraft.syntax import Syntax
@@ -442,6 +442,8 @@ class Grammar(metaclass=GrammarMeta):
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1), 
                         replay=replay)
         for result in runner.run(generator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
+            if isinstance(result, Error):
+                raise SyncraftError(f"Generation failed with error: {result}", offender=result, expect="successful generation")
             return LayoutDoc.from_ast(result)
         raise SyncraftError("Generation did not yield any results", offender=None, expect="at least one result")
         
@@ -465,11 +467,12 @@ class Grammar(metaclass=GrammarMeta):
                         seed=seed if seed is not None else random.randint(0, 2**32 - 1),
                         replay=True)
         try:
-            for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):
+            for result in runner.run(validator, state=None, cursor=None, once=True, cache=Cache()):  # type: ignore[arg-type]
                 if isinstance(result, Error):
                     return result
-            return True
+            return True    
         except SyncraftError as e:
             return Error.new(this=None, message=f"Exception {e} during validation", error=e)
+        
         
         
