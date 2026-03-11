@@ -17,4 +17,5 @@ site/
 .todo/
 .vibe/
 **/*.prof
+syncraft.main
 
