@@ -43,9 +43,9 @@ B = TypeVar('B')
 
 
 def debug_print(*arg, **kwargs) -> None:
-    # pass
-    from rich import print as rich_print
-    rich_print(*arg, **kwargs)
+    pass
+    # from rich import print as rich_print
+    # rich_print(*arg, **kwargs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +101,12 @@ class GenState(Bindable):
         return replace(self, steps=self.steps + steps)
     
     def inject(self, a: Any) -> GenState:
-        return replace(self, ast=a)
+        if a is self.ast:
+            return self
+        if a is Unknown:
+            return replace(self, ast=a)
+        else:
+            return replace(self.advance(1), ast=a)
     
     def fork(self, tag: Any) -> GenState:
         return replace(self, seed=hash((self.seed, tag)))
@@ -333,7 +338,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 forked_input.rng("alt_index").shuffle(indexes)
                 for idx in indexes:
                     selected = options[idx]
-                    result = yield from selected.run(forked_input, cache)
+                    result = yield from selected.run(forked_input, None)
                     match result:
                         case Right((value, next_input)):
                             debug_print(f"\nCALLING {callable_str(alt_run)} with {input.ast} -> {Alt(index=idx, value=value)}")

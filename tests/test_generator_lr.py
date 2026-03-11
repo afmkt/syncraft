@@ -13,7 +13,7 @@ from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
 from syncraft.fa import Builder
 
-SS = Syntax.set(terminal_constructor=Token)
+SS = Syntax.set(terminal_constructor=lambda value, tag: Token(**value))
 
 def tok(text: str):
     return SS.tok(text=text, case_sensitive=True)
@@ -61,7 +61,7 @@ def test_generate_with_mutual_left_recursion_without_base_raises():
 
 
 def test_generate_with_infers_text_lexer_without_config() -> None:
-    syntax = SS.tok("hi")
+    syntax = SS.tok(text="hi")
     ast = generate_with(syntax, seed=123)
     assert ast == Token(text="hi")
 
