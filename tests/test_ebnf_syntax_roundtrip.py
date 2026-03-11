@@ -14,17 +14,21 @@ def test_ebnf_to_syntax_and_back():
     ast = EBNF.parse(ebnf_text)
     assert isinstance(ast, GrammarDef)
     # Convert AST to Syntax
-    syntax = ast.syntax(Syntax, {}, set())
+    syntax = ast.syntax(Syntax, {})
     # Convert Syntax back to EBNF (via GrammarDef.from_syntax)
     graph = syntax.graph()
     roundtrip_ast = GrammarDef.from_syntax(graph)
     # The roundtrip AST should have the same rule names
     assert set(r.name for r in ast.rules) == set(r.name for r in roundtrip_ast.rules)
     # Optionally, check that converting back to Syntax yields equivalent structure
-    roundtrip_syntax = roundtrip_ast.syntax(Syntax, {}, set())
+    roundtrip_syntax = roundtrip_ast.syntax(Syntax, {})
     assert str(syntax) == str(roundtrip_syntax)
 
-
-
-if __name__ == "__main__":
-    test_ebnf_to_syntax_and_back()
+def test_single_rule_ebnf_to_syntax():
+    ebnf_text = "rule = 'a' 'b' | 'c';"
+    ast = EBNF.parse(ebnf_text)
+    syntax = ast.syntax(Syntax, {})
+    assert syntax is not None
+    # Should have a sequence and alternation in the structure
+    s = str(syntax)
+    assert "'a'" in s and "'b'" in s and "'c'" in s

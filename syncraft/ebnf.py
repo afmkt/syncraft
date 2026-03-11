@@ -42,11 +42,11 @@ Supported grammar (in EBNF):
 # -- syncraft-grammar-for-EBNF --
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Callable, Type, Set, cast
 from syncraft.grammar import Grammar, lazy, rule, grammar
-from syncraft.syntax import Syntax
+from syncraft.syntax import Syntax, SyntaxSpec, Graph, SeqSpec, AltSpec, ManySpec, LexSpec, LazySpec
 from syncraft.ast import Nothing
-
+from rich import print
 S = Syntax.set(builtin=True)
 
 
@@ -86,39 +86,205 @@ class EBNF0(Grammar):
 # -- dataclass-for-EBNF --
 @dataclass(frozen=True)
 class EBNFExpr:
-    pass
+    def simplify(self) -> EBNFExpr:
+        return self
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        raise NotImplementedError("syntax() not implemented for EBNFExpr")
+    
+
+
+@dataclass(frozen=True)
+class NothingExpr(EBNFExpr):
+
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        # print(self)
+        return cls.success(Nothing)
 
 @dataclass(frozen=True)
 class Ref(EBNFExpr):
-    name: str                    # rule reference: ident
+    name: str                    # rule reference: ident    
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        # print(self, 'env:', env, 'visited', visited)
+        if self.name not in env:
+            raise ValueError(f"Undefined rule reference: {self.name}")
+        if self in visited:
+            # print(f"Detected left recursion on rule {self.name}, creating lazy reference")
+            ret = cls.lazy(lambda: env[self.name]())
+            env[self.name] = lambda: ret
+            return ret
+        visited.add(self)
+        try:
+            result = env[self.name]()
+            env[self.name] = lambda: result
+        finally:
+            visited.discard(self)
+        return result
 
 @dataclass(frozen=True)
 class Lit(EBNFExpr):
-    value: str                   # decoded string literal value
+    literal: str                   # decoded string literal value
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        # print(self)
+        return cls.lit(self.literal)
 
 @dataclass(frozen=True)
 class Seq(EBNFExpr):
-    items: Tuple[EBNFExpr, ...]  # empty tuple => epsilon
+    seq: Tuple[EBNFExpr, ...]  # empty tuple => epsilon
+    def simplify(self) -> EBNFExpr:
+        # print(self)
+        simplified = tuple([item.simplify() for item in self.seq])
+        simplied = tuple(filter(lambda e: not isinstance(e, NothingExpr), simplified))
+        if not simplied:
+            return NothingExpr()
+        elif len(simplied) == 1:
+            return simplied[0]
+        else:
+            return Seq(simplied)
+        
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        # print(self)
+        if len(self.seq) == 1:
+            return self.seq[0].syntax(cls, env, visited)
+        else:
+            tmp = []
+            for item in self.seq:
+                s = item.syntax(cls, env, visited)
+                tmp.append(s)
+            return cls.seq(*tmp)
     
 @dataclass(frozen=True)
 class Alt(EBNFExpr):
-    options: Tuple[EBNFExpr, ...]  # len >= 2 ideally
+    alt: Tuple[EBNFExpr, ...]  # len >= 2 ideally
+    def simplify(self) -> EBNFExpr:
+        simplified = tuple(filter(lambda e: not isinstance(e, NothingExpr), (opt.simplify() for opt in self.alt)))
+        if not simplified:
+            return NothingExpr()
+        elif len(simplified) == 1:
+            return simplified[0]
+        else:
+            return Alt(simplified)
+
+
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        # print(self)
+        if len(self.alt) == 1:
+            return self.alt[0].syntax(cls, env, visited)
+        else:
+            tmp = []
+            for opt in self.alt:
+                s = opt.syntax(cls, env, visited)
+                tmp.append(s)
+            return cls.alt(*tmp)
 
 @dataclass(frozen=True)
 class Repeat(EBNFExpr):
     expr: EBNFExpr
     minimum: int                 # 0/1/...
     maximum: Optional[int]       # None => unbounded
+    def simplify(self) -> EBNFExpr:
+        simplified = self.expr.simplify()
+        if isinstance(simplified, NothingExpr):
+            return simplified
+        elif isinstance(simplified, Repeat):
+            new_min = self.minimum * simplified.minimum
+            if self.maximum is None or simplified.maximum is None:
+                new_max = None
+            else:
+                new_max = self.maximum * simplified.maximum
+            return Repeat(simplified.expr, new_min, new_max)
+        else:
+            return Repeat(simplified, self.minimum, self.maximum)
+        
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        # print(self)
+        s = self.expr.syntax(cls, env, visited)
+        return s.many(at_least=self.minimum, at_most=self.maximum)
 
 @dataclass(frozen=True)
 class RuleDef:
     name: str
     expr: EBNFExpr
+    def simplify(self) -> RuleDef:
+        # print(self.name)
+        return RuleDef(self.name, self.expr.simplify())
+    
 
 @dataclass(frozen=True)
-class GrammarDef:
+class GrammarDef(EBNFExpr):
     rules: Tuple[RuleDef, ...]
 
+    def simplify(self) -> EBNFExpr:
+        if not self.rules:
+            return NothingExpr()
+        return GrammarDef(tuple(r.simplify() for r in self.rules))
+    
+
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        def wrap_rule(r: RuleDef) -> Callable[[], Syntax]:
+            def rule_f() -> Syntax:
+                return r.expr.syntax(cls, env, visited).named(r.name)
+            return rule_f
+        simplified = cast(GrammarDef, self.simplify())
+        if not simplified.rules:
+            raise ValueError("Grammar must have at least one rule")
+        # print(simplified)
+        for r in simplified.rules:
+            env[r.name] = wrap_rule(r)
+        return env[simplified.rules[0].name]()
+
+
+    @classmethod
+    def from_syntax(cls, graph: Graph[SyntaxSpec]) -> GrammarDef:
+        # Map SyntaxSpec nodes to EBNFExprs (memoized to handle cycles)
+        spec_to_expr: Dict[SyntaxSpec, EBNFExpr] = {}
+
+        def spec_to_ebnfexpr(spec: SyntaxSpec) -> EBNFExpr:
+            # Memoize before recursion to handle cycles
+            if spec in spec_to_expr:
+                return spec_to_expr[spec]
+            # Pre-insert a placeholder to break cycles
+            spec_to_expr[spec] = Ref(getattr(spec, 'name', None) or '<anon>')
+            if isinstance(spec, SeqSpec):
+                items = tuple(spec_to_ebnfexpr(s) for s, keep in spec.steps if keep)
+                expr: EBNFExpr = Seq(items)
+            elif isinstance(spec, AltSpec):
+                options = tuple(spec_to_ebnfexpr(opt) for opt in spec.options)
+                expr = Alt(options)
+            elif isinstance(spec, ManySpec):
+                expr = Repeat(spec_to_ebnfexpr(spec.spec), spec.at_least, spec.at_most)
+            elif isinstance(spec, LexSpec):
+                p = spec.pattern
+                if p is None:
+                    raise ValueError(f"LexSpec {spec.fname} has no pattern")
+                expr = Lit(p)
+            elif isinstance(spec, LazySpec):
+                expr = spec_to_ebnfexpr(spec.inner_spec)
+            else:
+                if spec.name:
+                    expr = Ref(spec.name)
+                else:
+                    raise NotImplementedError(f"Cannot convert {type(spec)} to EBNFExpr")
+            spec_to_expr[spec] = expr
+            return expr
+
+        # Find all named nodes (rules)
+        rules = []
+        name_to_rule = {}
+        for node in graph.nodes:
+            name = getattr(node, "name", None)
+            if name:
+                expr = spec_to_ebnfexpr(node)
+                rule = RuleDef(name, expr)
+                rules.append(rule)
+                name_to_rule[name] = rule
+        # Ensure the root rule is first, if possible
+        root_name = getattr(graph.root, "name", None)
+        if root_name and root_name in name_to_rule:
+            ordered_rules = [name_to_rule[root_name]] + [r for r in rules if r.name != root_name]
+        else:
+            ordered_rules = rules
+        return GrammarDef(tuple(ordered_rules))
+            
 
 # -- dataclass-for-EBNF-end --
 

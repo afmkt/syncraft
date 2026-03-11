@@ -531,6 +531,20 @@ class LexSpec(SyntaxSpec):
         cache[self] = ret = replace(ret, spec=self)
         return ret
     
+    @property
+    def pattern(self) -> str | None:
+        for x in self.args:
+            if isinstance(x, str):
+                return x
+        for k, v in self.kwargs.items():
+            if isinstance(v, str) and k != 'type':
+                return v
+        for k, v in self.extra_info.items():
+            if isinstance(v, str) and k != 'type':
+                return v
+        return None
+
+
     def to_str(self, highlight: int) -> str:
         if self.str_cache is None:
             if self.name or not (self.kwargs or self.args or self.extra_info):
