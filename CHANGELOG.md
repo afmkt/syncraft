@@ -1,14 +1,31 @@
 
+
 This project follows Semantic Versioning from `1.0.0` onward.
+It's in pre-1.0 status. APIs may change and breaking changes are possible until 1.0.
 
 ## [Unreleased]
 
+_No unreleased changes at this time._
+
+## [0.8.0] - 2026-03-12
+
 ### Added
-- CI workflow for tests on push and pull request.
-- Contributor guide for a single-maintainer workflow.
-- Security policy with vulnerability reporting guidance.
-- Concept docs, FAQ, and runnable examples.
-- **Streaming parsing** as an established feature: `Grammar.parse_stream()`, `StreamCursor`, and incremental `ParserState` with backtracking support via `choice_depth` and `safe_base` tracking.
+- Major EBNF roundtrip improvements and bugfixes.
+- New documentation on bidirectional parsing, AST space vs. parse subspace, and roundtripping caveats.
+- Custom EBNF renderer, EBNFExpr.to_str.
+- Expanded and clarified API docstrings for all public symbols.
+- Improved test coverage and roundtrip validation for EBNF/Syntax.
+
+
+### Changed
+- General documentation and quickstart improvements.
+- Replace IdTracker with Generator.steps for explicit cache_key maintainance
+
+
+### Fixed
+- Resolved issues with EBNF AST simplification and roundtrip mismatches.
+- Fixed edge cases in bidirectional parsing and generation.
+- No known test failures; all tests pass.
 
 ## [0.3.2] - 2026-03-07
 

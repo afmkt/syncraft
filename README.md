@@ -9,6 +9,10 @@ Define a grammar once.
 
 It provides Packrat-style performance and supports direct left recursion.
 
+## Status
+
+Pre-1.0 (Release Candidate) — APIs may change before 1.0.
+
 
 ## Philosophy
 
