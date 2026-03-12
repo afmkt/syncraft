@@ -84,6 +84,9 @@ def test_ebnf_parenthesized_group():
     """Grouped expression with parentheses."""
     assert_ebnf_roundtrip("rule = ('a' | 'b') 'c';")
 
+def test_ebnf_simple():
+    
+    assert_ebnf_roundtrip("rule = 'a' 'b' | 'c';")
 
 def test_ebnf_optional_group():
     """Optional group with brackets."""

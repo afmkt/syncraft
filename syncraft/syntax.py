@@ -1965,10 +1965,14 @@ class Syntax(Generic[A, S]):
         c: Dict[SyntaxSpec, Syntax] = {}
         return graph.root.syntax(cls, cache=c)
 
-    def ebnf(self) -> Any:
+    def ebnf(self, return_ast: bool = False) -> Any:
         """Export this syntax to canonical EBNF text."""
-        from syncraft.ebnf import GrammarDef
-        return GrammarDef.from_graph(self.graph())      
+        from syncraft.ebnf import GrammarDef, EBNF
+        ast = GrammarDef.from_graph(self.graph())      
+        if return_ast:
+            return ast
+        else:
+            return EBNF.generate(ast).render()
         
         
 

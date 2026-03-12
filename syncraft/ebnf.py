@@ -86,8 +86,6 @@ class EBNF0(Grammar):
 # -- dataclass-for-EBNF --
 @dataclass(frozen=True)
 class EBNFExpr:
-    def simplify(self) -> EBNFExpr:
-        return self
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         raise NotImplementedError("syntax() not implemented for EBNFExpr")
     
@@ -130,70 +128,31 @@ class Lit(EBNFExpr):
 @dataclass(frozen=True)
 class Seq(EBNFExpr):
     seq: Tuple[EBNFExpr, ...]  # empty tuple => epsilon
-    def simplify(self) -> EBNFExpr:
-        # print(self)
-        simplified = tuple([item.simplify() for item in self.seq])
-        simplied = tuple(filter(lambda e: not isinstance(e, NothingExpr), simplified))
-        if not simplied:
-            return NothingExpr()
-        elif len(simplied) == 1:
-            return simplied[0]
-        else:
-            return Seq(simplied)
         
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
-        # print(self)
-        if len(self.seq) == 1:
-            return self.seq[0].syntax(cls, env, visited)
-        else:
-            tmp = []
-            for item in self.seq:
-                s = item.syntax(cls, env, visited)
-                tmp.append(s)
-            return cls.seq(*tmp)
+        tmp = []
+        for item in self.seq:
+            s = item.syntax(cls, env, visited)
+            tmp.append(s)
+        return cls.seq(*tmp)
     
 @dataclass(frozen=True)
 class Alt(EBNFExpr):
     alt: Tuple[EBNFExpr, ...]  # len >= 2 ideally
-    def simplify(self) -> EBNFExpr:
-        simplified = tuple(filter(lambda e: not isinstance(e, NothingExpr), (opt.simplify() for opt in self.alt)))
-        if not simplified:
-            return NothingExpr()
-        elif len(simplified) == 1:
-            return simplified[0]
-        else:
-            return Alt(simplified)
 
 
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
-        # print(self)
-        if len(self.alt) == 1:
-            return self.alt[0].syntax(cls, env, visited)
-        else:
-            tmp = []
-            for opt in self.alt:
-                s = opt.syntax(cls, env, visited)
-                tmp.append(s)
-            return cls.alt(*tmp)
+        tmp = []
+        for opt in self.alt:
+            s = opt.syntax(cls, env, visited)
+            tmp.append(s)
+        return cls.alt(*tmp)
 
 @dataclass(frozen=True)
 class Repeat(EBNFExpr):
     expr: EBNFExpr
     minimum: int                 # 0/1/...
     maximum: Optional[int]       # None => unbounded
-    def simplify(self) -> EBNFExpr:
-        simplified = self.expr.simplify()
-        if isinstance(simplified, NothingExpr):
-            return simplified
-        elif isinstance(simplified, Repeat):
-            new_min = self.minimum * simplified.minimum
-            if self.maximum is None or simplified.maximum is None:
-                new_max = None
-            else:
-                new_max = self.maximum * simplified.maximum
-            return Repeat(simplified.expr, new_min, new_max)
-        else:
-            return Repeat(simplified, self.minimum, self.maximum)
         
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         # print(self)
@@ -201,36 +160,30 @@ class Repeat(EBNFExpr):
         return s.many(at_least=self.minimum, at_most=self.maximum)
 
 @dataclass(frozen=True)
-class RuleDef:
+class RuleDef(EBNFExpr):
     name: str
     expr: EBNFExpr
-    def simplify(self) -> RuleDef:
-        # print(self.name)
-        return RuleDef(self.name, self.expr.simplify())
+    
+    def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
+        return self.expr.syntax(cls, env, visited).named(self.name)
     
 
 @dataclass(frozen=True)
 class GrammarDef(EBNFExpr):
-    rules: Tuple[RuleDef, ...]
-
-    def simplify(self) -> EBNFExpr:
-        if not self.rules:
-            return NothingExpr()
-        return GrammarDef(tuple(r.simplify() for r in self.rules))
-    
+    rules: Tuple[RuleDef, ...]    
 
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         def wrap_rule(r: RuleDef) -> Callable[[], Syntax]:
             def rule_f() -> Syntax:
                 return r.expr.syntax(cls, env, visited).named(r.name)
             return rule_f
-        simplified = cast(GrammarDef, self.simplify())
-        if not simplified.rules:
+        
+        if not self.rules:
             raise ValueError("Grammar must have at least one rule")
-        # print(simplified)
-        for r in simplified.rules:
+        
+        for r in self.rules:
             env[r.name] = wrap_rule(r)
-        return env[simplified.rules[0].name]()
+        return env[self.rules[0].name]()
 
 
     @classmethod

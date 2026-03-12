@@ -879,7 +879,7 @@ def transform(
         new_env = solve(src, value, env)
         if isinstance(new_env, list):
             raise DataError(
-                f"Failed to unify source with value: {new_env}",
+                f"Failed to unify SRC with value: {new_env} :\n {src} <=> {value}",
                 soft_failure=soft_failure,
             )
         tgt = target(new_env)
