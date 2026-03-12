@@ -168,23 +168,6 @@ uv add syncraft
 ```
 
 
+## Documentation
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-       
-
-
+Full documentation is available at: [https://afmkt.github.io/syncraft/](https://afmkt.github.io/syncraft/)

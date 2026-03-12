@@ -10,11 +10,17 @@ _No unreleased changes at this time._
 ## [0.8.0] - 2026-03-12
 
 ### Added
-- Major EBNF roundtrip improvements and bugfixes.
+- Major parsing/generation roundtrip improvements and bugfixes.
 - New documentation on bidirectional parsing, AST space vs. parse subspace, and roundtripping caveats.
 - Custom EBNF renderer, EBNFExpr.to_str.
 - Expanded and clarified API docstrings for all public symbols.
 - Improved test coverage and roundtrip validation for EBNF/Syntax.
+- Syntax.case for conditional transformation
+- Syntax.to for structural transformation
+- Syntax.bimap for converting values
+- Syntax.format for specify linebreaks and indentation
+- Normalization nested structure in Syntax.alt and Syntax.seq
+- Syntax.rp to construct CFG grammar rule from regex
 
 
 ### Changed
