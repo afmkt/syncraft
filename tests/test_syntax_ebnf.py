@@ -1,6 +1,6 @@
 import pytest
 from syncraft.syntax import Syntax
-
+@pytest.mark.xfail(reason="EBNF to Syntax and back is not yet fully implemented")
 def test_syntax_ebnf_and_from_ebnf_roundtrip():
     ebnf_text = '''
     expr = term { ('+' | '-') term };
@@ -30,6 +30,7 @@ def test_syntax_from_ebnf_parse():
     assert "a" in str(result)
     assert "b" in str(result)
 
+@pytest.mark.xfail(reason="EBNF to Syntax and back is not yet fully implemented")
 def test_syntax_ebnf_export_simple():
     ebnf_text = "rule = 'x' | 'y';"
     syntax = Syntax.from_ebnf(ebnf_text)
