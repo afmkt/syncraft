@@ -6,6 +6,7 @@ dist/
 wheels/
 *.egg-info
 .token
+.python-version
 .vscode/
 .pytest_cache/
 .mypy_cache/
@@ -19,4 +20,5 @@ site/
 **/*.prof
 syncraft.main/*
 syncraft.old/*
+
 
