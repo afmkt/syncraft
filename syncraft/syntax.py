@@ -976,13 +976,11 @@ class Syntax(Generic[A, S]):
         Args:
             f: Function mapping value A to B.
             block_normalization: If True, prevents normalization of this node.
-            block_normalization: If False, allows normalization to flatten. 
-
-            normalization happens in seq and alt combinators when their children have can_normalize=True.
-            If block_normalization is True, this syntax will be marked as can_normalize=False, 
-            which prevents normalization from flattening this node. 
-            If block_normalization is False, this syntax will keep its original can_normalize value, 
-            allowing normalization to flatten it if it was originally can_normal
+                If False, allows normalization to flatten. Normalization happens in seq and alt combinators when their children have can_normalize=True.
+                If block_normalization is True, this syntax will be marked as can_normalize=False, 
+                which prevents normalization from flattening this node. 
+                If block_normalization is False, this syntax will keep its original can_normalize value, 
+                allowing normalization to flatten it if it was originally can_normal
 
         Returns:
             Syntax yielding B with the same resulting state.
@@ -1482,28 +1480,33 @@ class Syntax(Generic[A, S]):
         dataclasses). Syncraft automatically derives the inverse transformation by
         analyzing the constructors' signatures, making this ideal for
         "destruct-then-reconstruct" workflows without manually writing the inverse.
+
+        `to` takes a pair of functions that takes one environment argument and returns a pattern. 
+        The first function `a` is used for parsing (destructuring the source shape), 
+        and the second function `b` is used for generation (constructing the target shape). 
+
+        If only one function is provided, it is treated as the target pattern
+        and Syncraft will treat the source pattern as `lambda env: env.X`. 
+        The name `X` is inferred from the target pattern, which must contain exactly one variable.
         
         LIMITATION: `to` works only on flat or finitely nested structures. General recursion and nesting are
         handled at the grammar/syntax level (e.g., via `Syntax.lazy()` or rule
         composition), not at the data transformation level. Use `.to()` to reshape
         single-level parsed results, then compose syntaxes for recursive structures.
-        
+
+
+
         Args: 
-            A pair of functions that takes one environment argument and returns a pattern. 
-            The first function `a` is used for parsing (destructuring the source shape), 
-            and the second function `b` is used for generation (constructing the target shape). 
-            If only one function is provided, it is treated as the target pattern
-            and Syncraft will treat the source pattern as `lambda env: env.X`. 
-            The name `X` is inferred from the target pattern, which must 
-            contain exactly one variable.
             
             a: Destructor/pattern for A (source shape). Typically a lambda that
-               deconstructs the parsed result into components. When `b` is omitted,
-               this becomes the target constructor instead.
+                deconstructs the parsed result into components. When `b` is omitted,
+                this becomes the target constructor instead.
+
             b: Constructor for B (target shape). Takes the components from `a` and
-               builds the desired output type. If omitted, `a` is used as the target
-               constructor and the source pattern is automatically inferred from the
-               single variable in `a` (requires exactly one variable in the pattern).
+                builds the desired output type. If omitted, `a` is used as the target
+                constructor and the source pattern is automatically inferred from the
+                single variable in `a` (requires exactly one variable in the pattern).
+
             block_normalization: Prevent flattening this node during normalization.
 
         Returns:
