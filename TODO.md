@@ -10,7 +10,7 @@ TODO
 
 ## Later (platform/ecosystem)
 - [ ] Integrate `Tracer` performance profile into parse tree visualizer
-- [ ] Export Grammar/Syntax to EBNF/BNF/Yacc
+- [*] Export Grammar/Syntax to EBNF/BNF/Yacc
 - [ ] AI assistant for writing grammar rules (web-based assistant, not a full editor)
 - [ ] Bidirectional constraints mini-framework (generalize `Not` in `bimap.py`)
 

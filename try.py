@@ -28,6 +28,7 @@ def test_syntax_ebnf_and_from_ebnf_roundtrip():
     syntax = Syntax.from_ebnf(ebnf_text)
     # Export back to EBNF
     ebnf_out = syntax.ebnf()
+    print(ebnf_out)
 
     # Re-import and check equivalence
     syntax2 = Syntax.from_ebnf(ebnf_out)
@@ -52,4 +53,4 @@ def test_syntax_ebnf_export_simple():
 if __name__ == "__main__":
     # test_single_rule_ebnf_to_syntax()
     # test_syntax_ebnf_and_from_ebnf_roundtrip()
-    test_syntax_ebnf_export_simple()
+    test_syntax_ebnf_and_from_ebnf_roundtrip()

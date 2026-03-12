@@ -19,7 +19,7 @@ from .algebra import (
     Right,
     Either,
 )
-from syncraft.bimap import (
+from .bimap import (
     DataError, 
     Not
 )
@@ -40,10 +40,19 @@ from .grammar import (
     grammar, 
 )
 from .format import (
-    LayoutDoc
+    LayoutDoc,
+    Concat,
+    Text,
+    Group,
+    Line,
+    Nest,
     
 )
 
+from .ebnf import (
+    EBNF,
+    GrammarDef,
+)
 
 try:
     from importlib.metadata import version
@@ -59,8 +68,9 @@ __all__ = [
 	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "SeqSpec", "AltSpec", "ManySpec",
 	"AST", "Token", "Many", "Nothing", "Seq", "Alt",
     "DataError", "Not",
+    "EBNF", "GrammarDef",
     "SyncraftError",
     "RegexError",
-    "LayoutDoc",
+    "LayoutDoc", "Concat", "Text", "Group", "Line", "Nest",
     "__version__",
 ]

@@ -1,41 +1,9 @@
-"""Layout document vocabulary and renderer.
 
-This module defines a small pretty-printing algebra used by generation APIs.
-The goal is to let grammars produce structured formatting intent, not only plain
-strings.
-
-LayoutDoc vocabulary
---------------------
-- ``Text(value)``: literal text.
-- ``Sequence(parts)``: concatenation of child nodes.
-- ``Group(body)``: choose between two rendering modes for ``body``:
-    - *flat mode*: line-break nodes use fallback text.
-    - *break mode*: line-break nodes emit ``\n`` and indentation.
-    The renderer picks flat mode when the group's flat rendering fits within the
-    available line width at the current column; otherwise it picks break mode.
-- ``Line(body, fallback=" ")``: a conditional break.
-    - In flat mode: emits ``fallback`` then ``body``.
-    - In break mode: emits newline + current indentation then ``body``.
-- ``SoftLine(body, fallback="")``: like ``Line`` but default fallback is empty,
-    so it collapses to nothing in flat mode by default.
-- ``Nest(body, level=1)``: increases indentation depth used by nested breaks in
-    ``body`` by ``level`` (non-negative).
-
-Semantics summary
------------------
-- Rendering state tracks ``(column, indent-depth, mode)``.
-- ``Group`` performs a width check using the flat projection of its body.
-- ``Nest`` only affects indentation of subsequent breaks, not immediate text.
-- ``Line``/``SoftLine`` are the only nodes that can materialize line breaks.
-
-``render(...)`` lowers AST-like values to this vocabulary with ``lower_to_layout``
-and then renders them under width/indent constraints.
-"""
 
 from __future__ import annotations
 from typing import Any, Tuple
 from dataclasses import dataclass, field, replace
-from enum import Enum
+
 from syncraft.ast import AST, Alt, Lazy, Many, ParseResult, Seq, Nothing, EOF, Unknown
 
 

@@ -12,6 +12,14 @@ from dataclasses import dataclass
 from enum import Enum
 
 class SyncraftError(Exception):
+    """
+    Custom exception class for errors encountered during AST processing in Syncraft.
+    Attributes:
+        message: A descriptive error message.
+        offender: The value or node that caused the error.
+        expect: An optional value or type that was expected instead of the offender.
+        soft_failure: A boolean flag indicating whether this error should be treated as a soft failure (i.e., non-fatal and backtracking) or a hard failure (i.e., critical error that should halt processing).
+    """
     def __init__(self, message: str, offender: Any, expect: Any = None, soft_failure: bool = False, **kwargs: Any) -> None:
         super().__init__(message)
         self.offender = offender
@@ -85,6 +93,9 @@ class Walkable(Protocol):
         ...
 @dataclass(frozen=True, slots=True)    
 class AST(Walkable):
+    """
+    Base class for all raw AST nodes in Syncraft. 
+    """
     def vis(self, depth: int = 5) -> Optional[SVGVisualization]:
         try:
             from syncraft.vis import ast2svg
@@ -207,7 +218,10 @@ class Seq(AST):
 
 
 @dataclass(frozen=True, slots=True)
-class Token(AST):
+class Token:
+    """
+    A typical structureal terminal token
+    """
     text: str | bytes | Tuple[Any, ...]
     token_type: Optional[Union[str, Enum]] = None   
 

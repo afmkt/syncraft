@@ -24,6 +24,9 @@ from dataclasses import replace
 
 
 class RegexError(SyncraftError):
+    """
+    Exception raised for errors in regex parsing or processing.
+    """
     pass
 
 

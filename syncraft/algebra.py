@@ -40,6 +40,21 @@ class ErrorPriority(IntEnum):
 
 @dataclass(slots=True)
 class Error:
+    """
+    Represents an error encountered during parsing, generation, or formatting.
+
+    Attributes:
+        this: The object associated with the error.
+        message: A human-readable error message.
+        error: The underlying error object, if any.
+        state: The state at the time of the error.
+        priority: The priority of the error for reporting purposes.
+        committed: Whether the error is committed.
+        stack: The call stack at the time of the error.
+        depth: The depth of the error in the parsing/generation/formatting process.
+        file: The file where the error occurred.
+        line: The line number where the error occurred.
+    """
     this: Optional[Any] = None
     message: Optional[str] = None
     error: Optional[Any] = None    
@@ -265,6 +280,13 @@ def normalize_map_f(f: Callable[..., Any]) -> Callable[..., Any]:
 
 @dataclass(frozen=True, slots=True)        
 class Algebra(Generic[A, S]):
+    """
+    The base class of all algebraic structures in Syncraft. 
+    An Algebra represents a set of composable logic, like alt, seq, map, etc.
+    Each Algebra has a run function that takes an input state and an optional cache, 
+    and produces a Python generator that yields control back to the caller with intermediate states, 
+    and eventually returns either a successful result or an error.
+    """
 ######################################################## shared among all subclasses ########################################################
     run_f: Callable[[S, Cache[S] | None], Generator[YieldChannelType, S, Either[Any, Tuple[A, S]]]]
     syntax: Syntax | None = None

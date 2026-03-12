@@ -19,6 +19,9 @@ from abc import ABC, abstractmethod
 from syncraft.ast import SyncraftError
 
 class DataError(SyncraftError):
+    """
+    Exception raised for errors in the data transformation process.
+    """
     def __init__(self, message: str, reason: list[Any] | None = None, *, soft_failure: bool = False):
         super().__init__(message, offender="N/A", soft_failure=soft_failure)
         self.reason = reason

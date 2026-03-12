@@ -82,6 +82,12 @@ S = TypeVar('S', bound=Bindable)  # State type
 N = TypeVar('N', bound=Hashable)  # Node type for graphs
 @dataclass(frozen=True, slots=True)
 class Graph(Generic[N]):
+    """
+    Immutable directed graph with a designated root node.
+    edges: Mapping from each node to its set of endpoints nodes. 
+           The direction of the an edge is from the key node to each node in the corresponding set.
+    root: The root node of the graph.
+    """
     edges: FrozenDict[N, frozenset[N]]
     root: N
 
@@ -179,6 +185,9 @@ class SyntaxSpec:
         raise NotImplementedError
         
     def named(self, *, name: None | str, file: None | str, line: None | int, func: None | str, _location:bool=True) -> SyntaxSpec:
+        """
+        Return a copy of this SyntaxSpec with updated name and metadata.
+        """
         if _location:
             return replace(self, name=name, file=file, line=line, func=func)
         else:
@@ -264,6 +273,13 @@ class SyntaxSpec:
 
 @dataclass(frozen=True, slots=True)
 class LazySpec(SyntaxSpec):
+    """
+    A SyntaxSpec for lazy (deferred) syntax definitions, used to represent recursive grammar rules.
+    lazy_state: Contains the thunk for resolving the lazy syntax and caches the resolved Syntax once computed.
+    creation_site: The location where the LazySpec was created.
+    str_cache: A cached string representation of the LazySpec.
+
+    """
     lazy_state: LazyState
     creation_site: str = field(compare=False, hash=False, init=False)
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
@@ -329,6 +345,11 @@ class LazySpec(SyntaxSpec):
 
 @dataclass(frozen=True, slots=True)
 class SeqSpec(SyntaxSpec):
+    """
+    A SyntaxSpec for sequence (ordered) syntax definitions, used to represent a sequence of grammar rules.
+    steps: A tuple of (SyntaxSpec, bool) pairs, where the bool indicates whether the step should be included in the sequence.
+    str_cache: A cached string representation of the SeqSpec.
+    """
     steps: Tuple[Tuple[SyntaxSpec, bool], ...]
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
     
@@ -408,6 +429,11 @@ class SeqSpec(SyntaxSpec):
     
 @dataclass(frozen=True, slots=True)
 class AltSpec(SyntaxSpec):
+    """
+    A SyntaxSpec for alternation (ordered choice) syntax definitions, used to represent a set of alternative grammar rules.
+     options: A tuple of SyntaxSpec objects representing the alternative options.
+     str_cache: A cached string representation of the AltSpec.
+    """
     options: Tuple[SyntaxSpec, ...]
 
     str_cache: str | None = field(default=None, compare=False, hash=False, repr=False, init=False)
@@ -458,6 +484,14 @@ class AltSpec(SyntaxSpec):
     
 @dataclass(frozen=True, slots=True)
 class ManySpec(SyntaxSpec):
+    """
+    A SyntaxSpec for repetition syntax definitions, used to represent zero or more occurrences of a grammar rule.
+    spec: The SyntaxSpec representing the repeated grammar rule.
+    at_least: The minimum number of occurrences required.
+    at_most: The maximum number of occurrences allowed (None for unlimited).
+    str_cache: A cached string representation of the ManySpec.
+
+    """
     spec: SyntaxSpec
     at_least: int
     at_most: Optional[int]
@@ -512,6 +546,18 @@ class ManySpec(SyntaxSpec):
 
 @dataclass(frozen=True, slots=True)
 class LexSpec(SyntaxSpec):
+    """
+    A SyntaxSpec for lexical (token-level) syntax definitions, used to represent terminal grammar rules.
+     
+     fname: The name of the lexer function or token type associated with this LexSpec.
+     args: Positional arguments for the lexer function, used to reconstruct the corresponding Syntax.
+     kwargs: Keyword arguments for the lexer function, used to reconstruct the corresponding Syntax.
+     extra_info: Additional metadata that may be relevant for certain lexers but does not affect Syntax reconstruction.
+     str_cache: A cached string representation of the LexSpec.
+
+     Note: LexSpec focuses on capturing the structural information needed to reconstruct a Syntax object. 
+           It does not attempt to capture all user-level semantics or transformations associated with the lexer.
+    """
     fname: str
     MAX_NAME_LENGTH: Optional[int] = field(compare=False, hash=False, repr=False)
     args: Tuple[Any, ...] = field(default_factory=tuple)
@@ -592,6 +638,9 @@ class LexSpec(SyntaxSpec):
     
 @dataclass
 class LazyState(Generic[A, S]):
+    """
+    LazyState encapsulates the state of a lazy syntax definition, including the thunk for resolving the syntax and caches for the resolved syntax and algebras.
+    """
     # thunk returns a Syntax[A, S], the original callable passed to Syntax.lazy
     thunk: Callable[[], Syntax[A, S]]
     # cached resolved Syntax; excluded from comparisons
