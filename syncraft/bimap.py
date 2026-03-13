@@ -46,7 +46,7 @@ class Bindable(ABC):
     def get(self, name: str, default: Any = ...) -> Any:
         return self.ctx.get(name, default)
     
-    def bind(self, value: Any, **trans: Callable[[Any, Any], Any] | Any) -> Bindable:
+    def bind(self, value: Any, **trans: Callable[[Any, Any], Any] | Any) -> Any:
         new_ctx = self.ctx
         for name, f in trans.items():
             if callable(f):
@@ -66,14 +66,14 @@ class Bindable(ABC):
     @abstractmethod
     def unused_cache_key(self) -> int: ...
 
-    def apply(self, f: Callable[..., Any])->Bindable: 
+    def apply(self, f: Callable[..., Any])->Any: 
         return self
         
     @abstractmethod
-    def enter(self) -> Bindable: ...
+    def enter(self) -> Any: ...
     
     @abstractmethod
-    def leave(self) -> Bindable: ...
+    def leave(self) -> Any: ...
     
     @property
     @abstractmethod
