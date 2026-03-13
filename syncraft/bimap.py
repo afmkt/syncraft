@@ -905,6 +905,12 @@ def bimap(forward: Callable[[B], A], backward: Callable[[A], B]) -> Callable[[Ex
         If expr is not fully resolved, we cannot make any inferences about the child expressions of expr.
     - If bimap(expr) is evaluated in the backward direction, we apply the backward function to the value we are trying to unify with. 
         If expr is not fully resolved, we cannot make any inferences about the child expressions of expr.
+
+    Args:
+        forward: A function that takes the result of evaluating the expression and transforms it into the desired output format.
+        backward: A function that takes a value we are trying to unify with and transforms it into the format expected by the expression.
+    Returns: 
+        A function that takes an expression and returns a new expression that applies the forward and backward transformations in both directions.
     """
     def wrap_bimap(expr: Expr) -> Any:        
         def infer_bimap(value: Any, 

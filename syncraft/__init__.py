@@ -21,6 +21,8 @@ from .algebra import (
 )
 from .bimap import (
     DataError, 
+    bimap,
+    iso,
     Not
 )
 from .ast import (
@@ -67,7 +69,7 @@ __all__ = [
     "Algebra", "Error", "Left", "Right", "Either",
 	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "SeqSpec", "AltSpec", "ManySpec",
 	"AST", "Token", "Many", "Nothing", "Seq", "Alt",
-    "DataError", "Not",
+    "DataError", "Not", "bimap", "iso",
     "EBNF", "GrammarDef",
     "SyncraftError",
     "RegexError",
