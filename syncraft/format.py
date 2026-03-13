@@ -175,13 +175,15 @@ class _Renderer:
         if isinstance(doc, Line):            
             if state.flat:
                 s = doc.flat
+                s = doc.template.format(s)
                 next_state = self.RenderState(col=state.col + len(s), depth=state.depth, flat=state.flat)
-                return doc.template.format(s), next_state
+                return s, next_state
             else:
                 s = doc.broken
                 pad = self.indent * state.depth
+                s = doc.template.format(s)
                 next_state = self.RenderState(col=len(pad) + len(s), depth=state.depth, flat=state.flat)
-                return doc.template.format("\n" + pad + s), next_state
+                return "\n" + pad + s, next_state
 
         
         raise TypeError(f"Unsupported LayoutDoc node: {type(doc)!r}")
