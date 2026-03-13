@@ -852,7 +852,7 @@ def unify(pattern: Any, value: Any, env: Env) -> Tuple[bool, List[Any]]:
                     return False, reason + [(pattern, value, f"Failed to unify dataclass field {field.name}")]
             return True, []
 
-    raise DataError(f"Unsupported pattern or value type for unification {pattern} <=> {value}.")
+    raise DataError(f"Unsupported pattern or value type for unification {pattern} <=> {value}, {type(pattern)} <=> {type(value)}")
 
 
 def solve(pattern: Any, value: Any, env: Env) -> Env | List[Any]:

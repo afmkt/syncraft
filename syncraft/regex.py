@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Tuple, Union, Any, Type, Mapping
+from typing import Optional, Tuple, Union, Any, Type, Mapping, Callable
 import unicodedata
 import random
 import re as pyre
@@ -19,6 +19,7 @@ from syncraft.ast import Nothing, SyncraftError
 from functools import cached_property
 from syncraft.utils import FrozenDict
 from dataclasses import replace
+
 
 
 
@@ -505,28 +506,30 @@ class Branch(RegexNode):
         pieces = [p for p in self.pieces if p.effective]
         parts_list: list[Tuple[Syntax[Any, Any], bool]] = []
         buffered_builders: list[Builder[str]] = []
+        def append_part(part: Tuple[Syntax[Any, Any], bool]) -> None:
+            parts_list.append(part)
 
         def flush_buffered_builders() -> None:
             nonlocal buffered_builders
             if buffered_builders:
                 merged = reduce(lambda a, b: a + b, buffered_builders)
-                parts_list.append(-_annotate_lex(syntax_cls, merged))
+                append_part(-_annotate_lex(syntax_cls, merged))
                 buffered_builders = []
 
         for piece in pieces:
             if piece.has_group:
                 flush_buffered_builders()
                 item = piece.syntax(syntax_cls=syntax_cls, case_insensitive=case_insensitive, references=references)
-                parts_list.append(item if isinstance(item, tuple) else (item, True))
+                append_part(item if isinstance(item, tuple) else (item, True))
+
             else:
                 q = piece.quantifier
                 if q is not None and q is not Nothing and q.minimum == 0:
                     # nullable piece without a group
                     flush_buffered_builders()
-                    atom_builder = piece.atom.builder(case_insensitive=case_insensitive)
-                
+                    atom_builder = piece.atom.builder(case_insensitive=case_insensitive)                
                     repeated = _annotate_lex(syntax_cls, atom_builder).many(at_least=q.minimum, at_most=q.maximum)
-                    parts_list.append(-repeated)
+                    append_part(-repeated)
                 else:
                     buffered_builders.append(piece.builder(case_insensitive=case_insensitive))
 
@@ -829,6 +832,9 @@ def parse(data: str, *, syntax: Syntax | None = None) -> Any:
 
 
 def re(pattern: str) -> Builder[str]:
+    """
+    Compile a regex pattern into a Builder that can be used for matching or generation.
+    """
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
@@ -843,6 +849,9 @@ def xeger(
     rnd: random.Random | None = None,
     seed: int | None = None,
 ) -> str:
+    """
+    Generate a random string that matches the given regex pattern.
+    """
     if rnd is not None and seed is not None:
         raise ValueError("Provide either 'rnd' or 'seed', not both")
 
@@ -867,7 +876,14 @@ def xeger(
     return result
 
 
-def rp(pattern: str, *, syntax_cls: Type[Syntax] | None = None, **refs: Syntax[Any, Any] | Tuple[Syntax[Any, Any], bool]) -> Syntax[Any, Any]:
+def rp(pattern: str, 
+       *, 
+       syntax_cls: Type[Syntax] | None = None, 
+       case_insensitive: bool = False,
+       **refs: Syntax[Any, Any] | Tuple[Syntax[Any, Any], bool]) -> Syntax[Any, Any]:
+    """
+    Parse a regex pattern and convert it into a Syntax object using the provided syntax class and references.
+    """
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
@@ -886,7 +902,9 @@ def rp(pattern: str, *, syntax_cls: Type[Syntax] | None = None, **refs: Syntax[A
             syntax_cls = Syntax
     assert syntax_cls is not None  # for mypy
 
-    converted = parsed.syntax(syntax_cls=syntax_cls, references={k: v if isinstance(v, tuple) else (v, True) for k, v in refs.items()})
+    converted = parsed.syntax(syntax_cls=syntax_cls, 
+                              case_insensitive=case_insensitive,
+                              references={k: v if isinstance(v, tuple) else (v, True) for k, v in refs.items()})
     return converted[0]
     
 

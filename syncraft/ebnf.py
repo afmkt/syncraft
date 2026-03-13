@@ -42,53 +42,20 @@ Supported grammar (in EBNF):
 # -- syncraft-grammar-for-EBNF --
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Tuple, Optional, Dict, Callable, Type, Set, cast
+from typing import Tuple, Optional, Dict, Callable, Type, Set
 from syncraft.grammar import Grammar, lazy, rule, grammar
 from syncraft.syntax import Syntax, SyntaxSpec, Graph, SeqSpec, AltSpec, ManySpec, LexSpec, LazySpec
 from syncraft.ast import Nothing
+from syncraft.fa import Builder
+from syncraft.regex import re
 from rich import print
-S = Syntax.set(builtin=True)
 
 
 
-@grammar
-class EBNF0(Grammar):
-    sqstr = S.re(r"'([^'\\]|\\.)*'")
-    dqstr = S.re(r'"([^"\\]|\\.)*"')
-    str_ = S.alt(sqstr, dqstr)
-    ident = S.re(r"[A-Za-z_][A-Za-z0-9_]*")
-
-    @lazy(S)
-    def grouped(_):
-        return S.rp(r"\[\s*(?&expr)\s*\]|\(\s*(?&expr)\s*\)|\{\s*(?&expr)\s*\}", expr=EBNF0.expr)
-
-    primary = S.alt(ident, str_, grouped)
-    suffix = S.rp(r"(\?|\*|\+|\{(?&int)(,(?&int)?)?\})", int=S.re(r"\d+"))
-    factor = primary + ~suffix
-        
-    seq = S.rp(r"(\s*(?&factor)\s*)*", factor=factor)
-    
-    expr = seq.sep_by(S.re(r"\s*\|\s*"), at_least=1)
-
-    erule = S.rp(
-        r"\s*(?&ident)\s*(?:=|::=)\s*(?&expr)\s*;\s*",
-        ident=ident,
-        expr=expr,
-    )
-
-    grammar = rule(erule.many(at_least=1), is_root=True)
 
 
-# -- syncraft-grammar-for-EBNF-end --
-
-
-
-# -- dataclass-for-EBNF --
 @dataclass(frozen=True)
 class EBNFExpr:
-    # def __str__(self) -> str:
-    #     return self.to_str()
-
     def to_str(self) -> str:
         return ""
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
@@ -304,6 +271,14 @@ def _encode_dq_literal(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
+
+
+def transform_terminal(cls: Type[Syntax]) -> Syntax:
+    return cls.re(r"\s*")
+
+
+
+S = Syntax.set(builtin=True)
 @grammar
 class EBNF(Grammar):
     sqstr = S.re(r"'([^'\\]|\\.)*'").bimap(_decode_literal, _encode_sq_literal)

@@ -1283,6 +1283,23 @@ class ModeAction:
 
 @dataclass(frozen=True, slots=True)
 class Builder(Generic[C]):
+    """
+    Builder is a high-level representation of a lexical rule, which can be compiled into an NFA/DFA.
+    regex.re can transform a regex pattern into a Builder, and then we can compile the Builder into an NFA/DFA using Builder.to_nfa()/to_dfa().
+    Builder can be combined using operators like 
+        + (concat), 
+        | (union), 
+        & (intersect), 
+        - (diff), 
+        ~ (complement), 
+        * (star), 
+        + (plus), 
+        ? (optional), 
+        and many() for custom repetition.
+    Builder can carry additional metadata like tags, priority, skip, non_greedy, and mode actions, 
+    which can be used during the compilation process to influence how the final automaton is constructed and how it behaves during matching.
+    
+    """
     kind: _NodeKind
     tag: Tag = None
     children: Tuple[Builder[C], ...] = field(default_factory=tuple)

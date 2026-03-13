@@ -7,7 +7,7 @@ from enum import Enum
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING,
-    Pattern, Literal, overload
+    Pattern, Literal, overload, Union
 )
 
 from dataclasses import dataclass, field, replace
@@ -25,6 +25,7 @@ from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase
 import threading
+
 
 
 Tag = str | Enum | None
@@ -1788,9 +1789,9 @@ class Syntax(Generic[A, S]):
         if tmp is None:
             tmp = LocalLexerBuilder()
             cls.set_lexer(tmp)
-            return tmp
+            return  tmp
         return tmp
-
+        
 
     @classmethod
     def re(cls, 
@@ -1860,7 +1861,10 @@ class Syntax(Generic[A, S]):
         return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
     @classmethod
-    def rp(cls, pattern: str, **refs: Syntax[Any, Any] | Tuple[Syntax[Any, Any], bool]) -> Syntax:
+    def rp(cls, 
+           pattern: str, 
+           i: bool = False,
+           **refs: Syntax[Any, Any] | Tuple[Syntax[Any, Any], bool]) -> Syntax:
         """Compile a regex++ grammar fragment into `Syntax`.
 
         `rp` extends regex-like authoring with grammar references and recursion.
@@ -1869,6 +1873,7 @@ class Syntax(Generic[A, S]):
 
         Args:
             pattern: Regex++ fragment string.
+            i: Whether to apply case-insensitive matching to the pattern.
             **refs: Named syntax references used by `(?&name)`.
 
         Returns:
@@ -1927,7 +1932,10 @@ class Syntax(Generic[A, S]):
         - This API only works on str input, as regex matching is inherently string-based.
         """
         import syncraft.regex as regex
-        ret = regex.rp(pattern, syntax_cls=cls, **refs)
+        ret = regex.rp(pattern, 
+                       syntax_cls=cls, 
+                       case_insensitive=i, 
+                       **refs)
         if isinstance(ret.spec, LexSpec):
             extra: FrozenDict[str, Any] = FrozenDict({
                 'type': 'rp',
