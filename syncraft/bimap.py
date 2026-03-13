@@ -893,30 +893,33 @@ def transform(
     return transform_f
 
 
-
-        
-
-def Not(expr: Any) -> Any:
-    """Logical negation of an expression. The inference rules for Not are as follows:
-        - If Not(expr) is True, then expr must be False. Therefore, we can infer that any child expressions of expr should be resolved to False.
-        - If Not(expr) is False, then expr must be True. Therefore, we can infer that any child expressions of expr should be resolved to True.
-        - If Not(expr) is not fully resolved, we cannot make any inferences about the child expressions of expr.
-        TODO: We need a mechanism to generalize this to other logical operators. 
-        - Unary operators like Not
-        - Binary operators like And, Or, etc.
-        - Multiary operators like And, Or, etc.
+def bimap(forward: Callable[[B], A], backward: Callable[[A], B]) -> Callable[[Expr], Any]:
     """
-    def infer_not(value: Any, child: List[Tuple[bool, int|str, Expr, Any]], env: Env, visited: Set[Any]) -> Generator[Tuple[Tuple[Var, Any], ...], None, None]:
-        if value is True:
-            for fully_resolved, i, child_expr, child_value in child:
+    Bimap operator that takes two functions, forward and backward, and applies them to the expression in both directions. 
+    In the unifying phase, the value in the pattern unifies with the result of the Expr, and we infer the arguments by 
+    applying the backward function, then the value of the argument is bound to the input Expr. 
+    In the evaluating phase, the argument is bound to the input Expr and be retrieved from Env, then apply the forward function to get the final result. 
+    
+    The inference rules for bimap are as follows:
+    - If bimap(expr) is evaluated in the forward direction, we apply the forward function to the result of evaluating expr. 
+        If expr is not fully resolved, we cannot make any inferences about the child expressions of expr.
+    - If bimap(expr) is evaluated in the backward direction, we apply the backward function to the value we are trying to unify with. 
+        If expr is not fully resolved, we cannot make any inferences about the child expressions of expr.
+    """
+    def wrap_bimap(expr: Expr) -> Any:        
+        def infer_bimap(value: Any, 
+                    child: List[Tuple[bool, int|str, Expr, Any]], 
+                    env: Env, 
+                    visited: Set[Any]) -> Generator[Tuple[Tuple[Var, Any], ...], None, None]:
+            v = backward(value)
+            for fully_resolved, _, child_expr, _ in child:
                 if not fully_resolved:
-                    yield from child_expr.inference(False, env=env, visited=visited)
-        elif value is False:
-            for fully_resolved, i, child_expr, child_value in child:
-                if not fully_resolved:
-                    yield from child_expr.inference(True, env=env, visited=visited)
-        else:
-            raise DataError(f"Expected boolean value for Not inference, got {value}")
-    return replace(Expr.apply(lambda x: not x, expr), infer = infer_not)
+                    yield from child_expr.inference(v, env=env, visited=visited)
+        return replace(Expr.apply(lambda x: forward(x), expr), infer = infer_bimap)
+    return wrap_bimap
 
+def iso(i: Iso[A, B]) -> Callable[[Expr], Any]:
+    return bimap(lambda x: i.fmap(x, None), lambda x: i.imap(x, None))
 
+def Not(expr: Expr) -> Any:
+    return bimap(lambda x: not x, lambda x: not x)(expr)
