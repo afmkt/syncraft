@@ -165,12 +165,12 @@ class _Renderer:
             use_flat = state.flat or self._fits(doc.body, state)
             group_state = self.RenderState(col=state.col, depth=state.depth, flat=use_flat)
             txt, rendered_state = self._render(doc.body, state=group_state)
-            return doc.template.format(txt), self.RenderState(col=rendered_state.col, depth=rendered_state.depth, flat=state.flat)
+            return txt, self.RenderState(col=rendered_state.col, depth=rendered_state.depth, flat=state.flat)
 
         if isinstance(doc, Nest):
             nested_state = self.RenderState(col=state.col, depth=state.depth + max(0, doc.level), flat=state.flat)
             txt, rendered_state = self._render(doc.body, state=nested_state)
-            return doc.template.format(txt), self.RenderState(col=rendered_state.col, depth=state.depth, flat=state.flat)
+            return txt, self.RenderState(col=rendered_state.col, depth=state.depth, flat=state.flat)
 
         if isinstance(doc, Line):            
             if state.flat:
