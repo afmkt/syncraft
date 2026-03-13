@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from syncraft.format import LayoutDoc
     from syncraft.vis import SVGVisualization
 
-from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict, DbgPrint
+from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error, EntryCategory
 from syncraft.cache import Cache, Incomplete
 from syncraft.bimap import Bindable, Iso, DataError, Match, Env
@@ -709,7 +709,7 @@ class LazyState(Generic[A, S]):
         return algebra
         
 
-@dataclass(frozen=True, slots=True, weakref_slot=True)
+@dataclass(frozen=True)
 class Syntax(Generic[A, S]):
     """
     The core signature of Syntax is take an Algebra Class and return an Algebra Instance.
@@ -746,7 +746,7 @@ class Syntax(Generic[A, S]):
     # the alt and seq combinators need to keep track of their children for normalization
     _children: Tuple[Syntax[Any, S], ...] | None = field(default=None, compare=False, hash=False, repr=False)
 
-    print: ClassVar[DbgPrint] = DbgPrint.create()
+    # print: ClassVar[DbgPrint] = DbgPrint.create()
     _lazy_facade_cache: ClassVar[ThreadLocalWeakValueDict[Callable[..., Any], Syntax]] = ThreadLocalWeakValueDict()
 
     
@@ -786,18 +786,18 @@ class Syntax(Generic[A, S]):
         return syntax2svg(self.spec, max_depth=depth)
 
 
-    @classmethod
-    def cdbg(cls, e: bool)->Any:
-        """Enable or disable class-level debug printing for all syntax instances."""
-        # cls debug enable
-        cls.print.enable(e)
-        return cls
+    # @classmethod
+    # def cdbg(cls, e: bool)->Any:
+    #     """Enable or disable class-level debug printing for all syntax instances."""
+    #     # cls debug enable
+    #     cls.print.enable(e)
+    #     return cls
 
-    def idbg(self, e: bool) -> Syntax[A, S]:
-        """Enable or disable debug printing for this syntax instance only."""
-        # instance debug enable
-        self.print.enable(e)
-        return self
+    # def idbg(self, e: bool) -> Syntax[A, S]:
+    #     """Enable or disable debug printing for this syntax instance only."""
+    #     # instance debug enable
+    #     self.print.enable(e)
+    #     return self
 
     
     @property
@@ -2127,6 +2127,9 @@ class Syntax(Generic[A, S]):
             return True    
         except SyncraftError as e:
             return Error.new(this=None, message=f"Exception {e} during validation", error=e)
+
+
+
 
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import (
     Any, TypeVar, Tuple, Set, Dict, List, Generator,
-    Generic, Callable, overload, Literal, Self
+    Generic, Callable, overload, Literal
 )
 
 from dataclasses import dataclass, field, is_dataclass, fields, replace
@@ -46,7 +46,7 @@ class Bindable(ABC):
     def get(self, name: str, default: Any = ...) -> Any:
         return self.ctx.get(name, default)
     
-    def bind(self, value: Any, **trans: Callable[[Any, Any], Any] | Any) -> Self:
+    def bind(self, value: Any, **trans: Callable[[Any, Any], Any] | Any) -> Bindable:
         new_ctx = self.ctx
         for name, f in trans.items():
             if callable(f):
@@ -66,14 +66,14 @@ class Bindable(ABC):
     @abstractmethod
     def unused_cache_key(self) -> int: ...
 
-    def apply(self, f: Callable[..., Any])->Self: 
+    def apply(self, f: Callable[..., Any])->Bindable: 
         return self
         
     @abstractmethod
-    def enter(self) -> Self: ...
+    def enter(self) -> Bindable: ...
     
     @abstractmethod
-    def leave(self) -> Self: ...
+    def leave(self) -> Bindable: ...
     
     @property
     @abstractmethod

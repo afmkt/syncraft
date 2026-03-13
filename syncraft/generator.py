@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import (
     Any, Set, TypeVar, Tuple, Optional, Callable, Dict, Hashable,
-    List, Generator as PyGenerator, cast, Self
+    List, Generator as PyGenerator, cast
 )
 
 from syncraft.fa import (
@@ -80,10 +80,10 @@ class GenState(Bindable):
     def unused_cache_key(self) -> int:
         return 0
 
-    def enter(self) -> Self: 
+    def enter(self) -> GenState: 
         return self
     
-    def leave(self) -> Self: 
+    def leave(self) -> GenState: 
         return self
     
     
