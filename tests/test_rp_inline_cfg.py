@@ -206,9 +206,9 @@ def test_rp_inline_with_check_predicate():
 
 def test_rp_inline_whitespace_handling():
     """
-    Regex whitespace escapes (\s*) naturally handle structural gaps.
+    Regex whitespace escapes (\\s*) naturally handle structural gaps.
     
-    Pattern: num \s* + \s* num
+    Pattern: num \\s* + \\s* num
     """
     num = S.rp(r"[0-9]+").map(int)
     expr = S.rp(r"(?&num)\s*\+\s*(?&num)", num=num)
