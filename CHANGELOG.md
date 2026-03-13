@@ -7,6 +7,10 @@ It's in pre-1.0 status. APIs may change and breaking changes are possible until 
 
 _No unreleased changes at this time._
 
+## [0.8.1] - 2026-03-13
+### Fixed
+- Fixed compatibility with weak references for `Syntax` objects in both Python 3.10 and 3.11.
+
 ## [0.8.0] - 2026-03-12
 
 ### Added
