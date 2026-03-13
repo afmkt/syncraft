@@ -23,6 +23,12 @@ SYNCRAFT_CONFIG_KEY = "__syncraft_config__"
 
 
 class EntryCategory(Enum):
+    """
+    Represents the direction of a grammar.
+    Parse: when we're parsing input text into an AST or other structured representation.
+    Generate: when we're generating text from an AST or other structured representation.
+    Format: when we're formatting text.
+    """
     Parse = 'map'
     Generate = "imap"
     Format = "fmt"

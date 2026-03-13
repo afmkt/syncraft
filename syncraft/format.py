@@ -19,7 +19,7 @@ class LayoutDoc:
     Layout documents are rendered via `render(...)`, callers can
     supply constraints like max line width.
     """
-
+    template: str = field(default="{0}", kw_only=True, repr=False, compare=False)
     ast: AST | Any = field(default=None, kw_only=True, repr=False, compare=False)
 
     @classmethod
@@ -148,7 +148,7 @@ class _Renderer:
 
     def _render(self, doc: LayoutDoc, *, state: RenderState) -> tuple[str, RenderState]:
         if isinstance(doc, Text):
-            s = doc.value
+            s = doc.template.format(doc.value)
             next_state = self.RenderState(col=state.col + len(s), depth=state.depth, flat=state.flat)
             return s, next_state
 
@@ -158,29 +158,30 @@ class _Renderer:
             for part in doc.parts:
                 txt, cur_state = self._render(part, state=cur_state)
                 chunks.append(txt)
-            return "".join(chunks), cur_state
+            
+            return doc.template.format("".join(chunks)), cur_state
 
         if isinstance(doc, Group):
             use_flat = state.flat or self._fits(doc.body, state)
             group_state = self.RenderState(col=state.col, depth=state.depth, flat=use_flat)
             txt, rendered_state = self._render(doc.body, state=group_state)
-            return txt, self.RenderState(col=rendered_state.col, depth=rendered_state.depth, flat=state.flat)
+            return doc.template.format(txt), self.RenderState(col=rendered_state.col, depth=rendered_state.depth, flat=state.flat)
 
         if isinstance(doc, Nest):
             nested_state = self.RenderState(col=state.col, depth=state.depth + max(0, doc.level), flat=state.flat)
             txt, rendered_state = self._render(doc.body, state=nested_state)
-            return txt, self.RenderState(col=rendered_state.col, depth=state.depth, flat=state.flat)
+            return doc.template.format(txt), self.RenderState(col=rendered_state.col, depth=state.depth, flat=state.flat)
 
         if isinstance(doc, Line):            
             if state.flat:
                 s = doc.flat
                 next_state = self.RenderState(col=state.col + len(s), depth=state.depth, flat=state.flat)
-                return s, next_state
+                return doc.template.format(s), next_state
             else:
                 s = doc.broken
                 pad = self.indent * state.depth
                 next_state = self.RenderState(col=len(pad) + len(s), depth=state.depth, flat=state.flat)
-                return "\n" + pad + s, next_state
+                return doc.template.format("\n" + pad + s), next_state
 
         
         raise TypeError(f"Unsupported LayoutDoc node: {type(doc)!r}")

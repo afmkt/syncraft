@@ -18,7 +18,7 @@ digit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
 
 def assert_ebnf_roundtrip(text: str, *, syntax: Any | None = None) -> Any:
     parsed = EBNF.parse(text, syntax=syntax)
-    print(str(parsed))
+    
     assert not isinstance(parsed, Error)
 
     generated = EBNF.generate(parsed, syntax=syntax, replay=True).render()
@@ -117,7 +117,20 @@ def test_ebnf_named_rules_with_recursion() -> None:
     grammar = assert_ebnf_roundtrip(ebnf)
     assert len(grammar.rules) == 3
 
+def test():
+    from syncraft import Syntax, GrammarDef, EBNF
+    grammar = assert_ebnf_roundtrip(ARITH_EBNF)
+    # print(grammar)
+    s = grammar.syntax(Syntax, {}, set())
+    # print(s)
+    graph = s.graph()
+    
+    ast2 = GrammarDef.from_graph(graph)
+    
+    txt = EBNF.generate(grammar, replay=True).render(width=160)
+    print(txt)
 
+    
 
 if __name__ == "__main__":
-    test_ebnf_optional_and_plus_shorthand()
+    test()

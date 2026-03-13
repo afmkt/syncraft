@@ -32,4 +32,5 @@ def test_single_rule_ebnf_to_syntax():
     assert syntax is not None
     # Should have a sequence and alternation in the structure
     s = syntax.ebnf()
+    
     assert "'a'" in s and "'b'" in s and "'c'" in s

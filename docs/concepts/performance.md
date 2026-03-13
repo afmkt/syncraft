@@ -10,7 +10,7 @@ Syncraft uses memoization and structured recursion handling to make practical gr
 
 ## Performance tips
 
-1. Order alternatives from simple to complex so cheap/high-probability branches are tried first.
+1. Order alternatives from simple-to-complex so cheap/high-probability branches are tried first.
 2. Avoid left recursion when possible.
-3. Prefer iterative forms such as `.many(...)` or right-recursive grammar patterns.
+3. Prefer iterative forms such as `.many(...)` or right-recursive grammar.
 4. Treat Syncraft's left-recursion handling as a safety net, not as the primary authoring style.

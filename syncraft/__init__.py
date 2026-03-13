@@ -5,7 +5,8 @@ from .syntax import (
     LazySpec,
     AltSpec,
 	SeqSpec,
-    ManySpec
+    ManySpec,
+    
 )
 
 from syncraft.regex import (
@@ -18,6 +19,7 @@ from .algebra import (
     Left,
     Right,
     Either,
+    EntryCategory,
 )
 from .bimap import (
     DataError, 
@@ -66,7 +68,7 @@ except Exception:
 
 __all__ = [
     "Grammar", "grammar", "rule", "lazy",
-    "Algebra", "Error", "Left", "Right", "Either",
+    "Algebra", "Error", "Left", "Right", "Either", "EntryCategory",
 	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "SeqSpec", "AltSpec", "ManySpec",
 	"AST", "Token", "Many", "Nothing", "Seq", "Alt",
     "DataError", "Not", "bimap", "iso",

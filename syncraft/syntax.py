@@ -907,6 +907,7 @@ class Syntax(Generic[A, S]):
 
     ######################################################## value transformation ########################################################
     def format(self,
+               tmplt: str = "{0}",
                *,
                breaks: Literal['never', 'optional', 'required'] = 'never',
                indent: int = 0,
@@ -919,29 +920,29 @@ class Syntax(Generic[A, S]):
         lowers generated values into ``LayoutDoc`` so a renderer can apply
         width-sensitive line breaking and indentation.
 
-        Core rendering semantics
-        ------------------------
-        breaks:
-            Controls line-break strategy:
-            - ``'never'`` (default): no width-sensitive grouping.
-            - ``'optional'``: wrap in a ``Group``; render flat when it fits,
-              otherwise break across lines.
-            - ``'required'``: reserved for forced-break semantics; not yet
-              implemented.
-        indent:
-            Extra indentation depth (non-negative integer) applied to nested
-            breaks within this subtree. Used by ``Nest`` in the layout tree.
-        
-        right:
-            Whether to attach line breaks to the right (default) or left of this node.
-            This controls whether breaks introduced by this formatting node will prefer to 
-            break before (right=False) or after (right=True) this node when breaking.
+        Args:
+            tmplt: Template string for formatting the value.
+            breaks:
+                Controls line-break strategy:
+                - `'never'` (default): no width-sensitive grouping.
+                - `'optional'`: wrap in a `Group`; render flat when it fits,
+                otherwise break across lines.
+                - `'required'`: reserved for forced-break semantics; not yet
+                implemented.
+            indent:
+                Extra indentation depth (non-negative integer) applied to nested
+                breaks within this subtree. Used by `Nest` in the layout tree.
+            
+            right:
+                Whether to attach line breaks to the right (default) or left of this node.
+                This controls whether breaks introduced by this formatting node will prefer to 
+                break before (right=False) or after (right=True) this node when breaking.
 
         """
         from syncraft.format import Nest, Group, Concat, Line, LayoutDoc
 
         def to_doc(ast: Any) -> "LayoutDoc":
-            doc = LayoutDoc.from_ast(ast)
+            doc = replace(LayoutDoc.from_ast(ast), template=tmplt)
             if breaks == 'optional':
                 body: LayoutDoc = Concat(parts=(doc, Line())) if right else Concat(parts=(Line(), doc))
                 if indent > 0:
@@ -960,10 +961,11 @@ class Syntax(Generic[A, S]):
         return cast(Syntax["LayoutDoc", S], self.fmt(to_doc, block_normalization=True))
 
     def fmt(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
-        """Low-level formatting escape hatch.
-
-        Prefer ``Syntax.format(...)`` for typed, validated formatting metadata.
-        ``fmt`` remains available for advanced raw transformations.
+        """
+        Low-level formatting escape hatch.
+        Prefer `Syntax.format(...)` for typed, validated formatting metadata.
+        `fmt` remains available for low-level raw transformations.
+        `fmt` == `map(f, entry=EntryCategory.Format)`
         """
         return replace(
             self,
@@ -2027,10 +2029,12 @@ class Syntax(Generic[A, S]):
 
     def ebnf(self, return_ast:bool = False) -> Any:
         """Export this syntax to canonical EBNF text."""
-        from syncraft.ebnf import GrammarDef
+        from syncraft.ebnf import GrammarDef, EBNF
+        ast = GrammarDef.from_graph(self.graph())
         if return_ast:
-            return GrammarDef.from_graph(self.graph())
-        return GrammarDef.from_graph(self.graph()).to_str()
+            return ast
+        return EBNF.generate(ast, replay=True, seed=0).render()
+        
 
         
 

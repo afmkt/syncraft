@@ -4,6 +4,23 @@ repo_url: https://github.com/afmkt/syncraft
 site_url: https://afmkt.github.io/syncraft/
 theme:
   name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite  
+  - pymdownx.tabbed:
+      alternate_style: true
+
 plugins:
   - search
   - macros:
@@ -12,6 +29,8 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          import:
+            - "https://docs.python.org/3/objects.inv"        
           options:
             docstring_style: google
             show_source: false
