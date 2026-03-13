@@ -28,9 +28,5 @@ nav:
       - Performance: concepts/performance.md
   - How-To:
       - EBNF Bidirectional Grammar: how-to/ebnf-bidirectional.md
-      - Debugging & errors: how-to/debugging.md
-      - SQLite parsing: how-to/sqlite.md
   - FAQ: faq.md
-  - Tutorials:
-      - SQLite CREATE TRIGGER Parser Tutorial: tutorials/trigger.ipynb
   - Reference: reference.md
