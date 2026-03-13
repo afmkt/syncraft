@@ -7,7 +7,7 @@ from enum import Enum
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING,
-    Pattern, Literal, overload, Union
+    Pattern, Literal, overload
 )
 
 from dataclasses import dataclass, field, replace
@@ -1799,18 +1799,21 @@ class Syntax(Generic[A, S]):
     def re(cls, 
            pattern: str, 
            *,
+           i: bool = False,
            skip: bool = False, 
            tag: Tag = None, 
            push: str | None = None, 
            pop: str | Literal[True] | None = None,  
            of: str | None = None) -> Syntax:
-        """Create a regex-backed terminal syntax.
+        """
+        Create a regex-backed terminal syntax.
 
         This is lexical regex matching (token-level). For recursive grammar
         fragments with `(?&name)` references, use `Syntax.rp(...)`.
         
         Args:
             pattern: Regular expression pattern for matching.
+            i: Whether to apply case-insensitive matching to the pattern.
             skip: Mark this terminal for automatic skipping (whitespace/comments).
             tag: Optional tag for lexer identification.
             push: Push a new lexer mode when this token is matched (requires
@@ -1848,7 +1851,7 @@ class Syntax(Generic[A, S]):
         """
         # local import to avoid circular dependency
         import syncraft.regex as regex  
-        b = regex.re(pattern).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
+        b = regex.re(pattern, case_insensitive=i).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
         ret = cls.lex(b)
         extra: FrozenDict[str, Any] = FrozenDict({
             'type': 're',
@@ -1867,7 +1870,8 @@ class Syntax(Generic[A, S]):
            pattern: str, 
            i: bool = False,
            **refs: Syntax[Any, Any] | Tuple[Syntax[Any, Any], bool]) -> Syntax:
-        """Compile a regex++ grammar fragment into `Syntax`.
+        """
+        Compile a regex++ grammar fragment into `Syntax`.
 
         `rp` extends regex-like authoring with grammar references and recursion.
         Use `(?&name)` in `pattern` and pass the referenced syntaxes through
@@ -1949,8 +1953,9 @@ class Syntax(Generic[A, S]):
 
     @classmethod
     def lit(cls, 
-            txt: str | bytes,
+            txt: str,
             *,
+            i: bool = False,
             skip: bool = False, 
             tag: Tag = None, 
             push: str | None = None, 
@@ -1961,6 +1966,7 @@ class Syntax(Generic[A, S]):
         
         Args:
             txt: Exact text to match.
+            i: Whether to apply case-insensitive matching to the text.
             skip: Mark this terminal for automatic skipping (whitespace/comments).
             tag: Optional tag for lexer identification.
             push: Push a new lexer mode when this token is matched (requires
@@ -1986,7 +1992,21 @@ class Syntax(Generic[A, S]):
             See `Syntax.re()` and `GlobalLexerBuilder` documentation for
             detailed skip semantics and lexer mode features.
         """
-        b: Builder[Any]= Builder.lit(txt).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
+        import syncraft.regex as regex
+        def lit(text: str, case_insensitive: bool = False) -> Builder[str]:
+            """
+            Create a Builder that matches the given literal text, with optional case insensitivity.
+            """
+            if case_insensitive:
+                b: Builder[str] = Builder.none()
+                for c in text:
+                    for variant in regex.RegexNode._casefold_variants(c):
+                        b = b | Builder.lit(variant)
+                return b
+            else:
+                return Builder.lit(text)
+
+        b = lit(txt, case_insensitive=i).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
         ret = cls.lex(b)
         extra: FrozenDict[str, Any] = FrozenDict({
             'type': 'lit',

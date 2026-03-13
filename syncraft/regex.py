@@ -831,7 +831,7 @@ def parse(data: str, *, syntax: Syntax | None = None) -> Any:
         return Error.new(this=syntax or RE.regex_full, message=str(e), error=e)
 
 
-def re(pattern: str) -> Builder[str]:
+def re(pattern: str, case_insensitive: bool = False) -> Builder[str]:
     """
     Compile a regex pattern into a Builder that can be used for matching or generation.
     """
@@ -840,7 +840,7 @@ def re(pattern: str) -> Builder[str]:
         if isinstance(parsed, Error):
             raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
         raise RegexError("Regex parse failed", offender=parsed)
-    return parsed.builder()
+    return parsed.builder(case_insensitive=case_insensitive)
 
 
 def xeger(
