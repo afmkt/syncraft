@@ -1774,82 +1774,39 @@ class Syntax(Generic[A, S]):
     @classmethod
     def lex(cls, builder: Builder | TokenSpec, **kwargs: Any) -> Syntax:
         """Create a terminal syntax from a lexer builder/token specification."""
-        lexer_builder = cls.lexer()
-        lb = lexer_builder(builder, **kwargs)
+        lexer_builder = cls._lexer()
+        b = cls.get('builtin')
+        lb = lexer_builder(builder, builtin=b, **kwargs)
         return cls.factory('lex', builder=lb)
 
     @classmethod
-    def set_lexer(cls, builder: LexerBuilder) -> Type[Syntax]:
+    def _set_lexer(cls, builder: LexerBuilder) -> Type[Syntax]:
         """Return a configured `Syntax` subclass with a custom lexer builder."""
         return cls.set(lexer_builder=builder)
 
     @classmethod
-    def lexer(cls) -> LexerBuilder:
+    def _lexer(cls) -> LexerBuilder:
         """Return the active lexer builder, creating a local default if needed."""
         from syncraft.lexer import LocalLexerBuilder
         tmp = cls.get('lexer_builder')
         if tmp is None:
             tmp = LocalLexerBuilder()
-            cls.set_lexer(tmp)
+            cls._set_lexer(tmp)
             return  tmp
         return tmp
         
-
     @classmethod
-    def re(cls, 
-           pattern: str, 
-           *,
-           i: bool = False,
-           skip: bool = False, 
-           tag: Tag = None, 
-           push: str | None = None, 
-           pop: str | Literal[True] | None = None,  
-           of: str | None = None) -> Syntax:
-        """
-        Create a regex-backed terminal syntax.
-
-        This is lexical regex matching (token-level). For recursive grammar
-        fragments with `(?&name)` references, use `Syntax.rp(...)`.
-        
-        Args:
-            pattern: Regular expression pattern for matching.
-            i: Whether to apply case-insensitive matching to the pattern.
-            skip: Mark this terminal for automatic skipping (whitespace/comments).
-            tag: Optional tag for lexer identification.
-            push: Push a new lexer mode when this token is matched (requires
-                  GlobalLexerBuilder).
-            pop: Pop the current lexer mode when this token is matched (requires
-                 GlobalLexerBuilder).
-            of: Specifies which mode this rule belongs to (requires
-                GlobalLexerBuilder).
-        
-        NOTE:
-            This API only works on str input.
-        
-        Skip Flag Behavior:
-            The `skip` flag marks tokens for automatic filtering between other
-            terminals. Behavior depends on the lexer builder mode:
-            
-            - **LocalLexerBuilder** (default): `skip=True` affects ONLY this
-              specific terminal. If this terminal is explicitly included in your
-              grammar (e.g., `S.re(r"\\s+", skip=True) + S.lit("x")`), the skip
-              node still yields its text. Skip is NOT globally applied to other
-              terminals.
-            
-            - **GlobalLexerBuilder**: `skip=True` is unioned into a shared DFA.
-              Marked tokens are automatically filtered between ALL terminals in
-              the grammar.
-            
-            For grammars using `S.rp()` patterns, explicit spacing in the pattern
-            is often clearer than relying on skip flags.
-        
-        Lexer Modes (GlobalLexerBuilder only):
-            The `push`, `pop`, and `of` parameters enable context-sensitive
-            lexing (e.g., string interpolation, nested comments). These features
-            require `GlobalLexerBuilder` as they depend on a unified lexer state
-            machine. See `GlobalLexerBuilder` documentation for details.
-        """
-        # local import to avoid circular dependency
+    def _re(cls, 
+            pattern: str, 
+            *, 
+            i: bool = False, 
+            skip: bool = False, 
+            tag: Tag = None, 
+            push: str | None = None, 
+            pop: str | Literal[True] | None = None,  
+            of: str | None = None
+            ) -> Syntax:
+        """Internal helper for regex-based syntax creation."""
         import syncraft.regex as regex  
         b = regex.re(pattern, case_insensitive=i).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
         ret = cls.lex(b)
@@ -1861,6 +1818,29 @@ class Syntax(Generic[A, S]):
             'push': push,
             'pop': pop,
             'of': of
+        })
+        assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
+        return replace(ret, spec=replace(ret.spec, extra_info = extra))
+
+    @classmethod
+    def re(cls, pattern: str, *, i: bool = False) -> Syntax:
+        """
+        Create a regex-backed terminal syntax.
+
+        This is lexical regex matching (token-level). For recursive grammar
+        fragments with `(?&name)` references, use `Syntax.rp(...)`.
+        
+        Args:
+            pattern: Regular expression pattern for matching.
+            i: Whether to apply case-insensitive matching to the pattern.
+        """
+        # local import to avoid circular dependency
+        import syncraft.regex as regex  
+        b = regex.re(pattern, case_insensitive=i)
+        ret = cls.lex(b)
+        extra: FrozenDict[str, Any] = FrozenDict({
+            'type': 're',
+            'pattern': pattern,
         })
         assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
         return replace(ret, spec=replace(ret.spec, extra_info = extra))
@@ -1952,7 +1932,7 @@ class Syntax(Generic[A, S]):
         return ret
 
     @classmethod
-    def lit(cls, 
+    def _lit(cls, 
             txt: str,
             *,
             i: bool = False,
@@ -1960,38 +1940,8 @@ class Syntax(Generic[A, S]):
             tag: Tag = None, 
             push: str | None = None, 
             pop: str | Literal[True] | None = None,  
-            of: str | None = None) -> Syntax:
-        """
-        Create a literal terminal syntax from exact text.
-        
-        Args:
-            txt: Exact text to match.
-            i: Whether to apply case-insensitive matching to the text.
-            skip: Mark this terminal for automatic skipping (whitespace/comments).
-            tag: Optional tag for lexer identification.
-            push: Push a new lexer mode when this token is matched (requires
-                  GlobalLexerBuilder).
-            pop: Pop the current lexer mode when this token is matched (requires
-                 GlobalLexerBuilder).
-            of: Specifies which mode this rule belongs to (requires
-                GlobalLexerBuilder).
-        
-        NOTE:
-            This API only works on str input.
-        
-        Skip Flag Behavior:
-            The `skip` flag marks tokens for automatic filtering. Behavior
-            depends on the lexer builder mode:
-            
-            - **LocalLexerBuilder** (default): Skip is NOT globally applied.
-              Each terminal has its own independent lexer.
-            
-            - **GlobalLexerBuilder**: Skip is globally applied via DFA union.
-              Marked tokens are filtered between all terminals.
-            
-            See `Syntax.re()` and `GlobalLexerBuilder` documentation for
-            detailed skip semantics and lexer mode features.
-        """
+            of: str | None = None
+            ) -> Syntax:
         import syncraft.regex as regex
         def lit(text: str, case_insensitive: bool = False) -> Builder[str]:
             """
@@ -2010,12 +1960,45 @@ class Syntax(Generic[A, S]):
         ret = cls.lex(b)
         extra: FrozenDict[str, Any] = FrozenDict({
             'type': 'lit',
-            'text': txt,
-            'skip': skip,
+            'pattern': txt,
+            'skip':skip,
             'tag': tag,
             'push': push,
             'pop': pop,
             'of': of
+        })
+        assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
+        return replace(ret, spec=replace(ret.spec, extra_info = extra))
+
+
+    @classmethod
+    def lit(cls, txt: str, *, i: bool = False) -> Syntax:
+        """
+        Create a literal terminal syntax from exact text.
+        
+        Args:
+            txt: Exact text to match.
+            i: Whether to apply case-insensitive matching to the text.
+        """
+        import syncraft.regex as regex
+        def lit(text: str, case_insensitive: bool = False) -> Builder[str]:
+            """
+            Create a Builder that matches the given literal text, with optional case insensitivity.
+            """
+            if case_insensitive:
+                b: Builder[str] = Builder.none()
+                for c in text:
+                    for variant in regex.RegexNode._casefold_variants(c):
+                        b = b | Builder.lit(variant)
+                return b
+            else:
+                return Builder.lit(text)
+
+        b = lit(txt, case_insensitive=i)
+        ret = cls.lex(b)
+        extra: FrozenDict[str, Any] = FrozenDict({
+            'type': 'lit',
+            'pattern': txt,
         })
         assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
         return replace(ret, spec=replace(ret.spec, extra_info = extra))

@@ -8,11 +8,11 @@ from syncraft.lexer import GlobalLexerBuilder
 
 # -- step-1 --
 
-S = Syntax.set_lexer(GlobalLexerBuilder())  
+S = Syntax._set_lexer(GlobalLexerBuilder())  
 
 @grammar
 class ExprGrammar(Grammar):
-    ws = S.re(r"\s*", skip=True, tag="WS")
+    ws = S._re(r"\s*", skip=True, tag="WHITESPACE")
     number = S.re(r"\d+")
     plus = S.lit("+")
     star = S.lit("*")
@@ -58,9 +58,10 @@ class Binary:
 
 
 # -- step-4 --
+S = Syntax._set_lexer(GlobalLexerBuilder())  # Reuse the same global lexer for the AST grammar
 @grammar
 class ExprAstGrammar(Grammar):
-    ws = S.re(r"\s*", skip=True)
+    ws = S._re(r"\s*", skip=True, tag="WHITESPACE")
     number = (S.re(r"\d+")).bimap(lambda txt: Number(int(txt)), lambda bin: str(bin.value))
     plus = S.lit("+")
     star = S.lit("*")

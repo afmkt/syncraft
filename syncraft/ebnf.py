@@ -50,11 +50,8 @@ from syncraft.ast import Nothing
 
 
 
-
 @dataclass(frozen=True)
 class EBNFExpr:
-    # def to_str(self) -> str:
-    #     return ""
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         raise NotImplementedError("syntax() not implemented for EBNFExpr")
     
@@ -69,10 +66,7 @@ class NothingExpr(EBNFExpr):
 
 @dataclass(frozen=True)
 class Ref(EBNFExpr):
-    name: str                    # rule reference: ident   
-    # def to_str(self) -> str:
-    #     return self.name
-     
+    name: str                    # rule reference: ident        
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         # print(self, 'env:', env, 'visited', visited)
         if self.name not in env:
@@ -93,10 +87,6 @@ class Ref(EBNFExpr):
 @dataclass(frozen=True)
 class Lit(EBNFExpr):
     literal: str                   # decoded string literal value
-
-    # def to_str(self) -> str:
-    #     return f"'{self.literal}'"
-
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         # print(self)
         return cls.lit(self.literal)
@@ -104,10 +94,6 @@ class Lit(EBNFExpr):
 @dataclass(frozen=True)
 class Seq(EBNFExpr):
     seq: Tuple[EBNFExpr, ...]  # empty tuple => epsilon
-
-    # def to_str(self) -> str:
-    #     return " ".join(item.to_str() for item in self.seq)
-
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         tmp = []
         for item in self.seq:
@@ -118,10 +104,6 @@ class Seq(EBNFExpr):
 @dataclass(frozen=True)
 class Alt(EBNFExpr):
     alt: Tuple[EBNFExpr, ...]  # len >= 2 ideally
-
-    # def to_str(self) -> str:
-    #     return " | ".join(opt.to_str() for opt in self.alt)
-    
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         tmp = []
         for opt in self.alt:
@@ -134,21 +116,6 @@ class Repeat(EBNFExpr):
     expr: EBNFExpr
     minimum: int                 # 0/1/...
     maximum: Optional[int]       # None => unbounded
-
-    # def to_str(self) -> str:
-    #     inner = self.expr.to_str()
-    #     if self.minimum == 0 and self.maximum is None:
-    #         return f"{{ {inner} }}"
-    #     elif self.minimum == 0 and self.maximum == 1:
-    #         return f"[ {inner} ]"
-    #     elif self.minimum == 1 and self.maximum is None:
-    #         return f"( {inner} )+"
-    #     elif self.minimum == self.maximum:
-    #         return f"( {inner} ){{{self.minimum}}}"
-    #     elif self.maximum is None:
-    #         return f"( {inner} ){{{self.minimum},}}"
-    #     else:
-    #         return f"( {inner} ){{{self.minimum},{self.maximum}}}"    
     
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         # print(self)
@@ -159,9 +126,6 @@ class Repeat(EBNFExpr):
 class RuleDef(EBNFExpr):
     name: str
     expr: EBNFExpr
-    
-    # def to_str(self) -> str:
-    #     return f"{self.name} = {self.expr.to_str()};"
 
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         return self.expr.syntax(cls, env, visited).named(self.name)
@@ -170,8 +134,6 @@ class RuleDef(EBNFExpr):
 @dataclass(frozen=True)
 class GrammarDef(EBNFExpr):
     rules: Tuple[RuleDef, ...]    
-    # def to_str(self) -> str:
-    #     return "\n".join(r.to_str() for r in self.rules)
 
     def syntax(self, cls: Type[Syntax], env: Dict[str, Callable[[], Syntax]], visited: Set[EBNFExpr]) -> Syntax:
         def wrap_rule(r: RuleDef) -> Callable[[], Syntax]:
@@ -270,14 +232,10 @@ def _encode_dq_literal(value: str) -> str:
 
 
 
-def transform_terminal(cls: Type[Syntax]) -> Syntax:
-    return cls.re(r"\s*")
-
-
-
 S = Syntax.set(builtin=True)
 @grammar
 class EBNF(Grammar):
+    
     sqstr = S.re(r"'([^'\\]|\\.)*'").bimap(_decode_literal, _encode_sq_literal)
     dqstr = S.re(r'"([^"\\]|\\.)*"').bimap(_decode_literal, _encode_dq_literal)
     str_ = (sqstr | dqstr).to(lambda env: Lit(env.X))

@@ -188,7 +188,6 @@ class Lexer(LexerProtocol[C]):
     @classmethod
     def create(cls, 
                *args: Builder,
-
                builtin: bool = False,
                cache_path: str | Path | None = None,
                ) -> Optional["Lexer[C]"]:
