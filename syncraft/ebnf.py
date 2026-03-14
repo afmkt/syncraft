@@ -250,7 +250,7 @@ class EBNF(Grammar):
 
         repeat = S.rp(r"\{\s*(?&expr)\s*\}", 
                       expr=EBNF.expr).to(lambda env: Repeat(env.expr, 0, None))
-        return optional | group | repeat
+        return optional | group | repeat 
 
     ref = ident.to(lambda env: Ref(env.X))
 
