@@ -939,17 +939,21 @@ class Syntax(Generic[A, S]):
                 break before (right=False) or after (right=True) this node when breaking.
 
         """
-        from syncraft.format import Nest, Group, Concat, Line, LayoutDoc
+        from syncraft.format import Nest, Group, Concat, LineBreak, LayoutDoc
+        
+        def concat(lft: LayoutDoc, rgt: LayoutDoc, inverse: bool):
+            return Concat(parts=(rgt, lft)) if inverse else Concat(parts=(lft, rgt))
+            
 
-        def to_doc(ast: Any) -> "LayoutDoc":
+        def to_doc(ast: Any) -> LayoutDoc:
             doc = replace(LayoutDoc.from_ast(ast), template=tmplt)
             if breaks == 'optional':
-                body: LayoutDoc = Concat(parts=(doc, Line())) if right else Concat(parts=(Line(), doc))
+                body: LayoutDoc = concat(doc, LineBreak(), inverse=not right)
                 if indent > 0:
                     body = Nest(ast=ast, body=body, level=indent)
                 return Group(ast=ast, body=body)
             elif breaks == 'required':
-                body = Concat(parts=(doc, Line(flat="\n"))) if right else Concat(parts=(Line(flat="\n"), doc))
+                body = concat(doc, LineBreak(flat="\n"), inverse=not right)
                 if indent > 0:
                     body = Nest(ast=ast, body=body, level=indent)
                 return Group(ast=ast, body=body)
@@ -958,7 +962,7 @@ class Syntax(Generic[A, S]):
             else:
                 raise SyncraftError(f"Invalid value for breaks: {breaks}", offender=breaks, expect="one of 'never', 'optional', 'required'")
 
-        return cast(Syntax["LayoutDoc", S], self.fmt(to_doc, block_normalization=True))
+        return cast(Syntax[LayoutDoc, S], self.fmt(to_doc, block_normalization=True))
 
     def fmt(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:
         """

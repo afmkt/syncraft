@@ -10,7 +10,7 @@ from syncraft.format import (
     
     LayoutDoc,
     Group,
-    Line,
+    LineBreak,
     Nest,
     Concat,
     Text    
@@ -59,7 +59,7 @@ def test_group_prefers_flat_when_fits() -> None:
         body = Concat(
             parts=(
                 Text("hello"),
-                Line(flat=" "),
+                LineBreak(flat=" "),
                 Text("world"),
                 
             )
@@ -73,7 +73,7 @@ def test_group_breaks_when_not_fit() -> None:
         body=Concat(
             parts=(
                 Text("hello"),
-                Line(),
+                LineBreak(),
                 Text("world"),
             )
         )
@@ -87,7 +87,7 @@ def test_nest_applies_indentation_on_break() -> None:
             parts=(
                 Text("if"),
                 Nest(
-                    body=Concat(parts=(Line(),Text("x"))), 
+                    body=Concat(parts=(LineBreak(),Text("x"))), 
                     level=1
                 )
             )
@@ -101,7 +101,7 @@ def test_softline_fallback_and_break() -> None:
         body=Concat(
             (
                 Text("a"),
-                Line(flat=""),
+                LineBreak(flat=""),
                 Text("b"),
             )
         )
@@ -116,11 +116,11 @@ def test_syntax_generate_renders_layoutdoc_result() -> None:
             body=Concat(
                 parts=(
                     Text("select"),
-                    Line(flat=" "),
+                    LineBreak(flat=" "),
                     Text("*"),
-                    Line(flat=" "),
+                    LineBreak(flat=" "),
                     Text("from"),
-                    Line(flat=" "),
+                    LineBreak(flat=" "),
                     Text("tbl"),
                 )
             )
@@ -169,7 +169,7 @@ def test_lower_to_layout_alt_none_and_layoutdoc_passthrough() -> None:
     assert alt_none_doc.value == ""
     assert isinstance(alt_none_doc.ast, Alt)
 
-    original = Group(body=Concat(parts=(Text("x"), Line(flat=""), Text("y"))))
+    original = Group(body=Concat(parts=(Text("x"), LineBreak(flat=""), Text("y"))))
     lowered = LayoutDoc.from_ast(original)
     assert lowered is original
 
@@ -204,7 +204,7 @@ def test_group_fits_exact_boundary_uses_flat_mode() -> None:
         body=Concat(
             parts=(
                 Text("ab"),
-                Line(), 
+                LineBreak(), 
                 Text("cd")
                 )
             )
@@ -219,7 +219,7 @@ def test_nest_negative_level_is_clamped_to_zero() -> None:
             parts=(
                 Text("if"), 
                 Nest(
-                    body=Concat(parts=(Line(), Text("x"))),
+                    body=Concat(parts=(LineBreak(), Text("x"))),
                     level=-3
                 )
             )

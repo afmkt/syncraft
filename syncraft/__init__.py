@@ -48,7 +48,7 @@ from .format import (
     Concat,
     Text,
     Group,
-    Line,
+    LineBreak,
     Nest,
     
 )
@@ -75,6 +75,6 @@ __all__ = [
     "EBNF", "GrammarDef",
     "SyncraftError",
     "RegexError",
-    "LayoutDoc", "Concat", "Text", "Group", "Line", "Nest",
+    "LayoutDoc", "Concat", "Text", "Group", "LineBreak", "Nest",
     "__version__",
 ]

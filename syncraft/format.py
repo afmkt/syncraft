@@ -99,7 +99,7 @@ class Group(LayoutDoc):
 
 
 @dataclass(frozen=True, slots=True)
-class Line(LayoutDoc):
+class LineBreak(LayoutDoc):
     """
     Conditional break: newline in break mode, flat text in flat mode.
     flat: emitted in flat mode (default: "" = self.flat).
@@ -172,7 +172,7 @@ class _Renderer:
             txt, rendered_state = self._render(doc.body, state=nested_state)
             return txt, self.RenderState(col=rendered_state.col, depth=state.depth, flat=state.flat)
 
-        if isinstance(doc, Line):            
+        if isinstance(doc, LineBreak):            
             if state.flat:
                 s = doc.flat
                 s = doc.template.format(s)
