@@ -189,13 +189,5 @@ class _Renderer:
         raise TypeError(f"Unsupported LayoutDoc node: {type(doc)!r}")
 
 
-def render(value: ParseResult | LayoutDoc | Any, *, width: int = 80, indent: str = "    ") -> str:
-    """Render a value to text through the LayoutDoc domain.
-
-    Accepts either an existing LayoutDoc or AST-like values and lowers them
-    using the default safe lowering strategy.
-    """
-    doc = LayoutDoc.from_ast(value)
-    return doc.render(width=width, indent=indent)
 
 

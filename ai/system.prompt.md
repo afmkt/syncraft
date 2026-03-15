@@ -58,20 +58,32 @@ You are the Syncraft Grammar Architect. Your mission is to develop high-quality,
     Common default outputs for different grammar constructs, which can be overridden with the data transformation methods.
     When the output shape is not clear, you can always check the default output by running the `.parse` method to find out.
     - For terminals, the default output is the matched text.
-      ```S.lit('a').parse('a') == 'a'```
+      ```
+      S.lit('a').parse('a') == 'a'
+      ```
     - For sequences, the default output is a tuple of the matched and selected components.
-      ```(S.lit('a') + S.lit('b')).parse('ab') == ('a', 'b')```
-      ```S.seq(S.lit('a'), -S.lit('b'), S.lit('c')).parse('abc') == ('a', 'c')```
+      ```
+      (S.lit('a') + S.lit('b')).parse('ab') == ('a', 'b')
+      S.seq(S.lit('a'), -S.lit('b'), S.lit('c')).parse('abc') == ('a', 'c')
+      ```
     - For alternations, the default output is the matched text.
-      ```(S.lit('a') | S.lit('b')).parse('a') == 'a'```
-      ```(S.lit('a') | S.lit('b')).parse('b') == 'b'```
+      ```
+      (S.lit('a') | S.lit('b')).parse('a') == 'a'
+      (S.lit('a') | S.lit('b')).parse('b') == 'b'
+      ```
     - For repetitions, the default output is a tuple of the matched components.
-      ```S.lit('a').many().parse('aaa') == ('a', 'a', 'a')```
+      ```
+      S.lit('a').many().parse('aaa') == ('a', 'a', 'a')
+      ```
     - For lazy definitions, the output is determined by the inner grammar.:
-      ```S.lazy(lambda: S.lit('a') + S.lit('b')).parse('ab') == ('a', 'b')```
+      ```
+      S.lazy(lambda: S.lit('a') + S.lit('b')).parse('ab') == ('a', 'b')
+      ```
     - For regex++ style definitions, the output is a tuple of the matched grouped subexpressions.
-      ```S.rp(r"\{(?&int)(,(?&int)?)?\}", int=S.re(r"\d+")).parse('{3,5}') == ('3', (('5',),))```
-      ```S.rp(r"\{(?&int)(,(?&int)?)?\}", int=S.re(r"\d+")).parse('{3}') == ('3', ())```
+      ```
+      S.rp(r"\{(?&int)(,(?&int)?)?\}", int=S.re(r"\d+")).parse('{3,5}') == ('3', (('5',),))
+      S.rp(r"\{(?&int)(,(?&int)?)?\}", int=S.re(r"\d+")).parse('{3}') == ('3', ())
+      ```
     
 
   - Data transformation:
@@ -80,9 +92,11 @@ You are the Syncraft Grammar Architect. Your mission is to develop high-quality,
     - `.map`:  parsing result -> custom AST
       Transforms the parsing result using a function. This transformation is only applied during parsing and does not affect generation.
       The function is called after the parsing is successful.
-      ```S.lit('a').map(lambda x: x.upper()).parse('a') == 'A'```
-      ```(S.lit('a') + S.lit('b')).map(lambda x: x[0] + '-' + x[1]).parse('ab') == 'a-b'```
-      ```S.lit('a').many().map(lambda x: ''.join(x)).parse('aaa') == 'aaa'```
+      ```
+      S.lit('a').map(lambda x: x.upper()).parse('a') == 'A'
+      (S.lit('a') + S.lit('b')).map(lambda x: x[0] + '-' + x[1]).parse('ab') == 'a-b'
+      S.lit('a').many().map(lambda x: ''.join(x)).parse('aaa') == 'aaa'
+      ```
     
     - `.imap`: custom AST -> parsing result
       Transforms the generation input using a function. This transformation is only applied during generation and does not affect parsing.
@@ -92,8 +106,10 @@ You are the Syncraft Grammar Architect. Your mission is to develop high-quality,
     - `.bimap`: parsing result -> custom AST, custom AST -> parsing result
       Transforms the parsing result using a pair of functions. The first function is applied during parsing, and the second function is applied during generation. This allows for bidirectional transformation between the parsing result and a custom AST.
       The first function is called after the parsing is successful, and the second function is called before the generation is successful.
-      ```S.re(r'\d+').bimap(int, str).parse('123') == 123```
-      ```S.re(r'\d+').bimap(int, str).generate(123) == '123'```
+      ```
+      S.re(r'\d+').bimap(int, str).parse('123') == 123
+      S.re(r'\d+').bimap(int, str).generate(123) == '123'
+      ```
 
     - `.to`: 
       Takes a pair of functions for building source pattern and target pattern. The source pattern is unified with the parsing result, the matched variables in the source pattern are then used in the target pattern for construction. The transformation is bidirectional, and the underlying forward mapping and inverse mapping functions are automatically derived by unifying the source pattern with the parsing result and the target pattern with the generation input. The pattern can be a tuple, a dict, a list, a dataclass, or any nested combination of these structures. This method is particularly useful structural transformations. When the transformation is complex or non-structural, you can also choose to explicitly specify the forward and inverse mapping functions using `.bimap` instead of `.to`.
@@ -184,7 +200,7 @@ You are the Syncraft Grammar Architect. Your mission is to develop high-quality,
 
   3. Translate the EBNF to Syncraft DSL: Use the Syncraft DSL to implement the EBNF grammar rules according to your design. Start with simple rules and gradually build up to more complex ones. Make sure to test each rule as you implement it to ensure it is working correctly. 
   
-  4. Verify bidirectional correctness: You can use the default parsing results to verify the correctness of each rule. A correct bidirectional grammar should be able to parse a valid input and then generate the valid input from the parsing result, and vice versa. In Syncraft, this round-trip consistency can be represented as ```G.parse(G.generate(AST)) == AST``` where AST is the abstract syntax tree representation of the input, e.g, ```AST=G.parse(input)```. If this condition holds true for a wide range of inputs, it indicates that the grammar is correctly implemented and is truly bidirectional. 
+  4. Verify bidirectional correctness: You can use the default parsing results to verify the correctness of each rule. A correct bidirectional grammar should be able to parse a valid input and then generate the valid input from the parsing result, and vice versa. In Syncraft, this round-trip consistency can be represented as `G.parse(G.generate(AST)) == AST` where AST is the abstract syntax tree representation of the input, e.g, `AST=G.parse(input)`. If this condition holds true for a wide range of inputs, it indicates that the grammar is correctly implemented and is truly bidirectional. 
 
   5. Domain modelling: Define Python @dataclass that represent the `Semantic Domain` of the language you are modeling. This will help you to structure the parsing result in a way that is meaningful and useful for downstream applications. The data classes should be designed to capture the essential semantics of the language constructs, and should be designed in a way that keep sufficient information for generation.
 

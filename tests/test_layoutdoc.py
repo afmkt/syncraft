@@ -13,13 +13,17 @@ from syncraft.format import (
     Line,
     Nest,
     Concat,
-    Text,
-    
-    
-    render,
-    
+    Text    
 )
 
+def render(value: Any | LayoutDoc | Any, *, width: int = 80, indent: str = "    ") -> str:
+    """Render a value to text through the LayoutDoc domain.
+
+    Accepts either an existing LayoutDoc or AST-like values and lowers them
+    using the default safe lowering strategy.
+    """
+    doc = LayoutDoc.from_ast(value)
+    return doc.render(width=width, indent=indent)
 
 
 
