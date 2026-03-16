@@ -907,13 +907,13 @@ class Syntax(Generic[A, S]):
 
     ######################################################## value transformation ########################################################
     def format(self,
-               tmplt: str = "{0}",
+               tmplt: str|None = None,
                *,
-               breaks: Literal['never', 'optional', 'required'] = 'never',
-               indent: int = 0,
-               right: bool = True,
+               include_all: bool = False,
+               indent: int = 0
                ) -> Syntax["LayoutDoc", S]:
-        """Attach declarative formatting metadata to this grammar subtree.
+        r"""
+        Attach declarative formatting metadata to this grammar subtree.
 
         ``Syntax.format(...)`` is the typed, validated entry point for the
         formatting pipeline. It annotates this node with a ``FormatSpec`` and
@@ -922,46 +922,30 @@ class Syntax(Generic[A, S]):
 
         Args:
             tmplt: Template string for formatting the value.
-            breaks:
-                Controls line-break strategy:
-                - `'never'` (default): no width-sensitive grouping.
-                - `'optional'`: wrap in a `Group`; render flat when it fits,
-                otherwise break across lines.
-                - `'required'`: reserved for forced-break semantics; not yet
-                implemented.
+                    0. AST nodes will be passed in as positional arguments.
+                       For most AST nodes, there will only be one AST node; in seq nodes, there will be one AST node per step.
+                    1. '\n' => hard line break
+                    2. {@opt} => soft line break
+                    3. {name@1} or {1} => the second positional argument, the name is optional and for readability only
+                    4. {b?static text} => only appears in the broken mode, static text can not be placeholder, it is emitted as-is if the mode matches, otherwise the whole block is deleted
+                    5. {f?static text} => only appears in the flat mode, static text can not be placeholder, it is emitted as-is if the mode matches, otherwise the whole block is deleted
+                    6. '\}' => literal '}}' only inside conditionals's static text, since outside of conditionals '}' is not special
+                    7. '\{' => literal '{{' only inside conditionals's static text, since outside of conditionals '{' is not special
+            
+            include_all: Only applied to Seq nodes, 
+                         if True, all steps will be passed as arguments to the template, 
+                         if False, only the steps marked as "keep" will be passed in.
+
             indent:
                 Extra indentation depth (non-negative integer) applied to nested
                 breaks within this subtree. Used by `Nest` in the layout tree.
-            
-            right:
-                Whether to attach line breaks to the right (default) or left of this node.
-                This controls whether breaks introduced by this formatting node will prefer to 
-                break before (right=False) or after (right=True) this node when breaking.
-
         """
-        from syncraft.format import Nest, Group, Concat, LineBreak, LayoutDoc
-        
-        def concat(lft: LayoutDoc, rgt: LayoutDoc, inverse: bool):
-            return Concat(parts=(rgt, lft)) if inverse else Concat(parts=(lft, rgt))
-            
+        from syncraft.format import Group, LayoutDoc            
 
         def to_doc(ast: Any) -> LayoutDoc:
-            doc = replace(LayoutDoc.from_ast(ast), template=tmplt)
-            if breaks == 'optional':
-                body: LayoutDoc = concat(doc, LineBreak(), inverse=not right)
-                if indent > 0:
-                    body = Nest(ast=ast, body=body, level=indent)
-                return Group(ast=ast, body=body)
-            elif breaks == 'required':
-                body = concat(doc, LineBreak(flat="\n"), inverse=not right)
-                if indent > 0:
-                    body = Nest(ast=ast, body=body, level=indent)
-                return Group(ast=ast, body=body)
-            elif breaks == 'never':
-                return Nest(ast=ast, body=doc, level=indent) if indent > 0 else doc
-            else:
-                raise SyncraftError(f"Invalid value for breaks: {breaks}", offender=breaks, expect="one of 'never', 'optional', 'required'")
-
+            doc = LayoutDoc.from_ast(ast).template(tmplt).with_all(include_all)
+            doc = Group(ast=ast, body=doc, level=indent)
+            return doc
         return cast(Syntax[LayoutDoc, S], self.fmt(to_doc, block_normalization=True))
 
     def fmt(self, f: Callable[..., B], *, block_normalization: bool = True) -> Syntax[B, S]:

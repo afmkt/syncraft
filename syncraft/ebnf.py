@@ -278,7 +278,7 @@ class EBNF(Grammar):
         r"\s*(?&ident)\s*(?:=|::=)\s*(?&expr)\s*;\s*",
         ident=ident,
         expr=expr,
-    ).to(lambda env: (env.ident, env.expr), lambda env: RuleDef(env.ident, env.expr)).format(breaks="required")
+    ).to(lambda env: (env.ident, env.expr), lambda env: RuleDef(env.ident, env.expr))
 
     grammar = rule(erule.many(at_least=1).to(lambda env: GrammarDef(env.X)), is_root=True)
 

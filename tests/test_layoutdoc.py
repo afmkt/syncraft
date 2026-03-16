@@ -7,11 +7,9 @@ from syncraft.parser import parse_word
 import pytest
 
 from syncraft.format import (
-    
+    construct_templated_text,
     LayoutDoc,
     Group,
-    LineBreak,
-    Nest,
     Concat,
     Text    
 )
@@ -58,24 +56,28 @@ def test_group_prefers_flat_when_fits() -> None:
     doc = Group(
         body = Concat(
             parts=(
-                Text("hello"),
-                LineBreak(flat=" "),
-                Text("world"),
-                
-            )
+                (Text(value="hello"), True),
+                (Text(value="world"), True),
+            ),
+            flat=construct_templated_text("{0}{@opt}{1}", is_broken=False),
+            broken=construct_templated_text("{0}{@opt}{1}", is_broken=True)
         )
     )
-    assert doc.render(width=20) == "hello world"
+    txt = doc.render(width=20)
+    print(f"Rendered text: {repr(txt)}")
+    assert txt == "hello world"
 
 
 def test_group_breaks_when_not_fit() -> None:
     doc = Group(
         body=Concat(
             parts=(
-                Text("hello"),
-                LineBreak(),
-                Text("world"),
-            )
+                (Text(value="hello"), True),
+                (Text(value="world"), True),                
+            ),
+            flat=construct_templated_text("{0}{@opt}{1}", is_broken=False),
+            broken=construct_templated_text("{0}{@opt}{1}", is_broken=True)
+
         )
     )
     assert doc.render(width=6) == "hello\nworld"
@@ -85,28 +87,33 @@ def test_nest_applies_indentation_on_break() -> None:
     doc = Group(
         body=Concat(
             parts=(
-                Text("if"),
-                Nest(
-                    body=Concat(parts=(LineBreak(),Text("x"))), 
+                (Text(value="if"), True),
+                (Group(
+                    body=Concat(parts=((Text(value="x"), True),)), 
                     level=1
-                )
-            )
+                ), True)
+            ),
+            flat=construct_templated_text("{0}{@opt}{1}", is_broken=False),
+            broken=construct_templated_text("{0}{@opt}{1}", is_broken=True)
         )
     )
-    assert doc.render(width=2, indent="  ") == "if\n  x"
+    txt = doc.render(width=2, indent="  ")
+    print(f"Rendered text:\n{repr(txt)}")
+    assert txt == "if\n  x"
 
 
 def test_softline_fallback_and_break() -> None:
     doc = Group(
         body=Concat(
-            (
-                Text("a"),
-                LineBreak(flat=""),
-                Text("b"),
-            )
+            parts=(
+                (Text(value="a"), True),
+                (Text(value="b"), True),
+            ), 
+            flat=construct_templated_text("{0}{@opt}{1}", is_broken=False),
+            broken=construct_templated_text("{0}{@opt}{1}", is_broken=True)
         )
     )
-    assert doc.render(width=10) == "ab"
+    assert doc.render(width=10) == "a b"
     assert doc.render(width=1) == "a\nb"
 
 
@@ -115,14 +122,16 @@ def test_syntax_generate_renders_layoutdoc_result() -> None:
         Group(
             body=Concat(
                 parts=(
-                    Text("select"),
-                    LineBreak(flat=" "),
-                    Text("*"),
-                    LineBreak(flat=" "),
-                    Text("from"),
-                    LineBreak(flat=" "),
-                    Text("tbl"),
-                )
+                    (Text(value="select"), True),
+                    
+                    (Text(value="*"), True),
+                    
+                    (Text(value="from"), True),
+                    
+                    (Text(value="tbl"), True),
+                ),
+                flat=construct_templated_text("{0}{@opt}{1}{@opt}{2}{@opt}{3}", is_broken=False),
+                broken=construct_templated_text("{0}{@opt}{1}{@opt}{2}{@opt}{3}", is_broken=True),
             )
         )
     )
@@ -149,7 +158,7 @@ def test_syntax_format_is_disabled_in_parse_and_validate() -> None:
     replay use the raw algebra without fmt/map, preserving structural round-trip
     integrity.
     """
-    syntax: Any = Syntax.success("abc").format(breaks="optional")
+    syntax: Any = Syntax.success("abc").format("{0}{@opt}")
 
     # Parse path skips formatting (fmt is disabled in Parser.disabled)
     parsed = syntax.parse("ignored")
@@ -169,7 +178,7 @@ def test_lower_to_layout_alt_none_and_layoutdoc_passthrough() -> None:
     assert alt_none_doc.value == ""
     assert isinstance(alt_none_doc.ast, Alt)
 
-    original = Group(body=Concat(parts=(Text("x"), LineBreak(flat=""), Text("y"))))
+    original = Group(body=Concat(parts=((Text(value="x"), True), (Text(value="y"), True))))
     lowered = LayoutDoc.from_ast(original)
     assert lowered is original
 
@@ -177,20 +186,20 @@ def test_lower_to_layout_alt_none_and_layoutdoc_passthrough() -> None:
 def test_layoutdoc_ast_synthesizes_seq_for_manual_sequence() -> None:
     doc = Concat(
         parts=(
-            Text("a"), 
-            Group(
+            (Text(value="a"), True), 
+            (Group(
                 body=Concat(
                     parts=(
-                        Text("b"), 
-                        Nest(
+                        (Text(value="b"), True), 
+                        (Group(
                             body=Concat(
-                                parts=(Text("c"),)
+                                parts=((Text(value="c"), True),)
                             ), 
                             level=2
-                        )
+                        ), True)
                     )
                 )
-            )
+            ), True)
         )
     )
     ast = doc.ast
@@ -203,10 +212,13 @@ def test_group_fits_exact_boundary_uses_flat_mode() -> None:
     doc = Group(
         body=Concat(
             parts=(
-                Text("ab"),
-                LineBreak(), 
-                Text("cd")
-                )
+                (Text(value="ab"), True),
+                (Text(value="cd"), True)
+                ),
+                include_all=True, 
+                flat=construct_templated_text("{0}{@opt}{1}", is_broken=False),
+                broken=construct_templated_text("{0}{@opt}{1}", is_broken = True)
+                
             )
         )
     assert doc.render(width=5) == "ab cd"
@@ -217,12 +229,14 @@ def test_nest_negative_level_is_clamped_to_zero() -> None:
     doc = Group(
         body=Concat(
             parts=(
-                Text("if"), 
-                Nest(
-                    body=Concat(parts=(LineBreak(), Text("x"))),
+                (Text(value="if"), True), 
+                (Group(
+                    body=Concat(parts=((Text(value="x"), True),)),
                     level=-3
-                )
-            )
+                ), True),
+            ),
+            flat=construct_templated_text("{0}{@opt}{1}", is_broken=False),
+            broken=construct_templated_text("{0}{@opt}{1}", is_broken=True)
         )
     )
     assert doc.render(width=2, indent="  ") == "if\nx"
@@ -256,12 +270,12 @@ def test_expression_grammar_integration_with_format_hints_and_rendered_text() ->
         lambda token: token.text,
         lambda text: Token(text=text),
     ).format(
-        breaks="optional",
+        "{0}{@opt}",  
     )
 
     # Sequence: without spacing rule in grammar, renders as "12+345"
     expr = (number + plus + number).format(
-        breaks="optional",
+        "{0}{@opt}{1}{@opt}{2}",
         indent=1
     )
 
@@ -272,7 +286,8 @@ def test_expression_grammar_integration_with_format_hints_and_rendered_text() ->
     # Format hints are applied during generation, spacing from grammar (none here)
     result = generated.render(width=80, indent="  ")
     # Without explicit spacing grammar, operator directly adjoins operands
-    assert result == "12+ 345"
+    print(result)
+    assert result == "12 + 345"
 
 
 def test_format_single_line_function_call() -> None:
@@ -291,12 +306,13 @@ def test_format_single_line_function_call() -> None:
         
     args = identifier + (comma_space + identifier).many()
     func_call = (identifier + syntax_cls.lit("(") + args + syntax_cls.lit(")")).format(
-        breaks="never"
+        "{0}{1}{2}{3}{4}"
     )
     
     expected = "f(a, b, c)"
     generated = func_call.generate(('f', '(', 'a', ((', ', 'b'), (', ', 'c')), ')'))
     result = generated.render(width=80)
+    print(result)
     assert result == expected
 
 
@@ -311,7 +327,7 @@ def test_format_multiline_function_call() -> None:
     
     # Apply format to the separator part (comma + space)
     separator = (syntax_cls.lit(",") + syntax_cls.lit(" ")).format(
-        breaks="optional",
+        "{0}{@opt}",
         indent=1
     )
     
@@ -325,12 +341,12 @@ def test_format_multiline_function_call() -> None:
     # print("Generated successfully!", generated)
     # Fits on one line with width=80
     result_wide = generated.render(width=80)
-    # print("Wide:", result_wide)
+    print("Wide:", result_wide)
     assert "," in result_wide
     
     # Breaks to multiple lines with narrow width
     result_narrow = generated.render(width=5)
-    # print("Narrow:", result_narrow)
+    print("Narrow:", result_narrow)
     assert "\n" in result_narrow, f"Expected newline in narrow output, got: {repr(result_narrow)}"
 
 
@@ -367,7 +383,7 @@ def test_format_multiline_addition_operator_first() -> None:
     
     # Apply format to the operator part (space + plus + space) with attach="left"
     operator = (syntax_cls.lit(" ") + syntax_cls.lit("+") + syntax_cls.lit(" ")).format(
-        breaks="optional",
+        "{0}{@opt}{1}{@opt}{2}",
         indent=1
     )
     
@@ -407,7 +423,7 @@ def test_format_nested_indentation() -> None:
     head = keyword + space + identifier + colon
     stmt = identifier
 
-    sep = space.format(breaks="optional", indent=1)
+    sep = space.format("{0}{@opt}", indent=1)
 
     if_stmt = (head + sep + stmt).format(indent=1)
     nested = head + sep + if_stmt
@@ -426,7 +442,6 @@ def test_format_nested_indentation() -> None:
     assert lines[0].startswith("if x:")
     assert lines[1].startswith("    if y:")
     assert lines[2].startswith("        z")
-
 
 
 
