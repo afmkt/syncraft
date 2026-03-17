@@ -944,7 +944,7 @@ class Syntax(Generic[A, S]):
 
         def to_doc(ast: Any) -> LayoutDoc:
             doc = LayoutDoc.from_ast(ast).template(tmplt).with_all(include_all)
-            doc = Group(ast=ast, body=doc, level=indent)
+            doc = Group(ast=ast, body=doc, indent=indent)
             return doc
         return cast(Syntax[LayoutDoc, S], self.fmt(to_doc, block_normalization=True))
 
