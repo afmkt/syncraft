@@ -6,8 +6,6 @@ from typing import (
     Union, TYPE_CHECKING, Protocol, runtime_checkable, 
     Hashable, Iterator, Callable, List
 )
-if TYPE_CHECKING:
-    from syncraft.vis import SVGVisualization
 from dataclasses import dataclass
 from enum import Enum
 
@@ -96,13 +94,6 @@ class AST(Walkable):
     """
     Base class for all raw AST nodes in Syncraft. 
     """
-    def vis(self, depth: int = 5) -> Optional[SVGVisualization]:
-        try:
-            from syncraft.vis import ast2svg
-            svg_content = ast2svg(self, max_depth=depth)
-            return svg_content
-        except ImportError:
-            return None
         
     def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
         """

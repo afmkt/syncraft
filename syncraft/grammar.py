@@ -17,8 +17,6 @@ import io
 import asyncio
 import textwrap
 
-if TYPE_CHECKING:
-    from syncraft.vis import SVGVisualization
 
 
 
@@ -230,22 +228,6 @@ class Grammar(metaclass=GrammarMeta):
     _validator: ThreadLocalDict
 
 
-    @classmethod
-    def vis(cls, syntax: Syntax | None = None, depth: int = 3) -> Optional["SVGVisualization"]:
-        """Render a syntax visualization for grammar inspection.
-
-        Args:
-            syntax: Optional specific syntax. Defaults to root rule.
-            depth: Maximum expansion depth for visualization.
-
-        Returns:
-            `SVGVisualization` when available.
-        """
-        if syntax is None:
-            syntax = cls._root_rule
-        if syntax is None:
-            raise ValueError("No root rule defined for the grammar")
-        return syntax.vis(depth=depth)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Initialize per-subclass grammar caches and rule registry."""

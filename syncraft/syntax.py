@@ -14,7 +14,6 @@ from dataclasses import dataclass, field, replace
 from syncraft.lexerprotocol import LexerBuilder
 if TYPE_CHECKING:
     from syncraft.format import LayoutDoc
-    from syncraft.vis import SVGVisualization
 
 from syncraft.utils import file as get_file, line as get_line, func as get_func, FrozenDict, CallWith, ThreadLocalWeakValueDict
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error, EntryCategory
@@ -780,10 +779,6 @@ class Syntax(Generic[A, S]):
     def __str__(self) -> str:
         return str(self.spec)
 
-    def vis(self, depth: int = 3) -> Optional[SVGVisualization]:
-        """Render an SVG visualization of this syntax subtree."""
-        from syncraft.vis import syntax2svg
-        return syntax2svg(self.spec, max_depth=depth)
 
 
     # @classmethod
