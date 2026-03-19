@@ -24,6 +24,10 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = []
 
+
+[project.scripts]
+syncraft = "syncraft.mcp.cli:main"
+
 [project.urls]
 Documentation = "https://afmkt.github.io/syncraft/"
 Repository = "https://github.com/afmkt/syncraft"
@@ -46,8 +50,6 @@ dev = [
     "graphviz>=0.21",
     "railroad-diagrams>=3.0.1",
     "rich>=14.1.0",
-    "ipython>=8.0.0",
-    "jupyter>=1.0.0",
     "mkdocs-jupyter>=0.24.6",
     "nbval>=0.10.0",
     "pytest-profiling>=1.8.1",
@@ -55,6 +57,7 @@ dev = [
     "mypy>=1.18.2",
     "regex>=2025.11.3",
     "types-regex>=2025.11.3.20251106",
+    "marimo>=0.21.1",
 ]
 
 
@@ -63,3 +66,4 @@ packages = ["syncraft"]
 
 [tool.setuptools.package-data]
 syncraft = ["cache/**/*", "py.typed"]
+"syncraft.mcp" = ['*.md']
