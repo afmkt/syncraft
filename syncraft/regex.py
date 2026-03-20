@@ -889,22 +889,26 @@ def match(pattern: str,
         raise RegexError("Regex parse failed", offender=parsed)
     alphabet = Alphabet(str)
     nfa = parsed.builder(case_insensitive=case_insensitive).compile(alphabet).nfa
+    runner = nfa.dfa.with_default_tag_invariant().runner()
     if fullmatch:
-        runner = nfa.end().dfa.with_default_tag_invariant().runner()
-        def matcher(s: str) -> bool:
+        # Use original nfa.dfa and check accept state after processing all characters        
+        def matcher_full(s: str) -> bool:
+            r = runner.reset()
             for i, ch in enumerate(s):
-                if not runner.step(ch, i):
+                result = r.step(ch, i)
+                if result.error:
                     return False
-            return runner.is_accepted()
+            return r.is_accepted()
+        return matcher_full
     else:
-        runner = nfa.dfa.with_default_tag_invariant().runner()
         def matcher(s: str) -> bool:
+            r = runner.reset()
             for i, ch in enumerate(s):
-                if not runner.step(ch, i):
+                result = r.step(ch, i)
+                if result.error:
                     return False
-            return runner.is_accepted()
-
-    return matcher
+            return r.is_accepted()
+        return matcher
     
 
 
