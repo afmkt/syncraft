@@ -843,12 +843,12 @@ def re(pattern: str, case_insensitive: bool = False) -> Builder[str]:
     return parsed.builder(case_insensitive=case_insensitive)
 
 
-def xeger(
+def rstr(
     pattern: str | pyre.Pattern[str],
     *,
     rnd: random.Random | None = None,
     seed: int | None = None,
-) -> str:
+) -> Callable[[], str]:
     """
     Generate a random string that matches the given regex pattern.
     """
@@ -865,15 +865,47 @@ def xeger(
     alphabet = Alphabet(str)
     dfa = parsed.builder().compile(alphabet).dfa.with_default_tag_invariant()
     rng = rnd if rnd is not None else random.Random(seed)
-    result = dfa.reverse.gen(DEFAULT_TAG, rng)
+    def generator() -> str:
+        result = dfa.reverse.gen(DEFAULT_TAG, rng)
 
-    # For text alphabet, gen() always returns str after internal concat
-    if not isinstance(result, str):
-        raise RegexError(
-            f"Expected string from text DFA generation, got {type(result).__name__}",
-            offender=result
-        )
-    return result
+        # For text alphabet, gen() always returns str after internal concat
+        if not isinstance(result, str):
+            raise RegexError(
+                f"Expected string from text DFA generation, got {type(result).__name__}",
+                offender=result
+            )
+        return result
+    return generator
+
+def match(pattern: str,
+          *,
+          case_insensitive: bool = False,
+          fullmatch: bool = False) -> Callable[[str], bool]:
+    pattern_text = pattern.pattern if isinstance(pattern, pyre.Pattern) else pattern
+    parsed = parse(pattern_text)
+    if not isinstance(parsed, Regex):
+        if isinstance(parsed, Error):
+            raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
+        raise RegexError("Regex parse failed", offender=parsed)
+    alphabet = Alphabet(str)
+    nfa = parsed.builder(case_insensitive=case_insensitive).compile(alphabet).nfa
+    if fullmatch:
+        runner = nfa.end().dfa.with_default_tag_invariant().runner()
+        def matcher(s: str) -> bool:
+            for i, ch in enumerate(s):
+                if not runner.step(ch, i):
+                    return False
+            return runner.is_accepted()
+    else:
+        runner = nfa.dfa.with_default_tag_invariant().runner()
+        def matcher(s: str) -> bool:
+            for i, ch in enumerate(s):
+                if not runner.step(ch, i):
+                    return False
+            return runner.is_accepted()
+
+    return matcher
+    
 
 
 def rp(pattern: str, 

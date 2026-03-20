@@ -7,6 +7,7 @@ Expr.eq/Expr.ne for lifting equality
 """
 from __future__ import annotations
 
+import random
 
 from typing import (
     Any, TypeVar, Tuple, Set, Dict, List, Generator,
@@ -16,7 +17,11 @@ from typing import (
 from dataclasses import dataclass, field, is_dataclass, fields, replace
 from syncraft.utils import FrozenDict, CallWith
 from abc import ABC, abstractmethod
-from syncraft.ast import SyncraftError
+from syncraft.ast import SyncraftError, guard
+
+
+
+
 
 class DataError(SyncraftError):
     """
@@ -929,3 +934,16 @@ def iso(i: Iso[A, B]) -> Callable[[Expr], Any]:
 
 def Not(expr: Expr) -> Any:
     return bimap(lambda x: not x, lambda x: not x)(expr)
+
+
+def Str(pattern: str,
+        *,
+        case_insensitive: bool = False,
+        fullmatch: bool = False,
+        rnd: random.Random | None = None,
+        seed: int | None = None,
+        ) -> Callable[[Expr], Any]:
+    from syncraft.regex import match, rstr
+    matcher = match(pattern, case_insensitive=case_insensitive, fullmatch=fullmatch)
+    generator = rstr(pattern, rnd=rnd, seed=seed)
+    return bimap(matcher, generator)

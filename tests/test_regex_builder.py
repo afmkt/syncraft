@@ -7,7 +7,7 @@ import pytest
 
 from syncraft.alphabet import Alphabet
 from syncraft.fa import DFA, NFA
-from syncraft.regex import Regex, parse, xeger
+from syncraft.regex import Regex, parse, rstr, match
 
 
 def _build(pattern: str):
@@ -113,18 +113,40 @@ def test_regex_builder_case_insensitive_unicode_category_noop() -> None:
     _assert_matches(builder, ["A", "AZ"], ["", "a", "Aa"])
 
 
-def test_regex_xeger_generates_matching_text() -> None:
+def test_regex_rstr_generates_matching_text() -> None:
     pattern = r"(ab|cd)+\d{2}"
-    sample = xeger(pattern, rnd=random.Random(0))
+    generator = rstr(pattern, rnd=random.Random(0))
+    sample = generator()
     assert _match(_build(pattern), sample)
 
 
-def test_regex_xeger_accepts_compiled_pattern() -> None:
+def test_regex_rstr_accepts_compiled_pattern() -> None:
     compiled = re.compile(r"[A-C]{3}")
-    sample = xeger(compiled, seed=1)
+    generator = rstr(compiled, seed=1)
+    sample = generator()
     assert compiled.fullmatch(sample) is not None
 
 
-def test_regex_xeger_rejects_seed_and_rng_together() -> None:
+def test_regex_rstr_rejects_seed_and_rng_together() -> None:
     with pytest.raises(ValueError):
-        xeger(r"abc", rnd=random.Random(0), seed=0)
+        rstr(r"abc", rnd=random.Random(0), seed=0)
+
+
+def test_match_function() -> None:
+    pattern = r"foo\d+"
+    matcher = match(pattern)
+    assert matcher("foo123")
+
+
+def test_match_function_ci() -> None:
+    pattern = r"foo\d+"
+    matcher_ci = match(pattern, case_insensitive=True)
+    assert matcher_ci("FOO456")
+    assert not matcher_ci("BAR123")
+
+def test_match_function_fullmatch() -> None:
+    pattern = r"foo\d+"
+    matcher_full = match(pattern, fullmatch=True)
+    assert not matcher_full("foo789x")
+    assert matcher_full("foo789")
+    

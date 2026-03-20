@@ -19,7 +19,7 @@ from syncraft.utils import file as get_file, line as get_line, func as get_func,
 from syncraft.algebra import Algebra, Either, Left, Right, SYNCRAFT_CONFIG_KEY, Error, EntryCategory
 from syncraft.cache import Cache, Incomplete
 from syncraft.bimap import Bindable, Iso, DataError, Match, Env
-from syncraft.ast import Many, Nothing, SyncraftError, Seq, Alt, Lazy, Unknown, _SingletonBase
+from syncraft.ast import Many, SyncraftError, Seq, Alt, Lazy, Nothing, Unknown, _SingletonBase
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
 from syncraft.token import TokenSpec, TokenSpecBase

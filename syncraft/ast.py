@@ -3,12 +3,11 @@
 from __future__ import annotations
 from typing import (
     Optional, Any, TypeVar, Tuple,
-    Union, TYPE_CHECKING, Protocol, runtime_checkable, 
+    Union, Protocol, runtime_checkable, 
     Hashable, Iterator, Callable, List
 )
 from dataclasses import dataclass
 from enum import Enum
-
 class SyncraftError(Exception):
     """
     Custom exception class for errors encountered during AST processing in Syncraft.
@@ -33,6 +32,7 @@ class SyncraftError(Exception):
         if self.data:
             details += ", " + ", ".join(f"{k}={v!r}" for k, v in self.data.items())
         return f"{base} ({details})"
+
 
 class _SingletonBase:
     def __call__(self) -> Any:
@@ -100,6 +100,14 @@ Unknown = singleton(
     """
 )
 
+def guard(f: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    def wrapper(a: Any) -> Any:
+        if a is Unknown:
+            return Unknown
+        if a is Nothing:
+            return Nothing
+        return f(a)
+    return wrapper
 
 class WalkEvent(Enum):
     ENTER = "enter"
@@ -269,7 +277,8 @@ ParseResult = Union[
     Many,
     Alt,
     Seq,
-    type[_SingletonBase],
+    Nothing,
+    Unknown,
     T,
 ]
 

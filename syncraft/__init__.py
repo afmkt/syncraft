@@ -11,6 +11,8 @@ from .syntax import (
 
 from syncraft.regex import (
     RegexError,
+    match,
+    rstr,
 )
 
 from .algebra import (
@@ -34,6 +36,7 @@ from .ast import (
 	Token,
 	Many,
     Nothing,
+    Unknown,
     SyncraftError,
 )
 
@@ -67,11 +70,13 @@ __all__ = [
     "Grammar", "grammar", "rule", "lazy",
     "Algebra", "Error", "Left", "Right", "Either", "EntryCategory",
 	"Syntax", "SyntaxSpec", "Graph", "LazySpec", "SeqSpec", "AltSpec", "ManySpec",
-	"AST", "Token", "Many", "Nothing", "Seq", "Alt",
-    "DataError", "Not", "bimap", "iso",
+	"AST", "Token", "Many", "Seq", "Alt",
+    "DataError", "Not", "bimap", "iso", "Nothing", "Unknown",
     "EBNF", "GrammarDef",
     "SyncraftError",
     "RegexError",
-    "LayoutDoc", "Concat", "Text", "Group",
+    "match",
+    "rstr",
+    "LayoutDoc", "Concat", "Text", "Group",    
     "__version__",
 ]
