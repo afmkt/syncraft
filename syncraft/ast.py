@@ -74,9 +74,31 @@ def singleton(name: str, doc: str, boolean: bool = False) -> type[_SingletonBase
     return _Singleton
 
 
-Nothing = singleton("Nothing", "Singleton sentinel representing the absence of a value in the AST.")
+Nothing = singleton(
+    "Nothing",
+    """
+    Singleton sentinel representing the absence of a value in the AST.
+
+    This is a VALID result meaning: "I know there's a node, and it has no value."
+    Used when parsing optional grammar rules that didn't match.
+    """
+)
 EOF = singleton("EOF", "Singleton sentinel representing end of input.")
-Unknown = singleton("Unknown", "Singleton sentinel representing an unknown value.")
+Unknown = singleton(
+    "Unknown",
+    """
+    Singleton sentinel representing an unknown value.
+
+    This is STRONGER than Nothing: it means "zero information about the AST,
+    not even the existence of the node is known." Used in generation when
+    no input data is provided - the system doesn't know if there's supposed
+    to be a node here at all.
+
+    Key difference from Nothing:
+    - Nothing: Node exists, but value is empty (known absence)
+    - Unknown: Node existence is unknown (no information)
+    """
+)
 
 
 class WalkEvent(Enum):
