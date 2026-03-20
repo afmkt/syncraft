@@ -7,7 +7,7 @@ Expr.eq/Expr.ne for lifting equality
 """
 from __future__ import annotations
 
-import random
+
 
 from typing import (
     Any, TypeVar, Tuple, Set, Dict, List, Generator,
@@ -15,9 +15,9 @@ from typing import (
 )
 
 from dataclasses import dataclass, field, is_dataclass, fields, replace
-from syncraft.utils import FrozenDict, CallWith
+from syncraft.utils import FrozenDict
 from abc import ABC, abstractmethod
-from syncraft.ast import SyncraftError, guard
+from syncraft.ast import SyncraftError
 
 
 
@@ -194,11 +194,9 @@ class Match:
         return self
 
     @staticmethod
-    def _build_pattern(ptn: Callable[..., Any], env: Env | None = None) -> Any:
+    def _build_pattern(ptn: Callable[[Env], Any], env: Env | None = None) -> Any:
         env = env or Env()
-        sig = CallWith(ptn)
-        vars = [env.create_var(name) for name in sig.missing_args[1:]]
-        return ptn(env, *vars)
+        return ptn(env)
 
 
     @staticmethod
@@ -631,10 +629,6 @@ class Constraint:
         else:
             return False, self.expr, []
 
-
-                
-        
-
 @dataclass(slots=True)
 class EnvFrame:
     bindings: dict[Var, Binding] = field(default_factory=dict)
@@ -706,6 +700,17 @@ class Env:
                 raise DataError(f"Failed to bind variable {k} to value {v}", reason)
         return ret
     
+
+    def where(self, condition: Callable[[Env], bool] | Expr) -> Env:
+        if isinstance(condition, Expr):
+            self.constraints.add(Constraint(condition, True))
+            return self
+        else:
+            def constraint_f(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
+                return True, condition(env)
+            self.constraints.add(Constraint(Expr(constraint_f), True))
+            return self
+    
     def resolve(self, var: Var) -> Any:
         ret = self.frames.resolve(var)
         if ret is ... and self.constants is not None:
@@ -749,6 +754,11 @@ class Env:
         return True, []
 
 
+
+
+
+def pattern(pattern: Any, env: Env) -> Any:
+    return pattern
 
 
 
@@ -936,14 +946,3 @@ def Not(expr: Expr) -> Any:
     return bimap(lambda x: not x, lambda x: not x)(expr)
 
 
-def Str(pattern: str,
-        *,
-        case_insensitive: bool = False,
-        fullmatch: bool = False,
-        rnd: random.Random | None = None,
-        seed: int | None = None,
-        ) -> Callable[[Expr], Any]:
-    from syncraft.regex import match, rstr
-    matcher = match(pattern, case_insensitive=case_insensitive, fullmatch=fullmatch)
-    generator = rstr(pattern, rnd=rnd, seed=seed)
-    return bimap(matcher, generator)

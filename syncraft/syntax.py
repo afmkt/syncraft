@@ -1523,6 +1523,36 @@ class Syntax(Generic[A, S]):
             ...     lambda env: SomeDataClass(env.X)    # unary target pattern, auto-infer source pattern
             ... )
             >>> # Equivalent to: .to(lambda env: env.X, lambda env: int(env.X))
+            
+            Functional Constraints:
+            You can add functional constraints to patterns using `env.where()`.
+            This allows predicates beyond just structural matching.
+
+            There are three ways to use constraints:
+
+            1. Using Expr via operator overloading:
+                >>> .to(
+                ...     lambda env: (env.where(env.X > env.Y).X, env.Y),
+                ...     lambda env: Point(env.X, env.Y)
+                ... )
+
+            2. Using lambda predicate:
+                >>> .to(
+                ...     lambda env: (env.where(lambda e: e.resolve(env.X) > e.resolve(env.Y)).X, env.Y),
+                ...     lambda env: Point(env.X, env.Y)
+                ... )
+
+            3. Using pattern() helper:
+                >>> from syncraft.bimap import pattern
+                >>> .to(
+                ...     lambda env: pattern((env.X, env.Y), env.where(env.X > env.Y)),
+                ...     lambda env: Point(env.X, env.Y)
+                ... )
+
+            The constraint `env.X > env.Y` uses Var comparison operators to create
+            an Expr, which is then added to the environment via `where()`. During
+            pattern matching, constraints are validated - if they fail, the pattern
+            doesn't match.
                 
         """
         if b is None:
