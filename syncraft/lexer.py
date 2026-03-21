@@ -293,29 +293,25 @@ class Lexer(LexerProtocol[C]):
     
 
 
-@dataclass(frozen=True, slots=True)
-class ExtRule(Generic[T]):
-    predicate: Callable[[T], bool]
-    generator: Callable[[Any, random.Random], GeneratedToken]
 
 @dataclass(slots=True)
 class ExtLexer(LexerProtocol[T]):
-    rule: ExtRule[T]
-
+    predicate: Callable[[T], bool]
+    generator: Callable[[Any, random.Random], GeneratedToken]
     def reset(self) -> None:
         pass
 
     @classmethod
     def create(cls, tkspec: TokenSpec) -> Optional[ExtLexer[T]]:
         if isinstance(tkspec, TokenSpec):
-            return cls(ExtRule(predicate=tkspec.predicate(), generator=tkspec.generator()))
+            return cls(predicate=tkspec.predicate(), generator=tkspec.generator())
         return None
     
     def candidate(self) -> LexerError | LexerResult[T]:
         return LexerError.message_only("External lexer cannot provide candidates")
 
     def match(self, item: T, index: int) -> LexerError | None | LexerResult[T]:
-        if self.rule.predicate(item):
+        if self.predicate(item):
             return LexerResult(start=index, end=index + 1, value=item)
                 
         return LexerError.new(
@@ -327,13 +323,13 @@ class ExtLexer(LexerProtocol[T]):
         
 
     def verify(self, value: Any) -> VerifiedToken:
-        if self.rule.predicate(value):
+        if self.predicate(value):
             return VerifiedToken(True, 1)
         return VerifiedToken(False, 0)
 
     def gen(self, rng: random.Random) -> GeneratedToken:
         from syncraft.ast import Unknown
-        return self.rule.generator(Unknown, rng)
+        return self.generator(Unknown, rng)
 
 
 
