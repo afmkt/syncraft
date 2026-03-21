@@ -287,6 +287,17 @@ class Expr:
     infer: Callable[[Any, List[Tuple[bool, int|str, Expr, Any]], Env, Set[Any]], Generator[Tuple[Tuple[Var, Any], ...], None, None]] = field(default=default_infer, compare=False, hash=False, repr=False)
     
     def evaluate(self, env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
+        """
+        Evaluate the expression within the given environment.
+
+        Args:
+            env (Env): The environment containing variable bindings and constraints.
+            visited (Set[Any]): A set of already visited expressions to prevent infinite recursion.
+
+        Returns:
+            Tuple[bool, Any]: A tuple where the first element indicates if the evaluation was fully resolved,
+                              and the second element is the evaluated value or the expression itself if not fully resolved.
+        """
         cache = env.evaluation_cache.setdefault(env.version, {})
         if id(self) in cache:
             return True, cache[id(self)]
@@ -299,6 +310,17 @@ class Expr:
         return fully_resolved, value
     
     def inference(self, value: Any, env: Env, visited: Set[Any]) -> Generator[Tuple[Tuple[Var, Any], ...], None, None]:
+        """
+        Perform inference on the expression within the given environment.
+
+        Args:
+            value (Any): The value to infer from.
+            env (Env): The environment containing variable bindings and constraints.
+            visited (Set[Any]): A set of already visited expressions to prevent infinite recursion.
+
+        Yields:
+            Tuple[Tuple[Var, Any], ...]: A tuple of variable bindings inferred from the expression.
+        """
         if self in visited:
             return
         visited = visited | {self}
@@ -505,7 +527,12 @@ class Expr:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Var(Expr):
+    """
+    Var represents a variable in the expression tree. It can be bound to a value in the environment during unification.
+    evaluation won't bind a variable
+    """
     name: str | None = None
+    predicate: Callable[[Any], bool] | None = field(default = None, compare=False, hash=False, repr=False)
     debug_f: Callable[..., Any] = field(default=lambda *arg, **kwargs: None, compare=False, hash=False, repr=False)
     def __post_init__(self):
         def expr_f(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
@@ -532,8 +559,13 @@ class Var(Expr):
             return True, []
         return False, reason + [(self, "Variable binding conflict")]
 
+
     def unify(self, other: Any, env: Env) -> Tuple[bool, List[Any]]:
-        return self.bind(env, other)
+        success, reason = self.bind(env, other)
+        if success:
+            if self.predicate is not None:
+                env.constraints.add(Constraint(Expr.apply(self.predicate, self), True))
+        return success, reason
 
     def debug(self, f: Callable[..., Any]) -> Var:
         object.__setattr__(self, 'debug_f', f)
@@ -541,6 +573,9 @@ class Var(Expr):
 
 @dataclass(slots=True)
 class Scope:
+    """
+    Scope manages a collection of variables, ensuring each variable is unique within the scope.
+    """
     pool: Dict[str, Var] = field(default_factory=dict)
     def __getattr__(self, name: str) -> Var:
         return self.create(name)
@@ -555,6 +590,9 @@ class Scope:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Let(Expr):
+    """
+    Let bind a variable to an expression. 
+    """
     var: Var = field(default_factory=lambda: Var(), compare=False, hash=False)
     body: Any = field(default_factory=lambda: Expr(), compare=False, hash=False)
 
@@ -571,6 +609,10 @@ class Let(Expr):
 
 def let(var: Var, rhs: Any) -> Let:
     return Let(var=var, body=rhs)
+
+        
+    
+
 
 
 @dataclass(slots=True)
@@ -704,12 +746,11 @@ class Env:
     def where(self, condition: Callable[[Env], bool] | Expr) -> Env:
         if isinstance(condition, Expr):
             self.constraints.add(Constraint(condition, True))
-            return self
         else:
             def constraint_f(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
                 return True, condition(env)
             self.constraints.add(Constraint(Expr(constraint_f), True))
-            return self
+        return self
     
     def resolve(self, var: Var) -> Any:
         ret = self.frames.resolve(var)

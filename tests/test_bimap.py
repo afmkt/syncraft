@@ -1,4 +1,4 @@
-from syncraft.bimap import solve, Env, evaluate, let, Expr, Scope, transform, Iso, Not, Match
+from syncraft.bimap import solve, Env, evaluate, let, Expr, Scope, transform, Iso, Not, Match, FrozenDict
 from typing import Any, Optional
 import pytest
 from dataclasses import dataclass
@@ -542,5 +542,228 @@ def test_match_passthrough_catches_unmatched() -> None:
     assert inv({"type": "variable", "name": "x"}, None) == ("variable", "x")
     assert inv({"type": "unknown"}, None) == {"type": "unknown"}  # passes through
 
+
+# ---------------------------------------------------------------------
+# Tests for Env.where (constraints API)
+# ---------------------------------------------------------------------
+
+def test_where_with_callable_condition():
+    """Test Env.where with a callable function condition."""
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    
+    # Create an environment with bindings
+    env = Env()
+    env.bind(X, 10)
+    env.bind(Y, 20)
+    
+    # Add a constraint: X + Y must equal 30
+    def sum_check(e: Env) -> bool:
+        return e.resolve(X) + e.resolve(Y) == 30
+    
+    env.where(sum_check)
+    
+    # Solve should succeed
+    success, reason = env.solve()
+    assert success, f"Constraint should be satisfied: {reason}"
+
+
+def test_where_with_callable_condition_fails():
+    """Test Env.where with a callable that returns False."""
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    
+    # Create an environment with bindings
+    env = Env()
+    env.bind(X, 10)
+    env.bind(Y, 20)
+    
+    # Add a constraint that will fail: X + Y must equal 100
+    def sum_check(e: Env) -> bool:
+        return e.resolve(X) + e.resolve(Y) == 100
+    
+    env.where(sum_check)
+    
+    # Solve should fail
+    success, reason = env.solve()
+    assert not success, "Constraint should fail"
+
+
+def test_where_with_expr_condition():
+    """Test Env.where with an Expr condition."""
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    
+    # Create an environment with bindings
+    env = Env()
+    env.bind(X, 5)
+    env.bind(Y, 10)
+    
+    # Create an Expr using the .eq() method (not Python's == operator)
+    # X * 2 creates an Expr, then we compare with Y using .eq()
+    expr_x_times_2 = X * 2
+    expr_condition = expr_x_times_2.eq(Y)  # This creates an Expr that compares X*2 to Y
+    
+    env.where(expr_condition)
+    
+    # Solve should succeed (5 * 2 == 10)
+    success, reason = env.solve()
+    assert success, f"Constraint should be satisfied: {reason}"
+
+
+def test_where_with_expr_fails():
+    """Test Env.where with an Expr that evaluates to False."""
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    
+    # Create an environment with bindings
+    env = Env()
+    env.bind(X, 5)
+    env.bind(Y, 15)
+    
+    # Create an Expr: X * 2 == Y (but 5 * 2 != 15)
+    expr_x_times_2 = X * 2
+    expr_condition = expr_x_times_2.eq(Y)
+    
+    env.where(expr_condition)
+    
+    # Solve should fail
+    success, reason = env.solve()
+    assert not success, "Constraint should fail"
+
+
+def test_where_combined_with_pattern():
+    """Test Env.where combined with pattern matching."""
+    scope = Scope()
+    A = scope.A
+    B = scope.B
+    
+    pattern = {
+        "value": A,
+        "doubled": let(B, A * 2),
+    }
+    
+    # Create env and add where constraint
+    env = Env()
+    env.where(lambda e: e.resolve(B) > 10)
+    
+    # Match against data
+    value = {"value": 6, "doubled": 12}
+    result = solve(pattern, value, env)
+    
+    assert isinstance(result, Env), f"Expected Env, got {result}"
+    assert result.resolve(A) == 6
+    assert result.resolve(B) == 12
+    
+    # Verify constraint is satisfied (B = 12 > 10)
+    success, reason = result.solve()
+    assert success, f"Constraint should be satisfied: {reason}"
+
+
+def test_where_constraint_fails_on_pattern():
+    """Test that Env.where constraint fails when pattern doesn't satisfy it."""
+    scope = Scope()
+    A = scope.A
+    B = scope.B
+    
+    pattern = {
+        "value": A,
+        "doubled": let(B, A * 2),
+    }
+    
+    # Create env and add where constraint: B must be > 10
+    env = Env()
+    env.where(lambda e: e.resolve(B) > 10)
+    
+    # Match against data where B = 4 (not > 10)
+    value = {"value": 2, "doubled": 4}
+    result = solve(pattern, value, env)
+    
+    # The solve should fail because constraint B > 10 is not satisfied
+    # Returns a list of errors, not an Env
+    assert isinstance(result, list), f"Expected list of errors, got {result}"
+
+
+def test_where_multiple_constraints():
+    """Test Env.where with multiple constraints."""
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    
+    env = Env()
+    env.bind(X, 10)
+    env.bind(Y, 20)
+    
+    # Add multiple constraints
+    env.where(lambda e: e.resolve(X) > 5)
+    env.where(lambda e: e.resolve(Y) > 15)
+    env.where(lambda e: e.resolve(X) + e.resolve(Y) == 30)
+    
+    # All constraints should be satisfied
+    success, reason = env.solve()
+    assert success, f"All constraints should be satisfied: {reason}"
+
+
+def test_where_with_where_method_in_create():
+    """Test Env.where used within Env.create method."""
+    scope = Scope()
+    NAME = scope.NAME
+    AGE = scope.AGE
+    
+    # Use Env.create with where parameter
+    env = Env.create(
+        scope=scope,
+        constants=FrozenDict({"NAME": "Alice", "AGE": 30}),
+    )
+    
+    # Add constraint
+    env.where(lambda e: e.resolve(AGE) >= 18)
+    
+    success, reason = env.solve()
+    assert success, f"Constraint should be satisfied: {reason}"
+
+
+def test_where_chaining_returns_env():
+    """Test that Env.where returns Env for method chaining."""
+    scope = Scope()
+    X = scope.X
+    
+    env = Env()
+    env.bind(X, 5)
+    
+    # Method chaining should work
+    result = env.where(lambda e: e.resolve(X) > 0)
+    
+    assert result is env, "where() should return the same Env instance"
+
+
+def test_where_constraint_on_unbound_variable():
+    """Test Env.where when constraint references an unbound variable."""
+    scope = Scope()
+    X = scope.X
+    Y = scope.Y
+    
+    env = Env()
+    env.bind(X, 10)
+    # Y is not bound
+    
+    # Add a constraint that checks Y but Y is not resolved yet
+    # The constraint function should still be added but will be evaluated during solve
+    def check_y(e: Env) -> bool:
+        y_val = e.resolve(Y)
+        return y_val is not ... and y_val > 0
+    
+    env.where(check_y)
+    
+    # Bind Y to a value
+    env.bind(Y, 5)
+    
+    # Now solve should succeed
+    success, reason = env.solve()
+    assert success, f"Constraint should be satisfied after Y is bound: {reason}"
 
 

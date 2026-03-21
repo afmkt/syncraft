@@ -82,16 +82,7 @@ class LexerProtocol(Protocol, Generic[C]):
     def gen(self, tag: Tag, rng: random.Random) -> GeneratedToken: ...  
 
     def candidate(self) -> LexerError | LexerResult[C]: ...
-    
-    @classmethod
-    def create(cls, *args: Any, **kwargs: Any) -> Optional[LexerProtocol[C]]: ...
 
-
-    @classmethod
-    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Tuple[Optional[LexerProtocol[C]], Dict[str, Any]]: ...
-
-    @property
-    def filepath(self) -> Optional[Path]: ...
 
 
 
