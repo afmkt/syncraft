@@ -9,16 +9,15 @@ from typing import (
 from syncraft.path import builtin_cache_path, user_cache_path
 
 from syncraft.alphabet import AlphabetProtocol
-from syncraft.fa import DEFAULT_TAG, NFA, Builder, ReverseDFA, Runner, ModeAction, ModeActionEnum, DFA
+from syncraft.fa import  NFA, Builder, ReverseDFA, Runner, DFA
 from syncraft.ast import SyncraftError
 from syncraft.cache import Either
-from collections import deque, defaultdict
+
 import random
 from pathlib import Path
 import hashlib
 import threading
 from syncraft.token import TokenSpec
-from functools import cached_property
 import pickle
 from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder, GeneratedToken, VerifiedToken
 
@@ -35,28 +34,12 @@ T = TypeVar('T', bound=Hashable)
 class Mode(Generic[C]):
     runner: Runner[C]
     rdfa: ReverseDFA[C]
-    priority: Dict[Tag, int] = field(default_factory=dict)
-    skip: frozenset[Tag] = field(default_factory=frozenset)
-    non_greedy: frozenset[Tag] = field(default_factory=frozenset)
     start_index: Optional[int] = None
-
-
-    @cached_property
-    def has_skip(self) -> bool:
-        return bool(self.skip)
-
     
     def reset(self) -> None:
         self.runner = self.runner.reset()
         self.start_index = None
         
-    
-    def select_tag(self, tags: frozenset[Tag]) -> Optional[Tag]:
-        if not tags:
-            
-            return None
-        sortted_tags = sorted(tags, key=lambda tag: (-self.priority.get(tag, -1), str(tag)))
-        return sortted_tags[0]
 
 
 @dataclass(slots=True)
@@ -100,9 +83,6 @@ class LexerCache:
             else:
                 lexer = self._load(dir, key)
                 if lexer is not None:
-                    normalize = lexer._normalize_default_tags
-                    if callable(normalize) and normalize():
-                        self._save(dir, key, lexer)
                     self.dict[key] = lexer
                     return lexer, dir / f"{key}.lex"
                 lexer = factory()
@@ -118,10 +98,7 @@ class LexerCache:
             
 @dataclass(slots=True)
 class Lexer(LexerProtocol[C]):
-    modes: Dict[str | None, Mode[C]] = field(default_factory=dict)
-    actions: Dict[Tag, ModeAction] = field(default_factory=dict)
-
-    _stack: deque[Mode[C]] = field(default_factory=deque)
+    mode : Mode[C]
     cache: ClassVar[LexerCache] = LexerCache()
     filepath: Optional[Path] = field(default=None, compare=False, hash=False, repr=False)
 
@@ -138,30 +115,6 @@ class Lexer(LexerProtocol[C]):
             return f"one of {', '.join(quoted)}"
         return f"one of {', '.join(items[:5])} ... {len(items)} valid inputs"
 
-    def _normalize_default_tags(self) -> bool:
-        def needs_normalization(mode: Mode[C]) -> bool:
-            has_default_tag = False
-            for tags in mode.runner.dfa.accept.values():
-                if not tags:
-                    return True
-                if DEFAULT_TAG in tags:
-                    has_default_tag = True
-                    if len(tags) > 1:
-                        return True
-            if not has_default_tag:
-                return False
-            return False
-
-        changed = False
-        for mode in self.modes.values():
-            if not needs_normalization(mode):
-                continue
-            dfa = mode.runner.dfa.with_default_tag_invariant()
-            self._raise_on_unreachable_accept(dfa)
-            mode.runner = dfa.runner(non_greedy=mode.non_greedy)
-            mode.rdfa = dfa.reverse
-            changed = True
-        return changed
 
     @staticmethod
     def _raise_on_unreachable_accept(dfa: DFA[Any]) -> None:
@@ -175,15 +128,6 @@ class Lexer(LexerProtocol[C]):
                 )
 
     
-    def tags(self) -> frozenset[Tag]:
-        all_tags: Set[Tag] = set()
-        for mode in self.modes.values():
-            for tags in mode.runner.dfa.accept.values():
-                if tags:
-                    all_tags.update(tags)
-                else:
-                    all_tags.add(None)
-        return frozenset(all_tags)
 
     @classmethod
     def create(cls, 
@@ -213,34 +157,15 @@ class Lexer(LexerProtocol[C]):
         return lexer
 
     def reset(self) -> None:
-        self.current_mode.reset()
+        try:
+            self.mode.reset()
+        except Exception as e:
+            raise SyncraftError(
+                f"Failed to reset lexer mode, please clear the lexer cache at `{self.filepath}` and try again.",
+                offender=None,
+                expect="a valid Mode instance",
+            ) from e
     
-    @property
-    def current_mode(self) -> Mode[C]:
-        if not self._stack:
-            return self.push_mode(None)
-        return self._stack[-1]
-        
-    def pop_mode(self, mode_name: str | None = None) -> Mode[C]:
-        if not self._stack:
-            raise SyncraftError("Cannot pop mode from empty stack", offender=self._stack, expect="non-empty stack")
-        if mode_name not in self.modes:
-            raise SyncraftError(f"Cannot pop unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
-        if self._stack[-1] is not self.modes.get(mode_name):
-            raise SyncraftError(f"Cannot pop mode '{mode_name}' because it is not the current mode", offender=mode_name, expect=f"current mode '{self._stack[-1]}'")
-        self._stack.pop()
-        return self.current_mode
-
-    def push_mode(self, mode_name: str | None = None) -> Mode[C]:
-        if mode_name not in self.modes:
-            raise SyncraftError(f"Cannot push unknown mode '{mode_name}'", offender=mode_name, expect=f"one of {list(self.modes.keys())}")
-        target_mode = self.modes[mode_name]
-        current = self._stack[-1] if self._stack else None
-        if current is target_mode:
-            return target_mode
-        self._stack.append(target_mode)
-        target_mode.reset()
-        return target_mode
             
 
     @staticmethod
@@ -255,20 +180,10 @@ class Lexer(LexerProtocol[C]):
                 
         assert alphabet is not None, "Cannot build a Mode without an alphabet"
 
-        skip: Set[Tag] = set()
-        priority: Dict[Tag, int] = {}
-        non_greedy: Set[Tag] = set()
+        
+        
         combined: Optional[NFA[C]] = None 
         for rule in rules:
-            if rule.skip:
-                # assert rule.tag is not None, "Skip rules must have a tag"
-                skip.add(rule.tag)
-            if rule.priority != 0:
-                # assert rule.tag is not None, "Priority rules must have a tag"
-                priority[rule.tag] = rule.priority
-            if rule.non_greedy:
-                # assert rule.tag is not None, "Greedy rules must have a tag"
-                non_greedy.add(rule.tag)
             nfa = rule.compile(alphabet).nfa
             nfa = nfa.tagged(rule.tag) if rule.tag is not None else nfa
             combined = nfa if combined is None else combined.union(nfa)
@@ -276,79 +191,31 @@ class Lexer(LexerProtocol[C]):
         assert combined is not None
         dfa = combined.dfa.normalized.with_default_tag_invariant()
         Lexer._raise_on_unreachable_accept(dfa)
-        non_greedy_set = frozenset(non_greedy)
         return Mode(
-            runner=dfa.runner(non_greedy=non_greedy_set),
+            runner=dfa.runner(non_greedy=frozenset()),
             rdfa=dfa.reverse,
-            priority=dict(priority),
-            skip=frozenset(skip),
-            non_greedy=non_greedy_set,
         )
 
     @classmethod
     def from_builders(cls, *rules: Builder[C]) -> Lexer[C]:
         if len(rules) == 0:
             raise SyncraftError("Cannot build a Lexer with no rules", offender=rules, expect="at least one rule")
-        modes: Dict[str | None, Set[Builder[C]]] = defaultdict(set)
-        universal_rules: Set[Builder[C]] = set()
-        actions: Dict[Tag, ModeAction] = {}
-        def add_rule_to_mode(rule: Builder[C], belong_name: str | None) -> None:
-            if belong_name == '*':
-                universal_rules.add(rule)
-            else:
-                modes[belong_name].add(rule)
-
-        for rule in rules:
-            match rule.action:
-                case None:
-                    modes[None].add(rule)
-                case ModeAction(action=ModeActionEnum.PUSH, belong=belong_name):
-                    add_rule_to_mode(rule, belong_name)
-                    assert rule.tag is not None, "PUSH actions must have a tag"
-                    actions[rule.tag] = rule.action
-                case ModeAction(action=ModeActionEnum.BELONG, belong=belong_name):
-                    add_rule_to_mode(rule, belong_name)
-                case ModeAction(action=ModeActionEnum.POP, belong=belong_name):
-                    add_rule_to_mode(rule, belong_name)
-                    assert rule.tag is not None, "POP actions must have a tag"
-                    actions[rule.tag] = rule.action
-        
-        for r in universal_rules:
-            for mode_rules in modes.values():
-                mode_rules.add(r)
-
-
-        lexer_modes: Dict[str | None, Mode[C]] = {}
-        for mname, mode_rules in modes.items():
-            lexer_modes[mname] = cls.one_mode(*mode_rules)
-
-        lexer = cls(modes=lexer_modes, actions=actions)
-        lexer.push_mode(None)
+        mode = cls.one_mode(*rules)
+        lexer = cls(mode=mode)
         return lexer
 
-    def gen(self, tag: Tag, rng: random.Random) -> GeneratedToken:
-        ret = self.current_mode.rdfa.gen(tag, rng)
-        act = self.actions.get(tag)
-        if act is not None:
-            match act:
-                case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name):
-                    self.push_mode(mode_name)
-                case ModeAction(action=ModeActionEnum.POP, belong=mode_name):
-                    self.pop_mode(mode_name)
-                case _:
-                    raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
-        return GeneratedToken(value=ret, tag=tag, steps=len(ret) if isinstance(ret, (str, bytes, tuple)) else 1)
+    def gen(self, rng: random.Random) -> GeneratedToken:
+        ret = self.mode.rdfa.gen(None, rng)
+        return GeneratedToken(value=ret, steps=len(ret) if isinstance(ret, (str, bytes, tuple)) else 1)
 
-    def verify(self, tag: frozenset[Tag], value: Any) -> VerifiedToken:
+    def verify(self, value: Any) -> VerifiedToken:
         txt = value
         lexer = self
         try:
             for index, char in enumerate(txt):
                 match lexer.match(char, index):  # type: ignore[arg-type]
 
-                    case LexerResult(tag=t, start=s, end=e):
-                        if len(tag) > 0 and t not in tag:
-                            return VerifiedToken(False, 0)
+                    case LexerResult(start=s, end=e):
                         if s != 0 or e != len(txt):
                             return VerifiedToken(False, 0)
                         if index != len(txt) - 1:
@@ -360,8 +227,6 @@ class Lexer(LexerProtocol[C]):
                         return VerifiedToken(False, 0)
             candidate = lexer.candidate()
             if isinstance(candidate, LexerResult):
-                if len(tag) > 0 and candidate.tag not in tag:
-                    return VerifiedToken(False, 0)
                 return VerifiedToken(candidate.start == 0 and candidate.end == len(txt), len(txt))
         except TypeError:
             raise SyncraftError(
@@ -372,7 +237,7 @@ class Lexer(LexerProtocol[C]):
         return VerifiedToken(False, 0)
 
     def candidate(self) -> LexerError | LexerResult[C]:
-        mode = self.current_mode
+        mode = self.mode
         if mode.start_index is None:
             return LexerError.message_only("Cannot get candidate when no input has been processed")
         
@@ -380,17 +245,14 @@ class Lexer(LexerProtocol[C]):
         if not candidate_:
             return LexerError.message_only("No candidate available")
         latest = candidate_[-1]
-        tag = mode.select_tag(latest[1])
         return LexerResult(
-                tag=tag,
                 start=mode.start_index,
                 end=latest[0] + 1,
-                skip=tag in mode.skip
             )
         
 
     def match(self, char: C, index: int) -> LexerError | None | LexerResult[C]:
-        mode = self.current_mode
+        mode = self.mode
         if mode.start_index is None:
             mode.start_index = index
         old_state = mode.runner.current
@@ -418,26 +280,13 @@ class Lexer(LexerProtocol[C]):
 
         if rr.final and rr.accepted is not None:
             accepted_pos, accepted_tags = rr.accepted
-            tag = mode.select_tag(accepted_tags)
-            act = self.actions.get(tag)
-            if act is not None:
-                match act:
-                    case ModeAction(action=ModeActionEnum.PUSH, mode=mode_name):
-                        self.push_mode(mode_name)
-                    case ModeAction(action=ModeActionEnum.POP, mode=mode_name):
-                        new_mode = self.pop_mode(mode_name)
-                        new_mode.reset()
-                    case _:
-                        raise SyncraftError(f"Unknown action {act}", offender=act, expect="PUSH, POP, or BELONG action")
             mode.runner = mode.runner.reset()
             start = mode.start_index if mode.start_index is not None else accepted_pos
             end = accepted_pos + 1
             mode.start_index = None
             return LexerResult(
-                    tag=tag,
                     start=start,
                     end=end,
-                    skip=tag in mode.skip
                 )
             
         return None
@@ -451,66 +300,40 @@ class ExtRule(Generic[T]):
 
 @dataclass(slots=True)
 class ExtLexer(LexerProtocol[T]):
-    rules: Dict[Tag, ExtRule[T]] = field(default_factory=dict)
+    rule: ExtRule[T]
 
     def reset(self) -> None:
         pass
 
-    def tags(self) -> frozenset[str|Enum|None]:
-        return frozenset(self.rules.keys())
-
     @classmethod
     def create(cls, tkspec: TokenSpec) -> Optional[ExtLexer[T]]:
         if isinstance(tkspec, TokenSpec):
-            ret = cls()
-            for t in tkspec.tags():
-                existing = ret.rules.get(t)
-                if existing is None:
-                    pred = tkspec.predicate()
-                    gen = tkspec.generator() 
-                    ret.rules[t] = ExtRule(pred, gen)
-            return ret
+            return cls(ExtRule(predicate=tkspec.predicate(), generator=tkspec.generator()))
         return None
     
-    
-    def clone(self) -> "ExtLexer[T]":
-        return replace(self, rules=dict(self.rules))
-
-    
-
     def candidate(self) -> LexerError | LexerResult[T]:
         return LexerError.message_only("External lexer cannot provide candidates")
 
     def match(self, item: T, index: int) -> LexerError | None | LexerResult[T]:
-        for tag in self.tags():
-            if tag in self.rules and self.rules[tag].predicate(item):
-                return LexerResult(tag=tag, start=index, end=index + 1, value=item, skip=False)
+        if self.rule.predicate(item):
+            return LexerResult(start=index, end=index + 1, value=item)
                 
         return LexerError.new(
             message=f"External lexer token mismatch, no tag matched item '{item}'",
             index=index,
             offender=item,
-            expect=self.tags()
+            expect=frozenset()
         )
         
 
-    def verify(self, tag: frozenset[Tag], value: Any) -> VerifiedToken:
-        for t in tag:
-            rule = self.rules.get(t)
-            if rule is not None:
-                if rule.predicate(value):
-                    return VerifiedToken(True, 1)
+    def verify(self, value: Any) -> VerifiedToken:
+        if self.rule.predicate(value):
+            return VerifiedToken(True, 1)
         return VerifiedToken(False, 0)
 
-    def gen(self, tag: Tag, rng: random.Random) -> GeneratedToken:
-        rule = self.rules.get(tag)
-        if rule is None or rule.generator is None:
-            raise SyncraftError(
-                f"External lexer cannot generate tokens for tag '{tag}'",
-                offender=self,
-                expect="generator callable",
-            )
-        return rule.generator(tag, rng)
+    def gen(self, rng: random.Random) -> GeneratedToken:
+        from syncraft.ast import Unknown
+        return self.rule.generator(Unknown, rng)
 
 
 
@@ -566,82 +389,3 @@ class LocalLexerBuilder(LexerBuilder[C]):
         return hash(id(self.lexer))
     
 
-@dataclass(slots=True)
-class GlobalLexerBuilder(LexerBuilder[C]):
-    """Unified DFA lexer builder for global skip behavior.
-    
-    All terminals are combined into a single DFA. The `skip=True` flag is
-    globally applied: marked tokens are automatically filtered between ALL
-    terminals in the grammar.
-    
-    Example:
-        >>> G = Syntax.set_lexer(GlobalLexerBuilder())
-        >>> _ws = G.re(r"\\s+", skip=True)  # Global skip rule
-        >>> expr = G.lit("a") + G.lit("b")   # "a b" parses successfully
-        >>> # Whitespace is skipped between all terminals
-    
-    Features requiring GlobalLexerBuilder:
-    - **Global skip behavior**: skip=True applies to all terminals
-    - **Lexer modes**: push/pop/of parameters for context-sensitive lexing
-      (e.g., string interpolation, nested comments)
-    - **Priority rules**: Disambiguate overlapping patterns with explicit
-      precedence (higher priority wins)
-    - **Non-greedy matching**: Shortest-match semantics instead of maximal
-      munch (useful for minimal string matching)
-    - **DFA caching**: Compiled lexer persisted to disk for faster startup
-    
-    Use this mode when:
-    - All terminals share the same whitespace/comment skipping rules
-    - You need lexer modes for context-sensitive tokens
-    - You want traditional lexer behavior (single tokenization pass)
-    - Performance optimization via compiled DFA
-    
-    Note: Cannot mix `S.rp()` with GlobalLexerBuilder; rp patterns are
-    PEG-based and bypass the DFA lexer.
-    """
-    args: Set[Builder] = field(default_factory=set)
-
-    builtin: bool = False
-    cache_path: str | Path | None = None 
-    lexer: LexerProtocol[C] | None = field(default=None, compare=False, hash=False, repr=False)
-    def __call__(self, arg: TokenSpec | Builder, **kwargs: Any) -> GlobalLexerBuilder[C]:
-        if isinstance(arg, Builder):
-            # Set automatically handles deduplication
-            self.args.add(arg)
-            self.builtin = kwargs.get("builtin", self.builtin)
-            self.cache_path = kwargs.get("cache_path", self.cache_path)
-            return self
-        elif isinstance(arg, TokenSpec):
-            assert not self.args, "Cannot mix Syntax.lit with Syntax.re/Syntax.lit"
-            lexer: ExtLexer[C] | None = ExtLexer.create(arg)
-            if lexer is not None:
-                return GlobalLexerBuilder(args=self.args, builtin=self.builtin, cache_path=self.cache_path, lexer=lexer)
-        raise SyncraftError(
-            f"GlobalLexerBuilder cannot create a lexer from argument of type {type(arg)}",
-            offender=(arg, kwargs),
-            expect="a TokenSpec or Builder instance",
-        )
-    
-    def resolve(self) -> LexerProtocol[C]:
-        if self.lexer is None:
-            lexer: LexerProtocol[C] | None = Lexer.create(*self.args, builtin=self.builtin, cache_path=self.cache_path)
-            object.__setattr__(self, 'lexer', lexer)
-            if self.lexer is None:
-                raise SyncraftError(
-                    "GlobalLexerBuilder could not create a lexer from the provided builders",
-                    offender=(self.args, self.builtin, self.cache_path),
-                    expect="at least one valid Builder instance",
-                )
-            return self.lexer
-        else:
-            return self.lexer
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, GlobalLexerBuilder):
-            return False
-        return self.args == other.args
-        
-
-    def __hash__(self) -> int:
-        return hash(frozenset(self.args))
-        

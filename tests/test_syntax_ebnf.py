@@ -37,3 +37,7 @@ def test_syntax_ebnf_export_simple():
     ebnf_out = syntax.ebnf()
     assert "rule" in ebnf_out
     assert "'x'" in ebnf_out and "'y'" in ebnf_out
+
+
+if __name__ == "__main__":
+    test_syntax_from_ebnf_parse()

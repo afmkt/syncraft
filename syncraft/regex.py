@@ -10,7 +10,7 @@ import re as pyre
 
 from syncraft.algebra import Error
 from syncraft.syntax import Syntax
-from syncraft.fa import Builder, DEFAULT_TAG
+from syncraft.fa import Builder
 from syncraft.alphabet import Alphabet
 from syncraft.grammar import Grammar, lazy, rule, grammar
 from functools import reduce
@@ -866,7 +866,7 @@ def rstr(
     dfa = parsed.builder().compile(alphabet).dfa.with_default_tag_invariant()
     rng = rnd if rnd is not None else random.Random(seed)
     def generator() -> str:
-        result = dfa.reverse.gen(DEFAULT_TAG, rng)
+        result = dfa.reverse.gen(None, rng)
 
         # For text alphabet, gen() always returns str after internal concat
         if not isinstance(result, str):

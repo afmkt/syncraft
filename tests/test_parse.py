@@ -6,7 +6,7 @@ from syncraft.ast import Token, Seq, Many, Alt
 from typing import Any
 
 
-S = Syntax.set(terminal_constructor=lambda value, tag: Token(**value))
+S = Syntax.set(terminal_constructor=lambda value: Token(**value))
 def literal(text: Any) -> Syntax[Any, Any]:
     return S.tok(text=text)
 
@@ -52,7 +52,7 @@ def test_sep_by()->None:
     
 
 def test_many_or()->None:
-    literal = Syntax.set(terminal_constructor=lambda value, tag: Token(**value)).tok
+    literal = Syntax.set(terminal_constructor=lambda value: Token(**value)).tok
     
     IF = literal(text="if")
     THEN = literal(text="then")

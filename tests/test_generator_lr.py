@@ -1,9 +1,9 @@
-from typing import Type
+
 
 import pytest
 
 from syncraft.syntax import Syntax
-from syncraft.ast import Token, Seq, Alt, Lazy
+from syncraft.ast import Token
 from syncraft.generator import (
     generate_with,
     generate,
@@ -13,7 +13,7 @@ from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
 from syncraft.fa import Builder
 
-SS = Syntax.set(terminal_constructor=lambda value, tag: Token(**value))
+SS = Syntax.set(terminal_constructor=lambda value: Token(**value))
 
 def tok(text: str):
     return SS.tok(text=text, case_sensitive=True)
@@ -72,7 +72,7 @@ def test_generate_with_infers_from_fabuilder_literal() -> None:
     ast = generate_with(lex_syntax, seed=321)
     print(ast)
     assert isinstance(ast, Token)
-    assert ast.token_type == "WORD" 
+    assert ast.token_type is None
     assert ast.text == "go"
 
 
@@ -86,3 +86,5 @@ def test_validate_lex_token_uses_verify_full_match() -> None:
     assert ast.text == "ab"
     
     
+if __name__ == "__main__":
+    test_generate_with_infers_from_fabuilder_literal()

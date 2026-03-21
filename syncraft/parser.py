@@ -372,12 +372,9 @@ class Parser(Algebra[T, ParserState[T]]):
             while True:
                 if state.ended:
                     match lexer.candidate():
-                        case LexerResult(tag=tag, start=start, end=end, value=lexeme, skip=skip):
-                            if skip:
-                                # Trailing skip tokens are fine, return EOF
-                                return Right.new((EOF, state)) # type: ignore
+                        case LexerResult(start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_constructor(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
+                                token = terminal_constructor(state.slice(start, end))
                             else:
                                 token = lexeme
                             return Right.new((token, state)) # type: ignore
@@ -396,13 +393,11 @@ class Parser(Algebra[T, ParserState[T]]):
                             return Left.new(Error.new(message=err_msg, this=lex_run, state=state, error=lexerError))
                         case None:
                             state = state.advance()
-                        case LexerResult(tag=tag, start=start, end=end, value=lexeme, skip=skip):
+                        case LexerResult(start=start, end=end, value=lexeme):
                             if end > state.index:
                                 state = state.advance()
-                            if skip:
-                                continue  # Skip this token and get next one
                             if lexeme is None:
-                                token = terminal_constructor(state.slice(start, end), tag if tag != DEFAULT_TAG else None)
+                                token = terminal_constructor(state.slice(start, end))
                             else:
                                 token = lexeme
                             return Right.new((token, state)) # type: ignore

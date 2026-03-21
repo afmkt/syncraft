@@ -118,7 +118,7 @@ class Scalar(TokenSpecBase):
     def generator(self) -> Callable[[Any, random.Random], GeneratedToken]:
         value = self.value
         def gen(input: Any, rnd: random.Random) -> GeneratedToken:
-            return GeneratedToken(value=value, tag=None, steps=1)
+            return GeneratedToken(value=value, steps=1)
         gen.__name__ = f"G({self.value!r})"
         return gen
 
@@ -207,7 +207,7 @@ class Structured(TokenSpecBase):
                         data[k] = v.pattern
                 else:
                     data[k] = v
-            return GeneratedToken(value=data, tag=None, steps=1)
+            return GeneratedToken(value=data, steps=1)
         gen.__name__ = f"G({self.describe()})"
         return gen
     

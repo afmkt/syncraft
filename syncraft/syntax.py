@@ -567,8 +567,8 @@ class LexSpec(SyntaxSpec):
 
     @classmethod
     def should_ignore(cls, data: Any) -> bool:
-        from syncraft.lexer import LocalLexerBuilder, GlobalLexerBuilder
-        return isinstance(data, (LocalLexerBuilder, GlobalLexerBuilder))
+        from syncraft.lexer import LocalLexerBuilder
+        return isinstance(data, (LocalLexerBuilder))
     
     def syntax(self, cls: type[Syntax], cache: MutableMapping[SyntaxSpec, Syntax])-> Syntax:
         if self in cache:
@@ -1782,32 +1782,6 @@ class Syntax(Generic[A, S]):
             return  tmp
         return tmp
         
-    @classmethod
-    def _re(cls, 
-            pattern: str, 
-            *, 
-            i: bool = False, 
-            skip: bool = False, 
-            tag: Tag = None, 
-            push: str | None = None, 
-            pop: str | Literal[True] | None = None,  
-            of: str | None = None
-            ) -> Syntax:
-        """Internal helper for regex-based syntax creation."""
-        import syncraft.regex as regex  
-        b = regex.re(pattern, case_insensitive=i).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
-        ret = cls.lex(b)
-        extra: FrozenDict[str, Any] = FrozenDict({
-            'type': 're',
-            'pattern': pattern,
-            'skip': skip,
-            'tag': tag,
-            'push': push,
-            'pop': pop,
-            'of': of
-        })
-        assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
-        return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
     @classmethod
     def re(cls, pattern: str, *, i: bool = False) -> Syntax:
@@ -1918,44 +1892,6 @@ class Syntax(Generic[A, S]):
             return replace(ret, spec=replace(ret.spec, extra_info = extra))
         return ret
 
-    @classmethod
-    def _lit(cls, 
-            txt: str,
-            *,
-            i: bool = False,
-            skip: bool = False, 
-            tag: Tag = None, 
-            push: str | None = None, 
-            pop: str | Literal[True] | None = None,  
-            of: str | None = None
-            ) -> Syntax:
-        import syncraft.regex as regex
-        def lit(text: str, case_insensitive: bool = False) -> Builder[str]:
-            """
-            Create a Builder that matches the given literal text, with optional case insensitivity.
-            """
-            if case_insensitive:
-                b: Builder[str] = Builder.none()
-                for c in text:
-                    for variant in regex.RegexNode._casefold_variants(c):
-                        b = b | Builder.lit(variant)
-                return b
-            else:
-                return Builder.lit(text)
-
-        b = lit(txt, case_insensitive=i).apply(skip=skip, tag=tag, push=push, pop=pop, of=of)
-        ret = cls.lex(b)
-        extra: FrozenDict[str, Any] = FrozenDict({
-            'type': 'lit',
-            'pattern': txt,
-            'skip':skip,
-            'tag': tag,
-            'push': push,
-            'pop': pop,
-            'of': of
-        })
-        assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
-        return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
 
     @classmethod

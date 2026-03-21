@@ -56,7 +56,7 @@ def test_dfa_reverse_none_tag_rejected():
     nfa = NFA.seq(s='a', tag='A', cs_factory=cs_factory)
     rev = nfa.dfa.reverse
     with pytest.raises(ValueError):
-        rev.gen(None, random.Random(0))
+        rev.gen('B', random.Random(0))
 
 
 

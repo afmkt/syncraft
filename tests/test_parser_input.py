@@ -35,7 +35,7 @@ def test_parse_bytes_input_with_lexer_bind() -> None:
     value = parser_run(syntax=byte_token, data=StreamCursor.from_data(b"\x01"))
 
     assert isinstance(value, Token)
-    assert value.token_type == "BYTE"
+    assert value.token_type is None
     assert isinstance(value.text, bytes)
     assert value.text == b"\x01"
 

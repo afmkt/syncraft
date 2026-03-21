@@ -33,10 +33,8 @@ class LexerError:
 
 @dataclass(frozen=True, slots=True)
 class LexerResult(Generic[C]):
-    tag: Tag
     start: int
     end: int
-    skip: bool 
     value: Any | None = None
     
 
@@ -60,7 +58,6 @@ class GeneratedToken:
     str or bytes will advance len(value) steps.
     """
     value: Any | None 
-    tag: Tag | None
     steps: int 
 
 
@@ -75,11 +72,9 @@ class LexerProtocol(Protocol, Generic[C]):
 
     def match(self, char: C, index: int) -> LexerError | None | LexerResult[C]: ...
 
-    def verify(self, tag: frozenset[Tag], value: Any) -> VerifiedToken: ...
+    def verify(self, value: Any) -> VerifiedToken: ...
 
-    def tags(self) -> frozenset[str|Enum|None]: ...
-
-    def gen(self, tag: Tag, rng: random.Random) -> GeneratedToken: ...  
+    def gen(self, rng: random.Random) -> GeneratedToken: ...  
 
     def candidate(self) -> LexerError | LexerResult[C]: ...
 

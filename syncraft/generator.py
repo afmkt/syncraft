@@ -4,9 +4,6 @@ from typing import (
     List, Generator as PyGenerator, cast
 )
 
-from syncraft.fa import (
-    DEFAULT_TAG
-)
 
 
 import random
@@ -441,30 +438,19 @@ class Generator(Algebra[ParseResult[T], GenState]):
             
             lexer: LexerProtocol[Any] = builder.resolve()
             lexer.reset()
-            all_tags = lexer.tags()
+
             yield from ()
             
             if input.pruned:
-                # Filter out skip tags during generation
-                skip_tags: frozenset[Any] = frozenset()
-                if hasattr(lexer, 'current_mode'):
-                    # For DFA/NFA lexer, get skip tags from current mode
-                    current_mode = lexer.current_mode  # type: ignore
-                    skip_tags = current_mode.skip
-                ntags = all_tags - skip_tags
-                if not ntags:
-                    ntags = all_tags  # Fallback if all tags are skip
-                tag = input.rng("lex_tag").choice(tuple(ntags))                
-                input = input.fork(tag=tag)
-                gt = lexer.gen(tag, input.rng())
-                generated = terminal_constructor(gt.value, gt.tag if gt.tag != DEFAULT_TAG else None)
+                gt = lexer.gen(input.rng())
+                generated = terminal_constructor(gt.value)
                 debug_print(f"\nLex CALLING {callable_str(lex_run)} with input.ast=={input.ast} -> {generated}")
                 return Right.new((cast(ParseResult[T], generated), input.advance(gt.steps)))
             else:
                 current = input.ast
                 current_value = terminal_destructor(current)
                 try:
-                    verified = lexer.verify(all_tags, current_value)
+                    verified = lexer.verify(current_value)
                 except SyncraftError as e:
                     debug_print(f"\nLex CALLING {callable_str(lex_run)} with input.ast=={input.ast} -> FAILED")
                     return Left.new(
@@ -485,7 +471,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     return Left.new(
                         Error.new(
                             this=lex_run,
-                            message=f"Expected token tag {{ {all_tags} }}, but got {current}: {type(current)}.",
+                            message=f"Unexpected token {current}: {type(current)}.",
                             priority=ErrorPriority.EXPECTED_TOKEN_TAG,
                             state=input,
                         )

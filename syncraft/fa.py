@@ -85,13 +85,17 @@ class ReverseDFA(Generic[C]):
     def gen(self, tag: Tag, rnd: random.Random) -> C | Tuple[C, ...]:
         current_states = self.accept.get(tag, frozenset())
         if not current_states:
-            if tag:
+            if tag and tag != DEFAULT_TAG:
                 raise ValueError(f"Empty accept states for tag '{tag}'")
             else:
                 tag = DEFAULT_TAG
                 current_states = self.accept.get(tag, frozenset())
                 if not current_states:
-                    raise ValueError(f"Empty accept states for tag '{tag}'")
+                    if len(self.accept) == 1:
+                        current_states = next(iter(self.accept.values()))
+                        if not current_states:
+                            raise ValueError(f"Empty accept states for tag '{tag}'")
+                    
         candicates = list(current_states)
         current = None
         rnd.shuffle(candicates)
