@@ -779,22 +779,6 @@ class Syntax(Generic[A, S]):
     def __str__(self) -> str:
         return str(self.spec)
 
-
-
-    # @classmethod
-    # def cdbg(cls, e: bool)->Any:
-    #     """Enable or disable class-level debug printing for all syntax instances."""
-    #     # cls debug enable
-    #     cls.print.enable(e)
-    #     return cls
-
-    # def idbg(self, e: bool) -> Syntax[A, S]:
-    #     """Enable or disable debug printing for this syntax instance only."""
-    #     # instance debug enable
-    #     self.print.enable(e)
-    #     return self
-
-    
     @property
     def present(self) -> Syntax[A, S]:
         """Positive lookahead: ensure this syntax is present. Does not consume input."""
@@ -1288,16 +1272,6 @@ class Syntax(Generic[A, S]):
         """
         return (self | self.success(Nothing)).named(f"{str(self.spec)}?", _location=False)
         
-    # @property
-    # def cut(self) -> Syntax[A, S]:
-    #     """Commit this branch: on failure, prevent trying alternatives.
-
-    #     Wraps the underlying algebra's cut.
-
-    #     Returns:
-    #         Syntax that marks downstream failures as committed.
-    #     """
-    #     return replace(self, alg_f=lambda cls, **global_kwargs: self(cls, **global_kwargs).cut())
 
 
     ###################################################### operator overloading #############################################

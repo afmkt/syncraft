@@ -430,25 +430,6 @@ class FrozenDict(collections.abc.Mapping, Generic[K, V]):
         new_data = dict(self._data)
         new_data[key] = value
         return FrozenDict(new_data)
-    
-
-# @dataclass(slots=True)
-# class DbgPrint:
-#     enabled: bool = field(default=False)
-#     print_func: Callable[..., Any] = field(default=print)
-    
-#     @classmethod
-#     def create(cls, enabled: bool = False, print_func: Callable[..., Any] = print) -> DbgPrint:
-#         return cls(enabled=enabled, print_func=print_func)
-    
-#     def __call__(self, *args: Any, **kwargs: Any) -> None:
-#         if self.enabled:
-#             self.print_func(*args, **kwargs)
-
-#     def enable(self, e: bool) -> DbgPrint:
-#         self.enabled = e
-#         return self
-    
 
 
 

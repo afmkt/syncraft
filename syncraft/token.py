@@ -202,7 +202,7 @@ class Structured(TokenSpecBase):
                 if isinstance(v, re.Pattern):
                     try:
                         import syncraft.regex as syncraft_regex
-                        data[k] = syncraft_regex.xeger(v, rnd=rnd)
+                        data[k] = syncraft_regex.rstr(v, rnd=rnd)
                     except Exception:
                         data[k] = v.pattern
                 else:

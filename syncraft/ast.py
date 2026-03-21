@@ -277,8 +277,7 @@ ParseResult = Union[
     Many,
     Alt,
     Seq,
-    Nothing,
-    Unknown,
+    Unknown, Nothing, # type: ignore
     T,
 ]
 

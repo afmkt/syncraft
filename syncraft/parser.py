@@ -16,7 +16,7 @@ from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.input import StreamCursor
 
-from syncraft.ast import Token, SyncraftError, EOF
+from syncraft.ast import SyncraftError, EOF
 from syncraft.bimap import Bindable
 import re
 import os
@@ -448,6 +448,7 @@ def parse(syntax: Syntax, data: StreamCursor[Any] | ParserState[Any]) -> Any:
 
 
 def parse_word(syntax: Syntax, data: str) -> Any:
+    from syncraft.ast import Token
     tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens)
 
