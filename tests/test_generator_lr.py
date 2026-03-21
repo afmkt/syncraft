@@ -70,7 +70,7 @@ def test_generate_with_infers_from_fabuilder_literal() -> None:
     S = Syntax.set(terminal_constructor=Token)
     lex_syntax = S.lex(Builder.lit("go").tagged("WORD"))
     ast = generate_with(lex_syntax, seed=321)
-    print(ast)
+    
     assert isinstance(ast, Token)
     assert ast.token_type is None
     assert ast.text == "go"

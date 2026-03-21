@@ -26,7 +26,6 @@ def all_subclasses(cls: Type[Any])->Set[Type[Any]]:
 
 @runtime_checkable
 class TokenSpec(Protocol):
-    def tags(self) -> frozenset[Tag]: ...
     def predicate(self) -> Callable[[Any], bool]: ...
     def generator(self) -> Callable[[Any, random.Random], GeneratedToken]: ...
     @classmethod
@@ -100,8 +99,6 @@ class Scalar(TokenSpecBase):
     def create(cls, value: str|bytes, *, case_sensitive: bool = True) -> Scalar:
         return cls(value=value, case_sensitive=case_sensitive)
     
-    def tags(self) -> frozenset[Tag]:
-        return frozenset([str(self.value)])
     
     def predicate(self) -> Callable[[Any], bool]:
         case_sensitive = self.case_sensitive
@@ -145,15 +142,6 @@ class Structured(TokenSpecBase):
         )
         
 
-    def tags(self) -> frozenset[Tag]:
-        config, kwargs, tags = self.normalise_kwargs(dict(self.kwargs))
-        if tags:
-            return tags
-        if 'token_type' in kwargs:
-            return frozenset([kwargs['token_type']])
-        if 'text' in kwargs:
-            return frozenset([kwargs['text']])
-        return frozenset()
     
     def describe(self) -> str:
 

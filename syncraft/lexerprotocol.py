@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable, Generic, Tuple, Dict, Optional, Hashable, Any, TypeVar, Callable
-from dataclasses import dataclass, field
-from enum import Enum
+from typing import Protocol, runtime_checkable, Generic, Hashable, Any, TypeVar
+from dataclasses import dataclass
 import random
-from pathlib import Path
+
 from abc import ABC, abstractmethod
 
-Tag = str | Enum | None
+
 C = TypeVar('C', bound=Hashable)
 
 
@@ -39,12 +38,10 @@ class LexerResult(Generic[C]):
     
 
     @classmethod
-    def new(cls, tag: Tag, start: int, end: int, skip: bool, value: Any | None = None) -> "LexerResult[C]":
+    def new(cls, start: int, end: int, value: Any | None = None) -> "LexerResult[C]":
         obj = cls.__new__(cls)
-        object.__setattr__(obj, 'tag', tag)
         object.__setattr__(obj, 'start', start)
         object.__setattr__(obj, 'end', end)
-        object.__setattr__(obj, 'skip', skip)
         object.__setattr__(obj, 'value', value)
         return obj
 
@@ -53,7 +50,7 @@ class LexerResult(Generic[C]):
 @dataclass(frozen=True, slots=True)
 class GeneratedToken:
     """
-    The result of generating a token and a tag. Contains the value of the token and the number of steps to advance after generating this token.
+    The result of generating a token. Contains the value of the token and the number of steps to advance after generating this token.
     Scalar and structured token will advance 1 step, 
     str or bytes will advance len(value) steps.
     """
