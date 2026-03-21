@@ -93,7 +93,7 @@ class UnsupportedFeature(RegexNode):
     
 
 
-def unsuppoerted(feature: str, *args: Any, **kwargs: Any) -> UnsupportedFeature:
+def unsupported(feature: str, *args: Any, **kwargs: Any) -> UnsupportedFeature:
     return UnsupportedFeature(feature=feature, args=args, kwargs=kwargs)
     
 
@@ -741,7 +741,7 @@ class RE(Grammar):
                         S.seq(-S.lit("(?P"), -RE.rparen),            
                         S.seq(-S.lit("(?p"), -RE.rparen),
                         S.seq(-S.lit("(?0"), -RE.rparen),
-                    ).to(lambda env: unsuppoerted(regex=env.regex, feature="recursive group")),
+                    ).to(lambda env: unsupported(regex=env.regex, feature="recursive group")),
 
             S.seq(-S.lit("(?P<"), +RE.name, -RE.greater, +RE.regex, -RE.rparen).to(lambda env: (env.name, env.regex), 
                                                                                    lambda env: GroupAtom(name=env.name, 
@@ -757,20 +757,20 @@ class RE(Grammar):
             
             S.seq(
                 -(S.lit("(?") | S.lit("(?=") | S.lit("(?!") | S.lit("(?<=") | S.lit("(?<!")), +RE.regex, -RE.rparen
-                ).to(lambda env: unsuppoerted(regex=env.regex, 
+                ).to(lambda env: unsupported(regex=env.regex, 
                                               feature="lookaround assertion group")),
 
-            S.seq(-S.lit("(?("), -(RE.number | RE.name), +RE.regex, -RE.rparen).to(lambda env:  unsuppoerted(regex=env.regex, 
+            S.seq(-S.lit("(?("), -(RE.number | RE.name), +RE.regex, -RE.rparen).to(lambda env:  unsupported(regex=env.regex, 
                                                                                                     feature="group existence test")),
 
             S.seq(-S.lit("(?#"), 
                   +RE.comment,
-                  -RE.rparen).to(lambda env: unsuppoerted(regex=env.regex, feature="comment group")),
+                  -RE.rparen).to(lambda env: unsupported(regex=env.regex, feature="comment group")),
                   
                 ).bind(group_counter = lambda _, c: c + 1 if c is not ... else 1)
 
 
-    anchor = S.alt(caret, dollar, boundary_escape).to(lambda env: unsuppoerted(regex=env.regex, 
+    anchor = S.alt(caret, dollar, boundary_escape).to(lambda env: unsupported(regex=env.regex, 
                                                                                feature="group existence test"))
 
 
