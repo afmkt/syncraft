@@ -59,8 +59,10 @@ class TokenSpec(TokenSpecProtocol):
     @classmethod
     def from_any(cls, spec: Any) -> TokenSpecProtocol:
         from syncraft.ast import Unknown
-        if isinstance(spec, str) or isinstance(spec, re.Pattern):
+        if isinstance(spec, str):
             return Str(spec)
+        elif isinstance(spec, re.Pattern):
+            return Str(spec, i=spec.flags & re.IGNORECASE != 0, fullmatch=True)
         elif isinstance(spec, TokenSpecProtocol):
             return spec
         elif is_primitive(spec):

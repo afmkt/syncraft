@@ -1934,8 +1934,17 @@ class Syntax(Generic[A, S]):
     def tok(cls, token_pattern: Any) -> Syntax:
         """
         Create token-spec terminal syntax from literal/regex token forms.
-        NOTE:
-        - This API only works on structured token input, not raw strings.
+        
+        Args:
+            token_pattern: The token specification, which can be 
+            1. Primitive types (int, float, bool, str) for simple literals
+            2. A regex pattern re.Pattern
+            3. A `TokenSpecProtocol` instance (e.g., `Str`).
+            4. A dictionary, list, tuple, or dataclass for structured tokens.
+            5. A mix of the above forms.
+            
+        Returns:
+            A `Syntax` object representing the token-spec terminal.
         """
         from syncraft.token import TokenSpec
         tkspec: TokenSpecProtocol = TokenSpec.from_any(token_pattern)
