@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Iterable
 from syncraft.ast import Nothing, Lazy, Seq, Alt
-from syncraft.parser import parse_word
+
 
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
@@ -10,6 +10,15 @@ import syncraft.generator as gen
 from syncraft.token import Str, Token
 import re
 import pytest
+
+
+def parse_word(syntax: Syntax, data: str):
+    from syncraft.token import Token
+    from typing import List
+    import re
+    from syncraft.parser import parse_data
+    tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    return parse_data(syntax, tokens)
 
 
 def iter_tokens(ast: Any) -> Iterable[str]:
@@ -256,7 +265,7 @@ def test_indirect_left_recursion_2()->None:
         return leaf(ast)
     normalized = norm(v1)
     print(normalized)
-    assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
+    assert normalized == (1, Token(text='+'), (2, Token(text='*'), 3)), f"Unexpected normalized AST: {normalized}"
     
 
     v_42 = parse_word(Expr, '42')
@@ -373,9 +382,9 @@ def test_non_recursive_map_preserves_shape()->None:
     v = parse_word(Pair, '12 + 34')
     assert v == (Token(text='12'), Token(text='+'), Token(text='34'))
     (left_tok, plus_tok, right_tok) = v
-    assert str(plus_tok) == 't.+'
-    assert str(left_tok) == 't.12'
-    assert str(right_tok) == 't.34'
+    assert plus_tok == Token(text='+')
+    assert left_tok == Token(text='12')
+    assert right_tok == Token(text='34')
 
     # Mapped version
     NUM_M = NUM.map(lambda t: int(t.text))
@@ -668,7 +677,7 @@ def test_multi_recursion()->None:
         return leaf(ast)
     normalized = norm(v1)
     print(normalized)
-    assert normalized == (1, '+', (2, '*', 3)), f"Unexpected normalized AST: {normalized}"
+    assert normalized == (1, Token(text='+', token_type=None), (2, Token(text='*', token_type=None), 3)), f"Unexpected normalized AST: {normalized}"
 
     v_42 = parse_word(Expr, '42')
     

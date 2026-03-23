@@ -5,11 +5,19 @@ Test non-recursive (non-lazy) grammar to isolate the asymmetry issue.
 
 from syncraft.syntax import Syntax
 from syncraft.ast import Alt, Seq, Lazy, Many
-from syncraft.parser import parse_word
+
 from syncraft.generator import generate_with
 from syncraft.token import Str, Token
 
 from typing import Any
+
+def parse_word(syntax: Syntax, data: str):
+    from syncraft.token import Token
+    from typing import List
+    import re
+    from syncraft.parser import parse_data
+    tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    return parse_data(syntax, tokens)
 
 class S:
     @staticmethod

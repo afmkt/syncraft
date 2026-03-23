@@ -1,8 +1,15 @@
 from __future__ import annotations
 from typing import Any, Iterable
-from syncraft.token import Str, Token
-from syncraft.parser import parse_word
+from syncraft.token import Token
+
 import re
+def parse_word(syntax, data: str):
+    from syncraft.token import Token
+    from typing import List
+    import re
+    from syncraft.parser import parse_data
+    tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    return parse_data(syntax, tokens)
 
 # Utility to extract all token texts from a (possibly nested) AST structure produced by parse_word.
 

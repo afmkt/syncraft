@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from typing import Any, Callable
+from typing import Any, Callable, Set
 import re
 from dataclasses import is_dataclass, fields, dataclass
 from enum import Enum
@@ -159,28 +159,6 @@ class Token:
     """
     A typical structureal terminal token
     """
-    text: str | Any
+    text: str | Str
     token_type: str |  Enum | None = None   
 
-    def to_str(self) -> str:
-        if isinstance(self.text, str):
-            return self.text.strip()
-        elif isinstance(self.text, bytes):
-            return self.text.decode('utf-8', errors='replace').strip()
-        elif isinstance(self.text, tuple):
-            return ''.join(str(c) for c in self.text).strip()
-        else:
-            return str(self.text).strip()
-            
-
-    def __repr__(self) -> str:        
-        if self.token_type is None:
-            return f"Token(text={self.to_str()!r})"
-        else:
-            return f"Token(text={self.to_str()!r}, token_type={self.token_type!r})"
-
-    def __str__(self) -> str:
-        if self.token_type is None:
-            return f"t.{self.to_str().strip()}"        
-        else:            
-            return f"t.({self.to_str().strip()}, {self.token_type})"

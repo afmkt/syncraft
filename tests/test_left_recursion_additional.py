@@ -3,20 +3,27 @@ import pytest
 # LeftRecursionError no longer imported; xfail test does not enforce error path.
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
-from syncraft.parser import parse_word
+
 from syncraft.cache import set_randomization
 
-from syncraft.token import Str, Token
+from syncraft.token import Token
 from typing import Any
 
 # Ensure randomization is enabled for these tests
 # This is also handled by conftest.py but we make it explicit here
 set_randomization(True)
 # Reuse the pattern from existing tests: specialize Syntax with a Structured
+def parse_word(syntax: Syntax, data: str):
+    from syncraft.token import Token
+    from typing import List
+    import re
+    from syncraft.parser import parse_data
+    tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    return parse_data(syntax, tokens)
 
 
 def lit(text: Any)->Syntax[Any, Any]:
-    return Syntax.tok(Token(text=Str(text)))
+    return Syntax.tok(Token(text=text))
 
 
 lazy = Syntax.lazy
@@ -45,7 +52,7 @@ def test_deterministic_choice_prefers_first_branch():
     v = parse_word(A, 'a')
     
     # Expect just single terminal 't.a' (following existing Then/terminal string forms from collapse tests)
-    assert str(v) == 't.a'
+    assert str(v) == "Token(text='a', token_type=None)"
 
 
 

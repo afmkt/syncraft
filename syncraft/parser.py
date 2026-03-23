@@ -440,10 +440,6 @@ def parse(syntax: Syntax, data: StreamCursor[Any] | ParserState[Any]) -> Any:
 
 
 
-def parse_word(syntax: Syntax, data: str) -> Any:
-    from syncraft.token import Token
-    tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
-    return parse_data(syntax, tokens)
 
     
 def parse_data(syntax: Syntax, data: List[T]) -> Any:

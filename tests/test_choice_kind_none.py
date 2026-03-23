@@ -1,11 +1,19 @@
 from syncraft.syntax import Syntax
 
-from syncraft.parser import parse_word
+
 
 from syncraft.algebra import Error
 
 from syncraft.generator import validate, generate_with
 from syncraft.token import Str, Token
+
+def parse_word(syntax: Syntax, data: str):
+    from syncraft.token import Token
+    from typing import List
+    import re
+    from syncraft.parser import parse_data
+    tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
+    return parse_data(syntax, tokens)
 
 
 S = Syntax

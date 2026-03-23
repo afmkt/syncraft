@@ -1,93 +1,39 @@
-from __future__ import annotations
-from syncraft.parser import  parse_word
+
+
+import pytest
+
 from syncraft.syntax import Syntax
-import syncraft.generator as gen
-from syncraft.ast import Seq, Many, Alt
-from typing import Any
+
+from syncraft.generator import (
+    generate_with,
+    generate,
+    validate,
+)
+from syncraft.algebra import Error
+from syncraft.cache import LeftRecursionError
 from syncraft.token import Str, Token
-from rich import print
 
-S = Syntax
-def literal(text: Any) -> Syntax[Any, Any]:
-    return S.tok(Token(text=Str(text)))
+SS = Syntax
 
+def tok(text: str):
+    return SS.tok(Token(text=text))
 
-IF = literal("if")
-ELSE = literal("else")
-THEN = literal("then")
-END = literal("end")
-
-def test_between()->None:
-    sql = "then if then"
-    syntax = IF.between(THEN, THEN)
+def test_generate_with_direct_left_recursion_with_base_succeeds():
+    # A := A + 'a' | 'a'
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
     
-    ast = parse_word(syntax, sql)    
-    generated = gen.generate_with(syntax, ast)
-    assert ast == Token(text='if')
-    print(generated)
-    assert generated == Seq(value=((Token(text='then'), False), (Token(text='if'), True), (Token(text='then'), False)))
-
-
-def test_sep_by()->None:
-    sql = "if then if then if then if"
-    syntax = IF.sep_by(THEN)
-    
-    ast = parse_word(syntax, sql)    
-    generated = gen.generate_with(syntax, ast)
-    assert ast == (Token(text='if'), Token(text='if'), Token(text='if'), Token(text='if'))
-    
-    assert generated == Seq(
-        value=(
-            (Token(text='if'), True),
-            (
-                Many(
-                    value=(
-                        Seq(value=((Token(text='then'), False), (Token(text='if'), True))),
-                        Seq(value=((Token(text='then'), False), (Token(text='if'), True))),
-                        Seq(value=((Token(text='then'), False), (Token(text='if'), True)))
-                    )
-                ),
-                True
-            )
-        )
-    )
+    ast = generate_with(A)
+    # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
+    assert not isinstance(ast, Error)
     
 
-def test_many_or()->None:
-    literal = Syntax.tok
-    
-    IF = literal(Token(text=Str("if")))
-    THEN = literal(Token(text=Str("then")))
-    END = literal(Token(text=Str("end")))
-    syntax = (IF.many() + THEN.many()).many() // END
-    sql = "if if then end"
-    ast = parse_word(syntax, sql)
-    generated = gen.generate_with(syntax, ast)
-    
-    assert ast == (((Token(text='if'), Token(text='if')), (Token(text='then'),)),)
-    assert generated == Seq(
-        value=(
-            (Many(value=(Seq(value=((Many(value=(Token(text='if'), Token(text='if'))), True), (Many(value=(Token(text='then'),)), True))),)), True),
-            (Token(text='end'), False)
-        )
-    )
 
-
-def test_optional_many():
-    a = literal('a')
-    S = a.optional.many()
-    sql = "a a"
+def test_generate_direct_left_recursion_with_base_succeeds():
+    A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    ast = generate(A)
+    assert not isinstance(ast, Error)
     
-    ast = parse_word(S, sql)    
-    generated = gen.generate_with(S, ast)
-    
-    
-    assert ast == (Token(text='a'), Token(text='a'))
-    assert generated == Many(value=(Alt(index=0,value=Token(text='a')), Alt(index=0, value=Token(text='a'))))
-
 
 if __name__ == "__main__":
-    test_between()
-    test_sep_by()
-    test_many_or()
-    test_optional_many()
+    test_generate_direct_left_recursion_with_base_succeeds()
+    test_generate_with_direct_left_recursion_with_base_succeeds()

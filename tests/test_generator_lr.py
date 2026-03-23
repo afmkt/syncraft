@@ -16,11 +16,12 @@ from syncraft.token import Str, Token
 SS = Syntax
 
 def tok(text: str):
-    return SS.tok(Token(text=Str(text, i=True)))
+    return SS.tok(Token(text=text))
 
 def test_generate_with_direct_left_recursion_with_base_succeeds():
     # A := A + 'a' | 'a'
     A = SS.lazy(lambda: (A + tok('a')) | tok('a'))  # type: ignore[name-defined]
+    
     ast = generate_with(A)
     # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
     assert not isinstance(ast, Error)

@@ -318,10 +318,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 forked_input.rng("alt_index").shuffle(indexes)
                 for idx in indexes:
                     selected = options[idx]
-                    # Use a fresh cache per branch to enable memoization
-                    # This prevents deep recursion in cyclic grammars
-                    branch_cache: Cache[Any] = Cache()
-                    result = yield from selected.run(forked_input, branch_cache)
+                    result = yield from selected.run(forked_input, cache)
                     match result:
                         case Right((value, next_input)):
                             debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> {Alt(index=idx, value=value)}")
