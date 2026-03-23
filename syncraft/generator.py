@@ -105,7 +105,8 @@ class GenState(Bindable):
     def inject(self, a: Any) -> GenState:
         # Theoretically, we should maintain the correspondence between AST and steps, i.e. 
         # when injecting an AST node, we should retrieve the steps associated with that node 
-        # and update the GenState accordingly. However, in Generator, we don't inject old AST nodes, but reusing the old GenState instance.
+        # and update the GenState accordingly. However, in Generator, 
+        # we don't inject old AST nodes, but reusing the old GenState instance.
         # 
 
         if a is self.ast:
