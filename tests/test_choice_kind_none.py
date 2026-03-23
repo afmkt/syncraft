@@ -3,13 +3,14 @@ from syncraft.syntax import Syntax
 from syncraft.parser import parse_word
 
 from syncraft.algebra import Error
-from syncraft.cache import Cache
+
 from syncraft.generator import validate, generate_with
+from syncraft.token import Str, Token
 
 
 S = Syntax
 def tok(text: str):
-    return S.tok(text=text, case_sensitive=True)
+    return S.tok(Token(text=Str(text, i=True)))
 
 
 def test_validate_and_generate_with_after_bimap_resets_choice_kind():

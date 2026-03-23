@@ -3,7 +3,7 @@
 import pytest
 
 from syncraft.syntax import Syntax
-from syncraft.ast import Token
+
 from syncraft.generator import (
     generate_with,
     generate,
@@ -11,12 +11,12 @@ from syncraft.generator import (
 )
 from syncraft.algebra import Error
 from syncraft.cache import LeftRecursionError
-from syncraft.fa import Builder
+from syncraft.token import Str, Token
 
-SS = Syntax.set(terminal_constructor=lambda value: Token(**value))
+SS = Syntax
 
 def tok(text: str):
-    return SS.tok(text=text, case_sensitive=True)
+    return SS.tok(Token(text=Str(text, i=True)))
 
 def test_generate_with_direct_left_recursion_with_base_succeeds():
     # A := A + 'a' | 'a'
@@ -61,30 +61,11 @@ def test_generate_with_mutual_left_recursion_without_base_raises():
 
 
 def test_generate_with_infers_text_lexer_without_config() -> None:
-    syntax = SS.tok(text="hi")
+    syntax = SS.tok(Token(text=Str("hi", i=True)))
     ast = generate_with(syntax, seed=123)
     assert ast == Token(text="hi")
 
 
-def test_generate_with_infers_from_fabuilder_literal() -> None:
-    S = Syntax.set(terminal_constructor=Token)
-    lex_syntax = S.lex(Builder.lit("go").tagged("WORD"))
-    ast = generate_with(lex_syntax, seed=321)
-    
-    assert isinstance(ast, Token)
-    assert ast.token_type is None
-    assert ast.text == "go"
 
-
-def test_validate_lex_token_uses_verify_full_match() -> None:
-    S = Syntax.set(terminal_constructor=Token, terminal_destructor=lambda token: token.text)
-    lex_syntax = S.lex(Builder.lit("ab").tagged("AB"))
-
-    ast = validate(lex_syntax, Token(text="ab", token_type="AB"))
-    assert isinstance(ast, Token)
-    assert ast.token_type == "AB"
-    assert ast.text == "ab"
     
     
-if __name__ == "__main__":
-    test_generate_with_infers_from_fabuilder_literal()

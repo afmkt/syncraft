@@ -2,13 +2,14 @@ from __future__ import annotations
 from syncraft.parser import  parse_word
 from syncraft.syntax import Syntax
 import syncraft.generator as gen
-from syncraft.ast import Token, Seq, Many, Alt
+from syncraft.ast import Seq, Many, Alt
 from typing import Any
+from syncraft.token import Str, Token
 
 
-S = Syntax.set(terminal_constructor=lambda value: Token(**value))
+S = Syntax
 def literal(text: Any) -> Syntax[Any, Any]:
-    return S.tok(text=text)
+    return S.tok(Token(text=Str(text)))
 
 
 IF = literal("if")
@@ -52,11 +53,11 @@ def test_sep_by()->None:
     
 
 def test_many_or()->None:
-    literal = Syntax.set(terminal_constructor=lambda value: Token(**value)).tok
+    literal = Syntax.tok
     
-    IF = literal(text="if")
-    THEN = literal(text="then")
-    END = literal(text="end")
+    IF = literal(Token(text=Str("if")))
+    THEN = literal(Token(text=Str("then")))
+    END = literal(Token(text=Str("end")))
     syntax = (IF.many() + THEN.many()).many() // END
     sql = "if if then end"
     ast = parse_word(syntax, sql)

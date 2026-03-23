@@ -425,13 +425,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
 
         
     @classmethod
-    def lex(cls, 
-            builder: LexerBuilder[Any], 
-            terminal_constructor: Callable[..., Any] | None = None, 
-            terminal_destructor: Callable[..., Any] | None = None) -> Algebra[ParseResult[T], GenState]:
-        terminal_constructor = terminal_constructor or cls.default_terminal_constructor
-        # default_terminal_constructor can be used for both construction and deconstruction.
-        terminal_destructor = terminal_destructor or cls.default_terminal_constructor
+    def lex(cls, builder: LexerBuilder[Any]) -> Algebra[ParseResult[T], GenState]:
         assert builder, "LexerBuilder could not be None"
         def lex_run(input: GenState, 
                     cache: Cache[GenState] | None) -> PyGenerator[
@@ -446,12 +440,12 @@ class Generator(Algebra[ParseResult[T], GenState]):
             
             if input.pruned:
                 gt = lexer.gen(input.rng())
-                generated = terminal_constructor(gt.value)
+                generated = gt.value
                 debug_print(f"\nLex CALLING {callable_str(lex_run)} with input.ast=={input.ast} -> {generated}")
                 return Right.new((cast(ParseResult[T], generated), input.advance(gt.steps)))
             else:
                 current = input.ast
-                current_value = terminal_destructor(current)
+                current_value = current
                 try:
                     verified = lexer.verify(current_value)
                 except SyncraftError as e:

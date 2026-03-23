@@ -4,16 +4,17 @@ Test non-recursive (non-lazy) grammar to isolate the asymmetry issue.
 """
 
 from syncraft.syntax import Syntax
-from syncraft.ast import Token, Alt, Seq, Lazy, Many
+from syncraft.ast import Alt, Seq, Lazy, Many
 from syncraft.parser import parse_word
 from syncraft.generator import generate_with
+from syncraft.token import Str, Token
 
 from typing import Any
 
 class S:
     @staticmethod
     def lit(text: Any) -> Syntax[Any, Any]:
-        return Syntax.tok(text=text)
+        return Syntax.tok(Token(text=Str(text, i=True)))
 
 def test_non_lazy_or_simple():
     """Test OrElse without Then: a | b"""

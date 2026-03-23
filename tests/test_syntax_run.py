@@ -28,7 +28,7 @@ def test_seq_default_mode_keeps_nested_shape() -> None:
 
 
 def test_seq_opt_in_normalize_seq_flattens_one_level() -> None:
-    SNorm = Syntax.set(normalize_seq=True)
+    SNorm = Syntax
     a = SNorm.tok("a")
     b = SNorm.tok("b")
     c = SNorm.tok("c")
@@ -50,7 +50,7 @@ def test_unary_seq_default_mode_keeps_singleton_tuple() -> None:
 
 
 def test_unary_seq_opt_in_unwraps_scalar() -> None:
-    U = Syntax.set(unwrap_unary_seq=True)
+    U = Syntax
     unary = U.seq(+U.tok("x"))
     value = parse_data(syntax=unary, data=["x"])
 
@@ -74,7 +74,7 @@ def test_alt_default_mode_keeps_nested_choice_shape() -> None:
 
 
 def test_alt_opt_in_normalize_alt_flattens_one_level() -> None:
-    ANorm = Syntax.set(normalize_alt=True)
+    ANorm = Syntax
     a = ANorm.tok("a")
     b = ANorm.tok("b")
     c = ANorm.tok("c")

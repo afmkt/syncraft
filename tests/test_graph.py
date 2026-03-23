@@ -5,13 +5,11 @@ from typing import Any
 from syncraft.parser import  parse_word
 
 from syncraft.syntax import Syntax
-from syncraft.cache import Cache
-
-
+from syncraft.token import Str, Token
 
 
 def literal(text: Any) -> Syntax[Any, Any]:
-    return Syntax.tok(text=text)
+    return Syntax.tok(Token(text=Str(text)))
 lazy = Syntax.lazy
 
 

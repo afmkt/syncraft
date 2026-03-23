@@ -9,7 +9,7 @@ from .syntax import (
     
 )
 
-from syncraft.regex import (
+from .regex import (
     RegexError,
     match,
     rstr,
@@ -33,7 +33,7 @@ from .ast import (
 	AST,
     Seq,
     Alt,
-	Token,
+	
 	Many,
     Nothing,
     Unknown,
@@ -58,6 +58,11 @@ from .ebnf import (
     GrammarDef,
 )
 
+from .token import (
+    Str,
+    TokenSpec,
+    Token,
+)
 try:
     from importlib.metadata import version
     __version__ = version("syncraft")
@@ -78,5 +83,6 @@ __all__ = [
     "match",
     "rstr",
     "LayoutDoc", "Concat", "Text", "Group",    
+    "Str", "TokenSpec", 
     "__version__",
 ]

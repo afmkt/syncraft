@@ -7,11 +7,11 @@ from enum import Enum
 from typing import (
     Optional, Any, TypeVar, Generic, Callable, Tuple, cast, Hashable,
     Type, List, Dict, Set, Iterator, ClassVar, Protocol, Generator, MutableMapping, TYPE_CHECKING,
-    Pattern, Literal, overload
+    Literal, overload
 )
 
 from dataclasses import dataclass, field, replace
-from syncraft.lexerprotocol import LexerBuilder
+from syncraft.lexerprotocol import LexerBuilder, TokenSpecProtocol
 if TYPE_CHECKING:
     from syncraft.format import LayoutDoc
 
@@ -22,7 +22,7 @@ from syncraft.bimap import Bindable, Iso, DataError, Match, Env
 from syncraft.ast import Many, SyncraftError, Seq, Alt, Lazy, Nothing, Unknown, _SingletonBase
 from syncraft.input import StreamCursor
 from syncraft.fa import Builder
-from syncraft.token import TokenSpec, TokenSpecBase
+
 import threading
 
 
@@ -1350,7 +1350,11 @@ class Syntax(Generic[A, S]):
     ######################################################################## data processing combinators #########################################################
 
 
-    def case(self, *branches: Tuple[Callable[..., Any], Callable[..., Any]], strict: bool=False, passthrough: bool=True, block_normalization: bool = True) -> Syntax[Any, S]:
+    def case(self, 
+             *branches: Tuple[Callable[..., Any], Callable[..., Any]], 
+             strict: bool=False, 
+             passthrough: bool=True, 
+             block_normalization: bool = True) -> Syntax[Any, S]:
         """
         Conditional bidirectional transformation based on structural shape.
         
@@ -1533,7 +1537,7 @@ class Syntax(Generic[A, S]):
             env = Env(constants=FrozenDict())
             # execute the pattern function to populate the environment with variable names, 
             a(env)
-            names = env.scope.all_var_names()
+            names = env.all_var_names()
             if len(names) != 1:
                 raise SyncraftError(f"to() with single function requires exactly one variable in the pattern, found {len(names)}: {names}", offender=names, expect="exactly one variable name")
             var_name = next(iter(names))
@@ -1759,7 +1763,7 @@ class Syntax(Generic[A, S]):
         return cls.factory('eof')
     
     @classmethod
-    def lex(cls, builder: Builder | TokenSpec, **kwargs: Any) -> Syntax:
+    def lex(cls, builder: Builder | TokenSpecProtocol, **kwargs: Any) -> Syntax:
         """Create a terminal syntax from a lexer builder/token specification."""
         lexer_builder = cls._lexer()
         b = cls.get('builtin')
@@ -1927,19 +1931,21 @@ class Syntax(Generic[A, S]):
         return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
     @classmethod
-    def tok(cls, *txt: str | Pattern[str], case_sensitive: bool = True, **kwargs: Any) -> Syntax:
+    def tok(cls, token_pattern: Any) -> Syntax:
         """
         Create token-spec terminal syntax from literal/regex token forms.
         NOTE:
         - This API only works on structured token input, not raw strings.
         """
-        tkspec: TokenSpec | None = TokenSpecBase.from_kwargs(*txt, case_sensitive=case_sensitive, **kwargs)
-        if tkspec is None:
-            parts = [str(t) for t in txt]
-            parts += [f"{k}={v}" for k, v in kwargs.items()]
-            args = ', '.join(parts)
-            raise SyncraftError(f"Invalid arguments to tok({args})", offender=(txt, kwargs), expect="valid token specification")
-        return cls.lex(tkspec, **kwargs)
+        from syncraft.token import TokenSpec
+        tkspec: TokenSpecProtocol = TokenSpec.from_any(token_pattern)
+        ret = cls.lex(tkspec)
+        extra: FrozenDict[str, Any] = FrozenDict({
+            'type': 'tok',
+            'pattern': token_pattern,
+        })
+        assert isinstance(ret.spec, LexSpec), f"Expected LexSpec from cls.lex, got {type(ret.spec)}"
+        return replace(ret, spec=replace(ret.spec, extra_info = extra))
 
     @classmethod
     def from_spec(cls, spec: SyntaxSpec)->Syntax:

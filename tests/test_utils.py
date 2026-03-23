@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Iterable
-from syncraft.ast import Token
+from syncraft.token import Str, Token
 from syncraft.parser import parse_word
 import re
 

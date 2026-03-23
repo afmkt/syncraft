@@ -1311,7 +1311,7 @@ class Builder(Generic[C]):
     text: Optional[Union[str, bytes, Sequence[C]]] = None
     at_least: int = 0
     at_most: Optional[int] = None
-    skip: bool = False  # if true, do not include this in the final automaton (used for whitespace, comments, etc)
+    skip: bool = False  # if true, do not include this in the final output (used for whitespace, comments, etc)
     priority: int = 0  # higher number means higher priority
     non_greedy: bool = False  # when true, first match wins instead of maximal munch
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to

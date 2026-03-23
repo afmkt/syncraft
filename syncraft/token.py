@@ -1,201 +1,184 @@
 from __future__ import annotations
 
 import random
-from typing import Any, Callable, TypeVar, Hashable, Protocol, runtime_checkable, Dict, Tuple, Optional, Type, Set
+from typing import Any, Callable
 import re
+from dataclasses import is_dataclass, fields, dataclass
+from enum import Enum
+from syncraft.lexerprotocol import GeneratedToken, TokenSpecProtocol
 
-from syncraft.utils import CallWith, FrozenDict
-from dataclasses import dataclass, field, fields, is_dataclass
-from syncraft.lexerprotocol import GeneratedToken
-
-
-
-Tag = str
-
-T = TypeVar('T', bound=Hashable)
-TokenT = TypeVar('TokenT', bound=Hashable)
-ScalarValueT = TypeVar('ScalarValueT', bound=Hashable)
+from syncraft.bimap import is_primitive, DataError
 
 
-def all_subclasses(cls: Type[Any])->Set[Type[Any]]:
-    """Recursively find all subclasses of a given class."""
-    result = set(cls.__subclasses__())
-    for subclass in cls.__subclasses__():
-        result.update(all_subclasses(subclass))
-    return result
-
-@runtime_checkable
-class TokenSpec(Protocol):
-    def predicate(self) -> Callable[[Any], bool]: ...
-    def generator(self) -> Callable[[Any, random.Random], GeneratedToken]: ...
-    @classmethod
-    def create(cls, *args: Any, **kwargs: Any) -> TokenSpec: ...
-
-
-class TokenSpecBase(TokenSpec):
-    
-    @classmethod
-    def from_kwargs(cls, *args: Any, **kwargs: Any) -> Optional[TokenSpec]:
-        all = all_subclasses(cls)
-        assert all, "No subclasses of TokenSpecBase found. Please import token modules to register TokenSpec subclasses."
-        for sub in all_subclasses(cls):
-            c = CallWith(sub.create, *args, **kwargs)
-            if c.missing_args or c.missing_kwargs:
-                continue
-            if c.unused_args or c.unused_kwargs:
-                continue
-            return c()
-        return None
-    
-    def _config_defaults(self) -> Dict[str, Any]:
-        if not is_dataclass(self):
-            return {}
-        return {
-            f.name: getattr(self, f.name)
-            for f in fields(self)
-            if f.metadata.get("is_config", False)
-        }
-
-    def _extract_config_kwargs(
-        self, kwargs: Dict[str, Any]
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        defaults = self._config_defaults()
-        config = {k: kwargs[k] for k in defaults if k in kwargs}
-        params = {k: v for k, v in kwargs.items() if k not in defaults}
-        return defaults | config, params
-
-    def _resolve_tag_kwargs(
-        self, params: Dict[str, Any]
-    ) -> Tuple[frozenset[Tag], Dict[str, Any]]:
-        remaining = dict(params)
-        tags: frozenset[Tag] = frozenset()
-        tag_callable = getattr(self, "tag", None)
-        if callable(tag_callable):
-            tags = tag_callable(**remaining)  # type: ignore[misc]
-        if not tags and "tag" in remaining:
-            raw = remaining.pop("tag")
-            if isinstance(raw, (set, frozenset)):
-                tags = frozenset(raw)
+class Str(TokenSpecProtocol):
+    def __init__(self, 
+                 pattern: str | re.Pattern,
+                 *,
+                 i: bool = False,
+                 fullmatch: bool = True):
+        from syncraft.regex import rstr, match        
+        self.case_insensitive = i
+        self.fullmatch = fullmatch
+        self.pattern = pattern
+        if isinstance(pattern, re.Pattern):
+            self.matcher = match(pattern, case_insensitive=i, fullmatch=fullmatch)
+            self.gen = rstr(pattern, case_insensitive=i)
+        else:
+            def match_fn(token: str) -> bool:
+                if i:
+                    token = token.lower()
+                    pat = pattern.lower()
+                else:
+                    pat = pattern
+                if fullmatch:
+                    return token == pat
+                else:
+                    return token.startswith(pat)
+            self.matcher = match_fn
+            self.gen = lambda rnd: pattern
+        def predicate(token: Any) -> bool:
+            return isinstance(token, str) and self.matcher(token)
+        def generator(input: Any, rnd: random.Random) -> GeneratedToken:
+            if isinstance(input, str) and self.matcher(input):
+                return GeneratedToken(value=input, steps=1)
             else:
-                tags = frozenset([raw])
-        return tags, remaining
-
-    def normalise_kwargs(
-        self, kwargs: Dict[str, Any]
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], frozenset[Tag]]:
-        config, params = self._extract_config_kwargs(kwargs)
-        tags, params = self._resolve_tag_kwargs(params)
-        return config, params, tags
-
-
-    
-@dataclass(frozen=True, slots=True)
-class Scalar(TokenSpecBase):
-    value: str | bytes
-    case_sensitive: bool = field(default=True, metadata={"is_config": True})
-    def __str__(self) -> str:
-        return f"{self.value!r}"
-    @classmethod
-    def create(cls, value: str|bytes, *, case_sensitive: bool = True) -> Scalar:
-        return cls(value=value, case_sensitive=case_sensitive)
-    
-    
-    def predicate(self) -> Callable[[Any], bool]:
-        case_sensitive = self.case_sensitive
-        value = self.value
-        def pred(token: Any) -> bool:
-            token_value = str(token)
-            if case_sensitive:
-                return token_value == str(value)
-            else:
-                return token_value.upper() == str(value).upper()
-        pred.__name__ = f"P({self.value!r})"
-        return pred
-
-    def generator(self) -> Callable[[Any, random.Random], GeneratedToken]:
-        value = self.value
-        def gen(input: Any, rnd: random.Random) -> GeneratedToken:
-            return GeneratedToken(value=value, steps=1)
-        gen.__name__ = f"G({self.value!r})"
-        return gen
-
-
-
-
-@dataclass(frozen=True, slots=True)
-class Structured(TokenSpecBase):
-    case_sensitive: bool = field(default=True, metadata={"is_config": True})
-    kwargs: FrozenDict[str, Any] = field(default_factory=FrozenDict)
-    def __str__(self) -> str:
-        return f"{self.describe()}"
-    @classmethod
-    def create(cls, 
-               *, 
-               case_sensitive: bool = True, 
-
-               **kwargs: Any) -> Structured:
-        return cls(
-
-            case_sensitive=case_sensitive,
-
-            kwargs=FrozenDict(kwargs)
-        )
+                return GeneratedToken(value=self.gen(rnd), steps=1)
+        self.predicate = predicate
+        self.generator = generator
+    def __repr__(self) -> str:
+        return f"Str(pattern={self.pattern!r}, i={self.case_insensitive}, fullmatch={self.fullmatch})"
         
+    def __str__(self) -> str:
+        return f"{self.pattern!r}"
 
-    
-    def describe(self) -> str:
+class TokenSpec(TokenSpecProtocol):
+    def __init__(self, predicate: Callable[[Any], bool], generator: Callable[[Any, random.Random], GeneratedToken]):
+        self.predicate = predicate
+        self.generator = generator
 
-        parts = []
-        for k, v in self.kwargs.items():
-            if isinstance(v, re.Pattern):
-                parts.append(f"{k}=/{v.pattern}/")
-            else:
-                parts.append(f"{k}={v}")
-
-        return ", ".join(parts)
-
-    def predicate(self) -> Callable[[T], bool]:
-        config, kwargs, _ = self.normalise_kwargs(dict(self.kwargs))
-        case_sensitive = config.get('case_sensitive', True)
-        
-        def pred(token: T) -> bool:
-            for key, pattern in kwargs.items():
-                if not hasattr(token, key):
+    @classmethod
+    def from_any(cls, spec: Any) -> TokenSpecProtocol:
+        from syncraft.ast import Unknown
+        if isinstance(spec, str) or isinstance(spec, re.Pattern):
+            return Str(spec)
+        elif isinstance(spec, TokenSpecProtocol):
+            return spec
+        elif is_primitive(spec):
+            def predicate(token: Any) -> bool:
+                return token == spec
+            def generator(input: Any, rnd: random.Random) -> GeneratedToken:                    
+                return GeneratedToken(value=spec, steps=1)
+            return cls(predicate=predicate, generator=generator)
+        elif isinstance(spec, dict):
+            result = {}
+            for k, v in spec.items():                    
+                result[k] = TokenSpec.from_any(v)                
+            def predicate(token: Any) -> bool:
+                if not isinstance(token, dict):
                     return False
-                else:
-                    data = getattr(token, key)
-                    if isinstance(pattern, re.Pattern):
-                        if pattern.fullmatch(str(data)) is None:
-                            return False
-                        else:
-                            continue
-                    elif isinstance(pattern, str):
-                        if case_sensitive:
-                            if str(data) != pattern:
-                                return False
-                        else:
-                            if str(data).upper() != pattern.upper():
-                                return False
-                    elif pattern != data:
+                for k, v in result.items():
+                    t = token.get(k, ...)
+                    if t is ... or not v.predicate(t):
                         return False
-            return True
-        pred.__name__ = f"P({self.describe()})"
-        return pred
-
-    def generator(self) -> Callable[[Any, random.Random], GeneratedToken]:
-        config, kwargs, _ = self.normalise_kwargs(dict(self.kwargs))
-        def gen(input: Any, rnd: random.Random) -> GeneratedToken:
-            data: Dict[str, Any] = {}
-            for k, v in kwargs.items():
-                if isinstance(v, re.Pattern):
-                    try:
-                        import syncraft.regex as syncraft_regex
-                        data[k] = syncraft_regex.rstr(v, rnd=rnd)
-                    except Exception:
-                        data[k] = v.pattern
+                return True
+            def generator(input: Any, rnd: random.Random) -> GeneratedToken:
+                generated = {}
+                if isinstance(input, dict):
+                    for k, v in result.items():
+                        generated[k] = v.generator(input.get(k, ...), rnd).value
+                    return GeneratedToken(value=generated, steps=1)
+                elif input is ... or input is Unknown:
+                    for k, v in result.items():
+                        generated[k] = v.generator(..., rnd).value
+                    return GeneratedToken(value=generated, steps=1)
                 else:
-                    data[k] = v
-            return GeneratedToken(value=data, steps=1)
-        gen.__name__ = f"G({self.describe()})"
-        return gen
-    
+                    raise DataError(f"Invalid input for token generation: {input}")
+            return cls(predicate=predicate, generator=generator)
+        elif isinstance(spec, (list, tuple)):
+            lst = []
+            for item in spec:
+                v = TokenSpec.from_any(item)
+                lst.append(v)
+            def predicate(token: Any) -> bool:
+                if not isinstance(token, type(spec)) or len(token) != len(lst):
+                    return False
+                return all(v.predicate(t) for v, t in zip(lst, token))
+            
+            def generator(input: Any, rnd: random.Random) -> GeneratedToken:
+                if isinstance(input, (list, tuple)):
+                    generated = []
+                    for v, i in zip(lst, input):
+                        generated.append(v.generator(i, rnd).value)
+                    return GeneratedToken(value=type(spec)(generated), steps=1)
+                elif input is ... or input is Unknown:
+                    generated = []
+                    for v in lst:
+                        generated.append(v.generator(..., rnd).value)
+                    return GeneratedToken(value=type(spec)(generated), steps=1)
+                else:
+                    raise DataError(f"Invalid input for token generation: {input}")
+            return cls(predicate=predicate, generator=generator)
+
+        elif is_dataclass(spec):
+            all_fields = {}
+            for field in fields(spec):
+                value = getattr(spec, field.name)
+                all_fields[field.name] = TokenSpec.from_any(value)
+
+            def predicate(token: Any) -> bool:
+                if not isinstance(token, type(spec)):
+                    return False
+                for field_name, token_spec in all_fields.items():
+                    value = getattr(token, field_name, ...)
+                    if value is ... or not token_spec.predicate(value):
+                        return False
+                return True
+            def generator(input: Any, rnd: random.Random) -> GeneratedToken:
+                generated_fields = {}
+                if isinstance(input, type(spec)):
+                    for field_name, token_spec in all_fields.items():
+                        value = getattr(input, field_name, ...)
+                        generated_fields[field_name] = token_spec.generator(value, rnd).value
+                    return GeneratedToken(value=type(spec)(**generated_fields), steps=1) # type: ignore
+                elif input is ... or input is Unknown:
+                    for field_name, token_spec in all_fields.items():
+                        generated_fields[field_name] = token_spec.generator(..., rnd).value
+                    return GeneratedToken(value=type(spec)(**generated_fields), steps=1) # type: ignore 
+                else:
+                    raise DataError(f"Invalid input for token generation: {input}")
+            return cls(predicate=predicate, generator=generator)
+
+        raise DataError(f"Invalid token specification: {spec}")
+            
+
+
+@dataclass(frozen=True, slots=True)
+class Token:
+    """
+    A typical structureal terminal token
+    """
+    text: str | Any
+    token_type: str |  Enum | None = None   
+
+    def to_str(self) -> str:
+        if isinstance(self.text, str):
+            return self.text.strip()
+        elif isinstance(self.text, bytes):
+            return self.text.decode('utf-8', errors='replace').strip()
+        elif isinstance(self.text, tuple):
+            return ''.join(str(c) for c in self.text).strip()
+        else:
+            return str(self.text).strip()
+            
+
+    def __repr__(self) -> str:        
+        if self.token_type is None:
+            return f"Token(text={self.to_str()!r})"
+        else:
+            return f"Token(text={self.to_str()!r}, token_type={self.token_type!r})"
+
+    def __str__(self) -> str:
+        if self.token_type is None:
+            return f"t.{self.to_str().strip()}"        
+        else:            
+            return f"t.({self.to_str().strip()}, {self.token_type})"

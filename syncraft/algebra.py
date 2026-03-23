@@ -758,11 +758,3 @@ class Algebra(Generic[A, S]):
             return Right.new((Many(value=tuple(ret)), current_input))
         return replace(self, run_f=many_run).flag(intrinsic=True) # type: ignore
     
-    @classmethod
-    def default_terminal_constructor(cls, *args, **kwargs) -> Any:
-        if args:
-            return args[0]
-        elif kwargs:
-            return next(iter(kwargs.values()))
-        else:
-            raise SyncraftError("No arguments provided to default_terminal_constructor", offender=None)

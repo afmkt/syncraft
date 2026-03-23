@@ -4,7 +4,9 @@ import pytest
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
 from syncraft.parser import parse_word
-from syncraft.cache import Cache, set_randomization
+from syncraft.cache import set_randomization
+
+from syncraft.token import Str, Token
 from typing import Any
 
 # Ensure randomization is enabled for these tests
@@ -14,7 +16,7 @@ set_randomization(True)
 
 
 def lit(text: Any)->Syntax[Any, Any]:
-    return Syntax.tok(text=text)
+    return Syntax.tok(Token(text=Str(text)))
 
 
 lazy = Syntax.lazy

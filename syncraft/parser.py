@@ -355,10 +355,8 @@ class Parser(Algebra[T, ParserState[T]]):
 
 
     @classmethod
-    def lex(cls, 
-            builder: LexerBuilder[Any], 
-            terminal_constructor: Callable[..., Any] | None = None) -> Algebra[T, ParserState[T]]:
-        terminal_constructor = terminal_constructor or cls.default_terminal_constructor
+    def lex(cls, builder: LexerBuilder[Any]) -> Algebra[T, ParserState[T]]:
+        
         assert builder, "LexerBuilder could not be None"
         
         def lex_run(state: ParserState[T], 
@@ -374,7 +372,7 @@ class Parser(Algebra[T, ParserState[T]]):
                     match lexer.candidate():
                         case LexerResult(start=start, end=end, value=lexeme):
                             if lexeme is None:
-                                token = terminal_constructor(state.slice(start, end))
+                                token = state.slice(start, end)
                             else:
                                 token = lexeme
                             return Right.new((token, state)) # type: ignore
@@ -397,7 +395,7 @@ class Parser(Algebra[T, ParserState[T]]):
                             if end > state.index:
                                 state = state.advance()
                             if lexeme is None:
-                                token = terminal_constructor(state.slice(start, end))
+                                token = state.slice(start, end)
                             else:
                                 token = lexeme
                             return Right.new((token, state)) # type: ignore
@@ -443,7 +441,7 @@ def parse(syntax: Syntax, data: StreamCursor[Any] | ParserState[Any]) -> Any:
 
 
 def parse_word(syntax: Syntax, data: str) -> Any:
-    from syncraft.ast import Token
+    from syncraft.token import Token
     tokens: List[Token]  = [Token(text=t) for t in re.split(r'[\x00-\x1F\x7F\s]+', data)]
     return parse_data(syntax, tokens)
 

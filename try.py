@@ -1,28 +1,93 @@
 from __future__ import annotations
-from syncraft.bimap import Env, Scope, let, solve
-def test_where_constraint_fails_on_pattern():
-    """Test that Env.where constraint fails when pattern doesn't satisfy it."""
-    scope = Scope()
-    A = scope.A
-    B = scope.B
+from syncraft.parser import  parse_word
+from syncraft.syntax import Syntax
+import syncraft.generator as gen
+from syncraft.ast import Seq, Many, Alt
+from typing import Any
+from syncraft.token import Str, Token
+from rich import print
+
+S = Syntax
+def literal(text: Any) -> Syntax[Any, Any]:
+    return S.tok(Token(text=Str(text)))
+
+
+IF = literal("if")
+ELSE = literal("else")
+THEN = literal("then")
+END = literal("end")
+
+def test_between()->None:
+    sql = "then if then"
+    syntax = IF.between(THEN, THEN)
     
-    pattern = {
-        "value": A,
-        "doubled": let(B, A * 2),
-    }
+    ast = parse_word(syntax, sql)    
+    generated = gen.generate_with(syntax, ast)
+    assert ast == Token(text='if')
+    print(generated)
+    assert generated == Seq(value=((Token(text='then'), False), (Token(text='if'), True), (Token(text='then'), False)))
+
+
+def test_sep_by()->None:
+    sql = "if then if then if then if"
+    syntax = IF.sep_by(THEN)
     
-    # Create env and add where constraint: B must be > 10
-    env = Env()
-    env.where(lambda e: e.resolve(B) > 10)
+    ast = parse_word(syntax, sql)    
+    generated = gen.generate_with(syntax, ast)
+    assert ast == (Token(text='if'), Token(text='if'), Token(text='if'), Token(text='if'))
     
-    # Match against data where B = 4 (not > 10)
-    value = {"value": 20, "doubled": 40}
-    result = solve(pattern, value, env)
+    assert generated == Seq(
+        value=(
+            (Token(text='if'), True),
+            (
+                Many(
+                    value=(
+                        Seq(value=((Token(text='then'), False), (Token(text='if'), True))),
+                        Seq(value=((Token(text='then'), False), (Token(text='if'), True))),
+                        Seq(value=((Token(text='then'), False), (Token(text='if'), True)))
+                    )
+                ),
+                True
+            )
+        )
+    )
     
-    assert isinstance(result, Env), f"Expected Env, got {result}"
+
+def test_many_or()->None:
+    literal = Syntax.tok
     
-    # Solve should fail because constraint is not satisfied
-    success, reason = result.solve()
-    assert not success, "Constraint should fail when B <= 10"
+    IF = literal(Token(text=Str("if")))
+    THEN = literal(Token(text=Str("then")))
+    END = literal(Token(text=Str("end")))
+    syntax = (IF.many() + THEN.many()).many() // END
+    sql = "if if then end"
+    ast = parse_word(syntax, sql)
+    generated = gen.generate_with(syntax, ast)
+    
+    assert ast == (((Token(text='if'), Token(text='if')), (Token(text='then'),)),)
+    assert generated == Seq(
+        value=(
+            (Many(value=(Seq(value=((Many(value=(Token(text='if'), Token(text='if'))), True), (Many(value=(Token(text='then'),)), True))),)), True),
+            (Token(text='end'), False)
+        )
+    )
+
+
+def test_optional_many():
+    a = literal('a')
+    S = a.optional.many()
+    sql = "a a"
+    
+    ast = parse_word(S, sql)    
+    generated = gen.generate_with(S, ast)
+    
+    
+    assert ast == (Token(text='a'), Token(text='a'))
+    assert generated == Many(value=(Alt(index=0,value=Token(text='a')), Alt(index=0, value=Token(text='a'))))
+
+
 if __name__ == "__main__":
-    test_where_constraint_fails_on_pattern()
+    test_between()
+    test_sep_by()
+    test_many_or()
+    test_optional_many()

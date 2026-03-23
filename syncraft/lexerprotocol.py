@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable, Generic, Hashable, Any, TypeVar
+from typing import Protocol, runtime_checkable, Generic, Hashable, Any, TypeVar, Callable
 from dataclasses import dataclass
 import random
 
@@ -8,6 +8,11 @@ from abc import ABC, abstractmethod
 
 
 C = TypeVar('C', bound=Hashable)
+
+@runtime_checkable
+class TokenSpecProtocol(Protocol):
+    predicate: Callable[[Any], bool]
+    generator: Callable[[Any, random.Random], GeneratedToken]
 
 
 @dataclass(frozen=True, slots=True)

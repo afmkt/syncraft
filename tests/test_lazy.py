@@ -1,13 +1,13 @@
 from __future__ import annotations
 from typing import Any, Iterable
-from syncraft.ast import Nothing, Token, Lazy, Seq, Alt
+from syncraft.ast import Nothing, Lazy, Seq, Alt
 from syncraft.parser import parse_word
 
 from syncraft.syntax import Syntax
 from syncraft.cache import LeftRecursionError
 from syncraft.cache import set_randomization
 import syncraft.generator as gen
-
+from syncraft.token import Str, Token
 import re
 import pytest
 
@@ -44,10 +44,10 @@ def token_multiset(ast: Any) -> dict[str, int]:
 # Ensure randomization is enabled for these tests
 set_randomization(True)
 
-S = Syntax.set(terminal_constructor=lambda value: Token(**value))
+S = Syntax
 
 def literal(text:Any) -> Syntax[Any, Any]:
-    return S.tok(text=text)
+    return S.tok(Token(text=Str(text)))
 
 lazy = S.lazy
 

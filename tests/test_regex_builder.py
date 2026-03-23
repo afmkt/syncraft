@@ -115,21 +115,18 @@ def test_regex_builder_case_insensitive_unicode_category_noop() -> None:
 
 def test_regex_rstr_generates_matching_text() -> None:
     pattern = r"(ab|cd)+\d{2}"
-    generator = rstr(pattern, rnd=random.Random(0))
-    sample = generator()
+    generator = rstr(pattern)
+    sample = generator(random.Random(0))
     assert _match(_build(pattern), sample)
 
 
 def test_regex_rstr_accepts_compiled_pattern() -> None:
     compiled = re.compile(r"[A-C]{3}")
-    generator = rstr(compiled, seed=1)
-    sample = generator()
+    generator = rstr(compiled)
+    sample = generator(1)
     assert compiled.fullmatch(sample) is not None
 
 
-def test_regex_rstr_rejects_seed_and_rng_together() -> None:
-    with pytest.raises(ValueError):
-        rstr(r"abc", rnd=random.Random(0), seed=0)
 
 
 def test_match_function() -> None:

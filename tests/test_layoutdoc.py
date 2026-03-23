@@ -2,8 +2,9 @@ from __future__ import annotations
 from typing import Any
 import re
 from syncraft.syntax import Syntax
-from syncraft.ast import Alt, Lazy, Many, Seq, Token, Unknown
+from syncraft.ast import Alt, Lazy, Many, Seq, Unknown
 from syncraft.parser import parse_word
+from syncraft.token import Str, Token
 import pytest
 
 from syncraft.format import (
@@ -266,13 +267,13 @@ def test_expression_grammar_integration_with_format_hints_and_rendered_text() ->
     """
     expression_syntax = Syntax
 
-    number = expression_syntax.tok(text=re.compile(r"\d+")).bimap(
+    number = expression_syntax.tok(Token(text=Str(re.compile(r"\d+")))).bimap(
         lambda token: token.text,
         lambda text: Token(text=text),
     )
 
     # Operator is marked as optional breakpoint
-    plus = expression_syntax.tok(text="+").bimap(
+    plus = expression_syntax.tok(Token(text=Str("+"))).bimap(
         lambda token: token.text,
         lambda text: Token(text=text),
     ).format(

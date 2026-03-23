@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from syncraft.ast import Token
+
 from syncraft.grammar import Grammar, grammar, rule
 from syncraft.syntax import Syntax
 
 
-S = Syntax.set(terminal_constructor=Token)
+S = Syntax
 
 
 @grammar
@@ -29,14 +29,14 @@ class CaseInsensitiveKeywordGrammar(Grammar):
 
 def test_regex_lexer_single_token() -> None:
     result = SimpleTokenGrammar.parse("abc")
-    assert result == Token(text="abc")
+    assert result == "abc"
 
 
 def test_regex_lexer_sequence() -> None:
     result = WordNumberGrammar.parse("abc123")
-    assert result == (Token(text="abc"), Token(text="123"))
+    assert result == ("abc", "123")
 
 
 def test_regex_lexer_case_insensitive_scoped() -> None:
     result = CaseInsensitiveKeywordGrammar.parse("IF")
-    assert result == Token(text="IF")
+    assert result == "IF"

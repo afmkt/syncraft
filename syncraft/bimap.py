@@ -1,5 +1,49 @@
 """
 Docstring for syncraft.bimap
+
+This module provides bidirectional transformation between data structures using the
+bimap pattern. The key concepts are:
+
+1. Expr: A callable that can be evaluated to produce a value, with support for
+   inference (reverse unification) when variables need to be bound.
+
+2. Constraint: Created during unification when an Expr pattern is matched against a
+   value. Contains the expression and the expected value.
+
+3. bimap(forward, backward): Creates a wrapper that applies forward/backward
+   transformations while providing custom inference logic via the `infer` function.
+
+4. Not(expr): A convenience function for logical negation. It uses bimap with
+   `lambda x: not x` for both directions.
+
+How Not Works (The Inference Flow)
+----------------------------------
+When using `.to(source_pattern, target_pattern)` with `Not(env.var)` in the target:
+
+During PARSING (target pattern with Not):
+    1. transform(target, source) runs the target pattern
+    2. solve(pattern, value, env) unifies the pattern with the actual value
+    3. unify() detects pattern is an Expr, calls pattern.unify(value, env)
+    4. Expr.unify() calls self.bind(env, value)
+    5. Expr.bind() adds Constraint(self, value) to env.constraints
+    6. env.solve() processes constraints:
+       - Constraint.__call__() evaluates the expression
+       - When expr NOT resolved but expected value IS resolved:
+         → calls expr.inference(value_expected, env, set())
+       - Not(env.greedy).infer_bimap applies backward(value) (i.e., not value)
+       - Then calls child_expr.inference(negated_value, env, visited)
+       - This binds the negated value to env.greedy
+
+During GENERATION (source pattern):
+    1. transform(source, target) runs the source pattern
+    2. Gets env.greedy value from environment
+    3. Evaluates Not(env.greedy) by applying forward(env.greedy) (also not)
+    4. Returns the negated value
+
+The key insight: Expr.inference is triggered from Constraint.__call__ when an
+expression contains unresolved variables but the expected value is known. This
+enables reverse unification - inferring variable values from the expected result.
+
 No occur-check, the visited set will prevent infinite recursion
 list/tuple is prefix matching
 Expr.eq/Expr.ne for lifting equality
@@ -532,7 +576,7 @@ class Var(Expr):
     evaluation won't bind a variable
     """
     name: str | None = None
-    predicate: Callable[[Any], bool] | None = field(default = None, compare=False, hash=False, repr=False)
+    # predicate: Callable[[Any], bool] | None = field(default = None, compare=False, hash=False, repr=False)
     debug_f: Callable[..., Any] = field(default=lambda *arg, **kwargs: None, compare=False, hash=False, repr=False)
     def __post_init__(self):
         def expr_f(env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
@@ -562,9 +606,9 @@ class Var(Expr):
 
     def unify(self, other: Any, env: Env) -> Tuple[bool, List[Any]]:
         success, reason = self.bind(env, other)
-        if success:
-            if self.predicate is not None:
-                env.constraints.add(Constraint(Expr.apply(self.predicate, self), True))
+        # if success:
+        #     if self.predicate is not None:
+        #         env.constraints.add(Constraint(Expr.apply(self.predicate, self), True))
         return success, reason
 
     def debug(self, f: Callable[..., Any]) -> Var:
@@ -623,11 +667,30 @@ class Binding:
 @dataclass(frozen=True, slots=True)
 class Constraint:
     """
-    Docstring for Constraint
-    False, _ if not fully evaluated
-    True, False if constraint failed
-    True, True if constraint succeeded
-    _val_hash is used by dataclass's default hash implementation.
+    A constraint represents a binding between an expression and an expected value.
+    
+    This is the KEY mechanism that triggers inference. When an Expr pattern is
+    unified with a value during solve(), a Constraint is created and added to
+    env.constraints. When env.solve() processes constraints:
+    
+    - If both expr AND expected are fully resolved: unify them directly
+    - If expr is NOT resolved but expected IS resolved: call expr.inference()
+      This is where bimap's custom inference logic is triggered!
+    - If expr is resolved but expected is NOT: return False (can't verify)
+    - If neither is resolved: return False (can't evaluate)
+    
+    The inference flow:
+        1. unify(pattern, value, env) creates Constraint(pattern, value)
+        2. env.solve() processes each constraint
+        3. Constraint.__call__() detects expr not resolved but expected resolved
+        4. Calls expr.inference(value_expected, env, set())
+        5. The custom infer function (from bimap) processes and binds variables
+    
+    Returns:
+        (fully_resolved, result, reason):
+        - False, _ if not fully evaluated
+        - True, False if constraint failed
+        - True, True if constraint succeeded
     """
     expr: Expr
     expected: Any = field(compare=False, hash=False)
@@ -719,6 +782,9 @@ class Env:
     def __getattr__(self, name: str) -> Var:
         return self.scope.create(name)
     
+    def all_var_names(self) -> Set[str]:
+        return self.scope.all_var_names()
+
     def create_var(self, name: str) -> Var:
         return self.scope.create(name)
 
@@ -819,8 +885,8 @@ def evaluate(expr: Any, env: Env, visited: Set[Any]) -> Tuple[bool, Any]:
     if isinstance(expr, Expr):
         return expr.evaluate(env, visited)
     elif is_struct(expr):
-        result = {}
         if isinstance(expr, dict):
+            result = {}
             for k, v in expr.items():
                 fully_resolved, val = evaluate(v, env, visited)
                 if not fully_resolved:
@@ -927,7 +993,30 @@ def transform(
     target: Callable[..., Any],
     *,
     soft_failure: bool,
-) -> Callable[[Any, Any], Any]:        
+) -> Callable[[Any, Any], Any]:
+    """
+    Create a transformation function between source and target patterns.
+    
+    This is the core function used by Iso.derive() to create bidirectional
+    transformations for .to() in syntax.py.
+    
+    The transformation flow:
+        1. Creates a fresh Env and evaluates source(env) to get the pattern
+        2. Calls solve(pattern, value, env) to unify pattern with input value
+           - solve() calls unify() which creates Constraint for Expr patterns
+           - solve() then calls env.solve() which triggers Constraint.__call__()
+           - Constraint.__call__() calls expr.inference() when needed
+        3. Evaluates target(new_env) with the solved environment
+        4. Returns the evaluated result
+    
+    Args:
+        source: Function that takes Env and returns source pattern (e.g., lambda env: env.X)
+        target: Function that takes solved Env and returns target pattern
+        soft_failure: If True, return error list instead of raising exception
+    
+    Returns:
+        A function that transforms input value using the source/target patterns
+    """
 
     def transform_f(value: Any, ctx: Any) -> Any:
         # from rich import print
@@ -951,22 +1040,39 @@ def transform(
 
 def bimap(forward: Callable[[B], A], backward: Callable[[A], B]) -> Callable[[Expr], Any]:
     """
-    Bimap operator that takes two functions, forward and backward, and applies them to the expression in both directions. 
-    In the unifying phase, the value in the pattern unifies with the result of the Expr, and we infer the arguments by 
-    applying the backward function, then the value of the argument is bound to the input Expr. 
-    In the evaluating phase, the argument is bound to the input Expr and be retrieved from Env, then apply the forward function to get the final result. 
+    Bimap operator for bidirectional transformations with custom inference.
+    
+    Takes two functions (forward and backward) and applies them to an expression:
+    - forward: Used during evaluation/generation phase
+    - backward: Used during inference/unification phase
+    
+    The inference mechanism (when expr contains unresolved variables):
+        1. When Constraint.__call__() evaluates bimap(expr) and finds the expression
+           is not fully resolved but the expected value is resolved
+        2. It calls expr.inference(value_expected, env, set())
+        3. The infer function (infer_bimap) applies backward(value_expected)
+        4. Then recursively calls child_expr.inference() to bind values to children
     
     The inference rules for bimap are as follows:
-    - If bimap(expr) is evaluated in the forward direction, we apply the forward function to the result of evaluating expr. 
-        If expr is not fully resolved, we cannot make any inferences about the child expressions of expr.
-    - If bimap(expr) is evaluated in the backward direction, we apply the backward function to the value we are trying to unify with. 
-        If expr is not fully resolved, we cannot make any inferences about the child expressions of expr.
+    - If bimap(expr) is evaluated in the forward direction, we apply the forward 
+      function to the result of evaluating expr. If expr is not fully resolved, 
+      we cannot make any inferences about the child expressions of expr.
+    - If bimap(expr) is evaluated in the backward direction (unification), we 
+      apply the backward function to the value we are trying to unify with, then
+      propagate the transformed value to child expressions via inference.
 
     Args:
-        forward: A function that takes the result of evaluating the expression and transforms it into the desired output format.
-        backward: A function that takes a value we are trying to unify with and transforms it into the format expected by the expression.
+        forward: A function applied during evaluation/generation (e.g., `not x`)
+        backward: A function applied during inference/unification (e.g., `not x`)
     Returns: 
-        A function that takes an expression and returns a new expression that applies the forward and backward transformations in both directions.
+        A function that takes an expression and returns a new expression with
+        custom inference logic attached.
+    
+    Example:
+        >>> Not = lambda expr: bimap(lambda x: not x, lambda x: not x)(expr)
+        >>> # Not(env.greedy) creates an Expr that:
+        >>> #   - During inference: applies backward to value, then infers children
+        >>> #   - During evaluation: applies forward to the evaluated child value
     """
     def wrap_bimap(expr: Expr) -> Any:        
         def infer_bimap(value: Any, 
@@ -984,6 +1090,27 @@ def iso(i: Iso[A, B]) -> Callable[[Expr], Any]:
     return bimap(lambda x: i.fmap(x, None), lambda x: i.imap(x, None))
 
 def Not(expr: Expr) -> Any:
+    """
+    Logical negation for bidirectional transformations.
+    
+    This is a convenience function that uses bimap with `lambda x: not x` for both
+    forward and backward transformations.
+    
+    During parsing (when used in target pattern of .to):
+        - Not(env.greedy) will bind `not value` to env.greedy
+        - Used when the parsed value should be negated when binding to env
+    
+    During generation (when used in source pattern):
+        - Not(env.greedy) evaluates env.greedy and returns its negation
+        - Used when the source variable should be negated in the output
+    
+    Example:
+        >>> # In regex.py for quantifier greedy flag:
+        >>> .to(lambda env: (Quantifier(minimum=env.M, maximum=env.N), env.greedy),
+        ...     lambda env: Quantifier(minimum=env.M, maximum=env.N, greedy=Not(env.greedy)))
+        >>> # Parsing: "*" -> Quantifier(min=0, max=None, greedy=True) binds greedy=False
+        >>> # Generation: Quantifier(min=0, max=None, greedy=True) -> "*?" (negated greedy)
+    """
     return bimap(lambda x: not x, lambda x: not x)(expr)
 
 

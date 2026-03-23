@@ -846,27 +846,23 @@ def re(pattern: str, case_insensitive: bool = False) -> Builder[str]:
 def rstr(
     pattern: str | pyre.Pattern[str],
     *,
-    rnd: random.Random | None = None,
-    seed: int | None = None,
-) -> Callable[[], str]:
+    case_insensitive: bool = False) -> Callable[[random.Random | int], str]:
     """
     Generate a random string that matches the given regex pattern.
     """
-    if rnd is not None and seed is not None:
-        raise ValueError("Provide either 'rnd' or 'seed', not both")
-
     pattern_text = pattern.pattern if isinstance(pattern, pyre.Pattern) else pattern
     parsed = parse(pattern_text)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
-            raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
-        raise RegexError("Regex parse failed", offender=parsed)
+            raise RegexError(f"Regex parse failed, {pattern_text!r}", offender=parsed, expect=parsed.summary)
+        raise RegexError(f"Regex parse failed, {pattern_text!r}", offender=parsed)
 
     alphabet = Alphabet(str)
-    dfa = parsed.builder().compile(alphabet).dfa.with_default_tag_invariant()
-    rng = rnd if rnd is not None else random.Random(seed)
-    def generator() -> str:
-        result = dfa.reverse.gen(None, rng)
+    dfa = parsed.builder(case_insensitive=case_insensitive).compile(alphabet).dfa.with_default_tag_invariant()
+    def generator(rnd: random.Random | int) -> str:
+        if isinstance(rnd, int):
+            rnd = random.Random(rnd)
+        result = dfa.reverse.gen(None, rnd)
 
         # For text alphabet, gen() always returns str after internal concat
         if not isinstance(result, str):
@@ -877,16 +873,17 @@ def rstr(
         return result
     return generator
 
-def match(pattern: str,
+def match(pattern: str | pyre.Pattern[str],
           *,
           case_insensitive: bool = False,
-          fullmatch: bool = False) -> Callable[[str], bool]:
+          fullmatch: bool = True) -> Callable[[str], bool]:
     pattern_text = pattern.pattern if isinstance(pattern, pyre.Pattern) else pattern
     parsed = parse(pattern_text)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
-            raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
-        raise RegexError("Regex parse failed", offender=parsed)
+            raise RegexError(f"Regex parse failed, {pattern_text!r}", offender=parsed, expect=parsed.summary)
+        raise RegexError(f"Regex parse failed, {pattern_text!r}", offender=parsed)
+    
     alphabet = Alphabet(str)
     nfa = parsed.builder(case_insensitive=case_insensitive).compile(alphabet).nfa
     runner = nfa.dfa.with_default_tag_invariant().runner()
@@ -923,8 +920,8 @@ def rp(pattern: str,
     parsed = parse(pattern)
     if not isinstance(parsed, Regex):
         if isinstance(parsed, Error):
-            raise RegexError("Regex parse failed", offender=parsed, expect=parsed.summary)
-        raise RegexError("Regex parse failed", offender=parsed)
+            raise RegexError(f"Regex parse failed, {pattern!r}", offender=parsed, expect=parsed.summary)
+        raise RegexError(f"Regex parse failed, {pattern!r}", offender=parsed)
     if syntax_cls is None:
         if len(refs) > 0:
             for ref in refs.values():

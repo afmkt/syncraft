@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from syncraft.ast import Token
+
 from syncraft.grammar import Grammar, grammar, rule
 from syncraft.syntax import Syntax
 

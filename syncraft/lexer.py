@@ -17,9 +17,9 @@ import random
 from pathlib import Path
 import hashlib
 import threading
-from syncraft.token import TokenSpec
+
 import pickle
-from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder, GeneratedToken, VerifiedToken
+from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder, GeneratedToken, VerifiedToken, TokenSpecProtocol
 
 Tag = str | Enum | None
 
@@ -302,9 +302,9 @@ class ExtLexer(LexerProtocol[T]):
         pass
 
     @classmethod
-    def create(cls, tkspec: TokenSpec) -> Optional[ExtLexer[T]]:
-        if isinstance(tkspec, TokenSpec):
-            return cls(predicate=tkspec.predicate(), generator=tkspec.generator())
+    def create(cls, tkspec: TokenSpecProtocol) -> Optional[ExtLexer[T]]:
+        if isinstance(tkspec, TokenSpecProtocol):
+            return cls(predicate=tkspec.predicate, generator=tkspec.generator)
         return None
     
     def candidate(self) -> LexerError | LexerResult[T]:
@@ -338,27 +338,11 @@ class ExtLexer(LexerProtocol[T]):
 @dataclass(frozen=True, slots=True)
 class LocalLexerBuilder(LexerBuilder[C]):
     """Per-terminal lexer builder (Syncraft's default mode).
-    
-    Each terminal (`S.re()`, `S.lit()`) gets its own independent lexer.
-    The `skip=True` flag affects only that specific terminal and is NOT
-    globally applied to other terminals in the grammar.
-    
-    Example:
-        >>> S = Syntax.set()  # Uses LocalLexerBuilder by default
-        >>> _ws = S.re(r"\\s+", skip=True)  # Skip only for this terminal
-        >>> expr = S.lit("a") + S.lit("b")   # "a b" will NOT parse
-        >>> # Each lit() has its own lexer without whitespace skipping
-    
-    Use this mode when:
-    - Terminals have different whitespace/spacing rules
-    - Using `S.rp()` patterns with explicit spacing
-    - You want fine-grained control over where skipping applies
-    
-    For global skip behavior, use `GlobalLexerBuilder` instead.
+    Each terminal (`S.re()`, `S.lit()`) gets its own independent lexer.        
     """
     lexer: LexerProtocol[C] | None = field(default=None, compare=False, hash=False, repr=False)
-    def __call__(self, arg: TokenSpec | Builder, **kwargs: Any) -> LocalLexerBuilder[C]:
-        if isinstance(arg, TokenSpec):
+    def __call__(self, arg: TokenSpecProtocol | Builder, **kwargs: Any) -> LocalLexerBuilder[C]:
+        if isinstance(arg, TokenSpecProtocol):
             tlexer: ExtLexer[C] | None = ExtLexer.create(arg)
             if tlexer is not None:
                 return LocalLexerBuilder(lexer=tlexer)

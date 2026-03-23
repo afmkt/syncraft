@@ -238,35 +238,6 @@ class Seq(AST):
 
 
 
-@dataclass(frozen=True, slots=True)
-class Token:
-    """
-    A typical structureal terminal token
-    """
-    text: str | bytes | Tuple[Any, ...]
-    token_type: Optional[Union[str, Enum]] = None   
-
-    def to_str(self) -> str:
-        if isinstance(self.text, str):
-            return self.text.strip()
-        elif isinstance(self.text, bytes):
-            return self.text.decode('utf-8', errors='replace').strip()
-        elif isinstance(self.text, tuple):
-            return ''.join(str(c) for c in self.text).strip()
-        else:
-            raise SyncraftError(f"Unsupported type {type(self.text)} for Token text", offender=self.text, expect="str, bytes, or tuple")
-
-    def __repr__(self) -> str:        
-        if self.token_type is None:
-            return f"Token(text={self.to_str()!r})"
-        else:
-            return f"Token(text={self.to_str()!r}, token_type={self.token_type!r})"
-
-    def __str__(self) -> str:
-        if self.token_type is None:
-            return f"t.{self.to_str().strip()}"        
-        else:            
-            return f"t.({self.to_str().strip()}, {self.token_type})"
         
 T = TypeVar('T', bound=Hashable)
 
