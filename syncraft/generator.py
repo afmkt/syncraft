@@ -54,14 +54,16 @@ class GenState(Bindable):
     steps: int = 0
 
     def str_input(self, ul: bool) -> str:
-        if not self.ast:
-            return "<PRUNED>"
-        s = str(self.ast)
-        if len(s) > 20:
-            return f"{self.ast.__class__.__name__}(...)" # type: ignore
-        else:
-            return s
-
+        try:
+            if not self.ast:
+                return "<PRUNED>"
+            s = str(self.ast)
+            if len(s) > 20:
+                return f"{self.ast.__class__.__name__}(...)" # type: ignore
+            else:
+                return s
+        except Exception as e:
+            return f"<unrepresentable GenState.ast: {e}>"
 
     @property
     def ended(self) -> bool:
@@ -72,7 +74,10 @@ class GenState(Bindable):
         return self.steps
 
     def __str__(self) -> str:
-        return f"{self.__class__.__name__}(ast={self.ast})"
+        try:
+            return f"{self.__class__.__name__}(ast={self.ast})"
+        except Exception as e:
+            return f"<unrepresentable GenState: {e}>"
         
     def unused_cache_key(self) -> int:
         return 0
@@ -156,16 +161,17 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     step_result = yield from step.run(input, cache)
                     match step_result:
                         case Left(_) as ERROR:
-                            debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input.ast=={input.ast} -> FAILED")
+                            debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input=={input} -> FAILED")
                             return ERROR
                         case Right((value, next_input)):
                             input = next_input
                             result.append((value, keep))
-                debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input.ast=={input.ast} -> {Seq(value=tuple(result))}")
+
+                debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input=={input} -> {Seq(value=tuple([]))}")
                 return Right.new((Seq(value=tuple(result)), input))
             else:
                 if not input.pruned and not isinstance(input.ast, Seq):
-                    debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input.ast=={input.ast} -> FAILED")
+                    debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input=={input} -> FAILED")
                     return Left.new(Error.new(
                         this=input.ast,
                         message=f"Expect Seq got {input.ast}",
@@ -175,7 +181,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 result = []
                 ast_seq = cast(Seq, input.ast)
                 if len(ast_seq.value) != len(normaize_steps):
-                    debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input.ast=={input.ast} -> FAILED with wrong length")
+                    debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input=={input} -> FAILED with wrong length")
                     return Left.new(Error.new(
                         this=input.ast,
                         message=f"Expect Seq of length {len(normaize_steps)} got {len(ast_seq.value)}",
@@ -188,19 +194,19 @@ class Generator(Algebra[ParseResult[T], GenState]):
                         tmp_state = inp.inject(ast_elem)
                         # debug_print(f"\nSeq CALLING BEFORE {callable_str(step.run_f)} with input.ast=={ast_elem}")
                         step_result = yield from step.run(tmp_state, cache)
-                        debug_print(f"\nSeq CALLING {callable_str(step.run_f)} with input.ast=={ast_elem} -> {step_result}")
+                        debug_print(f"\nSeq CALLING {callable_str(step.run_f)} with input=={ast_elem} -> {step_result}")
                     else:
                         tmp_state = inp.inject(Unknown())
                         step_result = yield from step.run(tmp_state, cache)
-                        debug_print(f"\nSeq CALLING {callable_str(step.run_f)} with input.ast=={tmp_state.ast} -> {step_result}")
+                        debug_print(f"\nSeq CALLING {callable_str(step.run_f)} with input=={tmp_state} -> {step_result}")
                     match step_result:
                         case Left() as ERROR:
-                            debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input.ast=={input.ast} -> FAILED at step with ast {ast_elem}")
+                            debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input=={input} -> FAILED at step with ast {ast_elem}")
                             return ERROR
                         case Right((value, next_input)):
                             inp = next_input
                             result.append((value, keep))    
-                debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input.ast=={input.ast} -> {Seq(value=tuple(result))}")
+                debug_print(f"\nSeq CALLING {callable_str(seq_run)} with input=={input} -> {Seq(value=tuple([]))}")
                 return Right.new((Seq(value=tuple(result)), inp))
         return cls(run_f=seq_run).flag(intrinsic=True) # type: ignore        
 
@@ -229,14 +235,14 @@ class Generator(Algebra[ParseResult[T], GenState]):
                                 offender=err,
                                 expect="Right",
                             )                    
-                debug_print(f"\nMany CALLING {callable_str(many_run)} with input.ast=={tmp_input.ast} -> {Many(value=tuple(ret))}")
+                debug_print(f"\nMany CALLING {callable_str(many_run)} with input=={tmp_input} -> {Many(value=tuple([]))}")
                 return Right.new((Many(value=tuple(ret)), tmp_input))
             else:
                 if not isinstance(input.ast, Many) or input.ast is Nothing:
-                    debug_print(f"\nMany CALLING {callable_str(many_run)} with input.ast=={input.ast} -> FAILED")
+                    debug_print(f"\nMany CALLING {callable_str(many_run)} with input=={input} -> FAILED")
                     return Left.new(Error.new(
                         this=self,
-                        message=f"Expect Many got {input.ast}",
+                        message=f"Expect Many got {input}",
                         priority=ErrorPriority.EXPECTED,
                         state=input,
                     ))
@@ -252,7 +258,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                                 break
                             ret.append(value)
                             if at_most is not None and len(ret) > at_most:
-                                debug_print(f"\nMany CALLING {callable_str(many_run)} with input.ast=={input.ast} -> FAILED with too many matches")
+                                debug_print(f"\nMany CALLING {callable_str(many_run)} with input=={input} -> FAILED with too many matches")
                                 return Left.new(Error.new(
                                     message=f"Expected at most {at_most} matches, got {len(ret)}",
                                     this=self,
@@ -260,10 +266,10 @@ class Generator(Algebra[ParseResult[T], GenState]):
                                     state=tmp_state,
                                 ))
                         case Left(err):
-                            debug_print(f"\nMany CALLING {callable_str(many_run)} with input.ast=={input.ast} -> FAILED with error {err}")
+                            debug_print(f"\nMany CALLING {callable_str(many_run)} with input=={input} -> FAILED with error {err}")
                             break
                 if len(ret) != len(input.ast.value):
-                    debug_print(f"\nMany CALLING {callable_str(many_run)} with input.ast=={input.ast} -> FAILED with mismatch in number of matches")
+                    debug_print(f"\nMany CALLING {callable_str(many_run)} with input=={input} -> FAILED with mismatch in number of matches")
                     return Left.new(Error.new(
                         message=f"`Many` expected {len(input.ast.value)} matches, got {len(ret)}",
                         this=self,
@@ -271,14 +277,14 @@ class Generator(Algebra[ParseResult[T], GenState]):
                         state=tmp_state,
                     ))
                 if len(ret) < at_least:
-                    debug_print(f"\nMany CALLING {callable_str(many_run)} with input.ast=={input.ast} -> FAILED with too few matches")
+                    debug_print(f"\nMany CALLING {callable_str(many_run)} with input=={input} -> FAILED with too few matches")
                     return Left.new(Error.new(
                         message=f"Expected at least {at_least} matches, got {len(ret)}",
                         this=self,
                         priority=ErrorPriority.EXPECTED,
                         state=tmp_state,
                     )) 
-                debug_print(f"\nMany CALLING {callable_str(many_run)} with input.ast=={input.ast} -> {Many(value=tuple(ret))}")
+                debug_print(f"\nMany CALLING {callable_str(many_run)} with input=={input} -> {Many(value=tuple([]))}")
                 return Right.new((Many(value=tuple(ret)), tmp_state))
         return replace(self, run_f=many_run).flag(intrinsic=True)  # type: ignore
     
@@ -292,15 +298,15 @@ class Generator(Algebra[ParseResult[T], GenState]):
             if input.pruned:
                 return Right.new((value, input))
             elif value != input.ast:
-                debug_print(f"\nSuccess CALLING {callable_str(success_run)} with input.ast=={input.ast} -> {value}")
+                debug_print(f"\nSuccess CALLING {callable_str(success_run)} with input=={input} -> {value}")
                 return Left.new(Error.new(
-                    message=f"Success expected {value} but got {input.ast}",
+                    message=f"Success expected {value} but got {input}",
                     this=cls,
                     priority=ErrorPriority.LEXER_VERIFICATION,
                     state=input,
                 ))
             else:
-                debug_print(f"\nSuccess CALLING {callable_str(success_run)} with input.ast=={input.ast} -> {value}")
+                debug_print(f"\nSuccess CALLING {callable_str(success_run)} with input=={input} -> {value}")
                 return Right.new((value, input))
         return cls(success_run)
 
@@ -321,27 +327,27 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     result = yield from selected.run(forked_input, cache)
                     match result:
                         case Right((value, next_input)):
-                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> {Alt(index=idx, value=value)}")
+                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> {Alt(index=idx, value=...)}")
                             return Right.new((Alt(index=idx, value=value), next_input))
                         case Left() as ERROR:
                             last_error = ERROR
-                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> FAILED")
+                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> FAILED")
                             
                 if last_error is not None:
                     return last_error
                 else:
                     return Left.new(Error.new(
-                        message=f"Alt, no branch match the given input {input.ast}",
+                        message=f"Alt, no branch match the given input {input}",
                         this=cls,
                         priority=ErrorPriority.ALT_NO_MATCH,
                         state=input,
                     ))
             else:                    
                 if not isinstance(input.ast, (Alt, Nothing)):
-                    debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> FAILED")
+                    debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> FAILED")
                     return Left.new(Error.new(
                         this=input.ast,
-                        message=f"Expect Alt got {input.ast}",
+                        message=f"Expect Alt got {input}",
                         priority=ErrorPriority.EXPECTED,
                         state=input,
                     ))
@@ -352,16 +358,16 @@ class Generator(Algebra[ParseResult[T], GenState]):
                         result = yield from option.run(tmp_state, cache)
                         match result:
                             case Right((value, next_input)):
-                                debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> {Alt(index=i, value=value)}")
+                                debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> {Alt(index=i, value=...)}")
                                 return Right.new((Alt(index=i, value=value), next_input))
                             case Left(err) as ERROR:
                                 if isinstance(err, Error) and err.committed:
-                                    debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> FAILED with committed error")
+                                    debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> FAILED with committed error")
                                     return ERROR
-                    debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> FAILED")
+                    debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> FAILED")
                     return Left.new(Error.new(
                         this=input.ast,
-                        message=f"No branch matched for {input.ast}",
+                        message=f"No branch matched for {input}",
                         priority=ErrorPriority.ALT_NO_MATCH,
                         state=input,
                     ))
@@ -371,10 +377,10 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     result = yield from selected.run(tmp_state, cache)
                     match result:
                         case Right((value, next_input)):
-                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> {Alt(index=ast_choice.index, value=value)}")
+                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> {Alt(index=ast_choice.index, value=...)}")
                             return Right.new((Alt(index=ast_choice.index, value=value), next_input))
                         case Left() as ERROR:
-                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input.ast=={input.ast} -> FAILED")
+                            debug_print(f"\nAlt CALLING {callable_str(alt_run)} with input=={input} -> FAILED")
                             return ERROR
             raise SyncraftError("alt should always return a value or an error.", offender=result, expect=(Left, Right))
         return cls(run_f=alt_run).flag(intrinsic=True)  # type: ignore
@@ -392,28 +398,28 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 result = (yield from alg.run(input, cache))
                 match result:
                     case Left() as ERROR:
-                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input.ast=={input.ast} -> FAILED")
+                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input=={input} -> FAILED")
                         return ERROR
                     case Right((value, state)):
-                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input.ast=={input.ast} -> {Lazy(value=value)}")
+                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input=={input} -> {Lazy(value=...)}")
                         return Right.new((Lazy(value=value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result)
             else:
                 current = input.ast
                 if not isinstance(current, Lazy) or current is Nothing:
-                    debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input.ast=={current} -> FAILED")
+                    debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input=={input} -> FAILED")
                     return Left.new(Error.new(this=alg, 
-                                      message=f"Expect Lazy got {current}",
+                                      message=f"Expect Lazy got {input}",
                                       state=input))
                 new_state = input.inject(current.value)
                 result = (yield from alg.run(new_state, cache))
                 match result:
                     case Left() as ERROR:
-                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input.ast=={current} -> FAILED")
+                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input=={input} -> FAILED")
                         return ERROR
                     case Right((value, state)):
-                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input.ast=={current} -> {Lazy(value=value)}")
+                        debug_print(f"\nLazy CALLING {callable_str(algebra_lazy_run)} with input=={input} -> {Lazy(value=...)}")
                         return Right.new((Lazy(value=value), state))
                     case _:
                         raise SyncraftError(f"Unexpected result type from lazy algebra {alg}", offender=result) 
@@ -438,7 +444,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
             if input.pruned:
                 gt = lexer.gen(input.rng())
                 generated = gt.value
-                debug_print(f"\nLex CALLING {callable_str(lex_run)} with input.ast=={input.ast} -> {generated}")
+                debug_print(f"\nLex CALLING {callable_str(lex_run)} with input=={input} -> {generated}")
                 return Right.new((cast(ParseResult[T], generated), input.advance(gt.steps)))
             else:
                 current = input.ast
@@ -446,7 +452,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 try:
                     verified = lexer.verify(current_value)
                 except SyncraftError as e:
-                    debug_print(f"\nLex CALLING {callable_str(lex_run)} with input.ast=={input.ast} -> FAILED")
+                    debug_print(f"\nLex CALLING {callable_str(lex_run)} with input=={input} -> FAILED")
                     return Left.new(
                         Error.new(
                             this=lex_run,
@@ -461,7 +467,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                         )
                     )
                 if not verified.ok:
-                    debug_print(f"\nLex CALLING {callable_str(lex_run)} with input.ast=={input.ast} -> FAILED")
+                    debug_print(f"\nLex CALLING {callable_str(lex_run)} with input=={input} -> FAILED")
                     return Left.new(
                         Error.new(
                             this=lex_run,
@@ -473,7 +479,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 parsed_value = cast(ParseResult[T], current)
                 if isinstance(parsed_value, AST):
                     parsed_value = replace(parsed_value) # type: ignore
-                debug_print(f"\nLex CALLING {callable_str(lex_run)} with input.ast=={current} -> {parsed_value}")
+                debug_print(f"\nLex CALLING {callable_str(lex_run)} with input=={input} -> {parsed_value}")
                 return Right.new((parsed_value, input.advance(verified.steps)))
 
         return cls(lex_run).flag(intrinsic=True) 

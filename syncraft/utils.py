@@ -17,18 +17,21 @@ LAZY_MARKER = '\u29D6'
 ORELSE_MARKER = '\u220B'
 
 def callable_str(obj:Any, with_id: bool=False)->str:
-    if not callable(obj):
-        return repr(obj)
-    idstr = hex(id(obj))
-    name = obj.syntax if hasattr(obj, 'syntax') else (
-        obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
-    prefix = '' if not with_id else f"{idstr} @ "
-    if hasattr(obj, 'syntax') and obj.syntax.is_lazy:
-        return f"{prefix}{LAZY_MARKER} {name}"
-    elif hasattr(obj, 'syntax') and obj.syntax.is_orelse:
-        return f"{prefix}{ORELSE_MARKER} {name}"
-    else:
-        return f"{prefix}{name}"
+    try:
+        if not callable(obj):
+            return repr(obj)
+        idstr = hex(id(obj))
+        name = obj.syntax if hasattr(obj, 'syntax') else (
+            obj.__name__ if hasattr(obj, '__name__') else obj.__class__.__name__)
+        prefix = '' if not with_id else f"{idstr} @ "
+        if hasattr(obj, 'syntax') and obj.syntax.is_lazy:
+            return f"{prefix}{LAZY_MARKER} {name}"
+        elif hasattr(obj, 'syntax') and obj.syntax.is_orelse:
+            return f"{prefix}{ORELSE_MARKER} {name}"
+        else:
+            return f"{prefix}{name}"
+    except Exception as e:
+        return f"<unrepresentable callable: {e}>"
 
 
 def syntax_of(f: Any):
