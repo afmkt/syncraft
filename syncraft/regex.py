@@ -954,10 +954,7 @@ class VerifyResult:
 
 
 def verify(pattern: str) -> VerifyResult:
-    try:
-        import regex as re
-    except ImportError:
-        import re # type: ignore
+    import re # type: ignore
 
     myerr = None
     err = None

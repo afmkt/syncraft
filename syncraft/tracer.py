@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, overload, Optional, Iterator, Callable, Protocol, Literal
 from dataclasses import dataclass, field
 from contextlib import contextmanager
-import contextvars
+from contextvars import ContextVar, Token
 import time
 from syncraft.bimap import Bindable
 
@@ -16,34 +16,12 @@ Site = Literal[
     'agenda-reprocess'
 ]
 
-
-
-
-@dataclass
-class ParseNode:
-    """A node in the reconstructed parse tree."""
-    rule: Any
-    location: str | None
-    site: Site
-    cache_key: Any
-    input: Bindable
-    push_time_ns: int
-    pop_time_ns: int | None = None
-    parent_id: int | None = field(default=None, repr=False)
-    result: Any = None
-    children: list[ParseNode] = field(default_factory=list)
-    
-    def duration_ns(self) -> int | None:
-        """Return parse duration in nanoseconds, or None if not yet popped."""
-        if self.pop_time_ns is None:
-            return None
-        return self.pop_time_ns - self.push_time_ns
-
-
 @dataclass(frozen=True, slots=True)
 class TraceEvent:
     tracer: Tracer | None
     timestamp_ns: int
+
+
 
 
 class EventProtocol(Protocol):
@@ -84,15 +62,71 @@ class PopEvent(TraceEvent):
     
 
 
+
+@dataclass(slots=True)
+class Node:
+    rule: Any
+    parent: Optional[Node]
+    push_event: PushEvent
+    pop_event: Optional[PopEvent] = None
+    children: list[Node] = field(default_factory=list)
+
+    @property
+    def site(self) -> Site:
+        return self.push_event.site
+    
+    @property
+    def state_in(self) -> Bindable:
+        return self.push_event.state
+    
+    @property
+    def state_out(self) -> Bindable | None:
+        return self.pop_event.state if self.pop_event else None
+    
+    @property
+    def duration_ns(self) -> Optional[int]:
+        if self.pop_event:
+            return self.pop_event.timestamp_ns - self.push_event.timestamp_ns
+        return None
+    
+    @property
+    def error(self) -> Any | None:
+        return self.pop_event.error if self.pop_event else None
+    
+    @property
+    def result(self) -> Any | None:
+        return self.pop_event.result if self.pop_event else None
+    
+    @property
+    def success(self) -> Optional[bool]:
+        return self.state_out is not None
+
+    @property
+    def finished(self) -> bool:
+        return self.pop_event is not None
+    
+
+
+
+_CURRENT_TRACER: ContextVar[Optional[Tracer]] = ContextVar(
+    "syncraft_current_tracer",
+    default=None,
+)
+
+
 class Tracer:
     def __enter__(self) -> Tracer:
+        self._token = _CURRENT_TRACER.set(self)
         return self
     def __exit__(self, exc_type, exc_value, traceback) -> None:
-        pass
+        if self._token is not None:
+            _CURRENT_TRACER.reset(self._token)
+            self._token = None # type: ignore
 
     def __init__(self, url: None | str = None) -> None:
         self.on_push_f: Optional[Callable[[PushEvent], None]] = None
         self.on_pop_f: Optional[Callable[[PopEvent], None]] = None
+        self._token: Optional[Token[Optional[Tracer]]] = None # type: ignore
 
     def on_push(self, f: Callable[[PushEvent], None]) -> Tracer:
         self.on_push_f = f
@@ -135,17 +169,6 @@ def trace_push(rule: Any, parent: Any | None, state: Bindable, site: Site) -> Ev
     
 
 
-_CURRENT_TRACER: contextvars.ContextVar[Optional[Tracer]] = contextvars.ContextVar(
-    "syncraft_current_tracer",
-    default=None,
-)
 
 
-@contextmanager
-def tracer() -> Iterator[Tracer]:
-    tracer = Tracer()
-    token = _CURRENT_TRACER.set(tracer)
-    try:
-        yield tracer
-    finally:
-        _CURRENT_TRACER.reset(token)
+

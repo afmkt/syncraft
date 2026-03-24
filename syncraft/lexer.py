@@ -20,6 +20,7 @@ import threading
 
 import pickle
 from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder, GeneratedToken, VerifiedToken, TokenSpecProtocol
+from syncraft import __version__
 
 Tag = str | Enum | None
 
@@ -45,6 +46,10 @@ class Mode(Generic[C]):
 @dataclass(slots=True)
 class LexerCache:
 
+    # Use package major.minor version for cache validation - cache invalidates when 
+    # major.minor version changes (patch releases are backward compatible)
+    _CACHE_VERSION: ClassVar[str] = ".".join(__version__.split(".")[:2])
+
     dict: Dict[str, Lexer[Any]] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
@@ -54,7 +59,23 @@ class LexerCache:
         if file.exists():
             with open(file, "rb") as f:
                 try:
-                    return pickle.load(f)
+                    data = pickle.load(f)
+                    # Validate cache format: expects (version, lexer)
+                    if not isinstance(data, tuple) or len(data) != 2:
+                        print(f"Invalid cache format in {file}, deleting...")
+                        file.unlink()
+                        return None
+                    version, lexer = data
+                    if version != LexerCache._CACHE_VERSION:
+                        print(f"Cache version mismatch in {file}: got {version}, expected {LexerCache._CACHE_VERSION}, deleting...")
+                        file.unlink()
+                        return None
+                    # Additional sanity check: verify the lexer has expected structure
+                    if not isinstance(lexer, Lexer):
+                        print(f"Invalid lexer type in cache {file}: {type(lexer)}, deleting...")
+                        file.unlink()
+                        return None
+                    return lexer
                 except Exception as e:
                     print(e)
                     print("Failed to load lexer from cache:", file)
@@ -66,7 +87,8 @@ class LexerCache:
         dir.mkdir(parents=True, exist_ok=True)
         file = dir / f"{key}.lex"
         with open(file, "wb") as f:
-            pickle.dump(lexer, f)
+            # Store version alongside lexer for validation on load
+            pickle.dump((LexerCache._CACHE_VERSION, lexer), f)
 
     def load(self, 
              *,

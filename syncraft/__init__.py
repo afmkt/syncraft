@@ -8,7 +8,9 @@ from .syntax import (
     ManySpec,
     
 )
-
+from .tracer import (
+    Tracer,    
+)
 from .regex import (
     RegexError,
     match,
@@ -84,5 +86,6 @@ __all__ = [
     "rstr",
     "LayoutDoc", "Concat", "Text", "Group",    
     "Str", "TokenSpec", 
+    "Tracer",
     "__version__",
 ]
