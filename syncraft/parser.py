@@ -15,52 +15,11 @@ from syncraft.input import StreamCursor
 
 from syncraft.ast import SyncraftError
 from syncraft.bimap import Bindable
-from syncraft.utils import callable_str
-import os
+
 
 def get_tab_width() -> int:
-    """Get the tab width from system settings, defaulting to 8 if unavailable."""
-    try:
-        # Try to get from TABSIZE environment variable
-        if 'TABSIZE' in os.environ:
-            return int(os.environ['TABSIZE'])
         
-        # Try to get from common shell variables
-        for var in ['COLUMNS', 'TERM']:
-            if var in os.environ:
-                # Check if there are any editor-specific tab settings
-                pass
-        
-        # Try to read from common editor config files
-        home = os.path.expanduser('~')
-        config_files = [
-            os.path.join(home, '.vimrc'),
-            os.path.join(home, '.editorconfig'),
-            os.path.join('.editorconfig')
-        ]
-        
-        for config_file in config_files:
-            if os.path.exists(config_file):
-                try:
-                    with open(config_file, 'r') as f:
-                        content = f.read()
-                        # Look for tab width settings
-                        import re
-                        # Vim style: set tabstop=4
-                        vim_match = re.search(r'(?:set\s+)?tabstop\s*[=:]\s*(\d+)', content, re.IGNORECASE)
-                        if vim_match:
-                            return int(vim_match.group(1))
-                        # EditorConfig style: tab_width = 4
-                        ec_match = re.search(r'tab_width\s*=\s*(\d+)', content, re.IGNORECASE)
-                        if ec_match:
-                            return int(ec_match.group(1))
-                except (IOError, ValueError):
-                    continue
-        
-        # Default to standard tab width
-        return 8
-    except (ValueError, OSError):
-        return 8
+    return 8
 
 
 T = TypeVar('T', bound=Hashable)  

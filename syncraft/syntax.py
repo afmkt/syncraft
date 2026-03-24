@@ -1767,7 +1767,8 @@ class Syntax(Generic[A, S]):
         """Create a terminal syntax from a lexer builder/token specification."""
         lexer_builder = cls._lexer()
         b = cls.get('builtin')
-        lb = lexer_builder(builder, builtin=b, **kwargs)
+        d = cls.get('cache_path')
+        lb = lexer_builder(builder, builtin=b, cache_path=d, **kwargs)
         return cls.factory('lex', builder=lb)
 
     @classmethod

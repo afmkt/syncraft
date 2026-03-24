@@ -1,11 +1,11 @@
 from __future__ import annotations
-from typing import Any, overload, Optional, Iterator, Callable, Protocol, Literal
+from typing import Any, overload, Optional, Callable, Protocol, Literal
 from dataclasses import dataclass, field
-from contextlib import contextmanager
+
 from contextvars import ContextVar, Token
 import time
 from syncraft.bimap import Bindable
-
+from syncraft.ast import SyncraftError
 
 Site = Literal[
     'cache-hit', 
@@ -25,7 +25,7 @@ class TraceEvent:
 
 
 class EventProtocol(Protocol):
-    def pop(self, *args, **kwargs) -> Any: ...
+    def pop(self, *args, **kwargs) -> None: ...
 @dataclass(frozen=True, slots=True)
 class PushEvent(TraceEvent, EventProtocol):
     rule: Any
@@ -34,11 +34,11 @@ class PushEvent(TraceEvent, EventProtocol):
     site: Site
     
     @overload
-    def pop(self, result: Any, error: None, state: Bindable) -> PopEvent: ...
+    def pop(self, result: Any, error: None, state: Bindable) -> None: ...
     @overload
-    def pop(self, result: None, error: Any, state: None) -> PopEvent: ...
+    def pop(self, result: None, error: Any, state: None) -> None: ...
 
-    def pop(self, result: Any | None = None, error: Any | None = None, state: Bindable | None = None) -> PopEvent:
+    def pop(self, result: Any | None = None, error: Any | None = None, state: Bindable | None = None) -> None:
         ret = PopEvent(
             tracer=self.tracer,
             timestamp_ns=time.perf_counter_ns(),
@@ -47,9 +47,9 @@ class PushEvent(TraceEvent, EventProtocol):
             error=error,
             state=state
         )
-        if self.tracer and self.tracer.on_pop_f:
-            self.tracer.on_pop_f(ret)
-        return ret  
+        if self.tracer:
+            self.tracer.close(ret)
+        
 
 
 
@@ -127,6 +127,40 @@ class Tracer:
         self.on_push_f: Optional[Callable[[PushEvent], None]] = None
         self.on_pop_f: Optional[Callable[[PopEvent], None]] = None
         self._token: Optional[Token[Optional[Tracer]]] = None # type: ignore
+        self.root: Optional[Node] = None
+        self.top: Optional[Node] = None
+
+    def open(self, event: PushEvent) -> None:
+        node = Node(
+            rule=event.rule,
+            parent=self.top,
+            push_event=event,
+        )
+        if self.top is not None:
+            self.top.children.append(node)
+        else:
+            self.root = node
+        self.top = node
+        if self.on_push_f:
+            # We want to be robust against errors in the callback, so we catch and ignore any exceptions it raises.
+            try:
+                self.on_push_f(event)
+            except Exception:
+                pass
+
+    def close(self, event: PopEvent) -> None:
+        if self.top is None:
+            raise SyncraftError("No open node to close", offender=event)
+        if self.top.push_event is not event.push_event:
+            raise SyncraftError("Mismatched push/pop events", offender=event)
+        self.top.pop_event = event
+        self.top = self.top.parent
+        if self.on_pop_f:
+            # We want to be robust against errors in the callback, so we catch and ignore any exceptions it raises.
+            try:
+                self.on_pop_f(event)
+            except Exception:
+                pass
 
     def on_push(self, f: Callable[[PushEvent], None]) -> Tracer:
         self.on_push_f = f
@@ -149,8 +183,7 @@ class Tracer:
             state=state,
             site=site,
         )
-        if self.on_push_f:
-            self.on_push_f(ret)
+        self.open(ret)
         return ret
         
         
@@ -167,8 +200,3 @@ def trace_push(rule: Any, parent: Any | None, state: Bindable, site: Site) -> Ev
         return dummy
     return tracer.push(rule=rule, parent=parent, state=state, site=site)
     
-
-
-
-
-

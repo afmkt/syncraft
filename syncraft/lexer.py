@@ -20,7 +20,7 @@ import threading
 
 import pickle
 from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder, GeneratedToken, VerifiedToken, TokenSpecProtocol
-from importlib.metadata import version
+
     
 
 
@@ -43,20 +43,18 @@ class Mode(Generic[C]):
         self.runner = self.runner.reset()
         self.start_index = None
         
-
-
 @dataclass(slots=True)
 class LexerCache:
 
     # Use package major.minor version for cache validation - cache invalidates when 
     # major.minor version changes (patch releases are backward compatible)
-    _CACHE_VERSION: ClassVar[str] = ".".join(version("syncraft").split(".")[:2])
-
+    
+    
     dict: Dict[str, Lexer[Any]] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
     @staticmethod
-    def _load(dir: Path, key: str) -> Optional[Lexer[Any]]:
+    def _load(dir: Path, key: str, signature: str) -> Optional[Lexer[Any]]:
         file = dir / f"{key}.lex"
         if file.exists():
             with open(file, "rb") as f:
@@ -68,8 +66,8 @@ class LexerCache:
                         file.unlink()
                         return None
                     version, lexer = data
-                    if version != LexerCache._CACHE_VERSION:
-                        print(f"Cache version mismatch in {file}: got {version}, expected {LexerCache._CACHE_VERSION}, deleting...")
+                    if version != signature:
+                        print(f"Cache version mismatch in {file}: got {version}, expected {signature}, deleting...")
                         file.unlink()
                         return None
                     # Additional sanity check: verify the lexer has expected structure
@@ -85,18 +83,19 @@ class LexerCache:
         return None
     
     @staticmethod
-    def _save(dir: Path, key: str, lexer: Lexer[Any]) -> None:
+    def _save(dir: Path, key: str, lexer: Lexer[Any], signature: str) -> None:
         dir.mkdir(parents=True, exist_ok=True)
         file = dir / f"{key}.lex"
         with open(file, "wb") as f:
             # Store version alongside lexer for validation on load
-            pickle.dump((LexerCache._CACHE_VERSION, lexer), f)
+            pickle.dump((signature, lexer), f)
 
     def load(self, 
              *,
              builders: Set[Builder[Any]], 
              factory: Callable[[], Lexer[Any]],
-             dir: Path) -> Tuple[Lexer[Any], Path]:
+             dir: Path,
+             signatire: str) -> Tuple[Lexer[Any], Path]:
         tmp = sorted(repr(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
@@ -105,14 +104,14 @@ class LexerCache:
             if key in self.dict:
                 return self.dict[key], dir / f"{key}.lex"
             else:
-                lexer = self._load(dir, key)
+                lexer = self._load(dir, key, signature=signatire)
                 if lexer is not None:
                     self.dict[key] = lexer
                     return lexer, dir / f"{key}.lex"
                 lexer = factory()
                 if lexer is not None:
                     self.dict[key] = lexer
-                    self._save(dir, key, lexer)
+                    self._save(dir, key, lexer, signature=signatire)
                     return lexer, dir / f"{key}.lex"
                 raise SyncraftError(
                     "Lexer factory did not produce a lexer",
@@ -122,6 +121,7 @@ class LexerCache:
             
 @dataclass(slots=True)
 class Lexer(LexerProtocol[C]):
+    _LEXER_SIGNATURE: ClassVar[str | None] = None
     mode : Mode[C]
     cache: ClassVar[LexerCache] = LexerCache()
     filepath: Optional[Path] = field(default=None, compare=False, hash=False, repr=False)
@@ -151,6 +151,18 @@ class Lexer(LexerProtocol[C]):
                     expect="accept states reachable from init",
                 )
 
+    @staticmethod
+    def signature() -> str:
+        if Lexer._LEXER_SIGNATURE is None:
+            a: Builder[str] = Builder.lit('a')
+            b: Builder[str] = Builder.lit('b')
+            c: Builder[str] = Builder.lit('c')
+            builder: Builder[str] = ~((a | b) + c).many(at_least=1)
+            lexer: Lexer[str] | None = Lexer.from_builders(builder)
+            pickle_bytes = pickle.dumps(lexer)
+            Lexer._LEXER_SIGNATURE = hashlib.sha256(pickle_bytes).hexdigest()
+        return Lexer._LEXER_SIGNATURE
+
     
 
     @classmethod
@@ -158,7 +170,7 @@ class Lexer(LexerProtocol[C]):
                *args: Builder,
                builtin: bool = False,
                cache_path: str | Path | None = None,
-               ) -> Optional["Lexer[C]"]:
+               ) -> Optional[Lexer[C]]:
         def fabuilder(*args: Any) -> Tuple[Set[Builder[Any]], Path]:
             if builtin:
                 path = builtin_cache_path()
@@ -176,7 +188,8 @@ class Lexer(LexerProtocol[C]):
             return None
         lexer, path = cls.cache.load(builders=builders, 
                               factory=lambda: cls.from_builders(*builders),
-                              dir=dir)
+                              dir=dir,
+                              signatire=cls.signature())
         lexer.filepath = path
         return lexer
 
