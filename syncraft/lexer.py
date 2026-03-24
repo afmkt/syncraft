@@ -54,6 +54,24 @@ class LexerCache:
     lock: threading.RLock = field(default_factory=threading.RLock)
 
     @staticmethod
+    def dir(builtin: bool, cache_path: str | Path | None) -> Path:
+        return builtin_cache_path() if builtin else user_cache_path(cache_path)
+    
+    def clear(self, 
+              builtin: bool = False, 
+              cache_path: str | Path | None = None) -> None:
+        with self.lock:
+            self.dict.clear()
+            dir = self.dir(builtin=builtin, cache_path=cache_path)
+            if dir.exists() and dir.is_dir():
+                for file in dir.glob("*.lex"):
+                    try:
+                        file.unlink()
+                    except Exception as e:
+                        print(f"Failed to delete cache file {file}: {e}")
+
+
+    @staticmethod
     def _load(dir: Path, key: str, signature: str) -> Optional[Lexer[Any]]:
         file = dir / f"{key}.lex"
         if file.exists():
@@ -97,7 +115,7 @@ class LexerCache:
              builders: Set[Builder[Any]], 
              factory: Callable[[], Lexer[Any]],
              dir: Path,
-             signatire: str) -> Tuple[Lexer[Any], Path]:
+             signature: str) -> Tuple[Lexer[Any], Path]:
         tmp = sorted(repr(fb) for fb in builders)
         joined = "\n".join(tmp)
         key = hashlib.sha256(joined.encode("utf-8")).hexdigest()
@@ -106,14 +124,14 @@ class LexerCache:
             if key in self.dict:
                 return self.dict[key], dir / f"{key}.lex"
             else:
-                lexer = self._load(dir, key, signature=signatire)
+                lexer = self._load(dir, key, signature=signature)
                 if lexer is not None:
                     self.dict[key] = lexer
                     return lexer, dir / f"{key}.lex"
                 lexer = factory()
                 if lexer is not None:
                     self.dict[key] = lexer
-                    self._save(dir, key, lexer, signature=signatire)
+                    self._save(dir, key, lexer, signature=signature)
                     return lexer, dir / f"{key}.lex"
                 raise SyncraftError(
                     "Lexer factory did not produce a lexer",
@@ -174,10 +192,7 @@ class Lexer(LexerProtocol[C]):
                cache_path: str | Path | None = None,
                ) -> Optional[Lexer[C]]:
         def fabuilder(*args: Any) -> Tuple[Set[Builder[Any]], Path]:
-            if builtin:
-                path = builtin_cache_path()
-            else:
-                path = user_cache_path(cache_path)
+            path = LexerCache.dir(builtin=builtin, cache_path=cache_path)
 
             acc: Set[Builder[Any]] = set()
             for v in args:
@@ -191,7 +206,7 @@ class Lexer(LexerProtocol[C]):
         lexer, path = cls.cache.load(builders=builders, 
                               factory=lambda: cls.from_builders(*builders),
                               dir=dir,
-                              signatire=cls.signature())
+                              signature=cls.signature())
         lexer.filepath = path
         return lexer
 
