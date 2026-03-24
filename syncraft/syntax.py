@@ -1985,7 +1985,7 @@ class Syntax(Generic[A, S]):
         from syncraft.ebnf import EBNF
         return EBNF.parse(source).syntax(cls, {}, set())
     
-    def parse(self, data: str) -> Any:
+    def parse(self, data: str | bytes | List[Any] | Tuple[Any, ...]) -> Any:
         """Parse text using this syntax.
         
         Args:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import (
-    Callable, Any, Dict, Union, Literal, Iterator, Optional, overload, TYPE_CHECKING, Literal
+    Callable, Any, Dict, Union, Literal, Iterator, List, overload, Tuple
 )
 from syncraft.format import LayoutDoc
 from syncraft.algebra import Error
@@ -303,7 +303,9 @@ class Grammar(metaclass=GrammarMeta):
         return ret
 
     @classmethod
-    def parse(cls, data: str, syntax: Syntax | None = None) -> Any:
+    def parse(cls, 
+              data: str | bytes | List[Any] | Tuple[Any, ...],
+              syntax: Syntax | None = None) -> Any:
         """Parse text using the grammar.
 
         Args:

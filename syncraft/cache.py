@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict, Hashable
+from typing import Dict, TypeVar, Generic, Callable, Any, Generator, List, Optional, Tuple, ClassVar, DefaultDict, Literal
 from syncraft.bimap import Bindable
 from syncraft.ast import SyncraftError
 
 from syncraft.utils import callable_str, is_lazy, is_orelse, syntax_of, is_intrinsic
-from syncraft.tracer import trace_pop, trace_push
+from syncraft.tracer import trace_push, Site
 from collections import defaultdict
 import copy
 import random
+
 
 def randomized(collection, enable_randomization=True):
     """Helper function to randomize iteration order of sets and other collections."""
@@ -40,6 +41,7 @@ Rule = Callable[[S, "Cache[S]"], Generator[Any, Any, Ret]]
 
 @dataclass(frozen=True, slots=True)
 class Left(Either[L, Any]):
+    
     value: Optional[L] = None
 
     @classmethod
@@ -51,6 +53,7 @@ class Left(Either[L, Any]):
 
 @dataclass(frozen=True, slots=True)
 class Right(Either[Any, R]):
+    
     value: R
     @classmethod
     def new(cls, value: R) -> Right[R]:
@@ -310,20 +313,29 @@ class Cache(Generic[S]):
         elif self.logging is True:
             print("[Cache]    ", *args, **kwargs)
     
-    def run_rule(self, rule: Rule, key: S) -> Generator[Any, Any, Ret]:
-        frame_id = trace_push(rule=syntax_of(rule), parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, state=key)
+
+    def trace_cache(self, rule: Rule, key: S, result: Either, site: Site) -> None:
+        frame_id = trace_push(rule=syntax_of(rule), parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, state=key, site=site)  
+        if isinstance(result, Right):
+            frame_id.pop(result=result.value[0], error=None, state=result.state)
+        elif isinstance(result, Left):
+            frame_id.pop(result=None, error=result.value, state=None)
+
+
+    def run_rule(self, rule: Rule, key: S, site: Site) -> Generator[Any, Any, Ret]:
+        frame_id = trace_push(rule=syntax_of(rule), parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, state=key, site=site)
         try:
             assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
             result = yield from rule(key, self) 
             if isinstance(result, Right):
-                trace_pop(frame_id, state = result.state, result = result.value[0])
+                frame_id.pop(result=result.value[0], error=None, state=result.state)
             elif isinstance(result, Left):
-                trace_pop(frame_id, state = None, result = result.value)
+                frame_id.pop(result=None, error=result.value, state=None)
             else:
                 raise SyncraftError("Unexpected result type", offender=result, expect=(Left, Right))
             return result
         except Exception as e:
-            trace_pop(frame_id, state=None, result=e)
+            frame_id.pop(result=None, error=e, state=None)
             raise e
     
     def __str__(self) -> str:
@@ -361,9 +373,7 @@ class Cache(Generic[S]):
             return ret
         
         
-    def trans_exec(self,
-            f: Rule,
-            key: S) -> Generator[Any, Any, Ret]:
+    def trans_exec(self, f: Rule, key: S) -> Generator[Any, Any, Ret]:
         """Execute a transformational combinator.
         
         Transformational combinators (map, iso, map_error, etc.) don't participate
@@ -372,7 +382,7 @@ class Cache(Generic[S]):
         """
         # Just run the function directly - no caching at this level
         # The inner algebra (via self.run()) will handle caching with intrinsic combinators
-        result = yield from self.run_rule(f, key)
+        result = yield from f(key, self) 
         return result
 
 
@@ -386,21 +396,24 @@ class Cache(Generic[S]):
             existing = cache_bucket.get(cache_key)
             if existing is not None:
                 if not isinstance(existing.payload, InProgress):
+                    self.trace_cache(f, key, existing.payload, site='cache-hit')
                     return existing.payload
                 else:
                     assert existing.payload.rule is f, f"Rule mismatch for {callable_str(f)} at {cache_key}: {existing.payload.rule} != {f}"
                     if existing.payload.result is not None:
                         ret = existing.payload.result
+                        self.trace_cache(f, key, ret, site='cache-inprogress')
                         return ret
                     else:
                         self.build_group(f, cache_key)  # Group is stored in self.groups[cache_key]
+                        self.trace_cache(f, key, Left.new("Left recursion detected - group building in progress"), site='recursion-detected')
                         return Left.new("Placeholder for left recursion - group building in progress") 
             
             head: InProgress[S] = InProgress(rule=f)
             entry = CacheEntry(payload=head, state=key)
             cache_bucket[cache_key] = entry
             self.start2rules[cache_key].add(f)
-            seed = yield from self.run_rule(f, key)
+            seed = yield from self.run_rule(f, key, 'parsing-normal')
             self.install_seed(entry, seed)
             seed = yield from self.post_process(f, seed)
             return seed
@@ -452,7 +465,7 @@ class Cache(Generic[S]):
                     payload: Either | InProgress | None = entry.payload
                     assert isinstance(payload, InProgress), f"Cache entry payload is not InProgress for {callable_str(f)} at {pos} during group resolution"
                     assert payload.rule is f, f"Cache entry rule is not {callable_str(f)} for {callable_str(f)} at {pos} during group resolution"
-                    new_result = yield from self.run_rule(f, entry.state)  # Use f, not rule
+                    new_result = yield from self.run_rule(f, entry.state, 'group-resolution')  # Use f, not rule
                     if isinstance(new_result, Left):
                         entry.last_error = new_result.value
                     new_payload = payload.grow(f, new_result)  # Use f, not rule
@@ -621,7 +634,7 @@ class Cache(Generic[S]):
                         
             # Re-run the rule WITHOUT clearing the cache entry
             # This allows the rule to see and benefit from existing InProgress improvements
-            new_result = yield from self.run_rule(rule, state)
+            new_result = yield from self.run_rule(rule, state, 'agenda-reprocess')  # Use rule, not f, and provide site info
             
             # Check if we got an improvement
             if isinstance(new_result, Right) and new_result.state is not None:

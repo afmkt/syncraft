@@ -1,10 +1,7 @@
 from __future__ import annotations
 from typing import (
     Optional, List, Any, Tuple, TypeVar,Hashable, 
-    Generic, Generator, Callable, Set
-)
-from syncraft.fa import (
-    DEFAULT_TAG
+    Generic, Generator, Callable
 )
 from syncraft.lexerprotocol import LexerProtocol, LexerBuilder, LexerError, LexerResult
 from syncraft.cache import Cache, Either, Left, Right, Incomplete
@@ -16,9 +13,9 @@ from functools import total_ordering
 from syncraft.syntax import Syntax, RunnerProtocol
 from syncraft.input import StreamCursor
 
-from syncraft.ast import SyncraftError, EOF
+from syncraft.ast import SyncraftError
 from syncraft.bimap import Bindable
-import re
+from syncraft.utils import callable_str
 import os
 
 def get_tab_width() -> int:

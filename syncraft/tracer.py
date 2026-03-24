@@ -1,10 +1,21 @@
 from __future__ import annotations
-from typing import Any, Literal, Optional, Iterator
+from typing import Any, overload, Optional, Iterator, Callable, Protocol, Literal
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 import contextvars
 import time
 from syncraft.bimap import Bindable
+
+
+Site = Literal[
+    'cache-hit', 
+    'cache-inprogress', 
+    'recursion-detected',
+    'parsing-normal',
+    'group-resolution', 
+    'agenda-reprocess'
+]
+
 
 
 
@@ -13,8 +24,9 @@ class ParseNode:
     """A node in the reconstructed parse tree."""
     rule: Any
     location: str | None
+    site: Site
     cache_key: Any
-    input_snapshot: str
+    input: Bindable
     push_time_ns: int
     pop_time_ns: int | None = None
     parent_id: int | None = field(default=None, repr=False)
@@ -28,18 +40,49 @@ class ParseNode:
         return self.pop_time_ns - self.push_time_ns
 
 
-
-@dataclass
-class TracerEvent:
-    id: int
+@dataclass(frozen=True, slots=True)
+class TraceEvent:
+    tracer: Tracer | None
     timestamp_ns: int
+
+
+class EventProtocol(Protocol):
+    def pop(self, *args, **kwargs) -> Any: ...
+@dataclass(frozen=True, slots=True)
+class PushEvent(TraceEvent, EventProtocol):
     rule: Any
     parent: Any | None
-    cache_key: int | None
-    input_snapshot: str | None
+    state: Bindable
+    site: Site
+    
+    @overload
+    def pop(self, result: Any, error: None, state: Bindable) -> PopEvent: ...
+    @overload
+    def pop(self, result: None, error: Any, state: None) -> PopEvent: ...
+
+    def pop(self, result: Any | None = None, error: Any | None = None, state: Bindable | None = None) -> PopEvent:
+        ret = PopEvent(
+            tracer=self.tracer,
+            timestamp_ns=time.perf_counter_ns(),
+            push_event=self,
+            result=result,
+            error=error,
+            state=state
+        )
+        if self.tracer and self.tracer.on_pop_f:
+            self.tracer.on_pop_f(ret)
+        return ret  
+
+
+
+@dataclass(frozen=True, slots=True)
+class PopEvent(TraceEvent):
+    push_event: PushEvent
     result: Any | None
-    which: int | None
-    kind: Literal['push', 'pop']
+    error: Any | None
+    state: Bindable | None
+    
+
 
 class Tracer:
     def __enter__(self) -> Tracer:
@@ -48,113 +91,48 @@ class Tracer:
         pass
 
     def __init__(self, url: None | str = None) -> None:
-        self.log: list[Any] = []
+        self.on_push_f: Optional[Callable[[PushEvent], None]] = None
+        self.on_pop_f: Optional[Callable[[PopEvent], None]] = None
+
+    def on_push(self, f: Callable[[PushEvent], None]) -> Tracer:
+        self.on_push_f = f
+        return self
+    
+    def on_pop(self, f: Callable[[PopEvent], None]) -> Tracer:
+        self.on_pop_f = f
+        return self
 
     def push(self, 
              rule: Any, 
              parent: Any | None,
-             state: Bindable) -> int: 
-        self.log.append(TracerEvent(
-            id=len(self.log),
+             state: Bindable,
+             site: Site) -> PushEvent: 
+        ret = PushEvent(
+            tracer=self,
             timestamp_ns=time.perf_counter_ns(),
             rule=rule,
             parent=parent,
-            cache_key=state.cache_key,
-            input_snapshot=state.str_input(ul=False),
-            result=None,
-            which=None,
-            kind='push'
-        ))
-        return len(self.log) - 1
+            state=state,
+            site=site,
+        )
+        if self.on_push_f:
+            self.on_push_f(ret)
+        return ret
         
-    
-    def pop(self,
-            which: int,
-            state: Bindable | None,
-            result: Any) -> None:
-        if hasattr(result, 'compact') and hasattr(result, '__class__') and result.__class__.__name__ == 'Error':
-            result = result.compact
-            
-        self.log.append(TracerEvent(
-            id=len(self.log),
-            timestamp_ns=time.perf_counter_ns(),
-            rule=None,
-            parent=None,
-            cache_key=state.cache_key if state is not None else None,
-            input_snapshot=state.str_input(ul=False) if state is not None else None,
-            result=result,
-            which=which,
-            kind='pop'
-        ))
         
-    def traces(self) -> list[Any]:
-        return self.log
-    
-    def tree(self) -> list[ParseNode]:
-        """
-        Reconstruct the parse tree from trace events using a parse stack.
-        
-        Handles recursive/looping rules correctly by tracking the active
-        parse context at each moment via push/pop events.
-        
-        Returns a list of root nodes (nodes with no parent).
-        Each node contains children, forming a tree structure.
-        """
-        
-        nodes: dict[int, ParseNode] = {}  # log_index (from push return) -> ParseNode
-        stack: list[int] = []  # Stack of log indices for active (unpoped) nodes
-        
-        for i, event in enumerate(self.log):
-            if event.kind == 'push':
-                parent_idx = stack[-1] if stack else None
-                node = ParseNode(
-                    rule=str(event.rule),
-                    location=event.rule.location if hasattr(event.rule, 'location') else None,
-                    parent_id=parent_idx,  # Store parent's log index, not id(parent)
-                    cache_key=event.cache_key,
-                    input_snapshot=event.input_snapshot,
-                    push_time_ns=event.timestamp_ns,
-                )
-                nodes[i] = node
-                stack.append(i)  # Push this node onto the parse stack
-                # assert node.location is not None, f"Rule must have a location, {repr(event.rule)}"
-                
-            elif event.kind == 'pop' and event.which is not None:
-                if event.which in nodes:
-                    nodes[event.which].pop_time_ns = event.timestamp_ns
-                    nodes[event.which].result = event.result
-                else:
-                    raise ValueError(f"Pop event refers to unknown push id {event.which}")
-                # Pop from stack - remove the most recent occurrence of 'which'
-                if event.which in stack:
-                    stack.remove(event.which)
-        
-        # Build parent-child relationships using parent_id (which is now a log index)
-        roots: list[ParseNode] = []
-        for node in nodes.values():
-            if node.parent_id is None:
-                roots.append(node)
-            else:
-                parent = nodes.get(node.parent_id)
-                if parent:
-                    parent.children.append(node)
-        
-        return roots
 
+class Dummy(EventProtocol):
+    def pop(self, *args, **kwargs) -> None:
+        pass
 
+dummy = Dummy()
 
-
-def trace_push(rule: Any, parent: Any | None, state: Bindable) -> int:
+def trace_push(rule: Any, parent: Any | None, state: Bindable, site: Site) -> EventProtocol:
     tracer = _CURRENT_TRACER.get()
     if tracer is None:
-        return 0
-    return tracer.push(rule=rule, parent=parent, state=state)
-
-def trace_pop(which: int, state: Bindable | None, result: Any) -> None:
-    tracer = _CURRENT_TRACER.get()
-    if tracer is None:
-        return
-    tracer.pop(which=which, state=state, result=result)
+        return dummy
+    return tracer.push(rule=rule, parent=parent, state=state, site=site)
+    
 
 
 _CURRENT_TRACER: contextvars.ContextVar[Optional[Tracer]] = contextvars.ContextVar(

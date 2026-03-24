@@ -140,6 +140,7 @@ class GenState(Bindable):
 
 @dataclass(frozen=True, slots=True)
 class Generator(Algebra[ParseResult[T], GenState]):      
+
     def bimap(self, 
               f: Callable[[ParseResult[T], Any], Any], 
               i: Callable[[Any, Any], ParseResult[T]]) -> Algebra[Any, GenState]:
