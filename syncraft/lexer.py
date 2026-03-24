@@ -60,6 +60,15 @@ class LexerCache:
     def clear(self, 
               builtin: bool = False, 
               cache_path: str | Path | None = None) -> None:
+        """
+        Clear the lexer cache.
+
+        Args:
+            builtin (bool): Whether to clear the built-in cache.
+            cache_path (str | Path | None): Path to the user cache directory.
+        Note:
+            This method can be called by Lexer.cache.clear()
+        """
         with self.lock:
             self.dict.clear()
             dir = self.dir(builtin=builtin, cache_path=cache_path)

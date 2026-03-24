@@ -11,6 +11,9 @@ from .syntax import (
 from .tracer import (
     Tracer,    
 )
+from .lexer import (
+    Lexer,
+)
 from .regex import (
     RegexError,
     match,
@@ -87,5 +90,6 @@ __all__ = [
     "LayoutDoc", "Concat", "Text", "Group",    
     "Str", "TokenSpec", 
     "Tracer",
+    "Lexer",
     "__version__",
 ]
