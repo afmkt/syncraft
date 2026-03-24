@@ -20,7 +20,9 @@ import threading
 
 import pickle
 from syncraft.lexerprotocol import LexerProtocol, LexerError, LexerResult, LexerBuilder, GeneratedToken, VerifiedToken, TokenSpecProtocol
-from syncraft import __version__
+from importlib.metadata import version
+    
+
 
 Tag = str | Enum | None
 
@@ -48,7 +50,7 @@ class LexerCache:
 
     # Use package major.minor version for cache validation - cache invalidates when 
     # major.minor version changes (patch releases are backward compatible)
-    _CACHE_VERSION: ClassVar[str] = ".".join(__version__.split(".")[:2])
+    _CACHE_VERSION: ClassVar[str] = ".".join(version("syncraft").split(".")[:2])
 
     dict: Dict[str, Lexer[Any]] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
