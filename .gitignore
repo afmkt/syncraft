@@ -20,5 +20,5 @@ site/
 **/*.prof
 syncraft.main/*
 syncraft.old/*
-
+syncraft/cache/*
 

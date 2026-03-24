@@ -7,7 +7,7 @@ from typing import (
 
 from types import EllipsisType
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, fields
 
 from collections import deque
 from syncraft.utils import  FrozenDict
@@ -1316,12 +1316,15 @@ class Builder(Generic[C]):
     non_greedy: bool = False  # when true, first match wins instead of maximal munch
     action: Optional[ModeAction] = None  # the mode that the lexical rule belongs to
     # for any additional metadata that might be needed
-    extra_meta: FrozenDict[str, Any] = field(default_factory=FrozenDict, compare=False, hash=False)  
     
-    def __getattr__(self, name: str) -> Any:
-        if name not in self.extra_meta:
-            raise AttributeError(f"Builder object has no extra_meta '{name}'")
-        return self.extra_meta[name]
+    def __repr__(self) -> str:
+        parts = ["Builder("]
+        for fld in fields(self):
+            v = getattr(self, fld.name)
+            parts.append(f"    {fld.name}={repr(v)},")
+        parts.append(")")
+        return "\n".join(parts)
+
 
     def set(self, 
             *, 
@@ -1330,11 +1333,11 @@ class Builder(Generic[C]):
             priority: int | EllipsisType = ...,
             non_greedy: bool | EllipsisType = ...,
             action: ModeAction | EllipsisType | None = ...,
-            **kwargs: Any) -> Builder[C]:
+            ) -> Builder[C]:
         """
         ...(Ellipsis) means keep the existing value.
         """
-        new_meta = {**self.extra_meta, **kwargs}
+        
         skip = skip if skip is not ... else self.skip
         priority = priority if priority is not ... else self.priority
         non_greedy = non_greedy if non_greedy is not ... else self.non_greedy
@@ -1345,8 +1348,7 @@ class Builder(Generic[C]):
                        action=action,
                        skip=skip,
                        priority=priority,
-                       non_greedy=non_greedy,                       
-                       extra_meta=FrozenDict(new_meta))
+                       non_greedy=non_greedy)
 
     def apply(self,            
               *,

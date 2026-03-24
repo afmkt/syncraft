@@ -86,9 +86,11 @@ class LexerCache:
     def _save(dir: Path, key: str, lexer: Lexer[Any], signature: str) -> None:
         dir.mkdir(parents=True, exist_ok=True)
         file = dir / f"{key}.lex"
-        with open(file, "wb") as f:
+        tmp_file = file.with_suffix(f".{random.getrandbits(32)}.tmp")
+        with open(tmp_file, "wb") as f:
             # Store version alongside lexer for validation on load
             pickle.dump((signature, lexer), f)
+        tmp_file.rename(file)
 
     def load(self, 
              *,

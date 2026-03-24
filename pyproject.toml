@@ -55,5 +55,9 @@ dev = [
 packages = ["syncraft"]
 
 [tool.setuptools.package-data]
-syncraft = ["cache/**/*", "py.typed"]
+syncraft = ["py.typed"]
+
+# Exclude all .lex files from the package data
+[tool.setuptools.exclude-package-data]
+syncraft = ["cache/**/*.lex"]
 "syncraft.mcp" = ['*.md']
