@@ -144,9 +144,8 @@ class InProgress(Generic[S]):
             assert new_state is not None, "New state is None during grow"         
             new_cache_key = new_state.cache_key
             old_state = self.state
-            # use != instead of > to check for improvement, because in some cases (e.g. generation with object IDs) cache keys might not be strictly increasing, 
-            # but any change in cache key indicates new progress
-            if old_state is None or new_cache_key != old_state.cache_key:
+            
+            if old_state is None or new_cache_key > old_state.cache_key:
                 self.result = new_result
                 self.revision += 1
                 self.growing = True

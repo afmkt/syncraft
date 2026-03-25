@@ -21,6 +21,7 @@ def test_generate_with_direct_left_recursion_with_base_succeeds():
     print("START GENERATING", '=='*80)
     ast = generate_with(A)
     # Should yield an AST (not Error) and produce a bindings mapping (possibly empty)
+    A.validate(P)
     assert not isinstance(ast, Error)
     
 

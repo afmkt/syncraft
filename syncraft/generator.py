@@ -51,7 +51,7 @@ class GenState(Bindable):
     ast: Optional[ParseResult] = None
     replay: bool = False
     seed: int = 0
-    # steps: int = 0
+    steps: int = 0
 
     def str_input(self, ul: bool) -> str:
         try:
@@ -76,7 +76,7 @@ class GenState(Bindable):
         # ensuring cache_key values are monotonically increasing, which is required
         # by the left-recursion growth algorithm in cache.py that compares cache_keys
         # to detect progress.
-        return hash(self.ast) 
+        return self.steps
 
     def __str__(self) -> str:
         try:
@@ -105,8 +105,7 @@ class GenState(Bindable):
             return replace(self, ast=new_ast)
         
     def advance(self, steps: int = 1) -> GenState:
-        return self
-        # return replace(self, steps=self.steps + steps)
+        return replace(self, steps=self.steps + steps)
     
     def inject(self, a: Any) -> GenState:
         if a is self.ast:
