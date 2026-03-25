@@ -47,7 +47,13 @@ def debug_print(*arg, **kwargs) -> None:
 
 @dataclass(frozen=True, slots=True)
 class GenState(Bindable):
-
+    """
+    State for generator algebra. This is the input type for generator algebras. 
+    It contains the current AST (or ``Unknown`` if pruned), a seed for randomization, and a replay flag that constrains behavior to match the provided AST structure.
+    The generator algebra manipulates this state to produce new ASTs, advance generation steps, and fork for stochastic choices. 
+    `steps` is used for tracking the steps taken during generation, which is used as the cache key for detecting progress in left-recursion growth.
+    A step in generation is defined as any point where the generator calls a rule, which includes all terminals and non-terminals.
+    """
     ast: Optional[ParseResult] = None
     replay: bool = False
     seed: int = 0
@@ -71,11 +77,6 @@ class GenState(Bindable):
 
     @property
     def cache_key(self) -> int:
-        # Use a monotonically increasing counter stored in the 'steps' field.
-        # The steps field is incremented via advance() as the generator progresses,
-        # ensuring cache_key values are monotonically increasing, which is required
-        # by the left-recursion growth algorithm in cache.py that compares cache_keys
-        # to detect progress.
         return self.steps
 
     def __str__(self) -> str:
