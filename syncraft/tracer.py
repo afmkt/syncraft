@@ -200,3 +200,8 @@ def trace_push(rule: Any, parent: Any | None, state: Bindable, site: Site) -> Ev
         return dummy
     return tracer.push(rule=rule, parent=parent, state=state, site=site)
     
+
+
+class TracePath:
+    def __init__(self, segments: list[Any]) -> None:
+        self.segments = segments or []

@@ -183,15 +183,33 @@ class Lexer(LexerProtocol[C]):
     @staticmethod
     def signature() -> str:
         if Lexer._LEXER_SIGNATURE is None:
+            import syncraft
+            from syncraft.fa import Builder
+            
+            # Build minimal test DFA
             a: Builder[str] = Builder.lit('a')
             b: Builder[str] = Builder.lit('b')
             c: Builder[str] = Builder.lit('c')
             builder: Builder[str] = ~((a | b) + c).many(at_least=1)
             lexer: Lexer[str] | None = Lexer.from_builders(builder)
-            pickle_bytes = pickle.dumps(lexer)
-            Lexer._LEXER_SIGNATURE = hashlib.sha256(pickle_bytes).hexdigest()
+            assert lexer is not None, "Failed to build test lexer for signature generation"
+            # Create canonical representation that ignores state IDs
+            dfa = lexer.mode.rdfa  # Use ReverseDFA for stability
+            canonical = (
+                dfa.cs_factory,  # CharSetFactory - stable
+                dfa.final,        # init state
+                tuple(sorted(dfa.accept.items())),  # sorted accept states
+                tuple(sorted(  # sorted transitions
+                    (s, tuple(sorted(t.items()))) 
+                    for s, t in sorted(dfa.transitions.items())
+                ))
+            )
+            
+            # Include package version in signature
+            version = getattr(syncraft, '__version__', 'unknown')
+            data = pickle.dumps((version, canonical))
+            Lexer._LEXER_SIGNATURE = hashlib.sha256(data).hexdigest()
         return Lexer._LEXER_SIGNATURE
-
     
 
     @classmethod
