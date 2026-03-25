@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import (
-    Any, Set, TypeVar, Tuple, Optional, Callable, Dict, Hashable,
+    Any, TypeVar, Tuple, Optional, Callable, Hashable,
     List, Generator as PyGenerator, cast
 )
 
@@ -108,24 +108,12 @@ class GenState(Bindable):
         return replace(self, steps=self.steps + steps)
     
     def inject(self, a: Any) -> GenState:
-        # Theoretically, we should maintain the correspondence between AST and steps, i.e. 
-        # when injecting an AST node, we should retrieve the steps associated with that node 
-        # and update the GenState accordingly. However, in Generator, 
-        # we don't inject old AST nodes, but reusing the old GenState instance.
-        # 
-
         if a is self.ast:
             return self
-        if a is Unknown:
-            return replace(self, ast=a)
-        else:
-            return replace(self.advance(1), ast=a)
+        return replace(self, ast=a)
     
     def fork(self, tag: Any) -> GenState:
-        # Increment steps to ensure each forked state has a unique cache_key.
-        # This is important for the left-recursion detection in cache.py which
-        # relies on unique cache_keys to identify distinct states.
-        return replace(self, seed=hash((self.seed, tag)), steps=self.steps + 1)
+        return replace(self, seed=hash((self.seed, tag)))
 
 
     def rng(self, tag: Any = None) -> random.Random:
@@ -201,12 +189,12 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 inp = input
                 for (step, keep), (ast_elem, _) in zip(normaize_steps, ast_seq.value):
                     if input.replay or keep:
-                        tmp_state = inp.inject(ast_elem)
+                        tmp_state = inp.inject(ast_elem).advance()
                         # debug_print(f"\nSeq CALLING BEFORE {callable_str(step.run_f)} with input.ast=={ast_elem}")
                         step_result = yield from step.run(tmp_state, cache)
                         debug_print(f"\nSeq CALLING {callable_str(step.run_f)} with input=={ast_elem} -> {step_result}")
                     else:
-                        tmp_state = inp.inject(Unknown())
+                        tmp_state = inp.inject(Unknown()).advance()
                         step_result = yield from step.run(tmp_state, cache)
                         debug_print(f"\nSeq CALLING {callable_str(step.run_f)} with input=={tmp_state} -> {step_result}")
                     match step_result:
@@ -231,7 +219,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
             if input.pruned:
                 ret: List[Any] = []
                 tmp_input = input
-                forked_input = tmp_input.fork(tag=len(ret))
+                forked_input = tmp_input.fork(tag=len(ret)).advance()
                 times = forked_input.rng("many_rng").choice(range(at_least, at_most if at_most is not None else at_least + 1))
                 while len(ret) < times:
                     match (yield from self.run(forked_input, cache)):
@@ -259,7 +247,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 ret = []
                 tmp_state = input
                 for x in input.ast.value:
-                    tmp_state = tmp_state.inject(x)
+                    tmp_state = tmp_state.inject(x).advance()
                     self_result = yield from self.run(tmp_state, cache) 
                     match self_result:
                         case Right((value, new_state)):
@@ -330,7 +318,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                                                                                      Either[Any, Tuple[Alt, GenState]]]:
             if input.pruned:
                 indexes = list(range(len(options)))
-                forked_input = input.fork(tag="alt")
+                forked_input = input.fork(tag="alt").advance()
                 forked_input.rng("alt_index").shuffle(indexes)
                 for idx in indexes:
                     selected = options[idx]
@@ -364,7 +352,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                 ast_choice = input.ast if isinstance(input.ast, Alt) else Alt(index=1, value=Nothing)
                 if ast_choice.index is None:
                     for i, option in enumerate(options):
-                        tmp_state = input.inject(ast_choice.value)
+                        tmp_state = input.inject(ast_choice.value).advance()
                         result = yield from option.run(tmp_state, cache)
                         match result:
                             case Right((value, next_input)):
@@ -383,7 +371,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     ))
                 else:
                     selected = options[ast_choice.index]
-                    tmp_state = input.inject(ast_choice.value)
+                    tmp_state = input.inject(ast_choice.value).advance()
                     result = yield from selected.run(tmp_state, cache)
                     match result:
                         case Right((value, next_input)):
@@ -422,7 +410,7 @@ class Generator(Algebra[ParseResult[T], GenState]):
                     return Left.new(Error.new(this=alg, 
                                       message=f"Expect Lazy got {input}",
                                       state=input))
-                new_state = input.inject(current.value)
+                new_state = input.inject(current.value).advance()
                 result = (yield from alg.run(new_state, cache))
                 match result:
                     case Left() as ERROR:
