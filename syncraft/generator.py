@@ -71,6 +71,11 @@ class GenState(Bindable):
 
     @property
     def cache_key(self) -> int:
+        # Use a monotonically increasing counter stored in the 'steps' field.
+        # The steps field is incremented via advance() as the generator progresses,
+        # ensuring cache_key values are monotonically increasing, which is required
+        # by the left-recursion growth algorithm in cache.py that compares cache_keys
+        # to detect progress.
         return self.steps
 
     def __str__(self) -> str:
@@ -117,7 +122,10 @@ class GenState(Bindable):
             return replace(self.advance(1), ast=a)
     
     def fork(self, tag: Any) -> GenState:
-        return replace(self, seed=hash((self.seed, tag)))
+        # Increment steps to ensure each forked state has a unique cache_key.
+        # This is important for the left-recursion detection in cache.py which
+        # relies on unique cache_keys to identify distinct states.
+        return replace(self, seed=hash((self.seed, tag)), steps=self.steps + 1)
 
 
     def rng(self, tag: Any = None) -> random.Random:
