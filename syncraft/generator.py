@@ -48,11 +48,15 @@ def debug_print(*arg, **kwargs) -> None:
 @dataclass(frozen=True, slots=True)
 class GenState(Bindable):
     """
-    State for generator algebra. This is the input type for generator algebras. 
-    It contains the current AST (or ``Unknown`` if pruned), a seed for randomization, and a replay flag that constrains behavior to match the provided AST structure.
-    The generator algebra manipulates this state to produce new ASTs, advance generation steps, and fork for stochastic choices. 
-    `steps` is used for tracking the steps taken during generation, which is used as the cache key for detecting progress in left-recursion growth.
-    A step in generation is defined as any point where the generator calls a rule, which includes all terminals and non-terminals.
+    State object for generator algebra.
+
+    This acts as the primary input for generator transformations. It tracks the current 
+    AST (or None/Unknown if pruned), manages randomization via a seed, and utilizes 
+    a replay flag to enforce consistency with an existing AST structure.
+
+    The `steps` attribute tracks progress by counting calls to grammar rules (terminals 
+    and non-terminals). This serves as a cache key to detect growth and prevent 
+    infinite loops during left-recursion.    
     """
     ast: Optional[ParseResult] = None
     replay: bool = False
