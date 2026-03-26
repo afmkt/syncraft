@@ -316,27 +316,27 @@ class Cache(Generic[S]):
     
 
     def trace_cache(self, rule: Rule, key: S, result: Either, site: Site) -> None:
-        frame_id = trace_push(rule=syntax_of(rule), parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, state=key, site=site)  
+        frame = trace_push(rule=syntax_of(rule), state=key, site=site)  
         if isinstance(result, Right):
-            frame_id.pop(result=result.value[0], error=None, state=result.state)
+            frame.pop(result=result.value[0], error=None, state=result.state)
         elif isinstance(result, Left):
-            frame_id.pop(result=None, error=result.value, state=None)
+            frame.pop(result=None, error=result.value, state=None)
 
 
     def run_rule(self, rule: Rule, key: S, site: Site) -> Generator[Any, Any, Ret]:
-        frame_id = trace_push(rule=syntax_of(rule), parent=syntax_of(self.stack[-2][0]) if len(self.stack) > 1 else None, state=key, site=site)
+        frame = trace_push(rule=syntax_of(rule), state=key, site=site)
         try:
             assert syntax_of(rule) is not None, f"Rule {rule} has no syntax annotation"
             result = yield from rule(key, self) 
             if isinstance(result, Right):
-                frame_id.pop(result=result.value[0], error=None, state=result.state)
+                frame.pop(result=result.value[0], error=None, state=result.state)
             elif isinstance(result, Left):
-                frame_id.pop(result=None, error=result.value, state=None)
+                frame.pop(result=None, error=result.value, state=None)
             else:
                 raise SyncraftError("Unexpected result type", offender=result, expect=(Left, Right))
             return result
         except Exception as e:
-            frame_id.pop(result=None, error=e, state=None)
+            frame.pop(result=None, error=e, state=None)
             raise e
     
     def __str__(self) -> str:

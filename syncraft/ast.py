@@ -3,11 +3,11 @@
 from __future__ import annotations
 from typing import (
     Optional, Any, TypeVar, Tuple,
-    Union, Protocol, runtime_checkable, 
-    Hashable, Iterator, Callable, List
+    Union, 
+    Hashable, Callable
 )
 from dataclasses import dataclass
-from enum import Enum
+
 class SyncraftError(Exception):
     """
     Custom exception class for errors encountered during AST processing in Syncraft.
@@ -101,6 +101,10 @@ Unknown = singleton(
 )
 
 def guard(f: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """
+    Decorator to guard a function against Unknown and Nothing values.
+    If the input is Unknown or Nothing, the function will return the same sentinel value.
+    """
     def wrapper(a: Any) -> Any:
         if a is Unknown:
             return Unknown
@@ -109,61 +113,17 @@ def guard(f: Callable[[Any], Any]) -> Callable[[Any], Any]:
         return f(a)
     return wrapper
 
-class WalkEvent(Enum):
-    ENTER = "enter"
-    EXIT = "exit"
-    ATOMIC = "atomic"
 
 
-@runtime_checkable
-class Walkable(Protocol):
-    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
-        ...
 @dataclass(frozen=True, slots=True)    
-class AST(Walkable):
-    """
-    Base class for all raw AST nodes in Syncraft. 
-    """
-        
-    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
-        """
-        Walk the AST, yielding events for entering and exiting nodes, as well as atomic values.
-        Args:
-            stack: The current traversal stack, which will be modified in-place. 
-                   The current node will be appended to the stack before yielding events and popped afterward.
-            keep: A boolean flag indicating whether the current node or any of its ancestors is kept in the AST. 
-                  Seq node stores its chiildren's keep flags, which are combined with the current keep flag when yielding events for child nodes.
-                  
-        Yields:
-            A tuple of (WalkEvent, current stack, keep flag) for each event during the walk.
-        """
-        stack.append(self)
-        try:
-            yield (WalkEvent.ATOMIC, stack, keep)
-        finally:
-            stack.pop()
-
+class AST:
+    pass
 
 
 
 @dataclass(frozen=True, slots=True)
 class Lazy(AST):
     value: Any
-    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
-        stack.append(self)
-        try:
-            yield (WalkEvent.ENTER, stack, keep)
-            if isinstance(self.value, AST):
-                yield from self.value.walk(stack, keep)
-            else:
-                stack.append(self.value)
-                try:
-                    yield (WalkEvent.ATOMIC, stack, keep)
-                finally:
-                    stack.pop()
-            yield (WalkEvent.EXIT, stack, keep)
-        finally:
-            stack.pop()
     
 
 @dataclass(frozen=True, slots=True)
@@ -171,72 +131,16 @@ class Alt(AST):
     index: Optional[int]
     value: Optional[Any]
 
-    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
-        stack.append(self)
-        try:
-            yield (WalkEvent.ENTER, stack, keep)
-            if isinstance(self.value, AST):
-                yield from self.value.walk(stack, keep)
-            else:
-                stack.append(self.value)
-                try:
-                    yield (WalkEvent.ATOMIC, stack, keep)
-                finally:
-                    stack.pop()
-            yield (WalkEvent.EXIT, stack, keep)
-        finally:
-            stack.pop()
 
 
 @dataclass(frozen=True, slots=True)
 class Many(AST):
     
     value: Tuple[Any, ...]
-    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
-        stack.append(self)
-        try:
-            yield (WalkEvent.ENTER, stack, keep)
-            for item in self.value:
-                if isinstance(item, AST):
-                    yield from item.walk(stack, keep)
-                else:
-                    stack.append(item)
-                    try:
-                        yield (WalkEvent.ATOMIC, stack, keep)
-                    finally:
-                        stack.pop()
-            yield (WalkEvent.EXIT, stack, keep)
-        finally:
-            stack.pop()
 
 @dataclass(frozen=True, slots=True)
 class Seq(AST):
     value: Tuple[Tuple[Any, bool], ...]
-    def walk(self, stack: List[Walkable | Any], keep: bool) -> Iterator[Tuple[WalkEvent, List[Walkable | Any], bool]]:
-        stack.append(self)
-        try:
-            yield (WalkEvent.ENTER, stack, keep)
-            for item, _keep in self.value:
-                if isinstance(item, AST):
-                    yield from item.walk(stack, keep and _keep)
-                else:
-                    stack.append(item)
-                    try:
-                        yield (WalkEvent.ATOMIC, stack, keep and _keep)
-                    finally:
-                        stack.pop()
-            yield (WalkEvent.EXIT, stack, keep)
-        finally:
-            stack.pop()
-
-
-
-
-
-
-
-
-
 
         
 T = TypeVar('T', bound=Hashable)
@@ -251,63 +155,6 @@ ParseResult = Union[
     Unknown, Nothing, # type: ignore
     T,
 ]
-
-def map(f: Callable[[Any], Any]):
-    """
-    Create a transducer that applies a function to each item before reducing it.
-    Args:
-    f: A function that takes an item and returns a transformed item.
-    Returns:
-    A transducer function that can be used to create a new reducer that applies the transformation before reducing.
-    """
-    def transducer(reducer: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:
-        """
-        Wrap the original reducer to apply the transformation function `f` to each item before reducing it.
-        Args:
-        reducer: The original reducer function that takes an accumulator and an item and returns a new accumulator.
-        Returns:
-        A new reducer function that applies the transformation function `f` to each item before reducing it
-        """
-        def wrapped(acc: Any, item: Any) -> Any:
-            return reducer(acc, f(item))
-        return wrapped
-    return transducer
-
-def filter(pred: Callable[[Any], bool]):
-    """
-    Create a transducer that filters items based on a predicate function.
-    
-    Args:
-        pred: A function that takes an item and returns True if the item should be kept, False otherwise.
-        
-    Returns:
-        A transducer function that can be used to create a new reducer that only processes items that satisfy the predicate.
-    """
-    def transducer(reducer: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:
-        """
-        Wrap the original reducer to only apply it to items that satisfy the predicate function `pred`.
-        Args:
-            reducer: The original reducer function that takes an accumulator and an item and returns a new accumulator.
-        Returns:
-            A new reducer function that only applies the original reducer to items that satisfy the predicate function `
-        """
-        def wrapped(acc: Any, item: Any) -> Any:
-            if pred(item):
-                return reducer(acc, item)
-            return acc
-        return wrapped
-    return transducer
-
-
-def compose(*transducers: Callable[[Callable[[Any, Any], Any]], Callable[[Any, Any], Any]]) -> Callable[[Callable[[Any, Any], Any]], Callable[[Any, Any], Any]]:
-    """Compose multiple transducers into a single transducer that applies them in sequence."""
-    def composed(reducer: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:
-        for transducer in reversed(transducers):
-            reducer = transducer(reducer)
-        return reducer
-    return composed
-
-
 
 
 
