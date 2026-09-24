@@ -2,8 +2,16 @@ name: docs
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - "syncraft/**"
+      - ".github/workflows/gh-pages.yml"
     tags:
-      - 'v*.*.*'   # Deploy docs on version tag push
+      - "v*.*.*"
   release:
     types: [published]
   workflow_dispatch:
@@ -27,29 +35,24 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
-      - name: Derive release version
-        shell: bash
-        run: |
-          # Strip leading 'v' if present (e.g., v1.2.3 -> 1.2.3)
-          echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
-      - name: Install deps (use source code)
-        shell: bash
+      - name: Install uv
         run: |
-          set -euxo pipefail
           python -m pip install --upgrade pip
           python -m pip install uv
-          # Install the package from source code (current tag) with dev dependencies
-          uv sync --group dev
-          # Make sure the package is available in the environment
-          uv run python -c "import syncraft; print(f'Syncraft version: {syncraft.__version__ if hasattr(syncraft, \"__version__\") else \"installed\"}')"
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Install package + docs deps
+        run: |
+          set -euxo pipefail
+          # Source package + documentation tooling
+          uv sync --group docs
+          uv run python -c "import syncraft; print('syncraft import ok')"
 
-      - name: Build site (clean)
+      - name: Build site
         run: uv run mkdocs build --clean --site-dir ./site
 
       - name: Upload artifact
