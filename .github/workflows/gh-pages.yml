@@ -51,11 +51,12 @@ jobs:
             "mkdocstrings[python]>=0.26.0" \
             "mkdocs-macros-plugin>=1.3.0"
           python -c "import syncraft; print('syncraft import ok', getattr(syncraft, '__version__', '?'))"
+          mkdocs --version
 
       - name: Build site
         run: |
           set -euxo pipefail
-          mkdocs build --clean --site-dir ./site
+          mkdocs build --clean --verbose --site-dir ./site
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

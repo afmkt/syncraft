@@ -26,10 +26,6 @@ dependencies = [
     "platformdirs>=4.9.4",
 ]
 
-
-[project.scripts]
-syncraft = "syncraft.mcp.cli:main"
-
 [project.urls]
 Documentation = "https://afmkt.github.io/syncraft/"
 Repository = "https://github.com/afmkt/syncraft"
@@ -56,14 +52,10 @@ docs = [
     "mkdocs-macros-plugin>=1.3.0",
 ]
 
-
-[tool.setuptools]
+[tool.hatch.build.targets.wheel]
 packages = ["syncraft"]
 
-[tool.setuptools.package-data]
-syncraft = ["py.typed"]
-
-# Exclude all .lex files from the package data
-[tool.setuptools.exclude-package-data]
-syncraft = ["cache/**/*.lex"]
-"syncraft.mcp" = ['*.md']
+[tool.hatch.build]
+exclude = [
+  "syncraft/cache/**/*.lex",
+]
