@@ -44,5 +44,5 @@ plugins:
 
 nav:
   - Home: index.md
-  - How-To: how-to/ebnf-bidirectional.md
+  - How-To: how-to/bidirectional-grammar.md
   - Reference: reference.md

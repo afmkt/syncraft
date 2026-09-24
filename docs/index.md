@@ -9,7 +9,7 @@ Current version: {{ version }}
 ## Start here
 
 - **[README](https://github.com/afmkt/syncraft#readme)** — install and quickstart
-- **[How-To](how-to/ebnf-bidirectional.md)** — write a bidirectional grammar (7-step workflow)
+- **[How-To](how-to/bidirectional-grammar.md)** — write a bidirectional grammar (7-step workflow)
 - **[API Reference](reference.md)** — public symbols from source
 
 ## Installation
