@@ -8,6 +8,7 @@ theme:
     - navigation.instant
     - navigation.sections
     - navigation.top
+    - toc.follow
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
@@ -17,9 +18,11 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.superfences
   - pymdownx.highlight
-  - pymdownx.inlinehilite  
+  - pymdownx.inlinehilite
   - pymdownx.tabbed:
       alternate_style: true
+  - toc:
+      permalink: true
 
 plugins:
   - search
@@ -30,22 +33,16 @@ plugins:
       handlers:
         python:
           import:
-            - "https://docs.python.org/3/objects.inv"        
+            - "https://docs.python.org/3/objects.inv"
           options:
             docstring_style: google
             show_source: false
             show_root_heading: true
             inherited_members: false
-            filters: 
+            filters:
               - "!^_"
+
 nav:
   - Home: index.md
-  - Quickstart: quickstart.md
-  - Concepts:
-      - Architecture: concepts/architecture.md
-      - Bidirectional Model: concepts/bidirectional.md
-      - Performance: concepts/performance.md
-  - How-To:
-      - EBNF Bidirectional Grammar: how-to/ebnf-bidirectional.md
-  - FAQ: faq.md
+  - How-To: how-to/ebnf-bidirectional.md
   - Reference: reference.md
