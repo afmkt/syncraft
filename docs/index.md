@@ -67,7 +67,7 @@ print(expr.parse("((1+2)*3)"))   # ((1, '+', 2), '*', 3)
 
 ### 2. Map to dataclasses and generate
 
-`.case()` defines bidirectional structural mappings: extract from the parse shape, build domain objects, and invert for generation.
+Continuing from the `expr` grammar above: layer bidirectional mappings with `.case()` so parse yields dataclasses and generate accepts them.
 
 ```python
 from dataclasses import dataclass
@@ -82,6 +82,7 @@ class BinaryOp:
     op: str
     right: Number | BinaryOp
 
+# `expr` is the Regex++ grammar from section 1
 expr_ast = expr.case(
     (lambda env: env.number, lambda env: Number(env.number)),
     (lambda env: (env.left, env.op, env.right),
